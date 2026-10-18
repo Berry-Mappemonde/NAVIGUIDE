@@ -14,12 +14,12 @@ UTC, écrite par le serveur seul :
 - `poe`       : port d'entrée officiel passé à ≤ 15 nm d'une perle (basis `pearl`) ;
 - `wx`        : météo marquante au bateau, dérivée d'une entrée `grib` déjà
                 journalisée (vent ≥ WX_GALE_KT ou mer WMO) — pas de GRIB,
-                pas de `wx` (lot A, enrichi lot F2 : durée, max, level) ;
+                pas de `wx` (enrichi F2 : durée, max, level) ;
 - `climo`     : changement de régime entre deux perles (rose ≥ 90°, calmes,
-                saison cyclonique) — lot F2 ;
-- `sci`       : station / campagne scientifique à ≤ 10 nm — lot F2 ;
+                saison cyclonique) — F2 ;
+- `sci`       : station / campagne scientifique à ≤ 10 nm — F2 ;
 - `news`      : veille Tavily d'une escale (J-10 → J+2), datée, avec URL
-                — lot L4. Expire à J+2.
+                — L4. Expire à J+2.
 
 Rien n'est inventé : une position vient de l'horloge, un vent d'un GRIB
 réellement téléchargé. Les trous restent des trous (`absent`), le journal
@@ -431,7 +431,7 @@ def wx_entry_from_grib(
 ) -> Optional[dict]:
     """A `wx` line derived from a journaled GRIB reading — or None when the
     weather was unremarkable. Same numbers, same time, nothing added.
-    Lot F2 : durée (heures), max, level WMO (forte / très forte)."""
+    Durée (heures), max, level WMO (forte / très forte)."""
     wind = grib.get("windKnots")
     hs = grib.get("hs")
     dur = hours if isinstance(hours, (int, float)) else WX_SLOT_H
@@ -654,7 +654,7 @@ def add_note(text: str, now: datetime, *, author: str = "skipper", lang: str = "
 
 
 def add_chat(question: str, answer: str, summary: str, now: datetime, *, lang: str = "fr", engine: str | None = None) -> dict:
-    """Un échange avec le journal de bord (lot D) : horodatage, question,
+    """Un échange avec le journal de bord : horodatage, question,
     réponse, résumé. Écrit tel quel — le LLM a répondu, le journal se souvient."""
     q = " ".join(str(question or "").split())[:CHAT_MAX_CHARS]
     a = " ".join(str(answer or "").split())[:CHAT_MAX_CHARS]
@@ -675,7 +675,7 @@ def add_chat(question: str, answer: str, summary: str, now: datetime, *, lang: s
     return entry
 
 
-# ── veille (lot L4) ─────────────────────────────────────────────────────────
+# ── veille ─────────────────────────────────────────────────────────
 
 def record_news(entry: dict) -> bool:
     """Une entrée `news` datée, avec URL. Idempotente (id = news:slug:jour)."""

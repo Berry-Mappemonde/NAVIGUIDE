@@ -14,7 +14,7 @@ const hook = readFileSync(join(here, "useReplay.js"), "utf8");
 const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
 const bar = readFileSync(join(here, "..", "components", "SimulationFilmBar.jsx"), "utf8");
 
-describe("useReplay contract (lot E)", () => {
+describe("useReplay contract", () => {
   it("replays on the official clock, consumes the film plan, and hands back to live at the end or on Stop", () => {
     assert.match(hook, /replayWindow\(clockToUse, Date\.now\(\)\)/);
     assert.match(hook, /requestAnimationFrame\(tick\)/);
@@ -30,12 +30,12 @@ describe("useReplay contract (lot E)", () => {
   });
 
   it("App swaps the live boat for the replayed one in Suivre, jumps the playhead each frame, reads each new leg aloud", () => {
-    // DM5 : la position live vient de la source (official.live en Berry,
+    // La position live vient de la source (official.live en Berry,
     // vessel.live sur ma route) — le replay la remplace pareil.
     assert.match(app, /replay\.active && replay\.live \? replay\.live : sourceLive/);
     assert.match(app, /const sourceLive = suivreCustom \? \(vessel\.live \|\| customClientLive\) : official\.live;/);
     assert.match(app, /jump: Boolean\(live\.replay\)/);
-    // The voice lives in hooks/useReplayVoice.js since lot J; App mounts it.
+    // The voice lives in hooks/useReplayVoice.js; App mounts it.
     assert.match(app, /useReplayVoice\(\{/);
     assert.match(app, /chapterText: replay\.chapterText/);
     assert.match(readFileSync(join(here, "useReplayVoice.js"), "utf8"), /speakSentence|speak\(/);
@@ -82,7 +82,7 @@ describe("useReplay contract (lot E)", () => {
     assert.match(bar, /=== sec \? 0 : sec/);
   });
 
-  it("lot RD7 — durées décochables, budget tenu, temps naturel sans case", () => {
+  it("Durées décochables, budget tenu, temps naturel sans case", () => {
     assert.equal(toggleFilmDuration(0, 150), 150);
     assert.equal(toggleFilmDuration(150, 150), 0);
     assert.equal(toggleFilmDuration(150, 180), 180);
@@ -99,7 +99,7 @@ describe("useReplay contract (lot E)", () => {
     assert.match(hook, /userBudget > 0 \? userBudget : FILM_TARGET_SECONDS/);
   });
 
-  it("lot RG8 — durée estimée = caractères ÷ 15, sans recalibrer la voix", () => {
+  it("Durée estimée = caractères ÷ 15, sans recalibrer la voix", () => {
     assert.equal(filmEstimatedSeconds(2250), 150);
     assert.equal(filmEstimatedSeconds(2700), 180);
     assert.equal(filmEstimatedSeconds(0), 0);
@@ -118,7 +118,7 @@ describe("useReplay contract (lot E)", () => {
     assert.match(app, /estimatedSeconds: replay\.estimatedSeconds/);
   });
 
-  it("lot F4 : les événements du chapitre ouvrent la bulle (même texte que la carte NOW)", () => {
+  it("Les événements du chapitre ouvrent la bulle (même texte que la carte NOW)", () => {
     assert.match(hook, /pickFilmEvent/);
     assert.match(hook, /publishEventBubble/);
     assert.match(hook, /filmBubbleRef/);
@@ -128,7 +128,7 @@ describe("useReplay contract (lot E)", () => {
   });
 });
 
-describe("useReplay lot R3 — onend immédiat sans boundary", () => {
+describe("useReplay — onend immédiat sans boundary", () => {
   const t0 = Date.parse("2026-05-15T08:00:00Z");
   const chapters = [
     { tA: t0, tB: t0 + 86400000, text: "A".repeat(80), fromLat: 48.8, fromLon: 2.4, toLat: 46.1, toLon: -1.1 },
@@ -230,7 +230,7 @@ describe("useReplay lot R3 — onend immédiat sans boundary", () => {
     assert.ok(chapterHasFirstLeg(picked.chapters[0]));
   });
 
-  it("lot RD5 : un script distant qui ignore t0 n'est pas retenu", () => {
+  it("Un script distant qui ignore t0 n'est pas retenu", () => {
     const ch2026 = [{ text: "L’expédition a quitté Saint-Maur le 15 mai 2026." }];
     assert.equal(filmTextHasT0Year(ch2026, "2026-05-15T08:00:00.000Z"), true);
     assert.equal(filmTextHasT0Year(ch2026, "2025-05-15T08:00:00.000Z"), false);
@@ -238,7 +238,7 @@ describe("useReplay lot R3 — onend immédiat sans boundary", () => {
   });
 });
 
-describe("lot RE4 — ligne d'état pilotée par le t0 de la barre", () => {
+describe("Ligne d'état pilotée par le t0 de la barre", () => {
   const sample = {
     sailNm: 14220,
     seaHours: 112 * 24,
@@ -284,7 +284,7 @@ describe("lot RE4 — ligne d'état pilotée par le t0 de la barre", () => {
 
   it("App décale la ligne dès le champ date, sans toucher au t0 Simulation", () => {
     assert.match(app, /followClockLineFromT0/);
-    // DM5 : replayT0 ne décale que la ligne Suivre × Berry ; ma route lit le
+    // ReplayT0 ne décale que la ligne Suivre × Berry ; ma route lit le
     // t0 de son propre voyage (date de départ choisie).
     assert.match(app, /t0: suivreBerry \? replayT0/);
     assert.doesNotMatch(app, /iso: isSuivre && replay\.active/);
@@ -299,7 +299,7 @@ function chapterHasFirstLeg(ch) {
   return Number.isFinite(ch.fromLat) && Number.isFinite(ch.toLat);
 }
 
-describe("lot RC10 — film officiel, pas la Simulation", () => {
+describe("Film officiel, pas la Simulation", () => {
   it("empreinte RE7 : pas Bay of Biscay, pas milles nautiques du départ ; court sans jargon ready", () => {
     assert.equal(isRe7OfficialFilm({
       chapters: [{ text: "Départ de Saint-Maur. golfe de Gascogne. Aujourd’hui, le bateau est à Nouméa." }],
@@ -313,7 +313,7 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
     assert.equal(isRe7OfficialFilm({ chapters: [] }), false);
   });
 
-  it("lot RC21 — 801 mots : gabarit RG6 ready, Bay of Biscay stale, remplissage stale", () => {
+  it("801 mots : gabarit RG6 ready, Bay of Biscay stale, remplissage stale", () => {
     const pad = (prefix) => `${prefix} ${"mot ".repeat(801)}`;
     const rg6 = pad("Le 15 mai, Berry-Mappemonde quitte La Rochelle pour Ajaccio. 432 milles, 9 jours de mer.");
     assert.equal(filmHasRg6Rg7Fingerprint(rg6), true);
@@ -399,7 +399,7 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
     assert.doesNotMatch(startFn, /status === "absent"/);
   });
 
-  it("lot DM8C — l'URL du film suit le mode ; preparing n'est pas un film", () => {
+  it("L'URL du film suit le mode ; preparing n'est pas un film", () => {
     assert.equal(filmRequestPath("official"), "/voyage/official/film");
     assert.equal(filmRequestPath(""), "/voyage/official/film");
     assert.equal(filmRequestPath(null), "/voyage/official/film");
@@ -427,7 +427,7 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
   });
 });
 
-describe("useReplay lot R4 — temps continu entre deux boundaries", () => {
+describe("useReplay — temps continu entre deux boundaries", () => {
   it("60 frames entre deux boundaries : 60 positions croissantes, pas < 1/30 de la jambe", () => {
     const t0 = Date.parse("2026-05-15T08:00:00Z");
     const clock = {
@@ -496,7 +496,7 @@ describe("useReplay lot R4 — temps continu entre deux boundaries", () => {
   });
 });
 
-describe("useReplay lot RA3 — interpolation jusqu'au dernier chapitre", () => {
+describe("useReplay — interpolation jusqu'au dernier chapitre", () => {
   const t0 = Date.parse("2026-05-15T08:00:00Z");
   const hour = 3600000;
   const clock = {
@@ -570,7 +570,7 @@ describe("useReplay lot RA3 — interpolation jusqu'au dernier chapitre", () => 
   });
 });
 
-describe("useReplay lot RA5 — Stop coupe voix, animation, caméra", () => {
+describe("useReplay — Stop coupe voix, animation, caméra", () => {
   it("stop() met active=false, coupe la voix, libère la caméra", () => {
     const calls = { voice: 0, camera: 0, raf: 0 };
     const next = applyReplayStop({
@@ -610,7 +610,7 @@ describe("useReplay lot RA5 — Stop coupe voix, animation, caméra", () => {
   });
 });
 
-describe("useReplay lot RB6 — voix sans coupure, Stop total, pas de live sur incident", () => {
+describe("useReplay — voix sans coupure, Stop total, pas de live sur incident", () => {
   it("stop() pendant la lecture coupe voix + animation + caméra au premier geste", () => {
     const order = [];
     const next = applyReplayStop({
@@ -638,7 +638,7 @@ describe("useReplay lot RB6 — voix sans coupure, Stop total, pas de live sur i
   });
 });
 
-describe("useReplay lot RF5 — fin du film : sous-titre de clôture conservé", () => {
+describe("useReplay — fin du film : sous-titre de clôture conservé", () => {
   it("applyReplayStop garde le dernier sous-titre si keepChapterText", () => {
     const close = "Aujourd’hui, le bateau est à Nouméa.";
     const merged = `Départ vers Fort-de-France. ${close}`;
@@ -663,7 +663,7 @@ describe("useReplay lot RF5 — fin du film : sous-titre de clôture conservé",
   });
 });
 
-describe("useReplay lot RC16 — sous-titre visible : phrases avion RF5", () => {
+describe("useReplay — sous-titre visible : phrases avion RF5", () => {
   it("choisit les phrases avion déjà dans le chapitre, sans inventer", () => {
     const long = [
       "Puis, le 18 août, départ vers Saint-Pierre-et-Miquelon, escale prévue.",
@@ -697,7 +697,7 @@ describe("useReplay lot RC16 — sous-titre visible : phrases avion RF5", () => 
   });
 });
 
-describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
+describe("useReplay — client robuste (E2, E3, E4)", () => {
   const t0 = Date.parse("2026-05-15T08:00:00Z");
   const hour = 3600000;
 
@@ -841,7 +841,7 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     assert.doesNotMatch(filmSubtitleAt(officialCh1, 0).sentence, /La Rochelle/);
   });
 
-  it("RC43 : chapitre side « second voilier » — pas le s'envole d'un autre chapitre", () => {
+  it("Chapitre side « second voilier » — pas le s'envole d'un autre chapitre", () => {
     const side = "À Halifax, l'équipage embarque sur un second voilier pour Saint-Pierre.";
     const airElsewhere = "Le 19 juillet, l'équipage s'envole de Cayenne pour Halifax ; le catamaran attend à Cayenne.";
     const glued = `${side} ${airElsewhere}`;
@@ -867,7 +867,7 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     }), glued);
   });
 
-  it("RC43 : un chapitre vol n'extrait que CE vol ; reprise sans s'envole", () => {
+  it("Un chapitre vol n'extrait que CE vol ; reprise sans s'envole", () => {
     const glued = [
       "Le 19 juillet, l'équipage s'envole de Cayenne pour Halifax ; le catamaran attend à Cayenne.",
       "Le 30 juillet, l'équipage s'envole de Halifax pour Cayenne.",
@@ -898,7 +898,7 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     assert.doesNotMatch(resume.text, /s'envole/);
   });
 
-  it("RC43 : phrase side sous le curseur même si le chapitre fusionné est étiqueté vol", () => {
+  it("Phrase side sous le curseur même si le chapitre fusionné est étiqueté vol", () => {
     const merged = [
       "À Halifax, l'équipage embarque sur un second voilier pour Saint-Pierre.",
       "Le 26 août, l'équipage s'envole de Halifax pour Cayenne.",
@@ -921,7 +921,7 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     assert.doesNotMatch(atAir.text, /second voilier/);
   });
 
-  it("RC36 : un énoncé qui finit après tB — pas d'applyChapter / pas de stopSpeaking avant onEnd, tMs dans [tA, tB]", () => {
+  it("Un énoncé qui finit après tB — pas d'applyChapter / pas de stopSpeaking avant onEnd, tMs dans [tA, tB]", () => {
     const tA = Date.parse("2026-06-02T08:00:00Z");
     const tB = tA + 4 * 3600 * 1000;
     const ch = {
@@ -981,7 +981,7 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     assert.doesNotMatch(voiceSrc, /\[active, voice, chapterText, chapterIdx/);
   });
 
-  it("VF1 : speaking vrai sans mot depuis > 2 s = voix coincée ; une frontière récente mène encore", () => {
+  it("Speaking vrai sans mot depuis > 2 s = voix coincée ; une frontière récente mène encore", () => {
     assert.equal(VOICE_LEAD_MS, 2500);
     assert.equal(VOICE_MS_PER_CHAR, 60);
     // Chrome laisse speaking à vrai alors que les frontières se sont tues.
@@ -1011,7 +1011,7 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     }), false);
   });
 
-  it("VF1 : après abandon, le pas suivant avance charIdx et le film ne se termine pas", () => {
+  it("Après abandon, le pas suivant avance charIdx et le film ne se termine pas", () => {
     const chapters = Array.from({ length: 7 }, (_, i) => ({
       tA: Date.parse("2026-05-15T08:00:00Z") + i * 4 * 3600000,
       tB: Date.parse("2026-05-15T08:00:00Z") + (i + 1) * 4 * 3600000,
@@ -1042,7 +1042,7 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     assert.equal(shouldReturnToLive({ voiceIncident: true, filmFinished: true }), true);
   });
 
-  it("RC30 : la fin du film attend la fin de la clôture — budgetDone ne précède jamais voiceSpokenAll", () => {
+  it("La fin du film attend la fin de la clôture — budgetDone ne précède jamais voiceSpokenAll", () => {
     // Le temps-film a atteint la fin (linear.finish) mais la voix dit encore
     // « Aujourd'hui, le bateau est… » : pas de finish().
     assert.equal(filmShouldFinish({
@@ -1103,7 +1103,7 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
   });
 });
 
-describe("lot RG11B — pilule Rédigé, hasWritten, étiquette", () => {
+describe("Pilule Rédigé, hasWritten, étiquette", () => {
   it("hasWritten true → pilule active, étiquette Nemotron ; false → désactivée, règles", () => {
     const on = resolveServedFilm({
       hasWritten: true,
@@ -1156,7 +1156,7 @@ describe("lot RG11B — pilule Rédigé, hasWritten, étiquette", () => {
   });
 });
 
-describe("lot RC41 — débit écrit stable, pas de sprint puis calage", () => {
+describe("Débit écrit stable, pas de sprint puis calage", () => {
   it("voix : charIdx dès la 1re phrase à FILM_ESTIMATE_CPS, jamais le budget", () => {
     assert.equal(filmScriptCharIdx({
       voiceClock: true, phraseOn: false, linearChar: 203,
@@ -1203,7 +1203,7 @@ describe("lot RC41 — débit écrit stable, pas de sprint puis calage", () => {
   });
 });
 
-describe("lot RC52 — bateau sur la phrase, pas à tB", () => {
+describe("Bateau sur la phrase, pas à tB", () => {
   it("à charIdx au milieu d'un chapitre, la position est l'instant de la phrase, pas tB ni aujourd'hui", () => {
     const tA = Date.parse("2026-06-02T08:00:00Z");
     const tCape = Date.parse("2026-06-27T12:00:00Z");

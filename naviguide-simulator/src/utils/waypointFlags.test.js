@@ -34,7 +34,7 @@ describe("waypointFlagSrcs", () => {
     assert.deepEqual(flagIconMetrics(["a"]).iconSize[0] < flagIconMetrics(["a", "b"]).iconSize[0], true);
   });
 
-  it("lot RD2 — iconAnchor au centre exact du rond", () => {
+  it("IconAnchor au centre exact du rond", () => {
     const m = drawingPinMetrics();
     assert.equal(DRAWING_PIN_PX, 14);
     assert.deepEqual(m.iconSize, [14, 14]);

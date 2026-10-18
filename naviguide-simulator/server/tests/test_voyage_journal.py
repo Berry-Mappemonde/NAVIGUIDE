@@ -242,7 +242,7 @@ def test_summary_carries_the_whole_voyage_events_apart_from_positions(client, mo
 
 
 def test_lot_a_ports_of_entry_and_weather_lines(client, monkeypatch):
-    """Lot A : ports d'entrée passés (perles) et météo marquante (dérivée du GRIB)."""
+    """Ports d'entrée passés (perles) et météo marquante (dérivée du GRIB)."""
     import ici_engine
     import ici_warm
     from ici_engine import thin_cache_key
@@ -311,7 +311,7 @@ def test_pearl_lines_follow_the_current_reading_of_the_pearls(client, monkeypatc
 
 
 def test_lot_f2_climo_rose_turn_and_calms(client, monkeypatch):
-    """Lot F2 : rose qui tourne de 120° → climo ; deux perles calmes → climo « calmes »."""
+    """Rose qui tourne de 120° → climo ; deux perles calmes → climo « calmes »."""
     import ici_engine
     import ici_warm
     from ici_engine import thin_cache_key
@@ -364,7 +364,7 @@ def test_lot_f2_climo_rose_turn_and_calms(client, monkeypatch):
 
 
 def test_lot_f2_sci_once_and_wx_stop_enriched(client, monkeypatch):
-    """Lot F2 : station à 6 nm une seule fois ; wx durée/max/level ; stop + tourisme cache."""
+    """Station à 6 nm une seule fois ; wx durée/max/level ; stop + tourisme cache."""
     import ici_engine
     import ici_warm
     import pearl_store

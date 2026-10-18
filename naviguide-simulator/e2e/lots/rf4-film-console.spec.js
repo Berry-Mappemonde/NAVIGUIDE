@@ -1,4 +1,4 @@
-// Lot RF4 — console vierge pendant le film : le bateau du film ne sonde
+// Console vierge pendant le film : le bateau du film ne sonde
 // plus /ici ni l'ETA. Sans API : Suivre, Revoir et Stop tiennent seuls ;
 // les comptes de requêtes restent (le client ne doit pas les lancer).
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
@@ -54,7 +54,7 @@ function isEtaUrl(url) {
   return /\/voyage\/official\/eta/.test(url);
 }
 
-test("lot RF4 — console vierge pendant le film, sac live après Stop", async ({ page }) => {
+test("Console vierge pendant le film, sac live après Stop", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

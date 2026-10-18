@@ -33,7 +33,7 @@ describe("viewMode U2", () => {
     assert.doesNotMatch(en.tracerButton, FORBIDDEN);
   });
 
-  it("lot CT1 : la pilule n'est plus Simulation — casse si on remet le libellé retiré", () => {
+  it("La pilule n'est plus Simulation — casse si on remet le libellé retiré", () => {
     assert.equal(fr.tracerButton, "Tracer");
     assert.equal(en.tracerButton, "Plot");
     assert.notEqual(fr.tracerButton, "Simulation");

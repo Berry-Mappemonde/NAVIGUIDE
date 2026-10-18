@@ -189,6 +189,7 @@ export function IciMaintenant({
   onMomentFocus = null,
   nowLeg = null,
   journalDays = null,
+  todayPosition = false,
 }) {
   const { t, lang } = useLang();
   const [localView, setLocalView] = useState(() => defaultIciTab(mode, { routeSource }));
@@ -340,32 +341,43 @@ export function IciMaintenant({
                   onFocus={escale.onFocus}
                 />
               ) : null}
-              {hereBody}
-              {(here?.sentences || []).map((sentence) => (
+              {todayPosition ? (
                 <p
-                  key={sentence}
-                  data-testid="ici-here-sentence"
-                  className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
+                  data-testid="ici-today-position"
+                  className="text-[11px] leading-snug text-amber-200 break-words [overflow-wrap:anywhere]"
                 >
-                  {sentence}
+                  {t("iciTodayPosition")}
                 </p>
-              ))}
-              {(here?.links || []).length ? (
-                <div className="flex flex-wrap gap-1.5 mt-0.5">
-                  {here.links.map((link) => (
-                    <a
-                      key={link.url}
-                      href={link.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      data-testid="ici-source-link"
-                      className="text-[10px] text-sky-300 hover:text-sky-100 no-underline"
+              ) : (
+                <>
+                  {hereBody}
+                  {(here?.sentences || []).map((sentence) => (
+                    <p
+                      key={sentence}
+                      data-testid="ici-here-sentence"
+                      className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
                     >
-                      {link.label}
-                    </a>
+                      {sentence}
+                    </p>
                   ))}
-                </div>
-              ) : null}
+                  {(here?.links || []).length ? (
+                    <div className="flex flex-wrap gap-1.5 mt-0.5">
+                      {here.links.map((link) => (
+                        <a
+                          key={link.url}
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          data-testid="ici-source-link"
+                          className="text-[10px] text-sky-300 hover:text-sky-100 no-underline"
+                        >
+                          {link.label}
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>
           </Section>
 

@@ -1,4 +1,4 @@
-// Lot C4 — ETA : la revue de plan s'affiche et chaque ligne a une date.
+// ETA : la revue de plan s'affiche et chaque ligne a une date.
 // Aucun changement de surface ; seuls les nombres (dates) bougent.
 import { expect, test } from "@playwright/test";
 import { dismissNotForNav, openReviewTab } from "../helpers.js";
@@ -10,7 +10,7 @@ const shot = (page, name) => page.screenshot({
   fullPage: false,
 });
 
-test("lot C4 — revue de plan : chaque étape a une date", async ({ page }) => {
+test("Revue de plan : chaque étape a une date", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });

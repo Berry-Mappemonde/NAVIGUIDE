@@ -217,7 +217,7 @@ function filmFixture() {
   return { clock, marks, live, journal, now: Date.parse("2026-09-19T02:00:00Z") };
 }
 
-describe("expeditionStory — script du film (lot F3)", () => {
+describe("expeditionStory — script du film", () => {
   it("brut ≤ 2 400 caractères, Saint-Maur et La Rochelle au chapitre 1", () => {
     const plan = buildFilmScript({ ...filmFixture(), lang: "fr", seconds: 150 });
     assert.ok(plan.chapters.length >= 1);
@@ -321,7 +321,7 @@ describe("expeditionStory — script du film (lot F3)", () => {
     assert.doesNotMatch(simFilm.chapters.map((c) => c.text).join(" "), /\bnm\b/);
   });
 
-  it("lot RD5 : t0 replay 2025 décale le texte, t0 absent reste 2026", () => {
+  it("T0 replay 2025 décale le texte, t0 absent reste 2026", () => {
     const fx = filmFixture();
     const official = buildFilmScript({ ...fx, lang: "fr" });
     assert.match(official.chapters[0].text, /15 mai 2026/);

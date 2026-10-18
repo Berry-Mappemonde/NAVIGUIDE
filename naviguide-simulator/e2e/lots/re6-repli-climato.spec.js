@@ -1,4 +1,4 @@
-// Lot RE6 — tuiles climato muettes → repli sur wind.geojson (maille 4°).
+// Tuiles climato muettes → repli sur wind.geojson (maille 4°).
 // Sans API : pastille Vent, bandeau et fixtures de repli tiennent seuls
 // (page.route). GET /voyage/official sondé ; s'il manque, annotation +
 // saut des seules sondes live backend — jamais le repli mocké, ni l'absence
@@ -106,7 +106,7 @@ async function closePanels(page) {
   }
 }
 
-test("lot RE6 — tuiles en échec : repli maille 4°, tuiles OK : pas de .geojson", async ({ page }) => {
+test("Tuiles en échec : repli maille 4°, tuiles OK : pas de .geojson", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

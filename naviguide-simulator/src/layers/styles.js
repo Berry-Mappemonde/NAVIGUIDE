@@ -19,7 +19,7 @@ export const TILE_ATTRIBUTION = tileAttribution("fr");
 /**
  * Marge basse min. des crédits Leaflet (px) : hauteur barre film (96) +
  * `bottom-5` (20). `--sim-inset-bottom` ne doit jamais passer sous ce plancher
- * tant que la barre est visible (lot RA6).
+ * tant que la barre est visible.
  */
 export const LEAFLET_ATTRIBUTION_BOTTOM_MIN_PX = 116;
 

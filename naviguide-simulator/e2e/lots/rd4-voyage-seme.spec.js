@@ -1,4 +1,4 @@
-// Lot RD4 / RC7 / RC9 — voyage officiel semé au démarrage : GET /voyage/official
+// Voyage officiel semé au démarrage : GET /voyage/official
 // ne 404 pas ; Suivre, fourchette, journal et Revoir tiennent.
 // Sans API : Suivre, barre film et Revoir tiennent seuls.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
@@ -54,7 +54,7 @@ function pickEtaStop(body) {
   return named?.name || "Dzaoudzi";
 }
 
-test("lot RD4 — voyage semé : Suivre, fourchette, journal, Revoir", async ({ page }) => {
+test("Voyage semé : Suivre, fourchette, journal, Revoir", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

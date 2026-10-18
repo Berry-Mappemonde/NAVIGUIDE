@@ -1,4 +1,4 @@
-// Lot P2 — vitesse réelle, zéro à quai.
+// Vitesse réelle, zéro à quai.
 import { expect, test } from "@playwright/test";
 
 const shot = (page, name) => page.screenshot({
@@ -39,7 +39,7 @@ async function enterSimulation(page) {
   await page.waitForTimeout(800);
 }
 
-test("lot P2 — à quai 0 kn ; en mer la vitesse varie", async ({ page }) => {
+test("À quai 0 kn ; en mer la vitesse varie", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });

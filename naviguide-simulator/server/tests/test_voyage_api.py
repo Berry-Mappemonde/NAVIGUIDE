@@ -155,7 +155,7 @@ def test_refresh_forecast(client):
 
 
 def test_recompute_takes_the_skipper_orders_as_constraints(client, monkeypatch):
-    """Lot G : vent max / mer max du skipper → zones interdites du routage,
+    """Vent max / mer max du skipper → zones interdites du routage,
     renvoyées dans le brouillon ; hors bornes → ignorés (défaut honnête)."""
     t0 = datetime(2026, 6, 13, 8, tzinfo=timezone.utc)
     vid = client.post("/voyage", json=_payload(t0.strftime("%Y-%m-%dT%H:%M:%SZ"))).json()["voyageId"]
@@ -275,7 +275,7 @@ def test_official_regimes_endpoint(client):
 
 
 def test_official_eta_noumea_dzaoudzi_span_is_days(client, monkeypatch):
-    """Lot RA7 : /voyage/official/eta resserre un p90 de 7 mois."""
+    """/voyage/official/eta resserre un p90 de 7 mois."""
     from ensemble_eta import ETA_MAX_SPAN_DAYS, tighten_eta_payload
     from plan_review import eta_span_days
 
@@ -313,7 +313,7 @@ def test_official_eta_noumea_dzaoudzi_span_is_days(client, monkeypatch):
 
 
 def test_official_itinerary_body_is_embedded_berry_without_network():
-    """Lot RD4 : l'itinéraire Berry est lu sur disque, pas inventé."""
+    """L'itinéraire Berry est lu sur disque, pas inventé."""
     from hindcast import block_network, unblock_network
 
     block_network()
@@ -392,7 +392,7 @@ def test_kick_official_eta_false_until_seeded(tmp_path, monkeypatch):
 
 
 def test_get_eta_seeded_without_clock_is_empty_no_fetch(client, monkeypatch):
-    """Lot RC7 : voyage semé sans clock → GET /eta 200, members 0, aucun fetch."""
+    """Voyage semé sans clock → GET /eta 200, members 0, aucun fetch."""
     from hindcast import block_network, unblock_network
     import ensemble_eta
 
@@ -454,7 +454,7 @@ def test_get_eta_seeded_without_clock_is_empty_no_fetch(client, monkeypatch):
 
 
 def test_kick_official_eta_restarts_when_first_ready_is_empty(tmp_path, monkeypatch):
-    """Lot RC9 : un premier ready vide n'est pas terminal — GET /eta relance le warm."""
+    """Un premier ready vide n'est pas terminal — GET /eta relance le warm."""
     monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path / "voyages"))
     monkeypatch.setenv("NAVIGUIDE_ETA_PREHEAT", "1")
     voyage_store._DIR = tmp_path / "voyages"
@@ -477,7 +477,7 @@ def test_kick_official_eta_restarts_when_first_ready_is_empty(tmp_path, monkeypa
 
 
 def test_kick_official_eta_stays_when_members_ready(tmp_path, monkeypatch):
-    """Lot RC9 : dès qu'il y a des membres, force=False ne relance pas."""
+    """Dès qu'il y a des membres, force=False ne relance pas."""
     monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path / "voyages"))
     monkeypatch.setenv("NAVIGUIDE_ETA_PREHEAT", "1")
     voyage_store._DIR = tmp_path / "voyages"
@@ -501,7 +501,7 @@ def test_kick_official_eta_stays_when_members_ready(tmp_path, monkeypatch):
 
 
 def test_get_eta_serves_alias_cache_without_clock(client, monkeypatch):
-    """Lot RC7 : cache alias → GET /eta 200 avec membres, toujours sans clock."""
+    """Cache alias → GET /eta 200 avec membres, toujours sans clock."""
     import ensemble_eta
     from pearl_store import kv_put
 
@@ -534,7 +534,7 @@ def test_get_eta_serves_alias_cache_without_clock(client, monkeypatch):
 
 
 def test_kick_official_warmups_one_after_another(monkeypatch):
-    """Lot RC7 : hindcast puis eta puis moments puis film, jamais les cinq ensemble."""
+    """Hindcast puis eta puis moments puis film, jamais les cinq ensemble."""
     log = []
 
     def wrap(name):
@@ -571,7 +571,7 @@ def test_kick_official_warmups_one_after_another(monkeypatch):
 
 
 def test_get_eta_failed_ensemble_returns_reason(client, monkeypatch):
-    """Lot RE5 : members 0 → raison / dernière tentative / prochaine relance, pas de date."""
+    """Members 0 → raison / dernière tentative / prochaine relance, pas de date."""
     now = datetime(2026, 9, 26, 12, tzinfo=timezone.utc)
     monkeypatch.setattr(voyage_api, "_now", lambda: now)
     monkeypatch.setattr(voyage_api, "_kick_official_eta", lambda **k: False)
@@ -609,7 +609,7 @@ def test_get_eta_failed_ensemble_returns_reason(client, monkeypatch):
 
 
 def test_get_eta_ready_members_bounded(client, monkeypatch):
-    """Lot RE5 : ensemble qui répond → membres et fourchette bornée."""
+    """Ensemble qui répond → membres et fourchette bornée."""
     from ensemble_eta import ETA_MAX_SPAN_DAYS
     from plan_review import eta_span_days
 
@@ -644,7 +644,7 @@ def test_get_eta_ready_members_bounded(client, monkeypatch):
 
 
 def test_kick_official_eta_backs_off_until_next_retry(tmp_path, monkeypatch):
-    """Lot RE5 : après un échec, force=False ne relance pas avant nextRetry."""
+    """Après un échec, force=False ne relance pas avant nextRetry."""
     monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path / "voyages"))
     monkeypatch.setenv("NAVIGUIDE_ETA_PREHEAT", "1")
     voyage_store._DIR = tmp_path / "voyages"
@@ -672,7 +672,7 @@ def test_kick_official_eta_backs_off_until_next_retry(tmp_path, monkeypatch):
 
 
 def test_kick_official_eta_retries_when_backoff_elapsed(tmp_path, monkeypatch):
-    """Lot RE5 : nextRetry échu → GET relance le warm (RC9 conservé)."""
+    """NextRetry échu → GET relance le warm (RC9 conservé)."""
     monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path / "voyages"))
     monkeypatch.setenv("NAVIGUIDE_ETA_PREHEAT", "1")
     voyage_store._DIR = tmp_path / "voyages"
@@ -700,7 +700,7 @@ def test_kick_official_eta_retries_when_backoff_elapsed(tmp_path, monkeypatch):
 
 
 def test_create_voyage_clock_failure_is_dated_503_not_500(client, monkeypatch):
-    """Lot RC12 : petite route non officielle — pas de 500, pas d'_climo_clock dans le handler."""
+    """Petite route non officielle — pas de 500, pas d'_climo_clock dans le handler."""
     def boom(*_a, **_k):
         raise AssertionError("calcul")
 
@@ -716,7 +716,7 @@ def test_create_voyage_clock_failure_is_dated_503_not_500(client, monkeypatch):
 
 
 def test_official_post_does_not_compute_clock(client, monkeypatch):
-    """Lot RF3 : POST officiel lit le stock, aucun _climo_clock."""
+    """POST officiel lit le stock, aucun _climo_clock."""
     monkeypatch.setattr(voyage_api, "_climo_clock", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("calcul")))
     body = _payload("2026-05-15T08:00:00Z") | {"official": True, "forecast": False}
     r = client.post("/voyage", json=body)
@@ -726,7 +726,7 @@ def test_official_post_does_not_compute_clock(client, monkeypatch):
 
 
 def test_post_same_route_without_official_flag_does_not_compute_clock(client, monkeypatch):
-    """Lot RC12 : POST sans official, mêmes points+t0 que l'officiel → stock ou preparing."""
+    """POST sans official, mêmes points+t0 que l'officiel → stock ou preparing."""
     seed = _payload("2026-05-15T08:00:00Z") | {"forecast": False}
     client.put("/voyage/official", json=seed | {"official": True})
     monkeypatch.setattr(
@@ -742,7 +742,7 @@ def test_post_same_route_without_official_flag_does_not_compute_clock(client, mo
 
 
 def test_unofficial_small_post_does_not_compute_clock_in_handler(client, monkeypatch):
-    """Lot RC12 : petite route non officielle → pas de 500, pas d'_climo_clock dans le handler."""
+    """Petite route non officielle → pas de 500, pas d'_climo_clock dans le handler."""
     def boom(*_a, **_k):
         raise AssertionError("calcul")
 
@@ -757,7 +757,7 @@ def test_unofficial_small_post_does_not_compute_clock_in_handler(client, monkeyp
 
 
 def test_nominal_path_has_no_500(client, tmp_path, monkeypatch):
-    """Lot RF3 : parcours nominal TestClient — aucun 500 sur les routes du fil rouge."""
+    """Parcours nominal TestClient — aucun 500 sur les routes du fil rouge."""
     import polar_api
 
     monkeypatch.setattr(polar_api, "POLAR_DATA_DIR", tmp_path / "polar")
@@ -791,7 +791,7 @@ def test_nominal_path_has_no_500(client, tmp_path, monkeypatch):
 
 
 def test_unofficial_at_without_vertices_is_dated_not_503(client, monkeypatch):
-    """Lot RC15 : POST petite route non officielle → GET /at et /clock 200 daté, pas 503."""
+    """POST petite route non officielle → GET /at et /clock 200 daté, pas 503."""
     def boom(*_a, **_k):
         raise AssertionError("calcul")
 
@@ -822,7 +822,7 @@ def test_unofficial_at_without_vertices_is_dated_not_503(client, monkeypatch):
 
 
 def test_ici_fill_failure_is_dated_200(client, monkeypatch):
-    """Lot RF3 : fill_dossier lève → /ici 200 daté, pas un 500."""
+    """Fill_dossier lève → /ici 200 daté, pas un 500."""
     import main
 
     async def boom(*_a, **_k):

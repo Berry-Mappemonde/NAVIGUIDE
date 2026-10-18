@@ -1,6 +1,6 @@
 name: ZAP baseline — simulateur (mensuel)
 
-# Sécurité P1 (lot H) : un passage OWASP ZAP « baseline » (passif, sans
+# Sécurité P1 : un passage OWASP ZAP « baseline » (passif, sans
 # attaque) sur la prod du simulateur, le 1er de chaque mois et à la demande.
 # Ne bloque rien : le rapport est attaché en artefact et une issue GitHub
 # est ouverte / mise à jour avec les alertes trouvées.

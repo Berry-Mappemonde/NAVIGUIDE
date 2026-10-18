@@ -1,4 +1,4 @@
-"""Lot C2 — hindcast multi-sources, médiane, cache, conventions."""
+"""Hindcast multi-sources, médiane, cache, conventions."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -238,7 +238,7 @@ def test_two_days_known_wind_position_within_1nm():
     expected_kn = boat_speed_from_wind(20.0)
     assert expected_kn == 9.0
     pack = at(LAT, LON, t0)
-    # Lot C4 : le courant du hindcast est projeté sur la route (cap 270°).
+    # Le courant du hindcast est projeté sur la route (cap 270°).
     sog = max(0.5, sog_along_route(expected_kn, pack, 270.0))
     assert sample is not None
     assert abs(sample["sailNm"] - sog * 48.0) <= 1.0
@@ -280,7 +280,7 @@ def test_wx_from_hindcast_uses_duration_and_max():
     assert wx["hours"] >= 6.0
 
 
-# ── Lot RA8 — ERA5 le long de la route, sans Copernicus ───────────────────────
+# ── RA8 — ERA5 le long de la route, sans Copernicus ───────────────────────
 
 RA8_POLAR = {
     "twa_rows": [40, 60, 90, 120, 150, 180],
@@ -388,7 +388,7 @@ def test_uncovered_slots_after_date_shift():
     assert (clat, clon, DAY0) in missing
 
 
-# ── Lot RF10 — cellule 0,25°, plage, quota, statut honnête ──────────────────
+# ── Cellule 0,25°, plage, quota, statut honnête ──────────────────
 
 SAME_CELL_A = (46.15, -1.16)
 SAME_CELL_B = (46.20, -1.20)
@@ -515,7 +515,7 @@ def test_rf10_voyage_dir_hosts_sqlite(tmp_path, monkeypatch):
     pearl_store.reset()
 
 
-# ── Lot HC1 — cache immuable par cellule, fenêtre, migration, trajet réel ────
+# ── HC1 — cache immuable par cellule, fenêtre, migration, trajet réel ────
 
 
 def _bind_om_frontier(published_until: str, *, era5_kn=20.0, calls=None):

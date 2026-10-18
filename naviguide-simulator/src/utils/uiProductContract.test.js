@@ -8,7 +8,7 @@ const src = dirname(fileURLToPath(import.meta.url));
 const read = (path) => readFileSync(join(src, path), "utf8");
 
 describe("contrat UI produit", () => {
-  it("lot RF7 : démarre en Suivre cinéma, vue monde, panneaux fermés", () => {
+  it("Démarre en Suivre cinéma, vue monde, panneaux fermés", () => {
     const app = read("../App.jsx");
     const map = read("../hooks/useSimulatorMap.js");
     const scene = read("../map/MapSceneController.js");
@@ -25,7 +25,7 @@ describe("contrat UI produit", () => {
     assert.match(tools, /visibility: open \? "visible" : "hidden"/, "Cinéma : le panneau droit n'est pas peint fermé");
   });
 
-  it("lot DM6 : entrée Tracer ouvre le dessin sans vider le brouillon", () => {
+  it("Entrée Tracer ouvre le dessin sans vider le brouillon", () => {
     const app = read("../App.jsx");
     const sidebar = read("../components/Sidebar.jsx");
     const selectAt = app.indexOf("const selectView = useCallback");
@@ -40,7 +40,7 @@ describe("contrat UI produit", () => {
     assert.match(sidebar, /drawingOn \? pillOn : pillOff/);
   });
 
-  it("lot DM6 (correctif du 15 oct.) : dessin ouvert = cadre « Tracé en cours » toujours là, légende dessous à brouillon vide", () => {
+  it("Dessin ouvert = cadre « Tracé en cours » toujours là, légende dessous à brouillon vide", () => {
     const app = read("../App.jsx");
     const tools = read("../components/ToolsSidebar.jsx");
     // Plus de contournement showBox : le cadre dépend du seul état du dessin.
@@ -51,7 +51,7 @@ describe("contrat UI produit", () => {
     assert.match(tools, /\{drawing \? <DrawingBox drawing=\{drawing\} \/> : null\}\s*<div[^>]*data-testid="expedition-box"/);
   });
 
-  it("lot RF7 : entrée Tracer pose la vue monde", () => {
+  it("Entrée Tracer pose la vue monde", () => {
     const app = read("../App.jsx");
     const scene = read("../map/MapSceneController.js");
     assert.match(app, /sceneApiRef\.current\?\.showWorld/);
@@ -59,7 +59,7 @@ describe("contrat UI produit", () => {
     assert.match(scene, /setView\(WORLD_CENTER, worldZ/);
   });
 
-  it("lot RE1 : Suivre → Simulation quitte le Cinéma et ouvre les deux panneaux", () => {
+  it("Suivre → Simulation quitte le Cinéma et ouvre les deux panneaux", () => {
     const app = read("../App.jsx");
     const selectAt = app.indexOf("const selectView = useCallback");
     assert.ok(selectAt >= 0, "selectView présent");
@@ -81,12 +81,12 @@ describe("contrat UI produit", () => {
     assert.ok(existsSync(join(src, "../../public/favicon-n-bl.png")));
   });
 
-  it("réserve les contrôles de lecture à Tracer et à Suivre × ma route (DM5)", () => {
+  it("réserve les contrôles de lecture à Tracer et à Suivre × ma route", () => {
     const app = read("../App.jsx");
     const filmBar = read("../components/SimulationFilmBar.jsx");
     const sidebar = read("../components/Sidebar.jsx");
     const simulationPanel = read("../components/SimulationPanel.jsx");
-    // DM5 : Play / vitesses vivent aussi en Suivre sur ma route — jamais en
+    // Play / vitesses vivent aussi en Suivre sur ma route — jamais en
     // Suivre × Berry (le live officiel commande).
     assert.match(app, /const playControlsActive = isTracer \|\| suivreCustom;/);
     assert.match(app, /showPlaybackControls=\{playControlsActive\}/);
@@ -155,7 +155,7 @@ describe("contrat UI produit", () => {
     assert.doesNotMatch(sidebar, /t\("briefing"\)/);
   });
 
-  it("lot R8c : un seul encadré, aucune carte flottante hors film", () => {
+  it("Un seul encadré, aucune carte flottante hors film", () => {
     const sidebar = read("../components/Sidebar.jsx");
     const app = read("../App.jsx");
     const ici = read("../components/IciMaintenant.jsx");
@@ -170,7 +170,7 @@ describe("contrat UI produit", () => {
     assert.doesNotMatch(ici, /ListenButton/);
   });
 
-  it("lot RD5 / RD9 : Date de départ dans le panneau droit, revue dans l'encadré gauche, replay distinct, horloge avec année", () => {
+  it("Date de départ dans le panneau droit, revue dans l'encadré gauche, replay distinct, horloge avec année", () => {
     const app = read("../App.jsx");
     const tools = read("../components/ToolsSidebar.jsx");
     const ici = read("../components/IciMaintenant.jsx");
@@ -181,7 +181,7 @@ describe("contrat UI produit", () => {
     assert.doesNotMatch(tools, /<PlanReview/);
     assert.doesNotMatch(tools, /planReview && !drawing/);
     assert.match(ici, /<PlanReview/);
-    // DM5 : l'horloge officielle ne porte que Suivre × Berry ; ma route lit
+    // L'horloge officielle ne porte que Suivre × Berry ; ma route lit
     // le voyage serveur perso (voyage.clock) dans les deux modes.
     assert.match(app, /suivreBerry \? \(official\.clock \|\| voyage\.clock\) : voyage\.clock/);
     assert.match(app, /const \[replayT0, setReplayT0\] = useState\(DEFAULT_T0_ISO\)/);
@@ -197,7 +197,7 @@ describe("contrat UI produit", () => {
     assert.match(clock, / · \$\{hh\}:\$\{mm\} UTC/);
   });
 
-  it("lot DM9 : panneau droit Tracer replie Polaires, déplie Calques, Demander conseil reste", () => {
+  it("Panneau droit Tracer replie Polaires, déplie Calques, Demander conseil reste", () => {
     const app = read("../App.jsx");
     const tools = read("../components/ToolsSidebar.jsx");
     const skipper = read("../components/SkipperOrdersPanel.jsx");
@@ -219,7 +219,7 @@ describe("contrat UI produit", () => {
     assert.match(tools, /data-testid="export-box"/);
   });
 
-  it("lot C3 : barre film et contexte du chat lisent la même source", () => {
+  it("Barre film et contexte du chat lisent la même source", () => {
     const app = read("../App.jsx");
     const bar = read("../components/SimulationFilmBar.jsx");
     assert.match(app, /const displayKnots = isSuivre/);

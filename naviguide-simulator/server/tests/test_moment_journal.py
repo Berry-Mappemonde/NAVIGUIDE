@@ -1,4 +1,4 @@
-"""Lot R9a — journal des moments : diff, remplissage idempotent, until."""
+"""Journal des moments : diff, remplissage idempotent, until."""
 from __future__ import annotations
 
 import copy
@@ -541,7 +541,7 @@ _RC44_MARKS = [
 
 
 def test_diff_moments_halifax_pearl_is_not_cayenne():
-    """Lot RC44 : perle 44,65/−63,57 → titre Halifax, pas Arrivée à Cayenne."""
+    """Perle 44,65/−63,57 → titre Halifax, pas Arrivée à Cayenne."""
     prev = {"leg": {"to": "Cayenne (Guyane)"}, "pos": {"lat": 4.93, "lon": -52.35}}
     cur = {
         "leg": {"to": "Saint-Pierre (Saint-Pierre-et-Miquelon)"},

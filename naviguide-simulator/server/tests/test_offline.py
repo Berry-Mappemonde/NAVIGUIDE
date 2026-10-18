@@ -1,4 +1,4 @@
-"""Lot RF11 — NAVIGUIDE_OFFLINE=1 : aucun HTTP sortant."""
+"""NAVIGUIDE_OFFLINE=1 : aucun HTTP sortant."""
 from __future__ import annotations
 
 import pytest

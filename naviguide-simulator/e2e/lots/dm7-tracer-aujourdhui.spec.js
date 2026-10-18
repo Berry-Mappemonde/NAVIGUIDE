@@ -1,4 +1,4 @@
-// Lot DM7 — Tracer simule depuis aujourd'hui (revue du 14 oct., C4 / C5) :
+// Tracer simule depuis aujourd'hui (revue du 14 oct., C4 / C5) :
 // Play part toujours du jour de connexion, 08:00 UTC ; « repartir au début »
 // y revient ; Date de départ masquée en Tracer (reste en Suivre) ; encadré et
 // fiche d'escale suivent le bateau DU TRACÉ (Saint-Maur → La Rochelle), jamais
@@ -27,7 +27,7 @@ function todayCivilFr() {
   return `${d.getUTCDate()} ${MONTHS_FR[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
-test("lot DM7 — Tracer : horloge aujourd'hui, pas de date, pas de Papeete", async ({ page }) => {
+test("Tracer : horloge aujourd'hui, pas de date, pas de Papeete", async ({ page }) => {
   test.setTimeout(120_000);
   const apiUp = Boolean(await probeOfficial(page));
   if (!apiUp) {

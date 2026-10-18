@@ -1,4 +1,4 @@
-// Lot R1 — nettoyage : Esri une fois, plus de phrases d'aide, remise, pilules grisées.
+// Nettoyage : Esri une fois, plus de phrases d'aide, remise, pilules grisées.
 // Sans API : attribution, textes, chiffres et classes disabled tiennent seuls.
 // Le film (aria-disabled en live) et « Polaires chargées » dépendent de l'API.
 import { expect, test } from "@playwright/test";
@@ -36,7 +36,7 @@ async function showToolsPanel(page) {
   await expect(theme).toBeVisible({ timeout: 10_000 });
 }
 
-test("lot R1 — Esri une fois, plus d'aide, remise du chiffre, pilules grisées", async ({ page }) => {
+test("Esri une fois, plus d'aide, remise du chiffre, pilules grisées", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/");
   await dismissNotForNav(page);

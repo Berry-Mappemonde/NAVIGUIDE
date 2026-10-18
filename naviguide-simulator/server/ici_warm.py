@@ -1,4 +1,4 @@
-"""Pré-génération des perles along de la route officielle (plan §1.3 ; lot P).
+"""Pré-génération des perles along de la route officielle (plan §1.3).
 
 Le film joue à 15–175 nm/s ; un sac `/ici` met 1–8 s. Les événements du film
 viennent donc des perles — les mêmes pour tous les visiteurs. Ce module :
@@ -13,7 +13,7 @@ viennent donc des perles — les mêmes pour tous les visiteurs. Ce module :
   MarineRegions et Overpass ne sont appelés qu'une fois par cellule.
 
 `NAVIGUIDE_ICI_WARM=0` désactive le chauffeur (tests, dev sans réseau).
-La veille Tavily (lot TV1) tourne après le chauffage, deux tours max par
+La veille Tavily tourne après le chauffage, deux tours max par
 escale, si `NAVIGUIDE_TAVILY_WATCH=1`. Défaut 0. `NAVIGUIDE_TAVILY_WATCH_S`
 change la période de la passe (défaut 86 400 s).
 """
@@ -30,6 +30,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from longitude import interp_lon_shortest, wrap_lon as _wrap_lon
+
 log = logging.getLogger("naviguide-simulator.ici-warm")
 
 SAMPLE_NM = 12.0
@@ -38,13 +40,13 @@ SAMPLE_NM = 12.0
 WARM_PAUSE_S = float(os.environ.get("NAVIGUIDE_ICI_WARM_PAUSE_S") or 1.0)
 WARM_PARALLEL = max(1, int(os.environ.get("NAVIGUIDE_ICI_WARM_PARALLEL") or 2))
 LEGACY_TTL_S = 7 * 86400.0
-POE_NEARBY_NM = 15.0  # a port of entry this close to a pearl was "passed" (journal, lot A)
-COAST_NEAR_NM = 25.0  # ports / WPI → jalon de côte (RG2)
-SCI_NEARBY_NM = 10.0  # station / campagne scientifique « croisée » (journal, lot F2)
+POE_NEARBY_NM = 15.0  # a port of entry this close to a pearl was "passed" (journal)
+COAST_NEAR_NM = 25.0  # ports / WPI → jalon de côte
+SCI_NEARBY_NM = 10.0  # station / campagne scientifique « croisée » (journal)
 AMP_NEAR_NM = 30.0    # AMP réelle à portée — repli export (centroïde, RG3)
-AMP_NEARBY_NM = 15.0  # polygone : proximité à la limite, hors inside (AM1B)
+AMP_NEARBY_NM = 15.0  # polygone : proximité à la limite, hors inside
 _AMP_NAME_SPLIT = re.compile(r"\s+[-—–]\s+|\s*\(")
-PROJECT_NEAR_NM = 30.0  # projet Blue Intelligence à portée (RG3)
+PROJECT_NEAR_NM = 30.0  # projet Blue Intelligence à portée
 CLIMO_ROSE_TURN_DEG = 90.0
 CLIMO_CALM_KN = 8.0
 
@@ -71,13 +73,13 @@ def warm_enabled() -> bool:
 
 
 def stories_enabled() -> bool:
-    """RG18 : plus de pré-génération de récits d'événements. Toujours faux —
+    """Plus de pré-génération de récits d'événements. Toujours faux —
     un réglage NAVIGUIDE_STORY_PREGEN ne peut plus rallumer ~177 appels Super."""
     return False
 
 
 def watch_enabled() -> bool:
-    """Veille Tavily (lots L4 / TV1). Défaut 0 : zéro recherche tant que le
+    """Veille Tavily. Défaut 0 : zéro recherche tant que le
     drapeau n'est pas ouvert. `NAVIGUIDE_TAVILY_WATCH=1` l'allume (poste)."""
     import escale_watch  # noqa: PLC0415
 
@@ -110,10 +112,6 @@ def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dl = math.radians(lon2 - lon1)
     a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return 2 * r * math.asin(math.sqrt(a))
-
-
-def _wrap_lon(lon: float) -> float:
-    return ((lon + 180.0) % 360.0) - 180.0
 
 
 def sample_route_nm(points: list[dict], step_nm: float = SAMPLE_NM) -> list[dict]:
@@ -156,7 +154,7 @@ def sample_route_nm(points: list[dict], step_nm: float = SAMPLE_NM) -> list[dict
             t = pos / seg
             out.append({
                 "lat": prev[0] + (lat - prev[0]) * t,
-                "lon": _wrap_lon(prev[1] + (lon - prev[1]) * t),
+                "lon": interp_lon_shortest(prev[1], lon, t),
                 "sailNm": round(prev_cum + pos, 2),
             })
             pos += step_nm
@@ -202,7 +200,7 @@ def _run_coro(factory):
 def get_pearl_bag(lat: float, lon: float, *, rich: bool = True) -> dict | None:
     """Sac `/ici` d'une perle : cache d'abord, sinon fill **sans LLM**.
 
-    None si le fill lève — l'appelant saute la perle (DM8A). Ne passe pas par
+    None si le fill lève — l'appelant saute la perle. Ne passe pas par
     `fill_dossier` (juge de vérité / veille) : `NAVIGUIDE_LLM_MODE` indifférent.
     Le chauffeur officiel (`warm_official_route`) n'est pas modifié.
     """
@@ -434,7 +432,7 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
         cur = None if (mrgid is None or ashore) else {"mrgid": mrgid, "name": zee.get("name"), "territory": zee.get("territory")}
         cur_id = cur["mrgid"] if cur else None
         state_id = state["mrgid"] if state else None
-        # Ports of entry within reach of the pearl (lot A): once per port.
+        # Ports of entry within reach of the pearl: once per port.
         for poe in (bag.get("poe") or [])[:3]:
             if not isinstance(poe, dict) or not poe.get("name"):
                 continue
@@ -569,7 +567,7 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
                 "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4),
                 "sailNm": pearl["sailNm"], "idx": idx, "basis": "pearl",
             })
-        # Lot F2 — régime climatique (deux perles consécutives connues).
+        # Régime climatique (deux perles consécutives connues).
         climo = _pearl_climo(bag)
         if prev_climo is not None and climo is not None:
             prev_cyc, cur_cyc = _in_cyclone_season(prev_climo.get("cyclone")), _in_cyclone_season(climo.get("cyclone"))
@@ -613,7 +611,7 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
         elif climo is None:
             in_calms = False
         prev_climo = climo
-        # Lot F2 / RG5 — station qualifiée à ≤ 10 nm, une fois par entité ; titre brut gardé pour la fiche.
+        # Station qualifiée à ≤ 10 nm, une fois par entité ; titre brut gardé pour la fiche.
         for item in _science_items(bag):
             if not science_type_key(item):
                 continue
@@ -784,7 +782,7 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
         _state["done"] += 1
         await asyncio.sleep(pause_s)
 
-    # The local ZEE layer first (lot B): pearls filled with it never flap,
+    # The local ZEE layer first: pearls filled with it never flap,
     # and the pearls already stored get their ZEE re-read right away.
     try:
         import zee_local  # noqa: PLC0415
@@ -800,7 +798,7 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
         _state["zeeRefreshed"] = await refresh_zee_local()
     except Exception as exc:
         log.debug("relecture ZEE locale : %s", exc)
-    # RG18 : plus de pré-génération de récits — le statut garde la clé stories.
+    # Plus de pré-génération de récits — le statut garde la clé stories.
     _state["stories"] = {"skipped": "on-demand"}
     if watch_enabled():
         try:
@@ -808,7 +806,7 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
             _state["watch"] = await escale_watch.run_daily(voy)
         except Exception as exc:
             log.debug("veille Tavily : %s", exc)
-    # Lot R9a : journal des moments après les perles. RC18 (27 sept.) : quand le stock a son remplisseur
+    # Journal des moments après les perles. RC18 (27 sept.) : quand le stock a son remplisseur
     # (processus séparé, avec l'horloge), l'API ne le refait pas — ici, sans horloge, ça produisait 770
     # moments sans date pour 46 s de CPU dans le processus de l'API.
     try:
@@ -832,7 +830,7 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
 
 
 async def refresh_zee_local(pause_s: float = 0.2) -> int:
-    """Re-read the ZEE of every stored pearl with the local VLIZ layer (lot B):
+    """Re-read the ZEE of every stored pearl with the local VLIZ layer:
     pearls filled from the gazetteer keep their rich layers, only `zee`
     (and the ports of entry, which hang on the ZEE) change. Returns the
     number of pearls corrected. No-op while the layer is not loaded."""

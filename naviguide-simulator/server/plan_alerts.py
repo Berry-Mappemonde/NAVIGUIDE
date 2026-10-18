@@ -1,4 +1,4 @@
-"""Évaluateur de plan (lot R10a, contrat PLAN_ICI § 3.1). Échantillon 60 nm, cyclone daté ± 15 j."""
+"""Évaluateur de plan. Échantillon 60 nm, cyclone daté ± 15 j."""
 from __future__ import annotations
 
 import copy

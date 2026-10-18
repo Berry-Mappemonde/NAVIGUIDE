@@ -1,4 +1,4 @@
-// Lot R10c — écart local borné (corridor ± 300 nm, cap +20 %).
+// Écart local borné (corridor ± 300 nm, cap +20 %).
 // Sans API : Simulation, ordres du skipper, bouton Recalculer tiennent seuls.
 // GET /voyage/official : sondé ; s'il manque, annotation + return après
 // les assertions UI (jamais affaiblies). Recalcul / ≤ 1 650 nm : seulement
@@ -41,7 +41,7 @@ async function showToolsPanel(page) {
   if (await toggle.isVisible().catch(() => false)) await toggle.click();
 }
 
-test("lot R10c — Simulation, vent 30 kn, Recalculer, route bornée", async ({ page }) => {
+test("Simulation, vent 30 kn, Recalculer, route bornée", async ({ page }) => {
   test.setTimeout(45_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {

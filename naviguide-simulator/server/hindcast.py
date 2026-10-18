@@ -3,7 +3,7 @@
 Une source en panne manque ; aucune source → champ vide (jamais inventé).
 Cache SQLite `pearl_store.kv` ns `hindcast`, clé (cellule ERA5 0,25°, produit, jour).
 Budget Open-Meteo : ns `om-budget`, plafond NAVIGUIDE_OM_DAILY_BUDGET (défaut 3000).
-Enveloppe unique partagée avec l'ensemble ETA (RG17) : l'hindcast du jour
+Enveloppe unique partagée avec l'ensemble ETA : l'hindcast du jour
 a la priorité, une part NAVIGUIDE_OM_ETA_RESERVED (défaut 24) reste pour
 la prochaine escale — l'un n'épuise pas l'autre.
 """
@@ -61,7 +61,7 @@ PRODUCTS = (
     SRC_CMEMS_WAVE,
     SRC_CMEMS_PHY,
 )
-# Vent du passé pour l'horloge (lot RA8) : ERA5 Open-Meteo, sans Copernicus.
+# Vent du passé pour l'horloge : ERA5 Open-Meteo, sans Copernicus.
 ERA5_PRODUCTS = (SRC_OM_ERA5,)
 
 # Tests branchent un client / des fetchers CMEMS. Jamais le réseau réel.
@@ -743,7 +743,7 @@ def series(
 ) -> dict:
     """Vent / houle / courant horaires du `day` (UTC), sources demandées, médiane.
 
-    `products=ERA5_PRODUCTS` : archive Open-Meteo seulement (lot RA8).
+    `products=ERA5_PRODUCTS` : archive Open-Meteo seulement.
     `fetch=False` : cache uniquement, aucun appel réseau.
     """
     day = _day_str(day)
@@ -982,7 +982,7 @@ def era5_day_cached(lat: float, lon: float, day: str | datetime) -> bool:
 def fill_era5_window(lat: float, lon: float, day: str | datetime,
                      *, pad_days: int = ERA5_WINDOW_PAD_DAYS) -> Optional[int]:
     """UN appel archive pour la cellule : la plage contiguë de jours NON cachés
-    autour de `day` dans [jour−pad, jour+pad] (lot HC1 : le besoin vient du
+    autour de `day` dans [jour−pad, jour+pad] (le besoin vient du
     trajet réel intégré, jamais de l'horloge climatologique).
 
     Un jour déjà en cache n'est JAMAIS redemandé. Retourne le nombre de jours

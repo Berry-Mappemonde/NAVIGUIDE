@@ -1,4 +1,4 @@
-// Lot RD1 — clic route → pop-up Copernicus ; clic drapeau n'ouvre pas le
+// Clic route → pop-up Copernicus ; clic drapeau n'ouvre pas le
 // panneau gauche ; plus de carré vert ▤ dans la liste des escales.
 // Sans API : le pop-up s'ouvre (fetch météo en repli), les onglets Vent /
 // Vagues / Courants et l'absence de ▤ tiennent seuls. GET /voyage/official
@@ -143,7 +143,7 @@ async function clickAjaccioFlag(page) {
   return true;
 }
 
-test("lot RD1 — clic route Copernicus, drapeau sans panneau, plus de ▤", async ({ page }) => {
+test("Clic route Copernicus, drapeau sans panneau, plus de ▤", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {

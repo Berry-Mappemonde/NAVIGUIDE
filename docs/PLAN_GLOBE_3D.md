@@ -21,7 +21,7 @@ Recherches refaites le 20 septembre sur MapLibre GL JS (sources en bas).
 | Où | `naviguide-simulator/src/globe/` ; onglet **Carte / Globe** au-dessus de la zone carte ; la carte Leaflet reste montée (cachée par `display:none`, jamais démontée) quand le globe est visible | `naviguide-globe/` (Vite + React), déployée sur `globe.naviguide.fr`, même API `:8010`, moteur JS partagé par un paquet `@naviguide/engine` (workspace npm) |
 | Ce qu'on réutilise | tout : sidebars, barre film, hooks, i18n, cartes, replay, chat | le serveur et les moteurs purs (`src/engine/*`, `src/utils/*`) ; l'UI est réécrite ou copiée |
 | Ce qu'on risque | un état partagé à deux vues (on l'a déjà : `scene` de `MapScene.jsx`) ; +≈ 250 ko gzip chargés **à la demande** | duplication d'UI, deux déploiements, dérive |
-| Effort | ≈ 9 jours-agent | ≈ 15 jours-agent |
+| Effort | ≈ 9 jours | ≈ 15 jours |
 | Avis | **recommandée** : un seul produit, le globe comme un onglet, tout le reste identique | si le porteur veut un site « globe » à part pour la communication |
 
 Les lots ci-dessous sont écrits pour l'option A ; l'option B reprend les
@@ -165,7 +165,7 @@ Liste de parité cochée ; spec Playwright joué avec `?view=carte` et
 ## 4. Effort, risques, coût
 
 - **Effort option A** : G0 1 j, G1 1,5 j, G2 1,5 j, G3 2 j, G4 1,5 j, G5 1,5 j,
-  G6 0,5 j, G7 0,5 j ≈ **10 jours-agent**. Option B : + squelette d'app,
+  G6 0,5 j, G7 0,5 j ≈ **10 jours**. Option B : + squelette d'app,
   copie des sidebars/barre film, déploiement ≈ **+5 j**.
 - **Risques** : PMTiles à générer (tippecanoe sur le Mac ou le VPS) ; Safari
   et WebGL2 ; deux vues qui consomment `scene` (le Leaflet caché continue de
@@ -177,7 +177,7 @@ Liste de parité cochée ; spec Playwright joué avec `?view=carte` et
 
 On garde Leaflet tel quel et on ajoute un **onglet Globe** (option A) — ou
 un site globe séparé (option B) — alimenté par les mêmes données, en
-MapLibre GL JS 6 (libre, 0 $). Dix jours-agent pour l'option A ; le film
+MapLibre GL JS 6 (libre, 0 $). Dix jours pour l'option A ; le film
 peut se tourner sur le globe si G0–G2 et G6 sont recettés avant la vidéo,
 sinon sur la carte.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remplit le stock du voyage officiel par le VRAI calcul (lot RF2) — dans un PROCESSUS à part (RC18).
+"""Remplit le stock du voyage officiel par le VRAI calcul — dans un PROCESSUS à part (RC18).
 
 Aucune donnée écrite en dur : une famille qui échoue reste « en préparation ».
 

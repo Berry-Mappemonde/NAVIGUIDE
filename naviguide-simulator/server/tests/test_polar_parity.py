@@ -1,4 +1,4 @@
-"""Lot C5 — parité polaire Python (horloge = PolarData) sur 20 cas partagés."""
+"""Parité polaire Python (horloge = PolarData) sur 20 cas partagés."""
 from __future__ import annotations
 
 import json

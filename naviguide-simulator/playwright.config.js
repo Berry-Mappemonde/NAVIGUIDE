@@ -1,6 +1,6 @@
-// Recette automatique (lot RG16 / D11) : fumée + specs de lots.
+// Recette automatique : fumée + scénarios.
 // Port : 5174 par défaut ; `PW_PORT=5199 npm run e2e` quand 5174 est déjà pris.
-// `PW_WITH_API=1` démarre l'API hors ligne (stock figé, lot RF11).
+// `PW_WITH_API=1` démarre l'API hors ligne (stock figé).
 import { defineConfig } from "@playwright/test";
 
 const port = Number(process.env.PW_PORT || 5174);
@@ -51,7 +51,7 @@ export default defineConfig({
     : "list",
   use: {
     baseURL: origin,
-    // Les lots existants affirment le français. Le visiteur sans choix est couvert par ouverture-langue.
+    // Les scénarios existants affirment le français. Le visiteur sans choix est couvert par ouverture-langue.
     storageState: "./e2e/.auth/fr.json",
     headless: true,
     viewport: { width: 1280, height: 800 },

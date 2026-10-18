@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "MomentCards.jsx"), "utf8");
 
-describe("MomentCards — lot R6 : aucune publication hors film", () => {
+describe("MomentCards — : aucune publication hors film", () => {
   it("ne publie plus la carte NOW dans la bulle hors film", () => {
     assert.doesNotMatch(src, /publishEventBubble/);
     assert.doesNotMatch(src, /isNowAlertOrDecision/);

@@ -1,5 +1,5 @@
 /**
- * Toponymes — même table que le serveur (`toponymsTable.json`, lot RC32).
+ * Toponymes — même table que le serveur (`toponymsTable.json`).
  * Pays et eaux : exonyme de la langue du récit. Ports / AMP : nom d'origine.
  */
 import table from "./toponymsTable.json" with { type: "json" };

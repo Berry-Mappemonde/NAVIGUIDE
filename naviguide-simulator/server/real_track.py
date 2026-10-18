@@ -1,4 +1,4 @@
-"""Trajet RÉEL figé du voyage officiel (lot HC1).
+"""Trajet RÉEL figé du voyage officiel.
 
 Le PASSÉ (du départ au dernier jour ERA5 publié, ~5 j de retard) est intégré
 jour après jour avec la météo réellement rencontrée (vent ERA5 → polaire ×
@@ -33,6 +33,7 @@ from hindcast import (
     om_quota_reason,
 )
 from pearl_store import kv_get, kv_put
+from longitude import unwrap_lon as _unwrap_lon
 from voyage_clock import WindExhausted, _r4, build_voyage_clock, parse_iso, to_iso
 
 log = logging.getLogger("naviguide-simulator.real-track")
@@ -93,15 +94,6 @@ def _strict_era5_wind(now: datetime, *, fetch: bool = True):
         raise WindExhausted(REASON_UNPUBLISHED)
 
     return wind_fn
-
-
-def _unwrap_lon(ref: float, lon: float) -> float:
-    x = float(lon)
-    while x - ref > 180.0:
-        x -= 360.0
-    while x - ref < -180.0:
-        x += 360.0
-    return x
 
 
 def _is_real_vertex(v: dict) -> bool:

@@ -1,4 +1,4 @@
-// Lot R9b — vue Journal (date · position · changement), clic → curseur.
+// Vue Journal (date · position · changement), clic → curseur.
 // Sans API : l'onglet Journal et la liste tiennent seuls (repli local).
 // GET /voyage/official : sondé ; s'il manque, on annote et on saute seulement
 // les assertions d'entrées officielles (15 mai → aujourd'hui).
@@ -59,7 +59,7 @@ async function showLeftPanel(page) {
   await expect(box).toBeVisible({ timeout: 15_000 });
 }
 
-test("lot R9b — Journal : liste, clic place le curseur", async ({ page }) => {
+test("Journal : liste, clic place le curseur", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {
@@ -101,7 +101,7 @@ test("lot R9b — Journal : liste, clic place le curseur", async ({ page }) => {
     }
   };
   if (apiUp) {
-    // L'horloge live à quai ouvre la fiche d'escale → onglet Maintenant (RC2).
+    // L'horloge live à quai ouvre la fiche d'escale → onglet Maintenant.
     // On refrappe Journal tant que la liste n'a pas de lignes.
     await expect(page.getByTestId("film-clock-line")).not.toHaveText(/\bj0\b/, { timeout: 25_000 }).catch(() => {});
     await expect.poll(async () => {

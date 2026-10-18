@@ -1,4 +1,4 @@
-// Lot RA2 — l'ordre du récit suit exactement le voyage.
+// L'ordre du récit suit exactement le voyage.
 // Sans API : le récit sidebar se construit depuis l'horloge locale.
 // Le film serveur (GET /voyage/official/film) n'est vérifié que si l'API répond.
 import { expect, test } from "@playwright/test";
@@ -59,7 +59,7 @@ function assertChapterPairs(chapters, lang) {
     .map((c) => ({ from: String(c.fromName || "").trim(), to: String(c.toName || "").trim() }))
     .filter((l) => l.from && l.to);
   expect(legs.length, `film ${lang} : paires from/to`).toBeGreaterThanOrEqual(8);
-  // RF5 : dernière jambe « départ vers Papeete » avec toName vide — le nom est
+  // Dernière jambe « départ vers Papeete » avec toName vide — le nom est
   // dans le texte, pas dans la paire. RC27 le met aussi dans from/to.
   const blob = (chapters || [])
     .map((c) => `${c.fromName || ""}→${c.toName || ""} ${c.text || ""}`)
@@ -122,7 +122,7 @@ async function probeOfficial(page) {
   return false;
 }
 
-test("lot RA2 — récit FR puis EN : Ajaccio avant Fort-de-France, sans répétition", async ({ page }) => {
+test("Récit FR puis EN : Ajaccio avant Fort-de-France, sans répétition", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/");
   await dismissNotForNav(page);

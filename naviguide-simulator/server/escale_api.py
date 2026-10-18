@@ -1,4 +1,4 @@
-"""Fiche d'escale (lot C, plan général §1.9).
+"""Fiche d'escale (plan général §1.9).
 
 Pour une escale (nom, position) : ce qu'un équipage veut savoir en arrivant,
 **en listes de faits** — chaque ligne a un nom, une position, une distance,
@@ -13,7 +13,7 @@ et quand OSM / BI le disent un site et un téléphone :
 - autour : projets et fiches science Blue Intelligence.
 
 La **rédaction** (un paragraphe de présentation, trois phrases) passe par
-`cascade_text(tier="fast")` (lot L2 / U5) à partir de ces listes seulement,
+`cascade_text(tier="fast")` à partir de ces listes seulement,
 filtrée comme les cartes ; sans LLM, les listes seules. Rien n'est inventé :
 une section vide n'est pas envoyée. Cache SQLite 7 jours (`pearl_store.kv`,
 ns « escale »). Chaque paragraphe porte `source`.
@@ -240,7 +240,7 @@ def _paragraph_prompt(name: str, sections: dict, lang: str) -> tuple[str, str]:
 async def write_paragraph(name: str, sections: dict, lang: str, client: httpx.AsyncClient | None = None) -> dict[str, Any]:
     if not sections:
         return {"status": "empty", "text": None, "engine": None, "source": None}
-    # U9 : rédiger en FR (U5), puis traduire si le client demande EN.
+    # Rédiger en FR, puis traduire si le client demande EN.
     system, user = _paragraph_prompt(name, sections, "fr")
     try:
         text, source = await cascade_text(system, user, client, tier="fast")

@@ -5,7 +5,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? "";
 const HISTORY_MAX = 30;
 
 /**
- * Chatbot journal de bord (lot D). `ask(question)` posts to /logbook/chat with
+ * Chatbot journal de bord. `ask(question)` posts to /logbook/chat with
  * the facts only the client knows (`contextFn()` → view, boat of the film,
  * polar, skipper's orders). The server answers from its own facts and logs
  * the exchange when the admin key travels with the request. Never blocks

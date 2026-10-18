@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from voyage_clock import OFFICIAL_VOYAGE_ID, parse_iso, sample_clock_at_time, to_iso
+from longitude import unwrap_lon, wrap_lon as _wrap_lon
 
 DAILY_RADIUS_NM = 200.0
 DAILY_LEAD_HOURS = 72
@@ -131,22 +132,6 @@ def product_by_saildocs(code: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _unwrap_lon(lon: float, ref: float) -> float:
-    while lon - ref > 180:
-        lon -= 360
-    while lon - ref < -180:
-        lon += 360
-    return lon
-
-
-def _wrap_lon(lon: float) -> float:
-    while lon > 180:
-        lon -= 360
-    while lon < -180:
-        lon += 360
-    return lon
-
-
 def _disk_delta(lat: float, radius_nm: float) -> Tuple[float, float]:
     dlat = radius_nm / 60.0
     cos_lat = max(0.2, math.cos(math.radians(lat)))
@@ -159,8 +144,10 @@ def bbox_around(lat: float, lon: float, radius_nm: float = DAILY_RADIUS_NM) -> T
     dlat, dlon = _disk_delta(lat, radius_nm)
     south = max(-90.0, lat - dlat)
     north = min(90.0, lat + dlat)
-    west = lon - dlon
-    east = lon + dlon
+    # Bornes repliées : près de 180° la boîte passe la couture (ouest > est,
+    # ex. 175.1E → 177.9W), jamais 182.1W.
+    west = _wrap_lon(lon - dlon)
+    east = _wrap_lon(lon + dlon)
     return (round(south, 4), round(north, 4), round(west, 4), round(east, 4))
 
 
@@ -229,7 +216,7 @@ def bbox_along_track(
     raw_lons: List[float] = []
     for lat, lon in points:
         dlat, dlon = _disk_delta(lat, radius_nm)
-        unwrapped = _unwrap_lon(lon, ref_lon)
+        unwrapped = unwrap_lon(ref_lon, lon)
         souths.append(lat - dlat)
         norths.append(lat + dlat)
         wests.append(unwrapped - dlon)
@@ -333,7 +320,8 @@ def _hem_lat(v: float) -> str:
 
 
 def _hem_lon(v: float) -> str:
-    return f"{abs(v):.1f}{'E' if v >= 0 else 'W'}"
+    x = _wrap_lon(v)
+    return f"{abs(x):.1f}{'E' if x >= 0 else 'W'}"
 
 
 def saildocs_query(

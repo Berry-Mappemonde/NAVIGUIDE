@@ -48,7 +48,7 @@ function BerryCard({
   const activateCustom = () => {
     if (!drawnRoute) return;
     setCardMode("file-active");
-    // DM5 — la pilule bascule la source sans changer de mode (Suivre ou Tracer).
+    // La pilule bascule la source sans changer de mode (Suivre ou Tracer).
     (onRouteSwitchToCustom || onCustomRoute)(drawnRoute);
   };
 
@@ -76,9 +76,9 @@ function BerryCard({
   const pillOn = "flex-1 min-w-0 px-2 py-1.5 rounded-lg text-[10px] font-semibold leading-tight border border-blue-400/60 bg-blue-600/30 text-blue-100";
   const pillOff = "flex-1 min-w-0 px-2 py-1.5 rounded-lg text-[10px] font-semibold leading-tight border border-slate-600/50 bg-slate-800/50 text-slate-400 hover:text-white hover:border-slate-500";
 
-  // DM1 : les pilules Berry-Mappemonde | <ma route> sont toujours rendues en
+  // Les pilules Berry-Mappemonde | <ma route> sont toujours rendues en
   // Tracer (VIEW_TRACER) ou pendant un tracé ; sans route perso, la seconde
-  // pilule reprend le brouillon (DM6) ou ouvre un dessin vide.
+  // pilule reprend le brouillon ou ouvre un dessin vide.
   const switcher = (hasCustom || isTracerView || isDrawing) ? (
     <div className="flex gap-1 mb-1.5">
       <button type="button" data-testid="route-switch-berry" onClick={activateBerry} className={(customOn || drawingOn) ? pillOff : pillOn} title={t("backToBerry")}>
@@ -93,7 +93,7 @@ function BerryCard({
           type="button"
           data-testid="route-switch-draw"
           // Même nom accessible que le bouton du bas qu'elle remplace en Tracer
-          // (les specs des lots N4/R9a/R13 le cherchent par ce nom).
+          // (les specs de N4/R9a/R13 le cherchent par ce nom).
           aria-label={`${t("berryMappemonde")} · ${t("drawOwnRoute")}`}
           onClick={startOrResumeDraw}
           className={drawingOn ? pillOn : pillOff}
@@ -170,7 +170,7 @@ function BerryCard({
     );
   }
 
-  // DM1 : en Tracer sans route perso, la carte montre les pilules et Importer ;
+  // En Tracer sans route perso, la carte montre les pilules et Importer ;
   // le geste « Tracer votre propre route » est la seconde pilule (le bouton du
   // bas reste tel quel en Suivre).
   if (isTracerView && !hasCustom) {
@@ -344,6 +344,7 @@ export const Sidebar = memo(function Sidebar({
   escaleLoading = false,
   escaleError = null,
   onEscaleClose,
+  todayPosition = false,
 }) {
   const { t, lang } = useLang();
   const isTracer = view === VIEW_TRACER;
@@ -353,8 +354,8 @@ export const Sidebar = memo(function Sidebar({
   const briefingTitle = !iciBriefing && typeof plan?.briefing_title === "string"
     ? plan.briefing_title.trim()
     : "";
-  // DM6 — Tracer ouvre le dessin, mais un brouillon vide garde la vitrine
-  // Berry (briefing, revue, fiche d'escale). Les lots M et R7 cliquent
+  // Tracer ouvre le dessin, mais un brouillon vide garde la vitrine
+  // Berry (briefing, revue, fiche d'escale). Les scénarios M et R7 cliquent
   // Tracer sans poser de point : le briefing et Ajaccio restent là.
   const drawingHidesBerry = Boolean(isDrawing && drawing?.points?.length);
   const showIciBriefing = !drawingHidesBerry && (isCockpit || briefing || briefingLoading || skipperNotice);
@@ -545,6 +546,7 @@ export const Sidebar = memo(function Sidebar({
               onClose: onEscaleClose,
               onFocus: onBriefingFocus,
             } : null}
+            todayPosition={todayPosition}
           />
         </div>
       </div>

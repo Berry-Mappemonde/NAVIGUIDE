@@ -146,7 +146,7 @@ From `naviguide-simulator/`:
 | `npm test` | Node.js unit tests (`src/**/*.test.js`, engine, hooks, UI contracts). |
 | `python -m pytest -q` | Python API tests (`server/tests/`, see [`pytest.ini`](naviguide-simulator/pytest.ini)). |
 | `npm run e2e` | Playwright (full suite; some `poste` specs skipped without a live store). |
-| `PW_WITH_API=1 npm run e2e:store` | Playwright lots with API + frozen store. |
+| `PW_WITH_API=1 npm run e2e:store` | Playwright specs with API + frozen store. |
 
 CI mirrors: `npm test`, `npm run build`, `pytest`, Playwright shards ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 

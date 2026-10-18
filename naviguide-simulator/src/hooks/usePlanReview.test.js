@@ -65,7 +65,7 @@ const tFr = interpolate(fr);
 const tEn = interpolate(en);
 const plain = (s) => String(s).replace(/[\u202f\u00a0]/g, " ");
 
-describe("usePlanReview — fourchette ETA (lot R11)", () => {
+describe("usePlanReview — fourchette ETA", () => {
   it("ne fabrique pas de fourchette sans membres ou sans dates", () => {
     assert.equal(formatEtaRange(null, tFr, "fr"), "");
     assert.equal(formatEtaRange({ members: 0, p10: "2026-10-11T00:00:00Z", p90: "2026-10-14T00:00:00Z" }, tFr, "fr"), "");
@@ -145,7 +145,7 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.equal(ETA_RETRY_MS[ETA_RETRY_MS.length - 1], 30000);
   });
 
-  it("écarte tout membre à 0 kn de la fourchette (lot RA7)", () => {
+  it("écarte tout membre à 0 kn de la fourchette", () => {
     assert.equal(ETA_MIN_KN, 3);
     const members = [
       { knots: 8.1, arrival: "2026-11-13T00:00:00Z" },
@@ -174,7 +174,7 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.equal(hidden.p10, "");
   });
 
-  it("lot RG17 — ligne de raison quand members = 0, jamais une fourchette", () => {
+  it("Ligne de raison quand members = 0, jamais une fourchette", () => {
     const empty = {
       members: 0,
       p10: "2026-10-11T00:00:00Z",
@@ -204,7 +204,7 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.doesNotMatch(enLabel, /arrival between/i);
   });
 
-  it("lot RG17 — pollOfficialEta s'arrête quand nextRetry est dans le futur", async () => {
+  it("PollOfficialEta s'arrête quand nextRetry est dans le futur", async () => {
     const unavailable = {
       members: 0,
       p10: null,
@@ -231,7 +231,7 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.match(plain(formatEtaRange(out, tFr, "fr")), /fourchette indisponible/);
   });
 
-  it("lot RC24 — nextRetry null ou epoch : pas « 1 janv. »", () => {
+  it("NextRetry null ou epoch : pas « 1 janv. »", () => {
     assert.equal(etaDayLabel(null, "fr"), "");
     assert.equal(etaDayLabel(undefined, "fr"), "");
     assert.equal(etaDayLabel("", "fr"), "");
@@ -256,7 +256,7 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.doesNotMatch(plain(formatEtaRange(invalid, tFr, "fr")), /1 janv/);
   });
 
-  it("lot RC24 — label sur la prochaine, pas la première rangée", () => {
+  it("Label sur la prochaine, pas la première rangée", () => {
     const now = Date.parse("2026-09-29T12:00:00Z");
     const marks = [
       { name: "Saint-Maur (Berry, Indre)", iso: "2026-05-15T08:00:00Z", filmNm: 0 },
@@ -282,7 +282,7 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.notEqual(nextStopRowIndex(rows, attached, now), 1);
   });
 
-  it("lot RC28 — horloge 19 sept. / 17 nm de Nouméa → Nouméa, pas Dzaoudzi", () => {
+  it("Horloge 19 sept. / 17 nm de Nouméa → Nouméa, pas Dzaoudzi", () => {
     const officialNow = Date.parse("2026-09-19T12:00:00Z");
     const wall = Date.parse("2026-09-29T20:00:00Z");
     const noumeaNm = 19177;
@@ -304,7 +304,7 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.notEqual(nextStopRowIndex(rows, marks, officialNow, liveNm), 3);
   });
 
-  it("lot RC28 — sans official.clock, aucun GET /eta ni ligne inventée", () => {
+  it("Sans official.clock, aucun GET /eta ni ligne inventée", () => {
     assert.ok(Number.isNaN(officialNowMs(null, null)));
     assert.ok(Number.isNaN(officialNowMs({}, {})));
     assert.equal(
@@ -323,11 +323,11 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
       officialClock: true,
     }), true);
     const app = readFileSync(join(here, "../App.jsx"), "utf8");
-    // DM5 : l'ETA officielle n'existe qu'en Suivre × Berry.
+    // L'ETA officielle n'existe qu'en Suivre × Berry.
     assert.match(app, /officialEtaReady = Boolean\(suivreBerry && official\.clock\)/);
     assert.match(app, /officialNowMs\(official\.clock,\s*official\.live\)/);
     assert.match(app, /officialEta: officialEtaReady/);
-    // DM7 : hors Suivre × Berry, nowMs / liveFilmNm viennent du tracé.
+    // Hors Suivre × Berry, nowMs / liveFilmNm viennent du tracé.
     assert.match(app, /legendNowAndLive\(/);
     assert.match(app, /liveFilmNm: legendLiveFilmNm/);
     assert.match(app, /liveFilmNm=\{legendLiveFilmNm\}/);
@@ -336,7 +336,7 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.match(app, /datedLegend \? legendMarks : \(officialClock\.marks \|\| legendMarks\)/);
   });
 
-  it("lot DM7 — legendNowAndLive : Tracer ignore official.live (Papeete)", () => {
+  it("LegendNowAndLive : Tracer ignore official.live (Papeete)", () => {
     const today = "2026-10-14T08:00:00.000Z";
     const officialNow = Date.parse("2026-09-19T12:00:00Z");
     const officialNm = 22000;
@@ -369,7 +369,7 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
   });
 });
 
-describe("usePlanReview — conseil (lot R10d)", () => {
+describe("usePlanReview — conseil", () => {
   it("écrit la phrase et les pastilles en FR et EN, sans anglais en FR", () => {
     const best = ADVICE_FIXTURE.best;
     const fr = formatAdviceSentence(best, tFr, "fr");
@@ -473,7 +473,7 @@ describe("usePlanReview — conseil (lot R10d)", () => {
   });
 });
 
-describe("lot RH2 — plus d'abort en vol", () => {
+describe("Plus d'abort en vol", () => {
   it("démontage pendant une requête en vol : aucun abort du fetch, aucun update", async () => {
     let resolveFetch;
     const pending = new Promise((r) => { resolveFetch = r; });
@@ -573,7 +573,7 @@ describe("lot RH2 — plus d'abort en vol", () => {
   });
 });
 
-describe("usePlanReview — ETA gelée pendant le film (lot RF4)", () => {
+describe("usePlanReview — ETA gelée pendant le film", () => {
   const stops = ["La Rochelle", "Ajaccio", "Fort-de-France", "Nouméa", "Dzaoudzi"];
 
   it("ne re-sonde pas l'ETA tant que le film tourne, une sonde à l'arrêt", () => {

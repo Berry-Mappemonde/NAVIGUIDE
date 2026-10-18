@@ -1,4 +1,4 @@
-"""Zones de piraterie (boîtes IMB / UKMTO) — lot N4.
+"""Zones de piraterie (boîtes IMB / UKMTO) — N4.
 
 Table versionnée : pas de score composite, pas de CYCLONE_BASINS.
 Boîtes reprises de naviguide/naviguide_workspace/naviguide_agent3/risk_engine.py
@@ -15,17 +15,10 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
+from longitude import wrap_lon as _wrap_lon
+
 _DATA = Path(__file__).resolve().parent / "data" / "piracy_zones.json"
 _LEVEL_RANK = {"HIGH": 3, "MEDIUM": 2, "MED": 2, "LOW": 1}
-
-
-def _wrap_lon(lon: float) -> float:
-    x = float(lon)
-    while x > 180.0:
-        x -= 360.0
-    while x < -180.0:
-        x += 360.0
-    return x
 
 
 @lru_cache(maxsize=1)

@@ -159,7 +159,7 @@ export function useOfficialExpedition({
       inflightRef.current = true;
       let gotClock = false;
       try {
-        // Horloge serveur d'abord (RG10) : le PUT de réparation peut durer des secondes — l'attendre laissait
+        // Horloge serveur d'abord : le PUT de réparation peut durer des secondes — l'attendre laissait
         // l'UI sur le t0 client (15 mai, 0 nm) puis sautait à la position live. Les deux partent ENSEMBLE,
         // une seule fois par tentative ; l'horloge vient du premier qui la porte (le PUT la rend aussi) —
         // plus de relecture après le PUT : chaque lecture pèse 3,9 Mo (335 ko gzippés) derrière le tunnel.

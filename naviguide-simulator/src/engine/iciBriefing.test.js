@@ -191,7 +191,7 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
-  it("lot T : une perle mince ne raconte pas l’échec BI", () => {
+  it("Une perle mince ne raconte pas l’échec BI", () => {
     const thin = {
       pearl: "thin",
       thin: true,
@@ -411,7 +411,7 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
-  it("lot P: a rich pearl tells seabed and aids to navigation; weather, satellite and the sheet stay live-only", () => {
+  it("A rich pearl tells seabed and aids to navigation; weather, satellite and the sheet stay live-only", () => {
     const pearl = {
       pearl: "rich",
       zee: { name: "French Exclusive Economic Zone", mrgid: 5677 },
@@ -699,7 +699,7 @@ function briefingSentences(text) {
   return text.split(/\n\n+|(?<=\.)\s+/).map((s) => s.trim()).filter(Boolean);
 }
 
-describe("lot M — sources liées, pas de redite", () => {
+describe("Sources liées, pas de redite", () => {
   it("chaque source connue produit un lien", () => {
     const cited = KNOWN_SOURCES.join(" · ");
     const segs = segmentSources(cited);
@@ -734,7 +734,7 @@ describe("lot M — sources liées, pas de redite", () => {
   });
 });
 
-describe("lot AM1B — ampSentence dans / à N milles", () => {
+describe("AmpSentence dans / à N milles", () => {
   it("dit « dans l'aire marine protégée » quand inside", () => {
     const text = narrateIci({
       zee: { name: "French Exclusive Economic Zone", mrgid: 5677, gold: true },

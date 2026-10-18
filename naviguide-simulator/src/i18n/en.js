@@ -173,6 +173,7 @@ export default {
   iciSectionLeg:      "Leg",
   iciSectionAlerts:   "Alerts",
   iciSectionHere:     "Here",
+  iciTodayPosition:   "Today's position",
   iciSectionAround:   "Around the boat",
   iciSectionSources:  "Sources",
   iciLegDay:          "D{n}",

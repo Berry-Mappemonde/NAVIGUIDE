@@ -10,7 +10,7 @@ const LEG = {
   flags: [{ kind: "formalities", names: ["Barbados EEZ"] }],
 };
 
-describe("planReview — revue de plan par règles (lot K)", () => {
+describe("planReview — revue de plan par règles", () => {
   it("reads the season from the atlas cache, counts missing cells honestly", () => {
     const lookup = (lat, lon, month) => (lat > 30 ? { point: { rose: { gale_pct: 18 }, cyclone: { nearby: 2 } } } : null);
     const s = seasonFromAtlas(LEG, [{ lat: 41, lon: 8 }, { lat: 15, lon: -60 }], lookup);

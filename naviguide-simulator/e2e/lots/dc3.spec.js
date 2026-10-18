@@ -1,4 +1,4 @@
-// Lot DC3 — balise, câble, profondeur, piraterie, satellite : dans le sac,
+// Balise, câble, profondeur, piraterie, satellite : dans le sac,
 // pas empilés au 2:30. Satellite sans légende jouable : silence.
 // Sans API (CI) : GET /voyage/official sondé ; s'il ne répond pas, annotation
 // + return des assertions film — barre, Suivre et Revoir restent.
@@ -86,7 +86,7 @@ function assertAtMostOnePerFamilyOnChapters(chapters, label) {
   }
 }
 
-test("lot DC3 — 2:30 sans familles carte, intégral une fois par chapitre, ≤ 2250", async ({ page }) => {
+test("2:30 sans familles carte, intégral une fois par chapitre, ≤ 2250", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

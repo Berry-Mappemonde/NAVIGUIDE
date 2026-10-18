@@ -1,4 +1,4 @@
-// Lot F5 — film anglais + plein écran (sidebars masquées, pas démontées).
+// Film anglais + plein écran (sidebars masquées, pas démontées).
 import { expect, test } from "@playwright/test";
 
 const shot = (page, name) => page.screenshot({
@@ -25,7 +25,7 @@ async function switchToEnglish(page) {
   await en.click();
 }
 
-test("lot F5 — sous-titre anglais, plein écran film, Échap rend les sidebars", async ({ page }) => {
+test("Sous-titre anglais, plein écran film, Échap rend les sidebars", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/");
   await dismissNotForNav(page);

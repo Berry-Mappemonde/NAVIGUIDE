@@ -1,4 +1,4 @@
-"""Lot R8a — build_moment : contrat Moment, signature stable, noms localisés."""
+"""Build_moment : contrat Moment, signature stable, noms localisés."""
 from __future__ import annotations
 
 import copy
@@ -166,7 +166,7 @@ def test_rc32_saint_martin_sheet_distinguished():
 
 
 def test_guadeloupe_sources_have_no_ok():
-    """Lot RC3 — bi=ok dans la perle ne doit pas apparaître comme libellé « ok »."""
+    """Bi=ok dans la perle ne doit pas apparaître comme libellé « ok »."""
     pearl, clock, leg, th, lang = _inputs(mrgid=33177)
     assert (pearl.get("sources") or {}).get("bi") == "ok"
     moment = build_moment(pearl, clock, leg, th, lang=lang)

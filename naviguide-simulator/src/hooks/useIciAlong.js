@@ -44,7 +44,7 @@ function loadCanonicalPearls() {
 export function useIciAlong({
   enabled,
   flat,
-  /** Drawn route (lot T): always sample this track, never the official pearls. */
+  /** Drawn route: always sample this track, never the official pearls. */
   customRoute = null,
   fromNm,
   toNm,

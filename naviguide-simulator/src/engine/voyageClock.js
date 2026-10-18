@@ -6,7 +6,7 @@
 import { alongTrackSpeed } from "./alongTrackSpeed.js";
 import { nameAirEpisodes } from "./filmCast.js";
 import { bearingDeg } from "./routeWindProfile.js";
-import { haversineNm, unwrapLon } from "../utils/geo.js";
+import { haversineNm, lerpLon } from "../utils/geo.js";
 
 export const AIR_CALENDAR_HOURS = 8;
 export const SAINT_MAUR_LAND_HOURS = 4;
@@ -373,10 +373,7 @@ export function buildVoyageClock({
 }
 
 /** Longitude par le plus court arc : -180 puis 179.85 ne traverse pas le globe. */
-export function lerpLon(a, b, t) {
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return lerpNum(a, b, t);
-  return lerpNum(a, unwrapLon(a, b), t);
-}
+export { lerpLon };
 
 function lerpNum(a, b, t) {
   if (a == null || b == null) return a ?? b ?? null;
@@ -573,7 +570,7 @@ export function sampleClockAtHours(clock, tHours) {
       model: b.model || a.model || null,
       leadHours: b.leadHours ?? a.leadHours ?? null,
       vehicle: veh,
-      // Pas courant a→b : la vitesse d'intégration est posée sur b (lot C3).
+      // Pas courant a→b : la vitesse d'intégration est posée sur b.
       speedKnots: b.speedKnots ?? a.speedKnots,
       windKnots: b.windKnots ?? a.windKnots,
     };

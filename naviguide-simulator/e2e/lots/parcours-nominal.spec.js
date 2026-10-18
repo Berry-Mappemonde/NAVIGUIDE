@@ -1,10 +1,10 @@
 // Parcours nominal — remplace r8a, r8b, r10a et r10b (29 sept., triage des specs e2e) :
 // ces quatre specs rejouaient le même parcours Suivre → Simulation → Tracer pour des lots serveur
 // « sans changement visible ». Une seule spec garde tout ce qu'elles vérifiaient :
-//  - R8b : l'encadré « Ici » seul (/lot-r8b.html, mode clair) — onglets, sections, pastilles, sources ;
-//  - R8a / R10a : barre film, horloge, trois vues, aucune erreur de page ;
-//  - R8c : l'encadré « Ici » présent dans l'app, dans les trois vues ;
-//  - R10b : GET /voyage/official/advice?leg=3 — structure pending | done | unavailable (RF1).
+//  - L'encadré « Ici » seul (/lot-r8b.html, mode clair) — onglets, sections, pastilles, sources ;
+//  - Barre film, horloge, trois vues, aucune erreur de page ;
+//  - L'encadré « Ici » présent dans l'app, dans les trois vues ;
+//  - GET /voyage/official/advice?leg=3 — structure pending | done | unavailable.
 // Sans API : la barre et les trois vues tiennent seules ; l'horloge officielle et /advice sont annotés.
 import { expect, test } from "@playwright/test";
 import { dismissNotForNav, enterSimulation, enterTracer, probeOfficial } from "../helpers.js";
@@ -98,7 +98,7 @@ test("parcours nominal — encadré Ici seul, trois vues, /advice (R8a · R8b ·
   let body = await adviceRes.json();
   expect(body.status).toMatch(/^(pending|done|unavailable)$/);
   if (body.status === "unavailable") {
-    // RF1 : sans isochrone ni modèle (stock figé de la CI), /advice répond « unavailable » — c'est le contrat ;
+    // Sans isochrone ni modèle (stock figé de la CI), /advice répond « unavailable » — c'est le contrat ;
     // pending | done ne se jouent que sur le poste de recette.
     test.info().annotations.push({
       type: "poste",

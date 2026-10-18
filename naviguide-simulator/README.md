@@ -10,7 +10,7 @@ The Blue Intelligence API stays at https://blueintelligence.online/api
 
 ## Run (macOS)
 
-**Automatique dans Cursor** (recommandé) : les hooks du projet démarrent API + Vite à l’ouverture de la session ; le navigateur s’ouvre à la fin de chaque réponse agent. Tu codes, tu regardes l’onglet `http://localhost:5174` (rechargement auto).
+**Automatique** (recommandé) : des hooks d’éditeur locaux démarrent API + Vite à l’ouverture de la session et ouvrent le navigateur. Tu codes, tu regardes l’onglet `http://localhost:5174` (rechargement auto).
 
 **Manuel** :
 

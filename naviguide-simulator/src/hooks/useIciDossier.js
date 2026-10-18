@@ -29,7 +29,7 @@ function legKey(jambe) {
 
 /**
  * Query string for GET /ici. Longitudes are folded into [−180, 180]
- * (lot S wrapLon): searoute-style unfolded points (236.84°) must not leave the bag.
+ * (wrapLon): searoute-style unfolded points (236.84°) must not leave the bag.
  */
 export function iciSearchParams({
   lat,
@@ -67,6 +67,24 @@ export function isStaleBag(bag, boat, limitNm = STALE_BAG_NM) {
   return bagDistanceNm(bag, boat) > limitNm;
 }
 
+/**
+ * During the voyage film the held bag is today's live place (no GET /ici
+ * per frame). When it sits farther than STALE_BAG_NM from the film boat,
+ * the Here panel hides it and labels today's position. A bag that still
+ * matches the film boat, and every bag outside the film, stays shown.
+ */
+export function filmStaleBagDecision({
+  playing = false,
+  bag = null,
+  boat = null,
+  limitNm = STALE_BAG_NM,
+} = {}) {
+  const shown = { hidden: false, labelToday: false };
+  if (!playing || !bag || !boat) return shown;
+  if (!isStaleBag(bag, boat, limitNm)) return shown;
+  return { hidden: true, labelToday: true };
+}
+
 /** The previous bag is a fresh start (no zee-exit, no wind-shift) when the boat jumped. */
 export function isJump(prevBag, bag, limitNm = JUMP_NM) {
   if (!prevBag?.at || !bag?.at) return false;
@@ -75,7 +93,7 @@ export function isJump(prevBag, bag, limitNm = JUMP_NM) {
 }
 
 /**
- * Lot RF4 — decide if GET /ici should run. Frozen (Revoir l'expédition):
+ * Decide if GET /ici should run. Frozen (Revoir l'expédition):
  * the film boat never schedules a bag. Catch-up after Stop is separate.
  */
 export function shouldScheduleIciFetch({
@@ -106,7 +124,7 @@ export function shouldCatchUpIci({ wasFrozen, frozen } = {}) {
   return Boolean(wasFrozen && !frozen);
 }
 
-/** Simulate a film track: how many /ici would fire (lot RF4). */
+/** Simulate a film track: how many /ici would fire. */
 export function countIciFetchesAlongTrack(points, {
   frozen = false,
   last = null,
@@ -219,7 +237,7 @@ export function useIciDossier({
   // switch) must not narrate this place. Meanwhile the along pearl just
   // passed (thin bag: ZEE, ports of entry, MPA, harbours) stands in — it is
   // what makes events fire at any film speed.
-  // Lot RF4: during the film the live bag stays put — do not treat it as stale.
+  // During the film the live bag stays put — do not treat it as stale.
   const staleRemote = Boolean(!frozen && remote && boat && isStaleBag(remote, boat));
   const fresh = remote && !staleRemote ? remote : null;
   const latB = boat ? Math.round(boat.lat * 20) / 20 : null;
@@ -485,7 +503,7 @@ export function useIciDossier({
     }
     if (nextBrief) lastNowRef.current = nextBrief;
     for (const ev of ledgerRef.current) {
-      // A replay (lot E) reads the journal: no LLM story is bought for its events.
+      // A replay reads the journal: no LLM story is bought for its events.
       if (!stories || !shouldEnqueueStory(ev, { written: stories })) continue;
       ev.story = enqueueStory(storyPayload(ev, lang));
     }
@@ -563,7 +581,12 @@ export function useIciDossier({
     pearl: effective?.pearl ?? (effective?.thin ? "thin" : null),
     events: tick.events,
     display: tick.briefing,
+    todayPosition: false,
   };
   if (!frozen) holdRef.current = pack;
-  return frozen && holdRef.current ? holdRef.current : pack;
+  if (!frozen) return pack;
+  const held = holdRef.current || pack;
+  const decision = filmStaleBagDecision({ playing: true, bag: held.dossier, boat });
+  if (!decision.labelToday) return held;
+  return { ...held, todayPosition: decision.labelToday };
 }

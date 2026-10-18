@@ -1,4 +1,4 @@
-// Lot R13 — redites : un libellé une fois par écran.
+// Redites : un libellé une fois par écran.
 // Sans API : le décompte innerText tient seul (repli route interne).
 // GET /voyage/official : sondé ; nom du bateau / polaire chargée seulement si l'API répond.
 import { expect, test } from "@playwright/test";
@@ -151,7 +151,7 @@ async function enterDraw(page) {
   await expect(page.getByTestId("drawing-box")).toBeVisible({ timeout: 15_000 });
 }
 
-test("lot R13 — aucune redite de libellé ; bateau / climatologie / Polaire une fois", async ({ page }) => {
+test("Aucune redite de libellé ; bateau / climatologie / Polaire une fois", async ({ page }) => {
   test.setTimeout(60_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {

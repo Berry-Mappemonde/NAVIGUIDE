@@ -102,7 +102,7 @@ describe("replay — rejouer la route de Saint-Maur à aujourd'hui", () => {
   });
 });
 
-describe("replay — filmPlan (lot F1)", () => {
+describe("replay — filmPlan", () => {
   it("répartit 150 s au prorata des caractères et timeAt est monotone", () => {
     const chapters = [
       { text: "aa", tA: 1_000, tB: 4_000 },
@@ -274,7 +274,7 @@ describe("replay — le bateau suit la voix, jamais l'inverse (27 sept.)", () =>
     assert.ok(t < depart, "toujours avant le départ du 18 mai");
   });
 
-  it("RG14 : le bateau suit le caractère dit, sans second lookahead de 12", () => {
+  it("Le bateau suit le caractère dit, sans second lookahead de 12", () => {
     const plan = filmPlan({ chapters: [chapter], targetSeconds: 150 });
     const ch = plan.chapters[0];
     const c = text.indexOf("Puis") + 5;
@@ -296,7 +296,7 @@ describe("replay — le bateau suit la voix, jamais l'inverse (27 sept.)", () =>
   });
 });
 
-describe("replay — vitesse continue (lot RG12, revue du 28 sept.)", () => {
+describe("replay — vitesse continue (revue du 28 sept.)", () => {
   const tA = Date.parse("2026-05-29T00:00:00Z");
   const tB = tA + 26 * 86400000;
   const tQuay = tB + 3 * 86400000;
@@ -463,7 +463,7 @@ describe("replay — vitesse continue (lot RG12, revue du 28 sept.)", () => {
   });
 });
 
-describe("replay — ancres au mot (lot RG14)", () => {
+describe("replay — ancres au mot", () => {
   it("chapterAnchors garde le charIdx serveur (déjà compensé) et reste monotone", () => {
     const tA = Date.parse("2026-05-15T12:00:00Z");
     const tGib = Date.parse("2026-05-21T12:00:00Z");

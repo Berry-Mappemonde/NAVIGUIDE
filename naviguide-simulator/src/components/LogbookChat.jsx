@@ -6,7 +6,7 @@ import { formatTimeUtc } from "../engine/journalFormat.js";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 
 /**
- * Le chatbot du journal de bord (lot D), dans le panneau gauche : une
+ * Le chatbot du journal de bord, dans le panneau gauche : une
  * question sur toutes les données de l'application, une réponse citant les
  * faits du serveur, l'échange consigné au journal quand la clé admin est là.
  */

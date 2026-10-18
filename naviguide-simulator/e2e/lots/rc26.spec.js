@@ -1,4 +1,4 @@
-// Lot RC26 — récit dense et réparti : le bateau avance pendant qu'on parle
+// Récit dense et réparti : le bateau avance pendant qu'on parle
 // (jamais plus de cinq phrases d'affilée ancrées sur la même minute) et la
 // grammaire des eaux tient (« les eaux françaises, puis celles de Montserrat »).
 // Sans API : Suivre, Revoir et la barre tiennent seuls. GET /voyage/official
@@ -56,7 +56,7 @@ function maxSameMinuteRun(chapter) {
   return best;
 }
 
-test("lot RC26 — récit dense et réparti, le bateau avance pendant qu'on parle", async ({ page }) => {
+test("Récit dense et réparti, le bateau avance pendant qu'on parle", async ({ page }) => {
   test.setTimeout(480_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

@@ -1,4 +1,4 @@
-"""Stock persistant du voyage officiel — une interface, deux dos (lot RF2, D5').
+"""Stock persistant du voyage officiel — une interface, deux dos (D5').
 
 Lecture/écriture des six familles (moments, film, eta, climo, ici, plan_review).
 Clé : (route officielle, t0, date des données). Une entrée porte un horodatage ;
@@ -21,6 +21,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+from longitude import delta_lon
 
 log = logging.getLogger("naviguide-simulator.official-store")
 
@@ -171,7 +173,7 @@ def _store_rev_relaxed() -> bool:
     La clé `…:rg4` n'existe pas encore dans l'archive gelée ; sans ça, GET
     /film, /moments et /ici restent « en préparation » et Revoir reste grisé.
     Sur le poste le remplisseur tourne (WORKER≠0) : pas de repli, il recalcule.
-    plan_review (RC50) n'est pas dans ce repli : un snapshot Halifax /
+    plan_review n'est pas dans ce repli : un snapshot Halifax /
     Saint-Pierre → Papeete ne doit plus sortir ready.
     """
     raw = (os.environ.get("NAVIGUIDE_OFFICIAL_WORKER") or "1").strip().lower()
@@ -333,7 +335,7 @@ class OfficialStore:
         voy: Optional[dict] = None,
         now: Optional[datetime] = None,
     ) -> str:
-        """Clé de rangement : film, moments, ici et plan_review portent la révision du calcul (RG5)."""
+        """Clé de rangement : film, moments, ici et plan_review portent la révision du calcul."""
         base = self.current_key(voy, now)
         if family == "film":
             return f"{base}:{FILM_SCRIPT_REV}"
@@ -870,12 +872,7 @@ def serve_clock_bytes() -> Optional[bytes]:
 
 def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     from isochrone import haversine  # noqa: PLC0415
-    dlon = float(lon2) - float(lon1)
-    while dlon > 180.0:
-        dlon -= 360.0
-    while dlon < -180.0:
-        dlon += 360.0
-    return haversine(lat1, lon1, lat2, lon1 + dlon)
+    return haversine(lat1, lon1, lat2, lon1 + delta_lon(lon1, lon2))
 
 
 def _load_official() -> Optional[dict]:
@@ -994,7 +991,7 @@ def preparing_ici(lat: float, lon: float, radius_nm: float = 30.0) -> dict:
 # ── calculs (mêmes fonctions que le serveur d'aujourd'hui) ───────────────────
 
 def compute_climo(voy: dict, now: datetime) -> Optional[dict]:
-    """Horloge officielle (lot HC1) : passé RÉEL figé (ERA5) + avenir
+    """Horloge officielle : passé RÉEL figé (ERA5) + avenir
     climatologique déterministe. Sans vent réel (hindcast coupé, quota, CI) :
     horloge climatologique comme avant. Si l'atlas a reculé depuis la veille,
     on NE recalcule PAS l'avenir : on garde l'horloge de la veille et le
@@ -1079,7 +1076,7 @@ def payload_has_real_until(payload: Optional[dict]) -> bool:
     """True si le climo a déjà le champ HC1 (date réelle ou null honnête).
 
     Un climo pré-HC1 n'a ni `clock.realUntil` ni `realUntil` au sommet : le
-    remplisseur doit alors relancer `compute_climo` (lot RC34). La présence
+    remplisseur doit alors relancer `compute_climo`. La présence
     de la clé, même à `null`, compte : `ensure_track` a déjà rendu None et
     le statut `empty` est rangé — on ne recalcule pas en boucle.
     """
@@ -1186,7 +1183,7 @@ def compute_film(voy: dict, now: datetime) -> Optional[dict]:
     if not voy.get("clock"):
         return None
 
-    # RG8 : trois variantes par priorité (2:30 / 3:00 / intégral). Plus les mêmes candidats
+    # Trois variantes par priorité (2:30 / 3:00 / intégral). Plus les mêmes candidats
     # sous deux plafonds — les pilules choisissent un texte différent.
     async def _variants():
         out: dict[str, dict[str, dict]] = {}
@@ -1533,7 +1530,7 @@ def refresh_missing(
             except Exception as exc:
                 log.warning("stock %s : %s", family, exc)
                 _log(family, PREPARING, str(exc)[:160])
-        # ED1 : plus de fill_written_film ici — Super / Ultra seulement au clic.
+        # Plus de fill_written_film ici — Super / Ultra seulement au clic.
         return st.status()
     finally:
         _REFRESH_LOCK.release()
@@ -2152,7 +2149,7 @@ def fill_written_film(
     cascade=None,
     now: Optional[datetime] = None,
 ) -> dict:
-    """ED1 : le remplisseur ne paie plus Super ni Ultra. Le rédigé part au clic."""
+    """Le remplisseur ne paie plus Super ni Ultra. Le rédigé part au clic."""
     _ = force, cascade, now
     _log_fill_written("written : ED1 — au clic seulement, remplisseur ne paie pas Super ni Ultra")
     return {"status": "click-only", "written": 0, "rewritten": 0, "fallen": 0}

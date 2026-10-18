@@ -182,7 +182,7 @@ const KIND_WORDS = Object.freeze({
   news: ["Veille", "Watch"],
 });
 
-/** Journal kinds that become a moment card (lot E + F2). */
+/** Journal kinds that become a moment card. */
 export const JOURNAL_CARD_KINDS = new Set(["stop", "zee", "amp", "poe", "wx", "note", "climo", "sci", "news"]);
 
 const JOURNAL_TITLE = {
@@ -236,7 +236,7 @@ function journalEntityKind(entry) {
   return "place";
 }
 
-/** Verdict du juge (U6/U11) porté par l'événement, la fiche ou le sac. */
+/** Verdict du juge porté par l'événement, la fiche ou le sac. */
 export function eventTruth(ev) {
   const p = ev?.payload || {};
   if (ev?.truth) return ev.truth;
@@ -819,7 +819,7 @@ export function advanceMoments(prev, {
     free = null;
     changed = true;
     // Changement de jambe : une carte Escale. Première jambe : seulement
-    // l’étape terrestre (Saint-Maur → La Rochelle, km par la route, lot R5).
+    // l’étape terrestre (Saint-Maur → La Rochelle, km par la route).
     if (leg?.fromStop && (previousLeg != null || isLandEscale(leg))) {
       const card = escaleCard(leg, lang, { filmCum });
       if (card && !seen.has(card.key) && !state.dismissed.has(card.key)) {
@@ -889,7 +889,7 @@ export function advanceMoments(prev, {
     changed = true;
   }
 
-  // Lot N4: one piracy card, gone outside the zone (re-enters if the boat comes back).
+  // One piracy card, gone outside the zone (re-enters if the boat comes back).
   const keepPiracy = bag?.piracy?.name ? `bag:piracy:${bag.piracy.name}` : null;
   const piracyGone = (c) => c?.kind === "piracy" && c.key !== keepPiracy;
   if (piracyGone(now)) {
@@ -915,7 +915,7 @@ export function advanceMoments(prev, {
   const beforeFree = freeQueue.length;
   freeQueue = freeQueue.filter((c) => !isStaleCard(c, { filmCum, mode }));
   if (nowQueue.length !== beforeNow || freeQueue.length !== beforeFree) changed = true;
-  // Lot T: a FREE place more than FREE_STALE_NM from the boat leaves the loop.
+  // A FREE place more than FREE_STALE_NM from the boat leaves the loop.
   freeQueue = dropFarFree(freeQueue);
   freeLoop = dropFarFree(freeLoop);
   if (free && isFreeStale(free, boat)) {

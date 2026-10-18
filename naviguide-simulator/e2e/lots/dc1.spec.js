@@ -1,4 +1,4 @@
-// Lot DC1 — une aire, déjà dite, mieux dite (près / traversée).
+// Une aire, déjà dite, mieux dite (près / traversée).
 // Sans API (CI) : GET /voyage/official sondé ; s'il ne répond pas, annotation
 // + return des assertions film — barre, Suivre et Revoir restent.
 // Avec API : le 2:30 a au plus une phrase d'aire, ≤ 2250 caractères ;
@@ -47,7 +47,7 @@ async function muteVoice(page) {
   }
 }
 
-test("lot DC1 — une aire près ou traversée, 2:30 ≤ 2250", async ({ page }) => {
+test("Une aire près ou traversée, 2:30 ≤ 2250", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

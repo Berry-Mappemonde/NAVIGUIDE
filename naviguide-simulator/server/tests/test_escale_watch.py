@@ -1,4 +1,4 @@
-"""Veille Tavily + enrichissement science — faux Tavily + faux Nemotron (lot L4)."""
+"""Veille Tavily + enrichissement science — faux Tavily + faux Nemotron."""
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone

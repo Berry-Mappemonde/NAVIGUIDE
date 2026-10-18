@@ -8,6 +8,8 @@ from typing import Optional
 import searoute as sr
 from geographiclib.geodesic import Geodesic
 
+from longitude import unwrap_lon, wrap_lon  # noqa: F401  (wrap_lon : API de main.py)
+
 from mem_limits import ROUTE_CACHE_MAX, lru_set
 from shipping_lanes import attach_anti_shipping
 
@@ -183,19 +185,10 @@ def _normalize_antimeridian(coords: list, prev_lon: float) -> list:
     """
     result = []
     for pt in coords:
-        lon, lat = pt[0], pt[1]
-        if lon - prev_lon > 180:
-            lon -= 360
-        elif lon - prev_lon < -180:
-            lon += 360
-        result.append([lon, lat])
+        lon = unwrap_lon(prev_lon, pt[0])
+        result.append([lon, pt[1]])
         prev_lon = lon
     return result
-
-
-def wrap_lon(lon: float) -> float:
-    """Replie une longitude dans [−180, 180] : ((lon + 540) % 360) − 180."""
-    return ((float(lon) + 540.0) % 360.0) - 180.0
 
 
 def unwrap_path(coords: list, ref_lon: float) -> list:
@@ -480,13 +473,8 @@ def _densify_coords(coords: list, max_km: float = 75.0) -> list:
                 n = int(dist / max_m) + 1
                 for j in range(1, n):
                     pos = line.Position(j / n * dist)
-                    lon = pos["lon2"]
                     # keep antimeridian continuity
-                    prev_lon = result[-1][0]
-                    if lon - prev_lon > 180:
-                        lon -= 360
-                    elif lon - prev_lon < -180:
-                        lon += 360
+                    lon = unwrap_lon(result[-1][0], pos["lon2"])
                     result.append([lon, pos["lat2"]])
         except Exception:
             pass
@@ -614,14 +602,9 @@ def searoute_with_exact_end(start, end):
         # to an oscillating zigzag that never converged.
         line = geod.InverseLine(last_point[1], last_point[0], end[1], end[0])
         pos = line.Position(line.s13)
-        lon = pos["lon2"]
         lat = pos["lat2"]
         # Antimeridian normalisation relative to the preceding point
-        prev_lon = coords[-1][0]
-        if lon - prev_lon > 180:
-            lon -= 360
-        elif lon - prev_lon < -180:
-            lon += 360
+        lon = unwrap_lon(coords[-1][0], pos["lon2"])
         coords.append([lon, lat])
 
     # ── Avoid-Land Pipeline ─────────────────────────────────────────────────

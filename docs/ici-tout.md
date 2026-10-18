@@ -1,6 +1,6 @@
 # `ici()` : toutes les familles au point bateau
 
-Sac moteur (~30 nm), pas un dump GeoJSON monde. Branche `cursor/ici-toutes-couches-3550`, PR #164. `kind` honnête : **observation ≠ climatology ≠ forecast**. Produit absent = `null` + `source` / `reason`, jamais d’invention.
+Sac moteur (~30 nm), pas un dump GeoJSON monde. `kind` honnête : **observation ≠ climatology ≠ forecast**. Produit absent = `null` + `source` / `reason`, jamais d’invention.
 
 `main` #163 (horloge / chargement) est fusionné dans la branche (force-push interdit).
 
@@ -74,10 +74,10 @@ Tuiles OpenSeaMap, WMS peint, GRIB globe et sync Atlas : hors sujet. Pas de touc
 
 - Tests Python : `naviguide-simulator/server/tests/test_ici_engine.py` (29).
 - Tests JS : `ici.test.js`, `iciBriefing.test.js`.
-- Campagne : [`media/ici-tout-campagne.json`](/cursor/stores/bc-4aa592e7-0ecf-4131-b6a8-eae00e39f8b2/media/ici-tout-campagne.json)
-- US + AtoN + RTOFS : [`media/ici-tout-us-aton.json`](/cursor/stores/bc-4aa592e7-0ecf-4131-b6a8-eae00e39f8b2/media/ici-tout-us-aton.json)
-- Pacifique / antiméridien : [`media/ici-tout-pacifique-antimeridien.json`](/cursor/stores/bc-4aa592e7-0ecf-4131-b6a8-eae00e39f8b2/media/ici-tout-pacifique-antimeridien.json)
-- Europe EMODnet : [`media/ici-tout-europe-emodnet.json`](/cursor/stores/bc-4aa592e7-0ecf-4131-b6a8-eae00e39f8b2/media/ici-tout-europe-emodnet.json)
-- Haute mer RTOFS : [`media/ici-tout-haute-mer-rtofs.json`](/cursor/stores/bc-4aa592e7-0ecf-4131-b6a8-eae00e39f8b2/media/ici-tout-haute-mer-rtofs.json)
-- Sentinel L2A : [`media/ici-tout-sentinel.json`](/cursor/stores/bc-4aa592e7-0ecf-4131-b6a8-eae00e39f8b2/media/ici-tout-sentinel.json)
-- Review / Gold prod : [`media/ici-tout-review-gold.json`](/cursor/stores/bc-4aa592e7-0ecf-4131-b6a8-eae00e39f8b2/media/ici-tout-review-gold.json)
+- Campagne : `media/ici-tout-campagne.json` (hors dépôt)
+- US + AtoN + RTOFS : `media/ici-tout-us-aton.json` (hors dépôt)
+- Pacifique / antiméridien : `media/ici-tout-pacifique-antimeridien.json` (hors dépôt)
+- Europe EMODnet : `media/ici-tout-europe-emodnet.json` (hors dépôt)
+- Haute mer RTOFS : `media/ici-tout-haute-mer-rtofs.json` (hors dépôt)
+- Sentinel L2A : `media/ici-tout-sentinel.json` (hors dépôt)
+- Review / Gold prod : `media/ici-tout-review-gold.json` (hors dépôt)

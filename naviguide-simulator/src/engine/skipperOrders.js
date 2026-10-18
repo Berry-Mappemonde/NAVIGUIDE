@@ -297,7 +297,7 @@ export function sanitizeBoat(boat) {
 /** Planning speed floor: a polar at 2 kn of wind says 0 — the skipper still plans. */
 export const PLANNING_MIN_KN = 3;
 
-/** Croisière : part de la polaire (lot C4). Défaut 0,85 ; VITE_POLAR_EFFICIENCY. */
+/** Croisière : part de la polaire. Défaut 0,85 ; VITE_POLAR_EFFICIENCY. */
 const _polarEffRaw = Number(
   (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_POLAR_EFFICIENCY) || 0.85,
 );

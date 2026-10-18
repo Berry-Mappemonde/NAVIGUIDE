@@ -1,4 +1,4 @@
-// Lot RB5 — le film dit le voyage officiel (Saint-Maur, 15 mai 2026, milles nautiques).
+// Le film dit le voyage officiel (Saint-Maur, 15 mai 2026, milles nautiques).
 // Sans API : récit local + script brut local. Les assertions de départ / unités
 // tiennent seules. GET /voyage/official/film : seulement si l'API répond.
 import { expect, test } from "@playwright/test";
@@ -112,7 +112,7 @@ async function storyBlob(page) {
   return { n, text: texts.join(" ") };
 }
 
-test("lot RB5 — film officiel : Saint-Maur le 15 mai 2026, milles nautiques", async ({ page }) => {
+test("Film officiel : Saint-Maur le 15 mai 2026, milles nautiques", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await probeOfficial(page);
 
@@ -152,7 +152,7 @@ test("lot RB5 — film officiel : Saint-Maur le 15 mai 2026, milles nautiques", 
   const subFr = (await subtitle.innerText()).trim();
   expect(subFr, "sous-titre chapitre 1").not.toBe("");
   assertOfficialDepart(subFr, "fr", { spoken: true });
-  // RC23 : le sous-titre est la phrase en cours (stock figé : « …Saint-Maur le 15 mai 2026. »).
+  // Le sous-titre est la phrase en cours (stock figé : « …Saint-Maur le 15 mai 2026. »).
   // La Rochelle reste exigée dans le chapitre 1, pas dans la 1re phrase.
   const chapter1 = await page.evaluate(() => {
     const f = window.__naviguideFilm || {};

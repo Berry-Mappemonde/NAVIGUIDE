@@ -146,7 +146,7 @@ def _startup_official_grib():
 async def _startup_ici_warm():
     """Perles along de la route officielle : cache disque rechargé, puis
     chauffé en fond (une perle toutes les ~1,2 s). NAVIGUIDE_ICI_WARM=0 coupe.
-    Avant, la couche ZEE VLIZ locale (lot B) : chargée si en cache, sinon
+    Avant, la couche ZEE VLIZ locale : chargée si en cache, sinon
     téléchargée en fond — le chauffeur lit les ZEE en local dès qu'elle est là."""
     try:
         import zee_local
@@ -188,7 +188,7 @@ def _bag_ready(bag: dict, lat: float, lon: float) -> dict:
 
 
 def _serve_ici_bag(bag: dict | None) -> dict | None:
-    """RG18 : the film-script phrase travels on the existing GET /ici bag."""
+    """The film-script phrase travels on the existing GET /ici bag."""
     if not isinstance(bag, dict):
         return bag
     try:
@@ -282,14 +282,34 @@ async def get_official_film(
     return out
 
 
-@app.post("/voyage/official/film")
+# Même gabarit que POST /ici/story : 12 / min / IP, 60 / min et 240 / h
+# pour tout le serveur. Compteurs séparés, pour qu'un récit ne mange pas
+# le budget du film. Pas de clé admin : le bouton public reste ouvert.
+_film_write_limited = rate_limited("film-write", 12, 60.0, global_limit=60)
+_film_write_hourly = rate_limited("film-write-hour", 10**9, 3600.0, global_limit=240)
+
+
+@app.post(
+    "/voyage/official/film",
+    dependencies=[Depends(_film_write_limited), Depends(_film_write_hourly)],
+)
 async def post_official_film_write(
     lang: str = Query("fr"),
     seconds: int = Query(150, ge=0, le=300),
     t0: str | None = Query(None),
 ):
-    """Clic Rédigé : une chaîne Super / Ultra / Lightning, jamais au GET."""
+    """Clic Rédigé : une chaîne Super / Ultra / Lightning, jamais au GET.
+
+    Durées acceptées : celles que le client envoie vraiment. La barre n'offre
+    que 2:30 (150) et 3:00 (180) ; aucun choix envoie 0 (film intégral —
+    l'état de départ, et le second clic sur la durée cochée). Le stock ne
+    prépare que ces trois clés. Toute autre valeur répond 422. On ne recale
+    pas vers la durée la plus proche : le rédigé serait rangé sous une autre
+    clé que celle relue ensuite par le GET.
+    """
     import official_store
+    if int(seconds) not in official_store.FILM_VARIANT_SECONDS:
+        raise HTTPException(422, "unsupported film duration")
     try:
         out = await official_store.write_film_on_click(lang=lang, seconds=seconds)
     except Exception as exc:
@@ -460,7 +480,7 @@ def _leg_from_pearl(pearl: dict | None) -> dict:
 
 
 def _moment_clock_and_leg(lat: float, lon: float, t: str | None, mode: str, pearl: dict | None):
-    """Horloge = requête ; jambe vide sauf champs déjà sur la perle (lot RC2)."""
+    """Horloge = requête ; jambe vide sauf champs déjà sur la perle."""
     when = t or _now_iso()
     mode_ok = mode if mode in _MOMENT_MODES else "follow"
     clock = {"iso": when, "t": when, "lat": lat, "lon": lon, "mode": mode_ok}
@@ -478,7 +498,7 @@ async def get_ici_moment(
     mode: str = Query("follow"),
     lang: str = Query("fr"),
 ):
-    """Moment (lot R8b) : perle la plus proche, sinon sac comme /ici, puis build_moment."""
+    """Moment : perle la plus proche, sinon sac comme /ici, puis build_moment."""
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(400, "lat/lon hors limites")
     from moment import build_moment
@@ -541,7 +561,7 @@ _weather_limited = rate_limited("weather", 90, 60.0)
 
 @app.post("/ici/story", dependencies=[Depends(_story_limited), Depends(_story_hourly)])
 async def post_ici_story(body: dict):
-    """Récit d'un événement, uniquement sur un geste « Rédigé » (RG18).
+    """Récit d'un événement, uniquement sur un geste « Rédigé ».
     Cache de lecture d'abord, puis cascade Super (tier write). Play n'attend pas."""
     if not isinstance(body, dict) or not (body.get("event") or body.get("eventId")):
         raise HTTPException(400, "événement manquant")
@@ -559,7 +579,7 @@ def get_route(
     end_lon: float = Query(...),
     check_wind: bool = Query(False),
 ):
-    # Lot S : searoute attend [−180, 180] ; le client envoie parfois une lon dépliée
+    # Searoute attend [−180, 180] ; le client envoie parfois une lon dépliée
     # (236,84° = SF vue depuis l'Australie). On replie, on calcule, on redéplie
     # relativement au départ demandé pour que Leaflet peigne le Pacifique.
     orig_start_lon = start_lon

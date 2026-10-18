@@ -1,4 +1,4 @@
-// Lot L6 — langue EN : source du récit ici() visible (Lightning ou règles).
+// Langue EN : source du récit ici() visible (Lightning ou règles).
 // Sans API : le libellé dit « rules ». La traduction Nemotron exige l'API.
 import { expect, test } from "@playwright/test";
 
@@ -28,7 +28,7 @@ async function switchToEnglish(page) {
   await en.click();
 }
 
-test("lot L6 — langue EN : story-source présent et non vide", async ({ page }) => {
+test("Langue EN : story-source présent et non vide", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });

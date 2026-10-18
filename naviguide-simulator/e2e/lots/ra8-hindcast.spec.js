@@ -1,4 +1,4 @@
-// Lot RA8 — tronçon parcouru teinté hindcast (ERA5), pas tout violet climatologie.
+// Tronçon parcouru teinté hindcast (ERA5), pas tout violet climatologie.
 // Sans API : fumée Suivre + légende des trois régimes (jamais inventée).
 // Avec API : sommets passés regime=hindcast, store.hindcast sans Copernicus.
 import { expect, test } from "@playwright/test";
@@ -19,7 +19,7 @@ async function dismissNotForNav(page) {
   }
 }
 
-test("lot RA8 — tronçon parcouru teinté hindcast", async ({ page }) => {
+test("Tronçon parcouru teinté hindcast", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
 

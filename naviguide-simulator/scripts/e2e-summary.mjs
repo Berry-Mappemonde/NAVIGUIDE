@@ -83,7 +83,7 @@ if (withReserve.length) {
 } else {
   console.log("");
   console.log("### Verts avec réserve (0) — vérifié en partie seulement");
-  console.log("0. Les chemins poste / mesure sont rangés à part (lot RG20).");
+  console.log("0. Les chemins poste / mesure sont rangés à part.");
 }
 const withPoste = passed.filter((t) => (t.postes || []).length);
 if (withPoste.length) {

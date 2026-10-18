@@ -205,7 +205,7 @@ export default function App() {
   const customRouteRef = useRef(null);
   const armDrawingWorldRef = useRef(() => {});
 
-  // The drawn route: points, searoute segments, undo / redo (lot J: hooks/useRouteDrawing.js).
+  // The drawn route: points, searoute segments, undo / redo (hooks/useRouteDrawing.js).
   const drawingState = useRouteDrawing();
   const {
     drawingMode, setDrawingMode, drawnPoints, drawnSegments, drawingLoading, canRedo,
@@ -226,7 +226,7 @@ export default function App() {
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [clipboardToast, setClipboardToast] = useState(null);
   const [drawNotice, setDrawNotice] = useState(null);
-  // Satellite / weather popup of a route click (lot J: hooks/useSatellitePopup.js).
+  // Satellite / weather popup of a route click (hooks/useSatellitePopup.js).
   const satellite = useSatellitePopup();
   const {
     selected: selectedSatellite, setSelected: setSelectedSatellite, loading: satelliteLoading,
@@ -285,7 +285,7 @@ export default function App() {
   });
   gateRef.current.allowed = notForNavOk;
 
-  // Lot DM5 — la source de route (Berry | ma route) est indépendante du mode :
+  // La source de route (Berry | ma route) est indépendante du mode :
   // Suivre peut suivre la route perso, Tracer peut montrer la Berry.
   const routeSource = resolveRouteSource(routeKind, customRoute);
   const suivreBerry = isSuivre && routeSource === "berry";
@@ -320,7 +320,7 @@ export default function App() {
     atlasRev,
     mode: suivreBerry ? "suivre" : SERVER_MODE_TRACER,
   });
-  // Lot DM5 — l'horloge officielle ne sert que Suivre × Berry : jamais un
+  // L'horloge officielle ne sert que Suivre × Berry : jamais un
   // PUT /voyage/official avec les points d'une route perso.
   const official = useOfficialExpedition({
     enabled: suivreBerry,
@@ -331,7 +331,7 @@ export default function App() {
   });
   // Mémoire du voyage officiel (journal serveur) — lecture seule, Suivre × Berry.
   const officialJournal = useOfficialJournal({ enabled: suivreBerry });
-  // Suivre × ma route (DM5) : le même voyage serveur que Tracer (POST /voyage,
+  // Suivre × ma route : le même voyage serveur que Tracer (POST /voyage,
   // t0 = date de départ choisie, défaut aujourd'hui 08:00 UTC) donne l'horloge.
   const vessel = useVirtualVessel({
     enabled: (isTracer || suivreCustom) && routeReady,
@@ -347,11 +347,11 @@ export default function App() {
   const officialClock = suivreBerry ? (official.clock || voyage.clock) : voyage.clock;
   const officialEtaReady = Boolean(suivreBerry && official.clock);
   const officialLiveNowMs = suivreBerry ? officialNowMs(official.clock, official.live) : NaN;
-  // Lot RC10 — le film n'utilise pas le repli voyage.clock (script Simulation).
+  // Le film n'utilise pas le repli voyage.clock (script Simulation).
   const filmClock = suivreBerry ? official.clock : voyage.clock;
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
-  // « Revoir l'expédition » (lot E): while it runs, the boat of the replay
+  // « Revoir l'expédition »: while it runs, the boat of the replay
   // stands in for the live one — the scene, the clock line, the story and
   // the cards all read `live`. Suivre only; Stop or the end hands back.
   const customVoyageId = suivreCustom ? (vessel.voyage?.voyageId || "") : "";
@@ -367,7 +367,7 @@ export default function App() {
     destination: suivreBerry ? official.live : vessel.live,
     t0: suivreBerry ? replayT0 : (voyage.t0 || DEFAULT_T0_ISO),
   });
-  // DM5 — en Suivre, la position vit sur la source : horloge officielle pour
+  // En Suivre, la position vit sur la source : horloge officielle pour
   // Berry, voyage serveur de ma route pour la perso. Tant que le serveur n'a
   // pas répondu, la position « à maintenant » se lit sur l'horloge client
   // (mêmes calculs : polaire + climatologie) — jamais une position inventée.
@@ -405,7 +405,7 @@ export default function App() {
   const clockSample = useMemo(() => {
     if (isSuivre && live && !previewing) return live;
     // Next / seek saute le dwell : un playhead posé sur une escale à hold
-    // est quand même à quai (lot P2 — sinon la barre garde les kn de jambe).
+    // est quand même à quai (sinon la barre garde les kn de jambe).
     const x = Number(playback.nm) || 0;
     const onHold = (officialClock?.marks || []).some((m) => (
       (m.holdHours || 0) > 0 && Math.abs((m.filmNm ?? m.nm) - x) <= 0.45
@@ -551,7 +551,7 @@ export default function App() {
     attachClockIso(
       escaleMarks,
       // Suivre × Berry : horloge officielle ; sans API, horloge locale
-      // (RA2 / R5). Tracer : horloge du tracé seulement — pas official.live.
+      //. Tracer : horloge du tracé seulement — pas official.live.
       (suivreBerry ? official.clock?.marks : null) || voyage.clock?.marks || [],
     )
   ), [escaleMarks, suivreBerry, official.clock, voyage.clock]);
@@ -578,7 +578,7 @@ export default function App() {
     : 0;
   const atQuay = Boolean(clockSample?.atQuay);
 
-  // Fiche d'escale (lot C / J ; lot R7 : popup sur le drapeau, plus dans le panneau).
+  // Fiche d'escale (popup sur le drapeau, plus dans le panneau).
   const escale = useEscaleSheetState({
     lang, isSuivre, atQuay, clockSample, marks: legendMarks,
     filmActive: replay.active,
@@ -598,9 +598,9 @@ export default function App() {
     });
   }, [suivreBerry, officialClock, sourceLive?.iso, sourceLive?.speedKnots, escaleMarks, playback.nm]);
 
-  // Chatbot journal de bord (lot D): the client adds what only it knows —
+  // Chatbot journal de bord: the client adds what only it knows —
   // the view, the film boat in Simulation, the polar, the skipper's orders.
-  // Lot C3: une seule vitesse — horloge en Suivre, prévue en Simulation.
+  // Une seule vitesse — horloge en Suivre, prévue en Simulation.
   // Suivre reads the clock "now", not the playback cursor (a journal seek).
   const followNow = isSuivre && sourceLive && Number.isFinite(Number(sourceLive.lat))
     ? { lat: Number(sourceLive.lat), lon: Number(sourceLive.lon), iso: sourceLive.iso || null }
@@ -630,7 +630,7 @@ export default function App() {
     frozen: replay.active,
   });
   const momentMode = drawingMode && drawnPoints.length ? "drawn" : (isSuivre ? "follow" : SERVER_MODE_TRACER);
-  // DM8C — Suivre × ma route lit GET /voyage/{id}/moments (pas le stock Berry,
+  // Suivre × ma route lit GET /voyage/{id}/moments (pas le stock Berry,
   // pas le journal local de Tracer). Sans voyageId : rien n'est servi comme prêt.
   const momentJournalMode = (suivreCustom && !customVoyageId)
     ? SERVER_MODE_TRACER
@@ -748,7 +748,7 @@ export default function App() {
     }
     if (!routeReady || !live || userPreview) return;
     const target = Number(live.filmNm) || 0;
-    // Replay (lot E): the boat moves ~200 nm per second of wall clock — jump
+    // Replay: the boat moves ~200 nm per second of wall clock — jump
     // every frame rather than pile up eased seeks.
     if (Math.abs(playback.nm - target) > (live.replay ? 0.2 : 2)) {
       sceneApiRef.current?.playback.seek(target, { jump: Boolean(live.replay) });
@@ -797,7 +797,7 @@ export default function App() {
   const alongPack = useIciAlong({
     enabled: Boolean(cast && routeReady) && !replay.active && !drawingMode,
     flat: flatRoute,
-    // Lot T: when a route is drawn, sample that track — never GET /ici/pearls (Berry).
+    // When a route is drawn, sample that track — never GET /ici/pearls (Berry).
     customRoute: routeForView,
     fromNm: chapterAtNm(escaleMarks, cast?.sailNm ?? playback.nm)?.from?.nm,
     toNm: destMark?.nm,
@@ -939,7 +939,7 @@ export default function App() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suivreCustom, suivreBerry, officialClock, legendMarks, storyLive?.iso, storyLive?.status, storyLive?.atQuay, storyLive?.windKnots, storyLive?.filmNm, storyLeg?.toStop, storyLeg?.fromStop, Math.round(storyLeg?.remainingNm || 0), officialJournal.journal, lang, replay.filmParagraphs]);
-  // Lot O — during a replay, Écouter / useReplayVoice read the current
+  // During a replay, Écouter / useReplayVoice read the current
   // paragraph; otherwise the story + briefing (Suivre) or the briefing alone.
   const speechText = replay.active
     ? (replay.chapterText || null)
@@ -972,7 +972,7 @@ export default function App() {
     openEscaleSheet(next);
   }, [replay.active, openEscaleSheet]);
 
-  // DM8C — Suivre × ma route : même barre que Berry ; Revoir actif quand
+  // Suivre × ma route : même barre que Berry ; Revoir actif quand
   // GET /voyage/{id}/film est ready, sinon grisé « en préparation ».
   const replayControls = useMemo(() => (isSuivre && officialClock ? {
     active: replay.active,
@@ -1120,7 +1120,7 @@ export default function App() {
     }
     if (next === VIEW_SUIVRE && replay.active) replay.stop();
     if (next === VIEW_SUIVRE && view === VIEW_TRACER) tracerNmRef.current = playheadNmRef.current;
-    // DM6 — quitter Tracer pendant un dessin met le brouillon de côté, sans Annuler.
+    // Quitter Tracer pendant un dessin met le brouillon de côté, sans Annuler.
     if (drawingModeRef.current && next !== VIEW_TRACER) {
       setDrawingMode(false);
       closeSatellite();
@@ -1128,7 +1128,7 @@ export default function App() {
     }
     setView(next);
     if (next === VIEW_SUIVRE) {
-      // DM5 — Suivre × ma route garde le départ du tracé (même voyage serveur
+      // Suivre × ma route garde le départ du tracé (même voyage serveur
       // que Tracer) ; Suivre × Berry repart de La Rochelle, comme avant.
       voyage.setStartAt(routeKindRef.current === "custom" ? "saint-maur" : DEFAULT_START_AT);
       sceneApiRef.current?.playback.pause();
@@ -1150,8 +1150,8 @@ export default function App() {
         setSidebarOpen(true);
         setToolsOpen(true);
       }
-      // DM6 — entrée en Tracer = dessin ouvert (brouillon vide ou déjà là).
-      // Une route perso terminée reste affichée (DM5) ; Annuler est le seul abandon.
+      // Entrée en Tracer = dessin ouvert (brouillon vide ou déjà là).
+      // Une route perso terminée reste affichée ; Annuler est le seul abandon.
       if (!(routeKindRef.current === "custom" && customRouteRef.current)) {
         armDrawingWorldRef.current(VIEW_TRACER);
       }
@@ -1180,7 +1180,7 @@ export default function App() {
   }, [isSuivre]);
 
   useEffect(() => {
-    // DM5 — Suivre × ma route garde une lecture jouable (Play / vitesses) ;
+    // Suivre × ma route garde une lecture jouable (Play / vitesses) ;
     // Suivre × Berry reste au temps réel (1 s = 1 s), comme avant.
     if (isSuivre) sceneApiRef.current?.playback.setProfile(suivreCustom ? "normal" : "real");
   }, [isSuivre, suivreCustom, sceneApi]);
@@ -1234,7 +1234,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [cinemaMode, drawingMode, filmFullscreen, goLive, handleSimNext, handleSimPrev, isTracer, isSuivre, leaveCinema, sceneApi, toggleCinema]);
 
-  // Capture : la bulle événement (lot F4) coupe Échap en phase bulle.
+  // Capture : la bulle événement coupe Échap en phase bulle.
   useEffect(() => {
     if (!filmFullscreen) return undefined;
     const onEsc = (e) => {
@@ -1253,7 +1253,7 @@ export default function App() {
   }, [lang, t]);
 
   const handleRouteSwitchToBerry = useCallback(() => {
-    // DM6 — la pilule Berry affiche la vitrine, sans Annuler et sans jeter le brouillon.
+    // La pilule Berry affiche la vitrine, sans Annuler et sans jeter le brouillon.
     if (drawingModeRef.current) {
       setDrawingMode(false);
       closeSatellite();
@@ -1264,7 +1264,7 @@ export default function App() {
     setCustomRoute(null);
     setRouteKind("berry");
     setVoyageFlat(null);
-    // DM5 — en Suivre, le bateau se recale sur le live de la nouvelle source.
+    // En Suivre, le bateau se recale sur le live de la nouvelle source.
     setUserPreview(false);
     sceneApiRef.current?.playback.pause();
     applyBerryBriefing();
@@ -1310,7 +1310,7 @@ export default function App() {
     kickLayerWarm(geojson);
   }, [fetchCustomPlan]);
 
-  // DM5 — la pilule <ma route> bascule la SOURCE sans changer de mode :
+  // La pilule <ma route> bascule la SOURCE sans changer de mode :
   // en Suivre comme en Tracer, la route perso redevient celle qu'on dessine.
   const handleRouteSwitchToCustom = useCallback((geojson) => {
     if (!geojson) return;
@@ -1326,7 +1326,7 @@ export default function App() {
     kickLayerWarm(geojson);
   }, [fetchCustomPlan]);
 
-  // DM6 — ouvrir le dessin ne vide jamais le brouillon (points / segments).
+  // Ouvrir le dessin ne vide jamais le brouillon (points / segments).
   // Seuls Annuler et la suppression d'une route perso appellent reset.
   armDrawingWorldRef.current = (restoreView) => {
     const mapView = sceneApiRef.current?.getView();
@@ -1340,9 +1340,9 @@ export default function App() {
     setCameraFollow(false);
     setDrawingMode(true);
     berryFetchIdRef.current += 1;
-    // DM6 — un brouillon vide garde le briefing Berry (lot M). On ne le
+    // Un brouillon vide garde le briefing Berry. On ne le
     // vide plus à l'ouverture du dessin ; le pin carte et la fiche d'escale
-    // restent coupés (lot I).
+    // restent coupés.
     sceneApiRef.current?.briefing?.clear?.();
     setEscaleStop(null);
     if (replay.active) replay.stop();
@@ -1421,7 +1421,7 @@ export default function App() {
     return () => clearTimeout(id);
   }, [drawNotice]);
 
-  // Lot LY2 — dès un segment posé, chauffer AMP + perles minces du brouillon.
+  // Dès un segment posé, chauffer AMP + perles minces du brouillon.
   // Debounce dans le warmer ; Annuler / supprimer (resetDrawState) coupent les vols.
   useEffect(() => {
     if (drawnPoints.length < 2) return undefined;
@@ -1568,7 +1568,7 @@ export default function App() {
   };
 
   const drawingMessage = drawnPoints.length === 0 ? t("drawStart") : drawnPoints.length === 1 ? t("drawFirstStop") : t("drawNextStop");
-  // Lot I: what the drawn route is so far — the boxes describe it, not the official route.
+  // What the drawn route is so far — the boxes describe it, not the official route.
   const drawing = useMemo(() => {
     if (!drawingMode) return null;
     let nm = 0;
@@ -1615,9 +1615,9 @@ export default function App() {
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(nm, { jump: true });
   }, [officialClock, isSuivre, sceneApi]);
-  // Revue de plan par règles (lot K): legs from the server (clock + pearls), season from the atlas cache.
+  // Revue de plan par règles: legs from the server (clock + pearls), season from the atlas cache.
   const planReviewState = usePlanReview({
-    // DM5 — GET /voyage/official/plan-review (et /eta) seulement en
+    // GET /voyage/official/plan-review (et /eta) seulement en
     // Suivre × Berry. Tracer et Suivre × ma route gardent le repli local.
     enabled: Boolean(suivreBerry && officialClock),
     frozen: replay.active,
@@ -1630,7 +1630,7 @@ export default function App() {
     lang,
     galeLimitPct: skipper.orders?.values?.galePct,
   });
-  // Route advice under the skipper's orders (lot G): gale and sea limits of
+  // Route advice under the skipper's orders: gale and sea limits of
   // the resolved orders become no-go zones of the isochrone.
   const handleRecompute = useCallback(
     () => vessel.recompute(clockSample?.iso, {
@@ -1662,7 +1662,7 @@ export default function App() {
     sceneReady,
     segments,
     points,
-    // DM5 — la scène dessine la source courante et seulement elle : la route
+    // La scène dessine la source courante et seulement elle : la route
     // perso quand elle est choisie (dans les deux modes), la Berry sinon.
     customRoute: routeForView,
     drawingMode,
@@ -1829,6 +1829,7 @@ export default function App() {
         officialFallback={officialFallback}
         iciBriefing={iciPack.briefing}
         iciBriefingSegments={iciPack.briefingSegments}
+        todayPosition={Boolean(iciPack.todayPosition)}
         onBriefingFocus={handleBriefingFocus}
         journal={officialJournal.journal}
         journalLoading={officialJournal.loading}

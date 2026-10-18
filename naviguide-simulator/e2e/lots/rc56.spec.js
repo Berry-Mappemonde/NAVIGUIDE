@@ -1,4 +1,4 @@
-// Lot RC56 — pendant Revoir, le bateau glisse (pas écran ≤ 30 px hors
+// Pendant Revoir, le bateau glisse (pas écran ≤ 30 px hors
 // zoom / changement de chapitre / resize du conteneur carte).
 // Le pas est mesuré dans le cadre de la carte (pas la fenêtre : un panneau
 // qui s'ouvre n'est pas un bond du bateau). Le chapitre qui compte pour le
@@ -41,7 +41,7 @@ async function muteVoice(page) {
   }
 }
 
-test("lot RC56 — Revoir 2:30, le bateau glisse sans bond", async ({ page }) => {
+test("Revoir 2:30, le bateau glisse sans bond", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

@@ -7,7 +7,7 @@ import { REGIME_COLORS, traveledEraSpeed, traveledRegimeSegments } from "./regim
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-describe("useRouteLayer — teinte par régime (lot C3)", () => {
+describe("useRouteLayer — teinte par régime", () => {
   it("colore le parcours jusqu'à traveledNm et fusionne les pas d'un même régime", () => {
     const verts = [
       { sailNm: 0, lat: 46.1, lon: -1.2, regime: "hindcast" },

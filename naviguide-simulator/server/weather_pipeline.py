@@ -6,7 +6,7 @@ Les handlers répondent tout de suite ; le client actualise à faible cadence.
 
 Le pipeline **transporte** les champs déjà convertis par les loaders
 (hindcast, Copernicus getWind / getWave / getCurrent, forecast_cube, saildocs).
-Il ne recalcule pas les vecteurs. Conventions (lot C5, cahier § 20) :
+Il ne recalcule pas les vecteurs. Conventions (cahier § 20) :
 
 - 1 m/s = 1,943844 kn (1 kn = 1 852 m/h)
 - vent et vagues : direction **« de »** (météorologique), atan2(-u, -v)
@@ -22,6 +22,7 @@ import time
 from typing import Any, Callable, Iterable, Optional
 
 from saildocs import last_ready_cycle, to_iso
+from longitude import wrap_lon
 
 log = logging.getLogger("naviguide-simulator.weather")
 
@@ -44,15 +45,6 @@ def bind_weather_transport(transport) -> None:
 
 def weather_http_transport():
     return _http_transport
-
-
-def wrap_lon(lon: float) -> float:
-    x = float(lon)
-    while x > 180.0:
-        x -= 360.0
-    while x < -180.0:
-        x += 360.0
-    return x
 
 
 def weather_cell(lat: float, lon: float) -> tuple[int, int]:

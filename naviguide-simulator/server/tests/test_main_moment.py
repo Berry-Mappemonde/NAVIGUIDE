@@ -1,4 +1,4 @@
-"""Lot R8b / RC2 — GET /ici/moment renvoie un Moment signé, sans greffe official_mini."""
+"""GET /ici/moment renvoie un Moment signé, sans greffe official_mini."""
 from __future__ import annotations
 
 import inspect
@@ -35,7 +35,7 @@ def test_ici_moment_uses_nearest_pearl(monkeypatch):
     assert isinstance(body["alerts"], list)
     assert isinstance(body["around"], list)
     assert isinstance(body["sources"], list)
-    # perle La Rochelle : pas de jambe ; plus de greffe official_mini (lot RC2)
+    # perle La Rochelle : pas de jambe ; plus de greffe official_mini
     assert body["leg"].get("to") in (None, "")
     assert body["leg"].get("from") in (None, "")
     assert "official_mini" not in inspect.getsource(main._moment_clock_and_leg)

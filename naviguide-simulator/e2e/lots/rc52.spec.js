@@ -1,4 +1,4 @@
-// Lot RC52 — pendant Revoir, le bateau est au lieu que la phrase nomme.
+// Pendant Revoir, le bateau est au lieu que la phrase nomme.
 // Sans API : GET /voyage/official sondé ; s'il manque, annotation + saut des
 // assertions phrase/bateau — barre et Revoir gardés.
 import { mkdirSync } from "node:fs";
@@ -46,7 +46,7 @@ function near(a, b, deg = 2.5) {
   return Math.hypot(a.lat - b.lat, dLon) < deg;
 }
 
-test("lot RC52 — au sous-titre Cape Verde / Coiba le bateau n'est pas à l'arrivée", async ({ page }) => {
+test("Au sous-titre Cape Verde / Coiba le bateau n'est pas à l'arrivée", async ({ page }) => {
   test.setTimeout(120_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

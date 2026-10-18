@@ -1,4 +1,4 @@
-// Lot RC45 — GET /ici sur la route officielle sert le sac AMP polygone.
+// GET /ici sur la route officielle sert le sac AMP polygone.
 // Sans API (CI) : GET /voyage/official sondé ; s'il ne répond pas, annotation
 // + return des assertions /ici et encadré — barre et Suivre restent.
 // Avec API : GET /ici aux Bouches de Bonifacio a une entrée source + inside
@@ -62,7 +62,7 @@ async function seekAfterAjaccio(page) {
   });
 }
 
-test("lot RC45 — Ici aux Bouches de Bonifacio nomme une aire (source polygon)", async ({ page }) => {
+test("Ici aux Bouches de Bonifacio nomme une aire (source polygon)", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

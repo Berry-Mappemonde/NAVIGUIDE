@@ -1,4 +1,4 @@
-"""Fiche d'escale (lot C) : listes de faits OSM + BI, paragraphe par la cascade, cache 7 j."""
+"""Fiche d'escale : listes de faits OSM + BI, paragraphe par la cascade, cache 7 j."""
 import asyncio
 import json
 
@@ -123,7 +123,7 @@ def test_endpoint_caches_seven_days(monkeypatch):
 
 
 def test_endpoint_rebuilds_when_cached_paragraph_is_prompt(monkeypatch):
-    """Lot RA1 : un paragraphe-prompt en cache 7 j ne doit plus être servi."""
+    """Un paragraphe-prompt en cache 7 j ne doit plus être servi."""
     key = escale_api.escale_key("La Rochelle", 46.15, -1.16, "en")
     pearl_store.kv_put("escale", key, {
         "name": "La Rochelle", "lat": 46.15, "lon": -1.16, "lang": "en",
@@ -204,7 +204,7 @@ def test_endpoint_rebuilds_when_cached_paragraph_is_nim(monkeypatch):
 
 
 def test_endpoint_strips_leaked_enrich_from_cache():
-    """Lot RA1 : un enrich science-prompt ne doit pas sortir sur la fiche."""
+    """Un enrich science-prompt ne doit pas sortir sur la fiche."""
     key = escale_api.escale_key("La Rochelle", 46.15, -1.16, "en")
     pearl_store.kv_put("escale", key, {
         "name": "La Rochelle", "lat": 46.15, "lon": -1.16, "lang": "en",
@@ -240,7 +240,7 @@ CAPTURE_LEAK = (
 
 
 def test_endpoint_leaked_capture_returns_rules_and_invalidates_key(monkeypatch):
-    """Lot RB3 : cache 7 j avec le texte de la capture → repli rules, clé droppée."""
+    """Cache 7 j avec le texte de la capture → repli rules, clé droppée."""
     key = escale_api.escale_key("Pointe-à-Pitre", 16.24, -61.53, "en")
     pearl_store.kv_put("escale", key, {
         "name": "Pointe-à-Pitre", "lat": 16.24, "lon": -61.53, "lang": "en",
@@ -286,7 +286,7 @@ def test_endpoint_leaked_capture_returns_rules_and_invalidates_key(monkeypatch):
 
 
 def test_endpoint_healthy_cache_is_served_unchanged():
-    """Lot RB3 : une fiche saine en cache ressort mot pour mot."""
+    """Une fiche saine en cache ressort mot pour mot."""
     key = escale_api.escale_key("Pointe-à-Pitre", 16.24, -61.53, "en")
     text = "Pointe-à-Pitre has a marina at Bas-du-Fort and a harbour master's office."
     fiche = {

@@ -25,7 +25,7 @@ function resetNumberToProfile(id, profile = DEFAULT_PROFILE) {
   return { value, forced: false };
 }
 
-describe("SkipperOrdersPanel — remise d’un chiffre (lot R1)", () => {
+describe("SkipperOrdersPanel — remise d’un chiffre", () => {
   it("exporte resetNumberToProfile et câble onReset sur loa, draft et chaque chiffre", () => {
     assert.match(src, /export function resetNumberToProfile/);
     assert.match(src, /onChange\?\.\(id, null\)/);
@@ -104,7 +104,7 @@ describe("SkipperOrdersPanel — remise d’un chiffre (lot R1)", () => {
   });
 });
 
-describe("SkipperOrdersPanel — Demander conseil (lot R10d)", () => {
+describe("SkipperOrdersPanel — Demander conseil", () => {
   it("le bouton Simulation dit Demander conseil, plus Recalculer l'itinéraire", () => {
     const sim = readFileSync(join(here, "SimulationPanel.jsx"), "utf8");
     const fr = readFileSync(join(here, "..", "i18n", "fr.js"), "utf8");
@@ -118,7 +118,7 @@ describe("SkipperOrdersPanel — Demander conseil (lot R10d)", () => {
   });
 });
 
-describe("SkipperOrdersPanel — une seule occurrence profil/budget (lot RA6)", () => {
+describe("SkipperOrdersPanel — une seule occurrence profil/budget", () => {
   it("l'en-tête replié ne répète pas le profil ni le budget déjà dans le panneau", () => {
     const summary = src.match(/<summary\b[^>]*>[\s\S]*?<\/summary>/);
     assert.ok(summary, "un <summary> racine");

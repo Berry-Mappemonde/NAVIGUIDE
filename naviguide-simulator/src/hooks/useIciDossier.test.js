@@ -7,7 +7,9 @@ import { haversineNm, wrapLon } from "../utils/geo.js";
 import {
   MOVE_NM,
   countIciFetchesAlongTrack,
+  filmStaleBagDecision,
   iciSearchParams,
+  isStaleBag,
   shouldCatchUpIci,
   shouldScheduleIciFetch,
 } from "./useIciDossier.js";
@@ -22,7 +24,7 @@ function trackNm(startLat, startLon, totalNm, stepNm = 10) {
 
 const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "useIciDossier.js"), "utf8");
 
-describe("useIciDossier — lot T wrapLon", () => {
+describe("useIciDossier — wrapLon", () => {
   it("l'URL /ici porte une longitude dans [−180, 180] pour un point à 236,84°", () => {
     const q = iciSearchParams({ lat: 37.7, lon: 236.84 });
     const lon = Number(q.get("lon"));
@@ -60,7 +62,7 @@ describe("useIciDossier contract", () => {
   });
 });
 
-describe("useIciDossier — film gelé (lot RF4)", () => {
+describe("useIciDossier — film gelé", () => {
   const last = { lat: 0, lon: 0, month: 5, destLat: 10, destLon: 10 };
   const dest = { month: 5, destLat: 10, destLon: 10 };
 
@@ -90,5 +92,33 @@ describe("useIciDossier — film gelé (lot RF4)", () => {
     assert.match(app, /frozen:\s*replay\.active/);
     assert.match(app, /enabled: Boolean\(cast && routeReady\) && !replay\.active/);
     assert.match(app, /frozen=\{Boolean\(replay\.active\)\}/);
+  });
+});
+
+describe("useIciDossier — sac live pendant le film", () => {
+  const fiji = { at: { lat: -18.1, lon: 178.4 } };
+  const laRochelle = { lat: 46.16, lon: -1.15 };
+  const nearFiji = { lat: -18.2, lon: 178.45 };
+
+  it("masque et étiquette le sac quand il est loin du bateau du film", () => {
+    assert.equal(isStaleBag(fiji, laRochelle), true);
+    const decision = filmStaleBagDecision({ playing: true, bag: fiji, boat: laRochelle });
+    assert.equal(decision.hidden, true);
+    assert.equal(decision.labelToday, true);
+  });
+
+  it("affiche le sac sans étiquette quand il colle au bateau du film", () => {
+    assert.equal(isStaleBag(fiji, nearFiji), false);
+    const decision = filmStaleBagDecision({ playing: true, bag: fiji, boat: nearFiji });
+    assert.equal(decision.hidden, false);
+    assert.equal(decision.labelToday, false);
+  });
+
+  it("hors film, le sac live reste affiché même loin d'un autre point", () => {
+    const decision = filmStaleBagDecision({ playing: false, bag: fiji, boat: laRochelle });
+    assert.equal(decision.hidden, false);
+    assert.equal(decision.labelToday, false);
+    assert.match(src, /filmStaleBagDecision\(\{ playing: true, bag: held\.dossier, boat \}\)/);
+    assert.match(src, /todayPosition: decision\.labelToday/);
   });
 });

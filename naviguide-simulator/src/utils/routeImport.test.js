@@ -56,7 +56,7 @@ function assertABC(parsed, source) {
   assert.equal(parsed.points[2].lon, C.lon);
 }
 
-describe("parseRouteFile (lot N1)", () => {
+describe("parseRouteFile", () => {
   it("lit une FeatureCollection de Points dans l'ordre, avec properties.name", () => {
     assertABC(parseRouteFile(GEOJSON_POINTS, "trois.geojson"), "geojson");
   });

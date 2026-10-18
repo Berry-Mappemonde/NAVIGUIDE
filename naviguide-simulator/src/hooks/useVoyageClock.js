@@ -11,7 +11,7 @@ import {
 /**
  * Deux t0 : Suivre × Berry = 15 mai 2026 figé ; Tracer (et Suivre × ma
  * route) = aujourd’hui 08:00 UTC. En Tracer, resetToToday force ce t0 à
- * chaque entrée et à chaque « repartir au début » (lot DM7) — le champ
+ * chaque entrée et à chaque « repartir au début » — le champ
  * Date de départ n’y agit plus.
  */
 export function useVoyageClock({

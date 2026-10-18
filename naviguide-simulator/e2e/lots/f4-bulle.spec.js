@@ -1,4 +1,4 @@
-// Lot R6 / F4 — bulle événement pendant le film seulement (mode sans voix).
+// Bulle événement pendant le film seulement (mode sans voix).
 // Sans API : l'ouverture sans bulle se vérifie toujours ; le film local
 // peut encore poser une bulle (départ / escale du brut).
 import { expect, test } from "@playwright/test";
@@ -58,7 +58,7 @@ function bubbleNearBoat() {
   };
 }
 
-test("lot R6 — aucune bulle à l'ouverture, bulle pendant le film", async ({ page }) => {
+test("Aucune bulle à l'ouverture, bulle pendant le film", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/");
   await dismissNotForNav(page);

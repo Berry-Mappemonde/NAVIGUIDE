@@ -1,4 +1,4 @@
-"""ZEE locale — point-dans-polygone sur les ZEE VLIZ v12 (lot B).
+"""ZEE locale — point-dans-polygone sur les ZEE VLIZ v12.
 
 Le gazetteer MarineRegions « par point » est bruité le long des côtes
 (« Spanish EEZ » à La Rochelle, allers-retours ZEE / haute mer). Blue
@@ -26,6 +26,8 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
+
+from longitude import wrap_lon as _wrap
 
 log = logging.getLogger("naviguide-simulator.zee-local")
 
@@ -247,10 +249,6 @@ def _near_coast(lat: float, lon: float, is_land, step: float = COAST_PROBE_DEG) 
         except Exception:
             continue
     return False
-
-
-def _wrap(lon: float) -> float:
-    return ((lon + 180.0) % 360.0) - 180.0
 
 
 def zee_at(lat: float, lon: float):

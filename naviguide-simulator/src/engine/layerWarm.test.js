@@ -48,7 +48,7 @@ function thinGets(calls) {
   return calls.filter((c) => /\/ici\?/.test(c.url) && /thin=1/.test(c.url));
 }
 
-describe("layerWarm (lot LY1)", () => {
+describe("layerWarm", () => {
   it("extrait les sommets [lat, lon] d'une LineString", () => {
     assert.deepEqual(pointsFromCustomRoute(line), [[46.15, -1.16], [41.31, 9.19]]);
     assert.deepEqual(pointsFromCustomRoute(null), []);
@@ -91,7 +91,7 @@ describe("layerWarm (lot LY1)", () => {
   });
 });
 
-describe("layerWarm (lot LY2) — brouillon pendant le tracé", () => {
+describe("layerWarm — brouillon pendant le tracé", () => {
   it("construit un GeoJSON LineString depuis drawnPoints / drawnSegments", () => {
     const geo = geojsonFromDrawn(DRAFT_POINTS, DRAFT_SEGS);
     assert.equal(geo.type, "FeatureCollection");

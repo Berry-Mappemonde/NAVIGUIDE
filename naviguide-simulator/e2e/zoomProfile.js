@@ -1,4 +1,4 @@
-// Profil CDP + longtask / écart de frame — lot U (méthode PROFIL_BUILD_PROD).
+// Profil CDP + longtask / écart de frame (méthode PROFIL_BUILD_PROD).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

@@ -24,6 +24,8 @@ from saildocs import (
     utc_day,
 )
 from voyage_clock import parse_iso, to_iso
+# Open-Meteo n’accepte que [-180, 180]. Le film peut être à -186 près de 180°.
+from longitude import wrap_lon
 
 log = logging.getLogger("naviguide-simulator.grib")
 
@@ -35,16 +37,6 @@ STALE_RETRY_S = 10 * 60
 FETCH_TIMEOUT_S = 20.0
 
 _last_try: Dict[str, datetime] = {}
-
-
-def wrap_lon(lon: float) -> float:
-    """Open-Meteo n’accepte que [-180, 180]. Le film peut être à -186 près de 180°."""
-    x = float(lon)
-    while x > 180.0:
-        x -= 360.0
-    while x < -180.0:
-        x += 360.0
-    return x
 
 
 def auto_enabled() -> bool:

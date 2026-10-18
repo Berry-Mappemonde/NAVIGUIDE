@@ -9,7 +9,7 @@ const src = readFileSync(join(here, "LogbookChat.jsx"), "utf8");
 const hook = readFileSync(join(here, "..", "hooks", "useLogbookChat.js"), "utf8");
 const sidebar = readFileSync(join(here, "Sidebar.jsx"), "utf8");
 
-describe("LogbookChat contract (lot D)", () => {
+describe("LogbookChat contract", () => {
   it("lives in the left sidebar, in both views, and says whether exchanges are logged", () => {
     assert.match(sidebar, /<LogbookChat messages=\{chat\.messages\}/);
     assert.match(sidebar, /\{!drawingHidesBerry && chat \? \(/, "any view, not once a drawn point hides Berry");
@@ -37,7 +37,7 @@ describe("LogbookChat contract (lot D)", () => {
     assert.match(src, /el\.scrollTop = el\.scrollHeight/);
   });
 
-  it("cadre de réponse sous la question (lot RA6)", () => {
+  it("cadre de réponse sous la question", () => {
     assert.match(src, /data-testid="logbook-chat-reply"/);
     const replyAt = src.indexOf('data-testid="logbook-chat-reply"');
     const listAt = src.indexOf('data-testid="logbook-chat-list"');

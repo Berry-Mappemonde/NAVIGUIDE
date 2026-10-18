@@ -1,4 +1,4 @@
-// Lot RF1 — plus de 400 /advice au parcours nominal. Sans API : Suivre,
+// Plus de 400 /advice au parcours nominal. Sans API : Suivre,
 // Simulation, Tracer et l'onglet Revue tiennent seuls (DM9 : Revue aussi
 // pendant le dessin). GET /voyage/official sondé ; s'il manque, annotation
 // + saut des seules assertions /advice — jamais les trois modes ni la revue.
@@ -42,7 +42,7 @@ async function showLeftPanel(page) {
   await expect(box).toBeVisible({ timeout: 15_000 });
 }
 
-test("lot RF1 — aucun 4xx/5xx advice, revue comme avant", async ({ page }) => {
+test("Aucun 4xx/5xx advice, revue comme avant", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

@@ -7,7 +7,7 @@ import { resolveFollowSpeed } from "./expeditionSpeed.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-describe("useExpeditionSpeed — lot C3", () => {
+describe("useExpeditionSpeed", () => {
   it("en Suivre, la vitesse est celle de l'horloge (0 à quai)", () => {
     assert.deepEqual(resolveFollowSpeed(null), { knots: null, kind: null, live: false });
     assert.deepEqual(resolveFollowSpeed({

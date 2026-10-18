@@ -60,7 +60,7 @@ def blended_wind(
     `t0` est conservé (départ de l'horloge) mais n'entre plus dans le fondu.
     `atlas_network=False`: cache-only climatology (hot loops prefetch first).
     """
-    del t0  # fondu relatif à maintenant, plus à t0 (lot C2 / A1)
+    del t0  # fondu relatif à maintenant, plus à t0
     now_d = _as_dt(now) if now is not None else datetime.now(timezone.utc)
     if t.tzinfo is None:
         t = t.replace(tzinfo=timezone.utc)

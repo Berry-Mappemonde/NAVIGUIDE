@@ -1,4 +1,4 @@
-// Lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases
+// Le film dit les choses dans l'ordre, et finit ses phrases
 // (revue du porteur, 14 oct.). Recette automatique du discours :
 //   - dans chaque chapitre, les dates explicites vont en avant (jamais
 //     « Le 19 mai … » puis « Le 18 mai … ») ;
@@ -8,7 +8,7 @@
 //     (Sint Maarten / Saint-Martin : un seul nom à l'oreille).
 // Sans API : GET /voyage/official sondé ; s'il manque, annotation + saut des
 // seules assertions film — la barre et Revoir restent vérifiés.
-// RC36 : avec API, à un changement de chapterIdx la jambe barre contient
+// Avec API, à un changement de chapterIdx la jambe barre contient
 // encore le fromName du chapitre qui finit, pas déjà le toName du suivant.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -99,7 +99,7 @@ async function probeOfficial(page) {
   return { apiUp: true };
 }
 
-test("lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases", async ({ page }) => {
+test("Le film dit les choses dans l'ordre, et finit ses phrases", async ({ page }) => {
   test.setTimeout(210_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {
@@ -196,7 +196,7 @@ test("lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases", a
 
   await shot(page, "01-ordre");
 
-  // RC36 — à la bascule de chapitre, la barre est encore sur la jambe qui finit.
+  // À la bascule de chapitre, la barre est encore sur la jambe qui finit.
   expect(await waitFilmCanStart(page, 20_000), "Revoir actif (API présente)").toBe(true);
   await start.click();
   await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 12_000 });

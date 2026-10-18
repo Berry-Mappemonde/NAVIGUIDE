@@ -5,7 +5,13 @@ export function toRad(deg) {
   return (deg * Math.PI) / 180;
 }
 
-/** Replie dans [−180, 180]. Équivalent à ((lon + 540) % 360) − 180. */
+/*
+ * Longitudes : la seule implémentation côté client (même contrat que
+ * server/longitude.py). Un repli écrit à la main ailleurs dans src/ est
+ * refusé par src/utils/longitudeGuard.test.js.
+ */
+
+/** Replie dans [−180, 180] ; une valeur déjà dans l'intervalle est rendue telle quelle. */
 export function wrapLon(lon) {
   if (!Number.isFinite(lon)) return lon;
   let x = lon;
@@ -22,6 +28,24 @@ export function unwrapLon(prevLon, lon) {
   while (x - prevLon > 180) x -= 360;
   while (x - prevLon < -180) x += 360;
   return x;
+}
+
+/** Écart signé le plus court de `a` vers `b`, dans [−180, 180]. */
+export function deltaLon(a, b) {
+  return wrapLon(Number(b) - Number(a));
+}
+
+/**
+ * Interpolation au plus court arc (t = 0 → a, t = 1 → b). Le résultat reste
+ * déplié autour de `a` (−185 → −193 donne −189) : la carte peint sans saut.
+ * Repliez avec wrapLon pour une API qui veut [−180, 180].
+ */
+export function lerpLon(a, b, t) {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) {
+    if (a == null || b == null) return a ?? b ?? null;
+    return a + (b - a) * t;
+  }
+  return a + (unwrapLon(a, b) - a) * t;
 }
 
 function isLonLat(coordinate) {
@@ -48,17 +72,14 @@ export function unwrapLineCoords(coords, firstLon = null) {
   return out;
 }
 
-/** Lot S : déplie une polyligne relativement à *refLon* (aucun saut de 360°). */
+/** Déplie une polyligne relativement à *refLon* (aucun saut de 360°). */
 export function unwrapPath(coords, refLon = null) {
   return unwrapLineCoords(coords, refLon);
 }
 
 export function haversineNm(lat1, lon1, lat2, lon2) {
   const dLat = toRad(lat2 - lat1);
-  let dLonDeg = lon2 - lon1;
-  while (dLonDeg > 180) dLonDeg -= 360;
-  while (dLonDeg < -180) dLonDeg += 360;
-  const dLon = toRad(dLonDeg);
+  const dLon = toRad(deltaLon(lon1, lon2));
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;

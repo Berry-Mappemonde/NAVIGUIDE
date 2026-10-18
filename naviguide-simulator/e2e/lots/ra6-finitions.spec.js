@@ -1,4 +1,4 @@
-// Lot RA6 — finitions : skipper sans redite, crédits au-dessus, km terre, cadre chat.
+// Finitions : skipper sans redite, crédits au-dessus, km terre, cadre chat.
 // Sans API : skipper, crédits, info-bulle, cadre de réponse tiennent seuls.
 // Jambe Saint-Maur « km par la route » : seulement si GET /voyage/official répond
 // (ou si le repli interne affiche déjà le libellé).
@@ -34,7 +34,7 @@ async function showToolsPanel(page) {
   if (await toggle.isVisible().catch(() => false)) await toggle.click();
 }
 
-test("lot RA6 — skipper, crédits, info-bulle, km terre, cadre chat", async ({ page }) => {
+test("Skipper, crédits, info-bulle, km terre, cadre chat", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {
