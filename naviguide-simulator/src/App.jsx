@@ -820,10 +820,14 @@ export default function App() {
   const highSeasRuled = highSeasRuledOut({
     vehicle: clockSample?.vehicle || jambe?.vehicle || null,
     nearStopNm: nearestStopNm(clockSample?.lat, clockSample?.lon, legendMarks),
+    fromStop: jambe?.fromStop,
+    toStop: jambe?.toStop,
   });
   const momentHighSeasRuled = highSeasRuledOut({
     vehicle: drawTip ? null : (clockSample?.vehicle || jambe?.vehicle || null),
     nearStopNm: nearestStopNm(momentLat, momentLon, legendMarks),
+    fromStop: jambe?.fromStop,
+    toStop: jambe?.toStop,
   });
   const iciPack = useIciDossier({
     highSeasRuledOut: highSeasRuled,

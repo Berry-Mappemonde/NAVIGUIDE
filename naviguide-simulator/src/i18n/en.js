@@ -626,4 +626,7 @@ export default {
   layerFicheKindCoastline: "Coastline",
   layerFicheKindGlider: "Underwater glider",
   layerFicheClose: "Close the card",
+
+  // DR1 — Tracer at J0: land departure, never "high seas".
+  iciDepartureRoadTransfer: "Departure: Saint-Maur (Indre), road transfer to La Rochelle",
 };

@@ -916,4 +916,45 @@ describe("jamais « haute mer » près d'un port ni hors de l'eau", () => {
     assert.match(app, /momentHighSeasRuledOut=\{momentHighSeasRuled\}/);
     assert.match(read("../components/Sidebar.jsx"), /highSeasRuledOut=\{momentHighSeasRuledOut\}/);
   });
+
+  it("Tracer J0, curseur à 0 : départ de Saint-Maur, transfert routier, jamais haute mer", () => {
+    // Cast Tracer : interpolateCast laisse vehicle « main » sur la jambe
+    // terrestre. Le drapeau Suivre n'est pas sur le dossier. drawTip annule
+    // le véhicule du moment. ZEE « High seas » / « Haute mer », ou le nom
+    // anglais « Ashore » sans le booléen ashore.
+    const at = { lat: SAINT_MAUR.lat, lon: SAINT_MAUR.lon };
+    const nearby = { marinas: [], capitaineries: [], wpi: [] };
+    const sources = { zee: "marineregions" };
+    const marks = [{
+      kind: "leg",
+      from: "Saint-Maur (Berry, Indre)",
+      to: "La Rochelle",
+      vehicle: "main",
+    }];
+    const cases = [
+      ["en", { name: "High seas", mrgid: null }, /high seas/i, /Departure: Saint-Maur \(Indre\), road transfer to La Rochelle/],
+      ["fr", { name: "Haute mer", mrgid: null }, /haute mer/i, /Départ : Saint-Maur \(Indre\), transfert routier vers La Rochelle/],
+      ["en", { name: "Ashore (France)", mrgid: null }, /high seas/i, /Departure: Saint-Maur \(Indre\), road transfer to La Rochelle/],
+      ["fr", { name: "Ashore (France)", mrgid: null }, /haute mer/i, /Départ : Saint-Maur \(Indre\), transfert routier vers La Rochelle/],
+    ];
+    for (const [lang, zee, forbidden, expected] of cases) {
+      const text = narrateIci({ at, zee, sources, nearby, marks }, lang);
+      assert.doesNotMatch(text, forbidden);
+      assert.match(text, expected);
+    }
+    // Véhicule du tracé annulé, escales pas encore là : la phrase serveur
+    // « high seas » ne reste pas sur ce départ terrestre.
+    const ruledOut = highSeasRuledOut({
+      vehicle: null,
+      nearStopNm: null,
+      fromStop: "Saint-Maur (Berry, Indre)",
+      toStop: "La Rochelle",
+    });
+    assert.equal(ruledOut, true);
+    const frame = { zee: { name: "High seas", mrgid: null }, sentences: [HIGH_SEAS_EN, HIGH_SEAS_FR] };
+    assert.deepEqual(hereWithoutFalseHighSeas(frame, { ruledOut }).sentences, []);
+    const app = readFileSync(join(here, "../App.jsx"), "utf8");
+    assert.match(app, /fromStop: jambe\?\.fromStop/);
+    assert.match(app, /toStop: jambe\?\.toStop/);
+  });
 });

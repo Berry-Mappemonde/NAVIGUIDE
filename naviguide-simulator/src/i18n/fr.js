@@ -626,4 +626,7 @@ export default {
   layerFicheKindCoastline: "Trait de côte",
   layerFicheKindGlider: "Planeur sous-marin",
   layerFicheClose: "Fermer la fiche",
+
+  // DR1 — Tracer à J0 : départ à terre, jamais « haute mer ».
+  iciDepartureRoadTransfer: "Départ : Saint-Maur (Indre), transfert routier vers La Rochelle",
 };
