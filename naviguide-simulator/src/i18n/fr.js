@@ -648,4 +648,7 @@ export default {
   // ED2
   ed2WritingNemotron: "Rédaction avec Nemotron 3 Super sur Nebius Token Factory…",
   ed2BrandLine: "NVIDIA · Nebius",
+
+  // FM1
+  fm1VariantAbsent: "Cette variante n’est pas encore prête",
 };

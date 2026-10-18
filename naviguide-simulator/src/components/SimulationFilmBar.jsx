@@ -10,7 +10,12 @@ import { ListenButton } from "./ListenButton.jsx";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
+import { filmDurationClass, filmDurationPill } from "../engine/playSpeeds.js";
 import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle, writtenPillEnabled } from "../hooks/useReplay.js";
+
+function filmPill(replay, sec) {
+  return filmDurationPill({ seconds: sec, active: replay?.active, estimates: replay?.variantEstimates });
+}
 
 function filmEstimateLabel(replay, t) {
   const clock = formatFilmEstimateClock(pickFilmEstimateSeconds(
@@ -522,24 +527,23 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                       className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5"
                       title={t("filmDuration")}
                     >
-                      {[[150, "filmDuration150"], [180, "filmDuration180"]].map(([sec, key]) => (
-                        <button
+                      {[[150, "filmDuration150"], [180, "filmDuration180"]].map(([sec, key]) => {
+                        const pill = filmPill(replay, sec);
+                        return (<button
                           key={sec}
                           type="button"
                           data-seconds={sec}
+                          data-variant-absent={pill.grey ? "1" : "0"}
                           aria-pressed={Number(replay.targetSeconds) === sec}
                           aria-disabled={Boolean(replay.active)}
                           disabled={Boolean(replay.active)}
-                          onClick={() => replay.onDuration?.(Number(replay.targetSeconds) === sec ? 0 : sec)}
-                          className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed ${
-                            Number(replay.targetSeconds) === sec
-                              ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
-                              : "text-white/70 hover:text-white border border-transparent"
-                          }`}
+                          title={pill.grey ? t("fm1VariantAbsent") : t(key)}
+                          onClick={() => { if (pill.grey) return; replay.onDuration?.(Number(replay.targetSeconds) === sec ? 0 : sec); }}
+                          className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed ${filmDurationClass(Number(replay.targetSeconds) === sec, pill.grey)}`}
                         >
                           {t(key)}
-                        </button>
-                      ))}
+                        </button>);
+                      })}
                       {filmEstimateLabel(replay, t) ? (
                         <span
                           data-testid="film-duration-estimate"

@@ -1,4 +1,5 @@
 import { useLang } from "../i18n/LangContext.jsx";
+import { filmSpeedProfileState } from "../engine/playSpeeds.js";
 
 const VB_W = 200;
 const VB_H = 32;
@@ -22,8 +23,12 @@ export function FilmSpeedProfile({
   playheadTotal,
   onSeek,
   loading = false,
+  durationSeconds = 0,
+  estimates = null,
 }) {
   const { t } = useLang();
+  const speed = filmSpeedProfileState({ durationSeconds, estimates });
+  const speedTitle = t(speed.grey ? speed.titleKey : "filmSpeedProfile");
   const rows = series || [];
   const maxX = Number(playheadTotal) > 0 ? Number(playheadTotal) : 1;
   const maxVal = rows.reduce((m, s) => {
@@ -43,7 +48,11 @@ export function FilmSpeedProfile({
   };
 
   return (
-    <div className={`mb-1.5 ${loading ? "opacity-60" : ""}`}>
+    <div
+      className={`mb-1.5 ${loading || speed.grey ? "opacity-60" : ""}`}
+      data-variant-absent={speed.grey ? "1" : "0"}
+      title={speedTitle}
+    >
       <div className="flex items-center justify-between mb-0.5 px-0.5">
         <span className="text-[9px] text-white/40">{t("filmSpeedProfile")}</span>
         <span className="text-[9px] text-white/40">
@@ -55,8 +64,8 @@ export function FilmSpeedProfile({
       <button
         type="button"
         onClick={onClick}
-        className="relative w-full h-8 rounded-md bg-white/5 border border-white/10 block overflow-hidden"
-        title={t("filmSpeedProfile")}
+        className={`relative w-full h-8 rounded-md bg-white/5 border border-white/10 block overflow-hidden ${speed.grey ? "opacity-30 cursor-not-allowed" : ""}`}
+        title={speedTitle}
       >
         <svg viewBox={`0 0 ${VB_W} ${VB_H}`} className="absolute inset-0 w-full h-full" preserveAspectRatio="none">
           {windPts ? (

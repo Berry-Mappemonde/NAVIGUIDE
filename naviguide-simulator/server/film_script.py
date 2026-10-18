@@ -7980,14 +7980,14 @@ def _finalize_chapter_zero_opens(
 
 
 def _film_apply_char_budget(chapters: list[dict], seconds: Any) -> None:
-    """Plafond 150 s ± 10 % à 15 car./s. 2:30 : keep_head=1 (ouverture d'une phrase)."""
+    """Plafond film_char_budget (15 car./s), pas 110 %. 2:30 : keep_head=1."""
     target = film_char_budget(seconds)
     if target <= 0 or not chapters:
         return
     keep = 1 if _film_compact_template(seconds) else 2
     if _film_compact_template(seconds):
         _keep_one_amp_in_script(chapters)
-    _trim_script_to_char_budget(chapters, int(target * 1.1), keep_head=keep)
+    _trim_script_to_char_budget(chapters, target, keep_head=keep)
 
 
 def fit_chapter_text(text: str, budget: int, extras: list[str], lang: str) -> str:
@@ -8559,6 +8559,9 @@ def build_raw_from_moments(
         review=review,
         seconds=seconds,
     )
+    # L'ouverture recollée après le plafond peut le dépasser : on recoupe.
+    if has_budget and target > 0:
+        _film_apply_char_budget(chapters, seconds)
     chapters[:] = _drop_degenerate_chapters(chapters)
     chars = script_chars(chapters)
     return _with_dc_subjects({

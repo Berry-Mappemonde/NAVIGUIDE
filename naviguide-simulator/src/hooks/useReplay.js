@@ -13,6 +13,9 @@ import {
 import { canLeadWithVoice, isSpeaking, stopSpeaking, waitForVoices, voiceEndKind, voiceMayLead, VOICE_LEAD_MS, VOICE_MS_PER_CHAR } from "../utils/speak.js";
 import { EventBubbleGate, FilmEventScoreGate, filmEventCard, pickFilmEvent, publishEventBubble } from "../components/eventBubble.js";
 import { isAirLegNames } from "../utils/berryLegs.js";
+import { filmShownEstimateSeconds, filmVariantAbsent } from "../engine/playSpeeds.js";
+import { exitDocumentFullscreen } from "../utils/cinemaHotkey.js";
+import { restoreFollowView } from "./useFilmCamera.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
 
@@ -651,13 +654,31 @@ export function formatFilmEstimateClock(seconds) {
 }
 
 export function pickFilmEstimateSeconds(targetSeconds, estimates, fallbackSeconds = 0) {
-  const key = String(Number(targetSeconds) || 0);
-  const map = estimates && typeof estimates === "object" ? estimates : null;
-  const row = map?.[key] || map?.fr?.[key];
-  const fromMap = Number(row?.estimatedSeconds);
-  if (Number.isFinite(fromMap) && fromMap > 0) return fromMap;
-  const fb = Number(fallbackSeconds);
-  return Number.isFinite(fb) && fb > 0 ? fb : 0;
+  return filmShownEstimateSeconds(targetSeconds, estimates, fallbackSeconds);
+}
+
+export function replayPlace(active, live) {
+  if (!active || !live) return null;
+  const lat = Number(live.lat);
+  const lon = Number(live.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return { lat, lon };
+}
+
+/** Pendant le film, le briefing suit la position rejouée ; au Stop, retour à maintenant. */
+export function briefingForReplayPosition({
+  active = false,
+  live = null,
+  nowBriefing = "",
+  replayText = "",
+} = {}) {
+  if (!active) return { view: "suivre", briefing: nowBriefing, follows: false };
+  const place = replayPlace(true, live);
+  const text = String(replayText || "").trim();
+  if (!place || !text) {
+    return { view: "suivre", briefing: "", follows: false, hidden: true };
+  }
+  return { view: "suivre", briefing: text, follows: true, lat: place.lat, lon: place.lon };
 }
 
 /** Même langue / t0 / style : garder le plan ready si seule la durée change. */
@@ -1086,6 +1107,8 @@ export function useReplay({
     stopSpeaking();
     stoppingRef.current = true;
     finishedRef.current = true;
+    exitDocumentFullscreen(typeof document !== "undefined" ? document : null);
+    restoreFollowView(typeof window !== "undefined" ? window.__naviguideScene : null, null);
     pinnedIdxRef.current = null;
     pinnedCharRef.current = null;
     filmBubbleRef.current.reset();
@@ -1210,7 +1233,9 @@ export function useReplay({
         ? Number(data.estimatedSeconds)
         : filmEstimatedSeconds(chars);
       setEstimatedSeconds(est);
-      setVariantEstimates(data?.estimates && typeof data.estimates === "object" ? data.estimates : null);
+      const estimates = data?.estimates && typeof data.estimates === "object" ? data.estimates : null;
+      setVariantEstimates(estimates);
+      setTargetSeconds((cur) => (filmVariantAbsent(cur, estimates) ? 0 : cur));
     };
 
     const applyStory = (data) => {

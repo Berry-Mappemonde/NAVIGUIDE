@@ -91,7 +91,7 @@ import {
   orientCoords,
 } from "./utils/berryLegs.js";
 import { loadOfficialBerryRoute } from "./utils/routeFromOfficial.js";
-import { isCinemaKey } from "./utils/cinemaHotkey.js";
+import { isCinemaKey, restoreShowLayers, snapshotShowLayers } from "./utils/cinemaHotkey.js";
 import { weatherLine as buildWeatherLine } from "./utils/weatherLine.js";
 import { mapInsetVars, measureFilmBarOccupiedPx } from "./utils/filmBarLayout.js";
 import { productHasData } from "./hooks/weatherSnapshot.js";
@@ -177,6 +177,7 @@ export default function App() {
   const [replayT0, setReplayT0] = useState(DEFAULT_T0_ISO);
   const [cinemaMode, setCinemaMode] = useState(true);
   const [filmFullscreen, setFilmFullscreen] = useState(false);
+  const filmLayerSnapRef = useRef(null);
   const [hideFilmBar, setHideFilmBar] = useState(false);
   const [filmBarNode, setFilmBarNode] = useState(null);
   const [filmBarMeasuredPx, setFilmBarMeasuredPx] = useState(null);
@@ -858,6 +859,7 @@ export default function App() {
     highSeasRuledOut: highSeasRuled,
     enabled: Boolean(cast),
     frozen: replay.active,
+    replayText: replay.active ? (replayFrame?.statusText || "") : "",
     stories: !replay.active && replay.filmStyle === "written",
     cast,
     snappedPosition: legContext?.snappedPosition,
@@ -1053,15 +1055,20 @@ export default function App() {
         setEscaleClear((n) => n + 1);
       }
       if (replay.start()) {
+        filmLayerSnapRef.current = snapshotShowLayers(maritimeLayers);
         // The camera picks the replayed boat up and follows it (same as Cinema's recapture).
         recaptureRef.current?.();
         setSidebarOpen(true);
       }
     },
     onStop: () => {
+      setFilmFullscreen(false);
+      setCameraFollow(true);
+      if (view !== VIEW_SUIVRE) setView(VIEW_SUIVRE);
+      restoreShowLayers(maritimeLayers, filmLayerSnapRef.current);
+      filmLayerSnapRef.current = null;
       replay.stop();
       if (shouldCloseEscaleSheet({ replayActive: true })) closeEscaleSheet();
-      if (view !== VIEW_SUIVRE) setView(VIEW_SUIVRE);
     },
     onVoice: replay.setVoice,
     source: replay.filmSource,
@@ -1074,7 +1081,7 @@ export default function App() {
     onT0: suivreBerry ? setReplayT0 : voyage.setT0,
     remoteStatus: replay.remoteStatus,
     customFilm: suivreCustom,
-  } : null), [isSuivre, officialClock, suivreBerry, suivreCustom, view, closeEscaleSheet, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.fromName, replay.toName, replay.subtitle, replay.subtitlePlace, replay.targetSeconds, replay.estimatedSeconds, replay.variantEstimates, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmReviewedBy, replay.filmWriting, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replay.remoteStatus, replayT0, voyage.t0, voyage.setT0]);
+  } : null), [isSuivre, officialClock, suivreBerry, suivreCustom, view, closeEscaleSheet, maritimeLayers, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.fromName, replay.toName, replay.subtitle, replay.subtitlePlace, replay.targetSeconds, replay.estimatedSeconds, replay.variantEstimates, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmReviewedBy, replay.filmWriting, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replay.remoteStatus, replayT0, voyage.t0, voyage.setT0]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;

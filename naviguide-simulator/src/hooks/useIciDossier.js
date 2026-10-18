@@ -85,6 +85,13 @@ export function filmStaleBagDecision({
   return { hidden: true, labelToday: true };
 }
 
+/** Sac trop loin du bateau du film : le récit affiché est celui de la position rejouée. */
+export function briefingFollowsReplay({ decision, replayText = "" } = {}) {
+  const text = String(replayText || "").trim();
+  if (!decision?.hidden || !text) return null;
+  return { briefing: text, briefingSegments: [], loading: false };
+}
+
 /** The previous bag is a fresh start (no zee-exit, no wind-shift) when the boat jumped. */
 export function isJump(prevBag, bag, limitNm = JUMP_NM) {
   if (!prevBag?.at || !bag?.at) return false;
@@ -185,6 +192,7 @@ export function useIciDossier({
   frozen = false,
   at = null,
   highSeasRuledOut = false,
+  replayText = "",
 }) {
   const [remote, setRemote] = useState(null);
   const [tick, setTick] = useState({ events: [], briefing: null });
@@ -591,5 +599,7 @@ export function useIciDossier({
   const held = holdRef.current || pack;
   const decision = filmStaleBagDecision({ playing: true, bag: held.dossier, boat });
   if (!decision.labelToday) return held;
+  const followed = briefingFollowsReplay({ decision, replayText });
+  if (followed) return { ...held, ...followed, todayPosition: decision.labelToday };
   return { ...held, todayPosition: decision.labelToday };
 }
