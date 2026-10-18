@@ -349,6 +349,35 @@ def stops_in_window(
     return out
 
 
+def official_stop_in_window(
+    name: str,
+    now: datetime | None = None,
+    *,
+    lat: float | None = None,
+    lon: float | None = None,
+) -> dict[str, Any] | None:
+    """Escale du voyage officiel dans la fenêtre J-10 → J+2, sinon None."""
+    from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
+    from voyage_store import load_voyage  # noqa: PLC0415
+
+    label = str(name or "").strip()
+    if not label:
+        return None
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    clock = (voy or {}).get("clock") if isinstance(voy, dict) else None
+    key = slug(label)
+    for stop in stops_in_window(clock, _utc(now)):
+        if stop.get("slug") != key:
+            continue
+        out = dict(stop)
+        if out.get("lat") is None and isinstance(lat, (int, float)):
+            out["lat"] = lat
+        if out.get("lon") is None and isinstance(lon, (int, float)):
+            out["lon"] = lon
+        return out
+    return None
+
+
 def _cache_get(ns: str, key: str, max_age_s: float | None = None) -> dict[str, Any] | None:
     import pearl_store  # noqa: PLC0415
 
@@ -496,6 +525,8 @@ async def search_watch(
         include_domains=include_domains,
         client=client,
     )
+    if data.get("credits"):
+        llm_budget.remember_tavily_port(port)
     _watch_search_inc(_day(when))
     stored = {
         "results": data.get("results") or [],
@@ -888,12 +919,18 @@ async def run_daily(
     now: datetime | None = None,
     *,
     client: httpx.AsyncClient | None = None,
+    enrich: bool = True,
 ) -> dict[str, Any]:
-    """Veille des escales + enrichissement des perles (une passe)."""
+    """Veille des escales. L'enrichissement des perles est optionnel (mémoire)."""
     from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
     from voyage_store import load_voyage  # noqa: PLC0415
 
     trip = voy if voy is not None else load_voyage(OFFICIAL_VOYAGE_ID)
     watch = await run_daily_watch(trip, now, client=client)
-    enrich = await run_daily_enrich(client=client)
-    return {"watch": watch, "enrich": enrich}
+    if not enrich:
+        return {
+            "watch": watch,
+            "enrich": {"entities": 0, "wrote": 0, "skipped": True, "reason": "watch-only"},
+        }
+    enrich_out = await run_daily_enrich(client=client)
+    return {"watch": watch, "enrich": enrich_out}

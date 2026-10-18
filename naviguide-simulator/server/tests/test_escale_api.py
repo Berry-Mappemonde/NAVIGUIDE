@@ -347,3 +347,65 @@ def test_write_paragraph_en_translates_and_keeps_figures(monkeypatch):
     assert "Minimes" in out["text"]
     assert "0.2" in out["text"] or "0,2" in out["text"]
     assert "99" not in out["text"]
+
+
+def _seed_fiche(name, lat, lon):
+    key = escale_api.escale_key(name, lat, lon, "fr")
+    pearl_store.kv_put("escale", key, {
+        "name": name, "lat": lat, "lon": lon, "lang": "fr",
+        "sections": {"mooring": {"marinas": [{"name": "Port"}]}},
+        "paragraph": {"status": "ready", "text": "Le port accueille les voiliers.", "source": "rules"},
+    })
+
+
+def test_get_escale_schedules_one_watch_task(monkeypatch):
+    """Escale dans la fenêtre : une tâche, pas une deuxième. Hors fenêtre : aucune."""
+    from datetime import datetime, timedelta, timezone
+
+    import voyage_store
+    from voyage_clock import OFFICIAL_VOYAGE_ID
+
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    escale_api._INFLIGHT.clear()
+    arrival = (datetime.now(timezone.utc) + timedelta(days=3)).strftime("%Y-%m-%dT08:00:00Z")
+    voyage_store.save_voyage({
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "points": [],
+        "marks": [],
+        "t0": "2026-01-01T00:00:00Z",
+        "clock": {
+            "t0": "2026-01-01T00:00:00Z",
+            "marks": [{"name": "Nouméa", "iso": arrival, "lat": -22.27, "lon": 166.44}],
+        },
+    })
+    _seed_fiche("Nouméa", -22.27, 166.44)
+    _seed_fiche("Ajaccio", 41.92, 8.74)
+    from main import app
+    client = TestClient(app)
+    monkeypatch.setenv("NAVIGUIDE_TAVILY_WATCH", "1")
+    tasks: list = []
+    real_create = asyncio.create_task
+
+    def capture(coro, *args, **kwargs):
+        code = getattr(coro, "cr_code", None)
+        if code is not None and code.co_name == "watch_stop":
+            tasks.append(code.co_name)
+            coro.close()
+            return None
+        return real_create(coro, *args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_task", capture)
+    try:
+        url = "/escale?name=Noum%C3%A9a&lat=-22.27&lon=166.44&lang=fr"
+        first = client.get(url)
+        assert first.status_code == 200
+        assert first.json()["cached"] is True
+        assert tasks == ["watch_stop"]
+        second = client.get(url)
+        assert second.status_code == 200
+        assert tasks == ["watch_stop"]
+        other = client.get("/escale?name=Ajaccio&lat=41.92&lon=8.74&lang=fr")
+        assert other.status_code == 200
+        assert tasks == ["watch_stop"]
+    finally:
+        escale_api._INFLIGHT.clear()
