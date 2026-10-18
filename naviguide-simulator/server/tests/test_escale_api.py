@@ -458,3 +458,122 @@ def test_get_escale_no_watch_task_once_tavily_cap_reached(monkeypatch):
         assert "Nouméa" not in escale_api._INFLIGHT and "noumea" not in escale_api._INFLIGHT
     finally:
         escale_api._INFLIGHT.clear()
+
+
+def _ready_fiche(name, lat, lon, lang="fr"):
+    return {
+        "name": name,
+        "lat": lat,
+        "lon": lon,
+        "lang": lang,
+        "sections": {"mooring": {"marinas": [{"name": "Quai"}]}},
+        "paragraph": {"status": "ready", "text": "Un quai.", "source": "rules"},
+        "sources": {},
+    }
+
+
+def test_second_open_same_day_is_cached_without_recompute(monkeypatch):
+    """I-13 : la deuxième ouverture du même jour ne relance pas le calcul."""
+    escale_api.reset_escale_hot_cache()
+    monkeypatch.setattr(escale_api, "escale_day_token", lambda: "2026-10-18")
+    calls = []
+    fiche = _ready_fiche("Cachejour", 1.23, 4.56)
+
+    async def patched(*_a, **_k):
+        calls.append(1)
+        return fiche
+
+    monkeypatch.setattr(escale_api, "build_escale", patched)
+    from main import app
+    client = TestClient(app)
+    url = "/escale?name=Cachejour&lat=1.23&lon=4.56&lang=fr"
+    first = client.get(url)
+    assert first.status_code == 200
+    assert first.json()["cached"] is False
+    assert calls == [1]
+    second = client.get(url)
+    assert second.status_code == 200
+    assert second.json()["cached"] is True
+    assert second.json()["paragraph"]["text"] == "Un quai."
+    assert calls == [1]
+    assert escale_api.escale_key("Cachejour", 1.23, 4.56, "fr").endswith("|2026-10-18|tf3")
+
+
+def test_escale_cache_misses_on_the_next_utc_day(monkeypatch):
+    escale_api.reset_escale_hot_cache()
+    days = {"d": "2026-10-18"}
+    monkeypatch.setattr(escale_api, "escale_day_token", lambda: days["d"])
+    calls = []
+    fiche = _ready_fiche("Jourcache", 2.5, 3.5)
+
+    async def patched(*_a, **_k):
+        calls.append(days["d"])
+        return fiche
+
+    monkeypatch.setattr(escale_api, "build_escale", patched)
+    from main import app
+    client = TestClient(app)
+    url = "/escale?name=Jourcache&lat=2.5&lon=3.5&lang=fr"
+    assert client.get(url).json()["cached"] is False
+    assert client.get(url).json()["cached"] is True
+    days["d"] = "2026-10-19"
+    assert client.get(url).json()["cached"] is False
+    assert calls == ["2026-10-18", "2026-10-19"]
+
+
+def test_escale_memory_serves_when_the_store_misses(monkeypatch):
+    """Si SQLite n'a pas la fiche, le cache mémoire du jour répond quand même."""
+    escale_api.reset_escale_hot_cache()
+    monkeypatch.setattr(escale_api, "escale_day_token", lambda: "2026-10-18")
+    calls = []
+    fiche = _ready_fiche("Memcache", 8.1, 9.2)
+
+    async def patched(*_a, **_k):
+        calls.append(1)
+        return fiche
+
+    monkeypatch.setattr(escale_api, "build_escale", patched)
+    from main import app
+    client = TestClient(app)
+    url = "/escale?name=Memcache&lat=8.1&lon=9.2&lang=fr"
+    assert client.get(url).json()["cached"] is False
+    real = pearl_store.kv_get
+
+    def miss(ns, key, *a, **k):
+        if ns == "escale":
+            return None
+        return real(ns, key, *a, **k)
+
+    monkeypatch.setattr(pearl_store, "kv_get", miss)
+    second = client.get(url)
+    assert second.status_code == 200
+    assert second.json()["cached"] is True
+    assert second.json()["paragraph"]["text"] == "Un quai."
+    assert calls == [1]
+
+
+def test_parallel_escale_openings_share_one_build(monkeypatch):
+    escale_api.reset_escale_hot_cache()
+    monkeypatch.setattr(escale_api, "escale_day_token", lambda: "2026-04-02")
+    calls = []
+    fiche = _ready_fiche("Paral", 11.11, 22.22)
+
+    async def patched(*_a, **_k):
+        calls.append(1)
+        await asyncio.sleep(0.15)
+        return dict(fiche)
+
+    monkeypatch.setattr(escale_api, "build_escale", patched)
+
+    async def burst():
+        from httpx import ASGITransport, AsyncClient
+        from main import app
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            return await asyncio.gather(*[
+                c.get("/escale?name=Paral&lat=11.11&lon=22.22&lang=fr") for _ in range(6)
+            ])
+
+    responses = asyncio.run(burst())
+    assert all(r.status_code == 200 for r in responses)
+    assert calls == [1]
+    assert all(r.json()["paragraph"]["text"] == "Un quai." for r in responses)

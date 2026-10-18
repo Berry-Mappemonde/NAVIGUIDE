@@ -15,8 +15,10 @@ et quand OSM / BI le disent un site et un téléphone :
 La **rédaction** (un paragraphe de présentation, trois phrases) passe par
 `cascade_text(tier="fast")` à partir de ces listes seulement,
 filtrée comme les cartes ; sans LLM, les listes seules. Rien n'est inventé :
-une section vide n'est pas envoyée. Cache SQLite 7 jours (`pearl_store.kv`,
-ns « escale »). Chaque paragraphe porte `source`.
+une section vide n'est pas envoyée. Cache par escale et par jour UTC
+(`pearl_store.kv`, ns « escale », TTL 7 j sur la clé du jour) plus un cache
+mémoire du jour si le store n'a pas la fiche. Le chauffeur de perles n'est
+pas lancé ici. Chaque paragraphe porte `source`.
 """
 from __future__ import annotations
 
@@ -24,6 +26,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -266,8 +269,52 @@ async def write_paragraph(name: str, sections: dict, lang: str, client: httpx.As
     return {"status": "ready", "text": tidy, "engine": source, "source": source}
 
 
+def escale_day_token() -> str:
+    """Jour UTC : la même escale ne se recalcule pas dans la journée."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
 def escale_key(name: str, lat: float, lon: float, lang: str) -> str:
-    return f"{name.strip().lower()[:60]}|{lat:.2f}|{lon:.2f}|{(lang or 'fr')[:2]}|{ESCALE_CACHE_REV}"
+    day = escale_day_token()
+    return (
+        f"{name.strip().lower()[:60]}|{lat:.2f}|{lon:.2f}|{(lang or 'fr')[:2]}"
+        f"|{day}|{ESCALE_CACHE_REV}"
+    )
+
+
+# Fiche du jour déjà calculée, si SQLite n'a pas répondu. Pas le chauffeur de perles.
+_DAY_MEM: dict[str, dict] = {}
+_BUILDING: dict[str, asyncio.Task] = {}
+_build_thread = threading.Lock()
+
+
+def reset_escale_hot_cache() -> None:
+    _DAY_MEM.clear()
+    _BUILDING.clear()
+
+
+async def _build_escale_once(key: str, name: str, lat: float, lon: float, lang: str) -> dict:
+    """Un seul calcul à froid par clé du jour, même si plusieurs onglets ouvrent la fiche."""
+    with _build_thread:
+        task = _BUILDING.get(key)
+        if task is None or task.done():
+            task = asyncio.create_task(build_escale(name, lat, lon, lang))
+            _BUILDING[key] = task
+    try:
+        return await task
+    finally:
+        with _build_thread:
+            if task.done() and _BUILDING.get(key) is task:
+                _BUILDING.pop(key, None)
+
+
+def _remember_escale(key: str, fiche: dict) -> None:
+    if isinstance(fiche, dict) and fiche.get("sections") and not nim_paragraph(fiche):
+        _DAY_MEM[key] = fiche
+
+
+def _forget_escale(key: str) -> None:
+    _DAY_MEM.pop(key, None)
 
 
 def nim_paragraph(fiche: dict | None) -> bool:
@@ -493,20 +540,27 @@ async def get_escale(
             sanitized = sanitize_fiche(val) if isinstance(val, dict) else None
             if sanitized is None:
                 pearl_store.kv_delete("escale", key)
+                _forget_escale(key)
                 hit = None
             elif sanitized:
                 if nim_paragraph(sanitized):
                     pearl_store.kv_delete("escale", key)
+                    _forget_escale(key)
                     hit = None
                 else:
                     if sanitized != val:
                         pearl_store.kv_put("escale", key, sanitized)
+                    _remember_escale(key, sanitized)
                     return {**sanitized, "cached": True}
+        remembered = _DAY_MEM.get(key)
+        if isinstance(remembered, dict) and not nim_paragraph(remembered):
+            return {**remembered, "cached": True}
     else:
+        _forget_escale(key)
         # A refresh also re-collects the stop's own pearl (its ZEE, its layers).
         from ici_engine import thin_cache_drop, thin_cache_key  # noqa: PLC0415
         thin_cache_drop(thin_cache_key(lat, lon, BAG_RADIUS_NM))
-    fiche = await build_escale(name, lat, lon, lang)
+    fiche = await _build_escale_once(key, name, lat, lon, lang)
     sanitized = sanitize_fiche(fiche)
     if sanitized is None:
         para = dict(fiche.get("paragraph") or {})
@@ -525,4 +579,5 @@ async def get_escale(
     # is retried on the next request that finds the cache stale.
     if sanitized.get("sections"):
         pearl_store.kv_put("escale", key, sanitized)
+        _remember_escale(key, sanitized)
     return {**sanitized, "cached": False}

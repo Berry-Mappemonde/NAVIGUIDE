@@ -932,3 +932,32 @@ def test_rules_answer_pourquoi_ralentir_copies_speed():
     assert "7.4" in text
     kept, dropped = logbook_chat.filter_numbers(text, FACT_PACK)
     assert dropped == 0 and "7.4" in kept
+
+
+def test_facts_cache_key_changes_with_the_utc_day():
+    a = logbook_chat.facts_cache_key(datetime(2026, 10, 18, 23, 30, tzinfo=timezone.utc), "fr")
+    b = logbook_chat.facts_cache_key(datetime(2026, 10, 19, 0, 5, tzinfo=timezone.utc), "fr")
+    c = logbook_chat.facts_cache_key(datetime(2026, 10, 18, 1, 0, tzinfo=timezone.utc), "en")
+    assert a != b
+    assert a.startswith("2026-10-18|fr|")
+    assert c.startswith("2026-10-18|en|")
+
+
+def test_logbook_facts_second_call_reuses_the_day_cache(client, monkeypatch):
+    """Le GET /logbook/facts du même jour ne reconstruit pas le paquet."""
+    calls = []
+
+    async def fake_ctx(*_a, **_k):
+        calls.append(1)
+        return dict(FACT_PACK)
+
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    logbook_chat.reset_facts_cache()
+    first = client.get("/logbook/facts", headers=PUBLIC)
+    second = client.get("/logbook/facts", headers=PUBLIC)
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.json()["cached"] is False
+    assert second.json()["cached"] is True
+    assert calls == [1]
+    assert second.json()["facts"]["polar"] == first.json()["facts"]["polar"]
+    assert second.json()["tokens"] <= logbook_chat.FACT_TOKEN_CAP
