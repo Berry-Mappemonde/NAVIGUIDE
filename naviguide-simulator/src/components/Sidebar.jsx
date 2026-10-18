@@ -322,7 +322,7 @@ export const Sidebar = memo(function Sidebar({
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
   canFinishDraw, drawing = null, onDrawUndo, onImportRoute, importBusy = false,
   isCockpit, polarData, view = VIEW_SUIVRE,
-  legContext, briefingLoading, officialFallback,
+  legContext, nowLeg = null, briefingLoading, officialFallback,
   iciBriefing = null,
   iciBriefingSegments = null, onBriefingFocus,
   skipperNotice = null,
@@ -335,6 +335,7 @@ export const Sidebar = memo(function Sidebar({
   momentFree = null, momentFreeLeft = 0, onMomentNext,
   chat = null, onChatAsk,
   moment = null,
+  momentHighSeasRuledOut = false,
   journalEntries = null,
   onSeek = null,
   momentMode = "follow",
@@ -460,12 +461,18 @@ export const Sidebar = memo(function Sidebar({
 
           <IciMaintenant
             moment={moment}
+            highSeasRuledOut={momentHighSeasRuledOut}
             journalEntries={journalEntries}
+            journalDays={journal?.days}
             onSeek={onSeek}
             mode={momentMode}
             routeSource={routeSource}
+            nowLeg={nowLeg}
             momentNow={!isDrawing ? momentNow : null}
             momentFree={!isDrawing ? momentFree : null}
+            onMomentDismiss={onMomentDismiss}
+            onMomentNext={onMomentNext}
+            onMomentFocus={onBriefingFocus}
             simulation={(
               <SimulationPanel
                 legContext={legContext}
@@ -483,6 +490,11 @@ export const Sidebar = memo(function Sidebar({
                 onGoLive={onGoLive}
               />
             )}
+            hereText={!drawingHidesBerry ? (
+              plan?.localFallback && expeditionBriefing
+                ? expeditionBriefing
+                : iciBriefing && iciBriefingSegments?.length ? iciBriefing : (briefing || "")
+            ) : ""}
             hereBody={!drawingHidesBerry ? (
               <div data-testid="here-product">
                 <div data-testid="briefing" className="sim-box-ici min-w-0 overflow-x-hidden h-auto">

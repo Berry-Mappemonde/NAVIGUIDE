@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
+import { canFocus, entityLinks } from "../engine/briefingLinks.js";
+import { hereWithoutFalseHighSeas } from "../engine/iciBriefing.js";
 import { EscaleSheet } from "./EscaleSheet.jsx";
 import { PlanReview } from "./PlanReview.jsx";
 import { sortJournalEntries } from "../hooks/useMomentJournal.js";
@@ -16,8 +18,16 @@ import {
   seekJournalEntry,
   visibleAlerts,
   displayIciFrame,
+  withNowLeg,
   localizeStoredTitle,
+  localizeStoredFact,
+  localizeStoredLabel,
+  aroundWithoutShown,
+  keptSentences,
+  sameShownMoment,
 } from "./iciMaintenant.js";
+
+const API = import.meta.env?.VITE_API_URL ?? "";
 
 function Section({ testId, label, children }) {
   return (
@@ -28,10 +38,12 @@ function Section({ testId, label, children }) {
   );
 }
 
-function CardAlias({ card, testId, lang = "fr" }) {
+function CardAlias({ card, testId, lang = "fr", onDismiss, onNext, onFocus }) {
+  const { t } = useLang();
   if (!card) return null;
-  const url = card.entity?.url || card.entity?.visit_url || null;
-  const title = localizeStoredTitle(card.title, lang);
+  const title = localizeStoredLabel(card.title, lang);
+  const links = entityLinks(card.entity);
+  const focusable = canFocus(card.entity) && typeof onFocus === "function";
   return (
     <div
       data-testid={testId}
@@ -41,27 +53,111 @@ function CardAlias({ card, testId, lang = "fr" }) {
       className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
     >
       {title ? <div className="text-[10px] font-semibold text-sky-200">{title}</div> : null}
-      {card.text ? <p>{card.text}</p> : null}
-      {url ? (
+      {card.text ? <p>{localizeStoredFact(card.text, lang)}</p> : null}
+      {testId === "moment-now" && typeof onDismiss === "function" ? (
+        <button
+          type="button"
+          data-testid="moment-dismiss"
+          onClick={onDismiss}
+          className="mt-0.5 text-[10px] text-slate-300 bg-transparent border-0 cursor-pointer px-0"
+        >
+          {t("momentClose")}
+        </button>
+      ) : null}
+      {testId === "moment-free" && typeof onNext === "function" ? (
+        <button
+          type="button"
+          data-testid="moment-next"
+          onClick={onNext}
+          className="mt-0.5 text-[10px] text-slate-300 bg-transparent border-0 cursor-pointer px-0"
+        >
+          {t("momentNext")}
+        </button>
+      ) : null}
+      {focusable ? (
+        <button
+          type="button"
+          data-testid="moment-focus"
+          onClick={() => onFocus(card.entity)}
+          className="mt-0.5 ml-2 text-[10px] text-sky-300 bg-transparent border-0 cursor-pointer px-0"
+        >
+          {t("momentSeeOnMap")}
+        </button>
+      ) : null}
+      {links.map((link) => (
         <a
-          href={url}
+          key={`${link.kind}-${link.href}`}
+          href={link.href}
           target="_blank"
           rel="noopener noreferrer"
-          data-testid="moment-link-site"
-          className="text-[10px] text-sky-300 hover:text-sky-100 no-underline"
+          data-testid={`moment-link-${link.kind}`}
+          className="ml-2 text-[10px] text-sky-300 hover:text-sky-100 no-underline"
         >
-          ↗
+          {link.host || "↗"}
         </a>
-      ) : null}
+      ))}
     </div>
   );
 }
 
-function JournalList({ entries, onSeek, lang }) {
+function asJournalRow(entry) {
+  if (!entry || entry.signature) return entry;
+  const lat = entry.lat;
+  const lon = entry.lon;
+  const title = entry.name || entry.title || "";
+  return {
+    ...entry,
+    signature: entry.id || entry.t,
+    pos: entry.pos || (lat != null && lon != null ? { lat, lon } : null),
+    changes: entry.changes || (title ? [{ title, fact: entry.kind || "" }] : []),
+  };
+}
+
+function JournalList({ entries, onSeek, lang, days = null }) {
   const rows = sortJournalEntries(entries);
+  const orderedDays = useMemo(() => {
+    const names = (Array.isArray(days) ? days : [])
+      .map((day) => (typeof day === "string" ? day : day?.day))
+      .filter(Boolean);
+    return [...new Set(names)].sort();
+  }, [days]);
+  const [openDay, setOpenDay] = useState(null);
+  const [dayRows, setDayRows] = useState([]);
+
+  async function selectDay(day) {
+    if (typeof onSeek === "function") onSeek(`${day}T12:00:00Z`);
+    setOpenDay(day);
+    try {
+      const res = await fetch(`${API}/voyage/official/journal/${encodeURIComponent(day)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data.entries || []);
+        setDayRows(Array.isArray(list) ? list.map(asJournalRow) : []);
+        return;
+      }
+    } catch {
+      /* the day list still moved the cursor */
+    }
+    setDayRows(rows.filter((entry) => String(entry.t || "").startsWith(day)));
+  }
+
+  const shown = (openDay ? dayRows : rows).map(asJournalRow).filter(Boolean);
   return (
     <ul data-testid="ici-journal-list" className="flex flex-col gap-0.5 m-0 p-0 list-none">
-      {rows.map((entry) => (
+      {orderedDays.map((day) => (
+        <li key={day}>
+          <button
+            type="button"
+            data-testid="journal-day"
+            data-day={day}
+            onClick={() => selectDay(day)}
+            className="w-full text-left text-[11px] leading-snug px-0.5 py-0.5 bg-transparent border-0 cursor-pointer hover:bg-white/5 text-slate-200"
+          >
+            {day}
+          </button>
+        </li>
+      ))}
+      {shown.map((entry) => (
         <li key={entry.signature || `${entry.seq}-${entry.t}`}>
           <button
             type="button"
@@ -80,6 +176,7 @@ function JournalList({ entries, onSeek, lang }) {
 
 export function IciMaintenant({
   moment,
+  highSeasRuledOut = false,
   view: viewProp,
   onViewChange,
   story = null,
@@ -91,9 +188,15 @@ export function IciMaintenant({
   planReview = null,
   simulation = null,
   hereBody = null,
+  hereText = "",
   escale = null,
-  momentNow = null,
+  momentNow: momentNowProp = null,
   momentFree = null,
+  onMomentDismiss = null,
+  onMomentNext = null,
+  onMomentFocus = null,
+  nowLeg = null,
+  journalDays = null,
   todayPosition = false,
 }) {
   const { t, lang } = useLang();
@@ -105,9 +208,19 @@ export function IciMaintenant({
     else setLocalView(id);
   };
   const frame = displayIciFrame(moment, journalEntries, mode);
-  const shown = frame.shown;
-  const here = frame.here;
+  // Maintenant never repeats the card shown as Suivant, nor what it says.
+  const momentNow = momentNowProp && !sameShownMoment(momentNowProp, momentFree) ? momentNowProp : null;
+  const around = aroundWithoutShown(frame.around, momentFree);
+  const shown = withNowLeg(frame.shown, nowLeg);
+  const here = hereWithoutFalseHighSeas(frame.here, { ruledOut: highSeasRuledOut });
   const alerts = visibleAlerts(frame.alerts, dismissed);
+  // One fact once in the whole tab: the briefing above, the alerts and the
+  // items around already say some of the server's « here » sentences.
+  const hereKept = keptSentences(here?.sentences, [
+    hereText,
+    ...alerts.map((alert) => alert?.fact),
+    ...(Array.isArray(around) ? around : []).map((item) => item?.fact || item?.text),
+  ]);
   const tint = regimeColor(shown?.leg?.regime);
   const tabs = visibleIciTabs(mode, { routeSource });
   const extraTabs = hiddenIciTabs(mode, { routeSource });
@@ -209,8 +322,8 @@ export function IciMaintenant({
                         : "border-amber-400/50 bg-amber-950/40 text-amber-100"
                     }`}
                   >
-                    <span className="truncate">{localizeStoredTitle(alert.title, lang)}</span>
-                    {alert.fact ? <span className="truncate text-white/70">· {alert.fact}</span> : null}
+                    <span className="truncate">{localizeStoredLabel(alert.title, lang)}</span>
+                    {alert.fact ? <span className="truncate text-white/70">· {localizeStoredFact(alert.fact, lang)}</span> : null}
                     <button
                       type="button"
                       data-testid="ici-alert-close"
@@ -225,7 +338,13 @@ export function IciMaintenant({
                 );
               })}
             </div>
-            <CardAlias card={momentNow} testId="moment-now" lang={lang} />
+            <CardAlias
+              card={momentNow}
+              testId="moment-now"
+              lang={lang}
+              onDismiss={onMomentDismiss}
+              onFocus={onMomentFocus}
+            />
           </Section>
 
           <Section testId="ici-section-here" label={t("iciSectionHere")}>
@@ -250,15 +369,15 @@ export function IciMaintenant({
               ) : (
                 <>
                   {hereBody}
-                  {(here?.sentences || []).map((sentence) => (
+                  {(here?.sentences || []).map((sentence, i) => (hereKept[i] ? (
                     <p
-                      key={sentence}
+                      key={`${i}-${sentence}`}
                       data-testid="ici-here-sentence"
                       className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
                     >
                       {sentence}
                     </p>
-                  ))}
+                  ) : null))}
                   {(here?.links || []).length ? (
                     <div className="flex flex-wrap gap-1.5 mt-0.5">
                       {here.links.map((link) => (
@@ -282,8 +401,14 @@ export function IciMaintenant({
 
           <Section testId="ici-section-around" label={t("iciSectionAround")}>
             <div className="flex flex-col gap-0.5">
-              <CardAlias card={momentFree} testId="moment-free" lang={lang} />
-              {(frame.around || []).map((item, i) => (
+              <CardAlias
+                card={momentFree}
+                testId="moment-free"
+                lang={lang}
+                onNext={onMomentNext}
+                onFocus={onMomentFocus}
+              />
+              {around.map((item, i) => (
                 <details
                   key={`${item.kind || "around"}-${item.title || i}`}
                   data-testid="ici-around"
@@ -292,7 +417,7 @@ export function IciMaintenant({
                 >
                   <summary className="cursor-pointer list-inside">
                     {localizeStoredTitle(item.title, lang)}
-                    {item.fact ? <span className="text-slate-400"> · {item.fact}</span> : null}
+                    {item.fact ? <span className="text-slate-400"> · {localizeStoredFact(item.fact, lang)}</span> : null}
                   </summary>
                   {item.url ? (
                     <a
@@ -320,6 +445,20 @@ export function IciMaintenant({
 
       {view === "story" ? (
         <div data-testid="ici-story-slot" className="mt-1 min-h-0">
+          <CardAlias
+            card={momentNow}
+            testId="moment-now"
+            lang={lang}
+            onDismiss={onMomentDismiss}
+            onFocus={onMomentFocus}
+          />
+          <CardAlias
+            card={momentFree}
+            testId="moment-free"
+            lang={lang}
+            onNext={onMomentNext}
+            onFocus={onMomentFocus}
+          />
           {story}
         </div>
       ) : null}
@@ -332,7 +471,7 @@ export function IciMaintenant({
         className="mt-1 min-h-0 overflow-auto"
       >
         {Array.isArray(journalEntries) ? (
-          <JournalList entries={journalEntries} onSeek={onSeek} lang={lang} />
+          <JournalList entries={journalEntries} onSeek={onSeek} lang={lang} days={journalDays} />
         ) : journal}
       </div>
 

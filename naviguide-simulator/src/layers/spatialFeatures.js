@@ -17,6 +17,20 @@ function mapBounds(bounds) {
  * Bbox stable envoyée à l'API catalogue. Leaflet peut étendre la Mercator
  * au-delà des pôles à faible zoom : les latitudes HTTP restent géographiques.
  */
+// What belongs to one point only: on a grouped cell it would read as if it
+// were true for every point of the group.
+const POINT_ONLY_PROPS = [
+  "name", "title", "description", "website", "telephone", "url", "canal_vhf",
+  "source_urls", "manager_url", "visit_url", "country", "region", "funder",
+  "wmo", "ship", "email",
+];
+
+export function clusterProperties(properties) {
+  const rest = { ...(properties || {}) };
+  for (const key of POINT_ONLY_PROPS) delete rest[key];
+  return rest;
+}
+
 export function quantizedCatalogBbox(rawBounds, zoom) {
   const bounds = mapBounds(rawBounds);
   if (!bounds) return null;
@@ -120,9 +134,9 @@ export function aggregatePointFeatures(features, project, {
         type: "Point",
         coordinates: [bucket.lon / bucket.count, bucket.lat / bucket.count],
       },
+      // No name here: the card names a cell by its count, through i18n.
       properties: {
-        ...(bucket.first.properties || {}),
-        name: `${bucket.count} points regroupés`,
+        ...clusterProperties(bucket.first.properties),
         clusterCount: bucket.count,
       },
     };

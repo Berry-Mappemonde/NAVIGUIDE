@@ -523,6 +523,10 @@ def _is_night(hour: float) -> bool:
 def _here(pearl: dict, clock: dict, lang: str) -> dict:
     zee_in = pearl.get("zee") if isinstance(pearl.get("zee"), dict) else None
     zee_name = localize_zee_name(zee_in, lang)
+    if not (zee_in or {}).get("mrgid") and not zee_is_high_seas(zee_in, pearl) and not (
+        (zee_in or {}).get("ashore") or str((zee_in or {}).get("name") or "").startswith("À terre")
+    ):
+        zee_name = "Unknown EEZ" if _en(lang) else "ZEE inconnue"
     poes = _poe_list(pearl)
     ports = [localize_place_name(p.get("name"), lang) for p in poes]
     entry = {"known": bool(ports), "ports": ports}
@@ -558,7 +562,7 @@ def _here(pearl: dict, clock: dict, lang: str) -> dict:
     emodnet = pearl.get("emodnet") if isinstance(pearl.get("emodnet"), dict) else {}
     seabed = emodnet.get("seabed") if isinstance(emodnet.get("seabed"), dict) else None
     weather = _weather_here(pearl, clock)
-    sentences = _sentences(zee_name, zee_in, poes, amps, weather, lang)
+    sentences = _sentences(zee_name, zee_in, poes, amps, weather, lang, pearl)
     links = _links(pearl, poes, amps)
     return {
         "zee": {
@@ -603,6 +607,44 @@ def _weather_here(pearl: dict, clock: dict) -> dict:
     return out
 
 
+# Territorial sea: a known port this close means the boat is not on the high seas.
+TERRITORIAL_SEA_NM = 12.0
+
+
+def _near_known_port(pearl: dict | None) -> bool:
+    """A port, marina, harbour office or port of entry within TERRITORIAL_SEA_NM."""
+    if not isinstance(pearl, dict):
+        return False
+    nearby = pearl.get("nearby") if isinstance(pearl.get("nearby"), dict) else {}
+    rows = list(pearl.get("poe") or [])
+    for key in ("marinas", "capitaineries", "wpi"):
+        rows.extend(nearby.get(key) or [])
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        nm = _as_float(row.get("nm"))
+        if nm is not None and nm <= TERRITORIAL_SEA_NM:
+            return True
+    return False
+
+
+def zee_is_high_seas(zee_in: dict | None, pearl: dict | None = None) -> bool:
+    """« High seas » only from an EEZ answer that found none, far from any
+    known port. Missing or failed EEZ data, ashore, or a port within the
+    territorial sea: never high seas."""
+    if not isinstance(zee_in, dict) or zee_in.get("unknown"):
+        return False
+    if zee_in.get("mrgid") or zee_in.get("ashore"):
+        return False
+    raw = str(zee_in.get("name") or "").strip()
+    if raw.startswith("À terre"):
+        return False
+    sources = (pearl or {}).get("sources") if isinstance((pearl or {}).get("sources"), dict) else {}
+    if sources.get("zee") in ("unavailable", "error"):
+        return False
+    return not _near_known_port(pearl)
+
+
 def _sentences(
     zee_name: str,
     zee_in: dict | None,
@@ -610,15 +652,18 @@ def _sentences(
     amps: list[dict],
     weather: dict,
     lang: str,
+    pearl: dict | None = None,
 ) -> list[str]:
     en = _en(lang)
     out: list[str] = []
     if not zee_in or not zee_in.get("mrgid") or zee_in.get("ashore"):
-        out.append(
-            "The boat is on the high seas: no exclusive economic zone, no entry formalities to plan."
-            if en else
-            "Le bateau est en haute mer : aucune ZEE, pas de formalités d’entrée à prévoir."
-        )
+        # Without a confirmed « no EEZ here », nothing is said about the EEZ.
+        if zee_is_high_seas(zee_in, pearl):
+            out.append(
+                "The boat is on the high seas: no exclusive economic zone, no entry formalities to plan."
+                if en else
+                "Le bateau est en haute mer : aucune ZEE, pas de formalités d’entrée à prévoir."
+            )
     else:
         out.append(
             _dedupe_parens(f"The boat is sailing in {zee_name}.")

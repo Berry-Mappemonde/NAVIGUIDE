@@ -143,6 +143,39 @@ def latest(limit: int = 50, kinds: Optional[Iterable[str]] = None) -> List[dict]
     return out[:limit]
 
 
+def entries_until(now, limit: Optional[int] = None, kinds: Optional[Iterable[str]] = None) -> List[dict]:
+    """Every entry with t ≤ now, newest first. `limit` caps the list; it does not drop earlier days from the count when omitted."""
+    if isinstance(now, datetime):
+        now_dt = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
+    else:
+        now_dt = parse_iso(str(now))
+    now_dt = now_dt.astimezone(timezone.utc)
+    wanted = set(kinds) if kinds else None
+    cap = int(limit) if limit else None
+    day_cut = now_dt.strftime("%Y-%m-%d")
+    out: List[dict] = []
+    for path in sorted(journal_dir().glob("????-??-??.json"), reverse=True):
+        if path.stem > day_cut:
+            continue
+        kept: List[dict] = []
+        for entry in _read_day(path.stem):
+            if wanted is not None and entry.get("kind") not in wanted:
+                continue
+            raw = entry.get("t")
+            if not raw:
+                continue
+            try:
+                when = parse_iso(raw)
+            except Exception:
+                continue
+            if when <= now_dt:
+                kept.append(entry)
+        out.extend(reversed(kept))
+        if cap and len(out) >= cap:
+            break
+    return out[:cap] if cap else out
+
+
 def _last_t(kind: str) -> Optional[datetime]:
     for path in sorted(journal_dir().glob("????-??-??.json"), reverse=True):
         ts = [e["t"] for e in _read_day(path.stem) if e.get("kind") == kind and e.get("t")]

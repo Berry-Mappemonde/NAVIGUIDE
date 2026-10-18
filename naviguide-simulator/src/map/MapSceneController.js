@@ -37,6 +37,7 @@ import {
   markerOffsetDelay,
 } from "../hooks/useMarkerOffsets.js";
 import { createPanes } from "../layers/layerOrder.js";
+import { installCompactAttribution } from "../layers/compactAttribution.js";
 import {
   ROUTE_CASING_COLOR,
   ROUTE_CASING_WEIGHT,
@@ -267,6 +268,7 @@ export class MapSceneController {
     this.baseLayer = bindQuietTiles(L.tileLayer(TILE_URLS.dark, baseTileOptions("fr"))).addTo(map);
     this.baseLayer._naviguideUrl = TILE_URLS.dark;
     this.baseLayer._naviguideAttr = tileAttribution("fr");
+    this.releaseCompactAttribution = installCompactAttribution(map);
     this.wakeGeometry = null;
     this.markerSets = new Map();
     this.waypointMarkers = new Map();
@@ -1628,6 +1630,7 @@ export class MapSceneController {
     this.waypointMarkers.clear();
     this.divIconCache.clear();
     this.baseLayer?.remove();
+    this.releaseCompactAttribution?.();
     this.map.remove();
   }
 }
