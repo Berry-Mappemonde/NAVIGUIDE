@@ -1,6 +1,7 @@
 import { memo, useMemo } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { formatCivilDate } from "../engine/voyageClock.js";
+import { displayStopName } from "../utils/stopLabels.js";
 import { formatEtaRange, formatEtaRangeTitle, nextStopFromMarks, nextStopRowIndex, useOfficialEta } from "../hooks/usePlanReview.js";
 import { regimeLegendHex } from "../utils/riskColors.js";
 
@@ -19,10 +20,10 @@ function markAt(m) {
  * `active` flag of two rows changes then — not the 18 formatted labels
  * (profile 18 sept. 2026: this list was 12 % of main-thread self time).
  */
-function EscaleRowBody({ name, nmLabel, dateLabel, quayLabel, etaLabel, etaTitle }) {
+function EscaleRowBody({ name, label, nmLabel, dateLabel, quayLabel, etaLabel, etaTitle }) {
   return (
     <>
-      <span className="font-medium leading-tight block truncate">{name}</span>
+      <span className="font-medium leading-tight block truncate">{label || name}</span>
       <span className="text-[9px] text-white/40">
         {nmLabel}
         {dateLabel}
@@ -35,7 +36,7 @@ function EscaleRowBody({ name, nmLabel, dateLabel, quayLabel, etaLabel, etaTitle
   );
 }
 
-const EscaleRow = memo(function EscaleRow({ name, nmLabel, dateLabel, quayLabel, etaLabel, etaTitle, active }) {
+const EscaleRow = memo(function EscaleRow({ name, label, nmLabel, dateLabel, quayLabel, etaLabel, etaTitle, active }) {
   const idle = active ? "bg-cyan-700/40 text-white" : "text-white/70";
   return (
     <li
@@ -47,6 +48,7 @@ const EscaleRow = memo(function EscaleRow({ name, nmLabel, dateLabel, quayLabel,
       <div className="flex-1 min-w-0 text-left px-2 py-1 text-[11px] cursor-default">
         <EscaleRowBody
           name={name}
+          label={label}
           nmLabel={nmLabel}
           dateLabel={dateLabel}
           quayLabel={quayLabel}
@@ -71,6 +73,7 @@ export const EscaleLegend = memo(function EscaleLegend({
       return {
         key: `${m.name}-${at}`,
         name: m.name,
+        label: displayStopName(m.name, lang, t),
         at,
         mark: m,
         nmLabel: `${Math.round(Number(m.nm) || 0).toLocaleString(lang === "en" ? "en-US" : "fr-FR")} nm`,
@@ -129,6 +132,7 @@ export const EscaleLegend = memo(function EscaleLegend({
           <EscaleRow
             key={r.key}
             name={r.name}
+            label={r.label}
             nmLabel={r.nmLabel}
             dateLabel={r.dateLabel}
             quayLabel={r.quayLabel}

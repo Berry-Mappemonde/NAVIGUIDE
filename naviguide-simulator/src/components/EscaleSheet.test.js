@@ -32,6 +32,14 @@ describe("EscaleSheet contract", () => {
     assert.equal((hook.match(/useEffect\(/g) || []).length, 1, "one fetch on stop/lang, not per render");
   });
 
+  it("affiche le nom lisible ; la clé du hook reste le nom stocké", () => {
+    assert.match(src, /import \{ displayStopName \} from "\.\.\/utils\/stopLabels\.js"/);
+    assert.match(src, /\{displayStopName\(stop\.name, lang, t\)\}/);
+    assert.doesNotMatch(src, />\{stop\.name\}</);
+    assert.match(hook, /\$\{stop\.name\}\|\$\{stop\.lat\.toFixed\(2\)\}/);
+    assert.doesNotMatch(hook, /displayStopName/);
+  });
+
   it("shows the paragraph source under the text and does not fetch /escale itself", () => {
     assert.match(src, /testId="escale-source"/);
     assert.match(src, /LlmSourceBadge/);

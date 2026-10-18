@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import en from "../i18n/en.js";
+import fr from "../i18n/fr.js";
+import { displayStopName } from "../utils/stopLabels.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "EscaleLegend.jsx"), "utf8");
@@ -87,6 +90,21 @@ describe("EscaleLegend — pastilles de régime", () => {
     assert.match(colors, /forecast:\s*"#38bdf8"/);
     assert.match(colors, /climatology:\s*"#c084fc"/);
     assert.doesNotMatch(src, /<button/);
+  });
+});
+
+describe("EscaleLegend — nom affiché, identité stockée", () => {
+  it("montre displayStopName et garde data-escale sur le nom brut", () => {
+    assert.match(src, /label: displayStopName\(m\.name, lang, t\)/);
+    assert.match(src, /data-escale=\{name\}/);
+    assert.match(src, /\{label \|\| name\}/);
+    assert.doesNotMatch(src, /data-escale=\{label\}/);
+    const tFr = (key) => fr[key] ?? key;
+    const tEn = (key) => en[key] ?? key;
+    assert.equal(displayStopName("Saint-Maur (Berry, Indre)", "fr", tFr), "Saint-Maur (Indre)");
+    assert.equal(displayStopName("Açores (Corse)", "fr", tFr), "Açores");
+    assert.equal(displayStopName("Açores (Corse)", "en", tEn), "Azores (Portugal)");
+    assert.equal(displayStopName("Ajaccio (Corse)", "fr", tFr), "Ajaccio (Corse)");
   });
 });
 
