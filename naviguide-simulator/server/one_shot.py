@@ -9,16 +9,23 @@ pour ne pas compter deux fois).
 le dossier de données du poste (hors dépôt) interdit de relancer : il se
 retire à la main. Il n'y a pas de ``--force``. Au plafond (``llm_budget.allow``),
 l'avancement est écrit et les appels déjà faits ne sont pas rejoués.
+
+Un seul passage s'exécute à la fois : ``<job>/.lock`` est pris en exclusif
+non bloquant après le contrôle de l'empreinte. Le second lancement échoue
+sans appel. Ce verrou d'exécution est celui du descripteur : le noyau le
+libère si le processus meurt. Le fichier ``.done`` reste le verrou de réussite.
 """
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
 import re
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 import llm_budget
 
@@ -270,6 +277,28 @@ def _save_done(job_name: str, fingerprint: str, completed: list[str]) -> None:
     _atomic_write(lock_path(job_name), json.dumps(payload, sort_keys=True) + "\n")
 
 
+@contextmanager
+def _hold_run_lock(job_name: str) -> Iterator[None]:
+    """Exclusif non bloquant sur ``<job>/.lock``.
+
+    Le fichier reste en place : seul le descripteur porte le verrou, donc
+    la mort du processus le libère. On ne le supprime pas (un nouveau
+    fichier serait un autre verrou).
+    """
+    directory = _job_dir(job_name, mkdir=True)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / ".lock"
+    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise Refused("busy", "un passage est déjà en cours") from exc
+        yield
+    finally:
+        os.close(fd)
+
+
 def run(job_name: str, fingerprint: str) -> dict[str, Any]:
     """Exécute les appels restants si l'empreinte est celle de l'estimation."""
     token = (fingerprint or "").strip().lower()
@@ -280,40 +309,41 @@ def run(job_name: str, fingerprint: str) -> dict[str, Any]:
     est = _estimate_from(job, planned)
     if token != est["fingerprint"]:
         raise Refused("bad-fingerprint", "empreinte différente de l'estimation")
-    if lock_exists(job.name):
-        raise Refused(
-            "locked",
-            "verrou de réussite présent ; suppression manuelle seulement",
-        )
-    known = [call.call_id for call in planned]
-    known_set = set(known)
-    completed = _load_progress(job.name, est["fingerprint"])
-    if any(call_id not in known_set for call_id in completed):
-        raise OneShotError(
-            "bad-progress",
-            "avancement hors plan ; suppression manuelle seulement",
-        )
-    ordered: list[str] = []
-    seen: set[str] = set()
-    for call_id in completed:
-        if call_id not in seen:
-            ordered.append(call_id)
-            seen.add(call_id)
-    for call in planned:
-        if call.call_id in seen:
-            continue
-        if not llm_budget.allow(call.tier):
+    with _hold_run_lock(job.name):
+        if lock_exists(job.name):
+            raise Refused(
+                "locked",
+                "verrou de réussite présent ; suppression manuelle seulement",
+            )
+        known = [call.call_id for call in planned]
+        known_set = set(known)
+        completed = _load_progress(job.name, est["fingerprint"])
+        if any(call_id not in known_set for call_id in completed):
+            raise OneShotError(
+                "bad-progress",
+                "avancement hors plan ; suppression manuelle seulement",
+            )
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for call_id in completed:
+            if call_id not in seen:
+                ordered.append(call_id)
+                seen.add(call_id)
+        for call in planned:
+            if call.call_id in seen:
+                continue
+            if not llm_budget.allow(call.tier):
+                _save_progress(job.name, est["fingerprint"], ordered)
+                raise StoppedAtCap(call.call_id, ordered)
+            job.execute(call)
+            ordered.append(call.call_id)
+            seen.add(call.call_id)
             _save_progress(job.name, est["fingerprint"], ordered)
-            raise StoppedAtCap(call.call_id, ordered)
-        job.execute(call)
-        ordered.append(call.call_id)
-        seen.add(call.call_id)
-        _save_progress(job.name, est["fingerprint"], ordered)
-    _save_done(job.name, est["fingerprint"], ordered)
-    progress = progress_path(job.name)
-    if progress.is_file():
-        progress.unlink()
-    return {"job": job.name, "completed": ordered}
+        _save_done(job.name, est["fingerprint"], ordered)
+        progress = progress_path(job.name)
+        if progress.is_file():
+            progress.unlink()
+        return {"job": job.name, "completed": ordered}
 
 
 def format_run(result: dict[str, Any]) -> str:
@@ -362,7 +392,8 @@ def main(argv: list[str] | None = None) -> int:
         prog="one_shot.py",
         description=(
             "Estime un passage unique sans appel, ou l'exécute sous empreinte. "
-            "Pas d'option pour forcer : supprimer le fichier .done à la main pour relancer."
+            "Pas d'option pour forcer : supprimer le fichier .done à la main pour relancer. "
+            "Un second passage simultané est refusé sans appel."
         ),
     )
     parser.add_argument("--job", required=True)

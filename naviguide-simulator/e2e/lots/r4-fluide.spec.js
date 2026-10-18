@@ -1,7 +1,32 @@
 // Film fluide : le bateau avance sans à-coups (mode linéaire).
 // Sans API : horloge locale + brut. Headless : pas de voix (webdriver).
+// La glisse se mesure au début d'une longue jambe : une escale courte
+// (Fort-de-France → Pointe-à-Pitre) se termine pendant les 2 s selon le
+// zoom et la date, et le bateau reste alors à quai.
 import { expect, test } from "@playwright/test";
 import { dismissNotForNav } from "../helpers.js";
+
+// Horloge de page fixe (pendant la traversée) : `Date.now()` et `new Date()`
+// ne suivent plus la date du runner. Le temps continue de s'écouler.
+const FIXED_NOW_MS = Date.parse("2026-09-01T12:00:00.000Z");
+
+async function pinPageClock(page) {
+  await page.addInitScript((origin) => {
+    const RealDate = Date;
+    const start = RealDate.now();
+    class NaviguideDate extends RealDate {
+      constructor(...args) {
+        if (args.length === 0) super(NaviguideDate.now());
+        else super(...args);
+      }
+
+      static now() {
+        return origin + (RealDate.now() - start);
+      }
+    }
+    window.Date = NaviguideDate;
+  }, FIXED_NOW_MS);
+}
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-r4/${name}.webp`,
@@ -12,6 +37,7 @@ const shot = (page, name) => page.screenshot({
 
 test("10 positions distinctes et monotones en 2 s", async ({ page }) => {
   test.setTimeout(90_000);
+  await pinPageClock(page);
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
@@ -55,10 +81,87 @@ test("10 positions distinctes et monotones en 2 s", async ({ page }) => {
       throw new Error("marqueur bateau absent avec API");
     }
   } else {
-    // Film ancré : à quai pendant les premières phrases — on mesure la glisse une fois en route.
-    const { waitBoatUnderWay } = await import("../helpers.js");
-    const way = await waitBoatUnderWay(page, { timeout: 60_000 });
-    expect(way.moving, `le bateau a pris la mer avant la mesure (${JSON.stringify(way)})`).toBe(true);
+    // Lecture prête, puis la plus longue jambe maritime : on échantillonne
+    // juste après le quai, tant que l'arrivée est encore loin.
+    await page.waitForFunction(() => {
+      const f = window.__naviguideFilm;
+      return typeof f?.seekChapter === "function"
+        && (f.chapters || []).some((c) => Number.isFinite(Number(c?.fromLat)) && Number.isFinite(Number(c?.toLat)));
+    }, null, { timeout: 20_000 });
+
+    const leg = await page.evaluate(async () => {
+      const wrap = (lon) => ((((Number(lon) + 180) % 360) + 360) % 360) - 180;
+      const nm = (aLat, aLon, bLat, bLon) => {
+        const r = Math.PI / 180;
+        const lat1 = Number(aLat) * r;
+        const lat2 = Number(bLat) * r;
+        const dLat = lat2 - lat1;
+        const dLon = (wrap(bLon) - wrap(aLon)) * r;
+        const h = Math.sin(dLat / 2) ** 2
+          + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+        return 2 * 3440.065 * Math.asin(Math.min(1, Math.sqrt(h)));
+      };
+      const sea = (name) => String(name || "");
+      const chapters = window.__naviguideFilm.chapters || [];
+      const ranked = [];
+      for (let n = 0; n < chapters.length; n += 1) {
+        const ch = chapters[n];
+        const fromLat = Number(ch.fromLat);
+        const fromLon = Number(ch.fromLon);
+        const toLat = Number(ch.toLat);
+        const toLon = Number(ch.toLon);
+        if (![fromLat, fromLon, toLat, toLon].every(Number.isFinite)) continue;
+        if (!sea(ch.toName).trim()) continue;
+        const from = sea(ch.fromName);
+        const to = sea(ch.toName);
+        const air = (/cayenne/i.test(from) && /halifax/i.test(to))
+          || (/halifax/i.test(from) && /cayenne/i.test(to));
+        const land = (/saint-maur/i.test(from) && /rochelle/i.test(to))
+          || (/rochelle/i.test(from) && /saint-maur/i.test(to));
+        if (air || land) continue;
+        const legNm = nm(fromLat, fromLon, toLat, toLon);
+        if (!(legNm > 0)) continue;
+        ranked.push({
+          idx: Number.isFinite(Number(ch.idx)) ? Number(ch.idx) : n,
+          fromLat, fromLon, toLat, toLon, legNm, from, to,
+        });
+      }
+      ranked.sort((a, b) => b.legNm - a.legNm);
+      let last = null;
+      for (const candidate of ranked.slice(0, 3)) {
+        if (!window.__naviguideFilm.seekChapter(candidate.idx, 0)) {
+          last = { ok: false, reason: "seek", ...candidate };
+          continue;
+        }
+        const t0 = performance.now();
+        while (performance.now() - t0 < 12_000) {
+          await new Promise((r) => setTimeout(r, 50));
+          const f = window.__naviguideFilm;
+          const marker = window.__naviguideScene?.mainBoatMarker?.();
+          const ll = marker?.getLatLng?.();
+          if (!f || f.ended || f.chapterIdx !== candidate.idx) continue;
+          if (!Number.isFinite(f.lat) || !Number.isFinite(f.lon) || !ll) continue;
+          const along = nm(candidate.fromLat, candidate.fromLon, f.lat, f.lon);
+          const remain = nm(f.lat, f.lon, candidate.toLat, candidate.toLon);
+          const gap = nm(ll.lat, ll.lng, f.lat, f.lon);
+          const early = along > 15 && remain > candidate.legNm * 0.6;
+          const onBoat = gap < Math.max(40, candidate.legNm * 0.02);
+          if (early && onBoat) {
+            return { ok: true, ...candidate, along, remain, gap };
+          }
+          last = {
+            ok: false,
+            reason: "hors fenêtre",
+            chapter: f.chapterIdx,
+            along, remain, gap,
+            ...candidate,
+          };
+        }
+      }
+      return last || { ok: false, reason: "aucune jambe" };
+    });
+    expect(leg?.ok, `glisse au milieu d'une longue jambe (${JSON.stringify(leg)})`).toBe(true);
+
     const samples = [];
     for (let i = 0; i < 10; i++) {
       const pos = await page.evaluate(() => {
