@@ -135,7 +135,7 @@ function JournalList({ entries, onSeek, lang, days = null }) {
     setDayRows(rows.filter((entry) => String(entry.t || "").startsWith(day)));
   }
 
-  const shown = (openDay ? dayRows : (orderedDays.length ? [] : rows)).map(asJournalRow).filter(Boolean);
+  const shown = (openDay ? dayRows : rows).map(asJournalRow).filter(Boolean);
   return (
     <ul data-testid="ici-journal-list" className="flex flex-col gap-0.5 m-0 p-0 list-none">
       {orderedDays.map((day) => (
