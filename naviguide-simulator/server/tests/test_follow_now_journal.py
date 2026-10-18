@@ -66,6 +66,9 @@ def test_entries_until_returns_every_past_day():
     sigs = {row.get("signature") for row in moments["moments"]}
     assert "kept" in sigs
     assert moments["count"] >= 3
+    # A day the moments already cover is not listed a second time from the journal.
+    first_day = [row.get("signature") for row in moments["moments"] if str(row.get("t")).startswith("2026-05-15")]
+    assert first_day == ["kept"]
 
 
 def test_layer_code_has_no_exception_repr():

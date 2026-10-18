@@ -2039,15 +2039,25 @@ def serve_moments(until: Optional[str] = None) -> dict:
     primary = stored or from_journal or sqlite_rows
     seen = set()
     rows = []
-    for pool in (primary, stored, from_journal, sqlite_rows):
+
+    def _add(row) -> None:
+        if not isinstance(row, dict):
+            return
+        key = str(row.get("signature") or row.get("id") or row.get("t") or id(row))
+        if key in seen:
+            return
+        seen.add(key)
+        rows.append(row)
+
+    for pool in (primary, stored, sqlite_rows):
         for row in pool or []:
-            if not isinstance(row, dict):
-                continue
-            key = str(row.get("signature") or row.get("id") or row.get("t") or id(row))
-            if key in seen:
-                continue
-            seen.add(key)
-            rows.append(row)
+            _add(row)
+    # Journal lines are the same facts as the moments, one row per fact: they
+    # only fill the days no moment covers, never a second copy of a day.
+    covered = {str(row.get("t") or "")[:10] for row in rows}
+    for row in from_journal:
+        if isinstance(row, dict) and str(row.get("t") or "")[:10] not in covered:
+            _add(row)
     if until:
         rows = [row for row in rows if _iso_le(row.get("t"), until)]
     return {
