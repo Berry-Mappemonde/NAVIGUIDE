@@ -32,7 +32,8 @@ PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
 # Clé film : VS1 (choix VL/Lightning ou repli, budget 2:30 / 3:00) invalide ed1.
-# vs1-ed2 : le rédigé resservi garde source, reviewedBy et model.
+# VB1 : cache de route ; absent, le récit ne change pas. Invalide vs1-rg10.
+# vs1-ed2 : le rédigé resservi garde source, reviewedBy et model. Invalide vs1-vb1.
 # Le remplisseur recalcule la famille film, pas les perles. Pas un WARM monde.
 # Pas de kind de moment nouveau : moments reste rg4.
 # ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).

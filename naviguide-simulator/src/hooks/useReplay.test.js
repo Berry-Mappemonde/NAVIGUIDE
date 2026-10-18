@@ -19,6 +19,8 @@ const bar = readFileSync(join(here, "..", "components", "SimulationFilmBar.jsx")
 describe("useReplay contract", () => {
   it("replays on the official clock, consumes the film plan, and hands back to live at the end or on Stop", () => {
     assert.match(hook, /replayWindow\(clockToUse, Date\.now\(\)\)/);
+    assert.match(hook, /fromLat: c\.fromLat/);
+    assert.match(hook, /toLon: c\.toLon/);
     assert.match(hook, /requestAnimationFrame\(tick\)/);
     assert.match(hook, /if \(done\)/);
     assert.match(hook, /const stop = useCallback/);
