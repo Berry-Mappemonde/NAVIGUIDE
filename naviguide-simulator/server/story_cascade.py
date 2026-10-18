@@ -607,6 +607,7 @@ async def _call_tokenfactory(
     system: str, user: str, tier: str, client: httpx.AsyncClient,
     *,
     max_tokens: int | None = None,
+    cascade_tier: str | None = None,
 ) -> tuple[str, str]:
     key = nebius_key()
     if not key:
@@ -635,7 +636,9 @@ async def _call_tokenfactory(
     pt, ct = _usage_tokens(data, system, user, text)
     llm_budget.record(t, pt, ct)
     source = llm_budget.source_for(t)
-    llm_budget.remember_source(source)
+    report_tier = cascade_tier if cascade_tier is not None else t
+    llm_budget.remember_source(source, report_tier)
+    llm_budget.clear_tier_errors(report_tier)
     return text, source
 
 
@@ -699,7 +702,6 @@ async def _call_openrouter(
     text = _openai_text(r.json())
     if not text:
         raise RuntimeError("openrouter empty")
-    llm_budget.remember_source("openrouter")
     return text, "openrouter"
 
 
@@ -730,7 +732,6 @@ async def _call_claude(
     text = _claude_text(r.json())
     if not text:
         raise RuntimeError("claude empty")
-    llm_budget.remember_source("claude")
     return text, "claude"
 
 
@@ -789,14 +790,17 @@ async def _cascade_once(
 
     async def _tokenfactory_hop() -> tuple[str, str]:
         try:
-            return await _call_tokenfactory(system, user, tier, http, max_tokens=max_tokens)
+            return await _call_tokenfactory(
+                system, user, tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
+            )
         except Exception as exc:
             if norm_tier != "fast" or not _tf_fast_super_retry(exc):
                 raise
+            llm_budget.record_retry_super()
             budget = max_tokens if max_tokens is not None else llm_budget.max_tokens_for(norm_tier)
             super_mt = max(int(budget), 400)
             return await _call_tokenfactory(
-                system, user, "write", http, max_tokens=super_mt,
+                system, user, "write", http, max_tokens=super_mt, cascade_tier=norm_tier,
             )
 
     for name in providers():
@@ -816,7 +820,10 @@ async def _cascade_once(
             text = _apply_filter(text, facts if facts is not None else user)
             if _clean_text(text):
                 if failures:
-                    llm_budget.remember_cascade_errors(failures)
+                    llm_budget.remember_cascade_errors(failures, tier=norm_tier)
+                if name in llm_budget.FALLBACK_PROVIDERS:
+                    llm_budget.record_fallback(name, norm_tier)
+                    llm_budget.remember_source(name, norm_tier)
                 # NIM returns `nvidia-<model>` (not in KNOWN_SOURCES). Cache it
                 # anyway: a gale is written live to the story store, but the
                 # same prompt must not re-hit the GPU (RG18 + RG19 deep tier).
@@ -834,7 +841,7 @@ async def _cascade_once(
             failures.append({"provider": name, "reason": last})
 
     if failures:
-        llm_budget.remember_cascade_errors(failures)
+        llm_budget.remember_cascade_errors(failures, tier=norm_tier)
 
     if fallback is not None:
         text = _apply_filter(fallback, facts if facts is not None else user, keep_if_empty=True)
