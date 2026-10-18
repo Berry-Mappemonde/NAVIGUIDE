@@ -1,0 +1,19 @@
+[Unit]
+Description=NAVIGUIDE — lecture prioritaire du film et de l'horloge
+After=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/blue-intelligence-map/naviguide-simulator
+EnvironmentFile=-/home/ubuntu/.config/naviguide/simulator.env
+ExecStart=/home/ubuntu/blue-intelligence-map/naviguide-simulator/.venv/bin/uvicorn server.film_front:app --host 127.0.0.1 --port 8011
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+# Pas de MemoryHigh : au-dessus du plafond souple le noyau fige le process
+# (incident du 15 oct. 2026). MemoryMax + Restart : trop gros, tué, relancé.
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
