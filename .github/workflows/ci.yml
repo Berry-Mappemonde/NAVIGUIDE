@@ -224,15 +224,24 @@ jobs:
           python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
       - name: Seed Mongo de CI (fichiers du dépôt uniquement)
         run: python scripts/seed_ci_mongo.py
-      - name: Cache des réponses Overpass (clé = seed des ports)
-        uses: actions/cache@v6
+      - name: Restaurer le cache Overpass (seed des ports)
+        uses: actions/cache/restore@v6
         with:
           path: backend/.ci-cache/osm-ports.json
-          key: ci-osm-${{ hashFiles('seed/ports_of_entry.geojson') }}
+          key: overpass-v2-${{ hashFiles('seed/ports_of_entry.geojson') }}-${{ github.run_id }}
+          restore-keys: |
+            overpass-v2-${{ hashFiles('seed/ports_of_entry.geojson') }}-
+            overpass-v2-
       - name: Validation OSM réelle + scan d'anomalies (bi_ci seulement)
         run: python scripts/enrich_ci_osm.py
         env:
           CI_OSM_CACHE: ${{ github.workspace }}/backend/.ci-cache/osm-ports.json
+      - name: Sauvegarder le cache Overpass
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: backend/.ci-cache/osm-ports.json
+          key: overpass-v2-${{ hashFiles('seed/ports_of_entry.geojson') }}-${{ github.run_id }}
       - name: Fichiers d'environnement lus par les tests
         run: |
           cat > .env <<'EOF'
