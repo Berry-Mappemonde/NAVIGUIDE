@@ -493,6 +493,48 @@ def same_stop(a: str, b: str) -> bool:
     return bool(na) and na == nb
 
 
+def _moment_near_named_place(change: dict, clock: dict | None, marks: list | None) -> bool:
+    """Le bateau est au lieu nommé à l'instant du jalon (RG14)."""
+    kind = str(change.get("kind") or "")
+    if kind not in {"stop", "escale", "approche", "coast", "port", "marina"}:
+        return True
+    named = change_place_name(change)
+    coords = _named_place_coords(named, marks)
+    if coords is None or not clock:
+        return True
+    t_ms = change.get("tMs")
+    if t_ms is None:
+        t_ms = _ms(change.get("t"))
+    if t_ms is None:
+        return True
+    snapped = _clock_time_near_coords(clock, coords[0], coords[1], int(t_ms) - 21 * 86_400_000, int(t_ms) + 21 * 86_400_000)
+    if snapped is not None:
+        t_ms = snapped
+    boat = _clock_latlon_at(clock, int(t_ms))
+    if boat is None:
+        return True
+    d = _nm_between(coords[0], coords[1], boat[0], boat[1])
+    return d is not None and d <= 30.0
+
+
+def _is_departure_port_echo(change: dict, from_name: str, dest_name: str) -> bool:
+    """Perle « Escale » qui répète le port de départ alors que la jambe va ailleurs."""
+    kind = str(change.get("kind") or "")
+    if kind not in {"stop", "escale"}:
+        return False
+    title_cf = re.sub(r"\s+", " ", str(change.get("title") or "")).strip().casefold()
+    if title_cf not in {"escale", "stopover"} and not _is_generic_title(
+        str(change.get("title") or ""), kind,
+    ):
+        return False
+    named = change_place_name(change)
+    if not named or not from_name or not same_stop(named, from_name):
+        return False
+    if dest_name and same_stop(named, dest_name):
+        return False
+    return True
+
+
 def _is_generic_title(title: str, kind: str = "") -> bool:
     t = re.sub(r"\s+", " ", str(title or "")).strip().casefold()
     if not t:
@@ -1149,6 +1191,10 @@ def change_place_name(change: dict) -> str:
     fact = str(change.get("fact") or "")
     if kind == "escale":
         title = title.replace("Arrivée à ", "").replace("Arrival at ", "").strip()
+    if kind in {"stop", "escale"} and re.match(r"^escale$", title.strip(), re.I):
+        port = clean_spoken_label(fact) or fact.strip()
+        if port:
+            return toponyms.origin_name(port)
     if kind == "zee-enter":
         title = LIST_PREFIX_RE.sub("", title).strip(" :")
     if kind == "coast":
@@ -2933,6 +2979,37 @@ def is_saint_maur(name: str) -> bool:
     return bool(_SAINT_MAUR_RE.search(str(name or "")))
 
 
+def _align_quay_stop_to_passage(stop: dict, clock: dict | None) -> dict:
+    """Recolle l'iso d'une escale sur le passage horloge au lieu nommé (hub / filmNm)."""
+    if not clock or not isinstance(stop, dict):
+        return stop
+    coords = _canonical_place_coords(stop.get("name") or "")
+    if coords is None:
+        return stop
+    try:
+        mlat, mlon = float(stop["lat"]), float(stop["lon"])
+        d_mark = _nm_between(coords[0], coords[1], mlat, mlon)
+    except (TypeError, ValueError, KeyError):
+        d_mark = None
+    if d_mark is not None and d_mark <= 50.0:
+        return stop
+    t = _clock_time_near_coords(clock, coords[0], coords[1], None, None)
+    if t is None:
+        return stop
+    boat = _clock_latlon_at(clock, t)
+    if boat is None:
+        return stop
+    d = _nm_between(coords[0], coords[1], boat[0], boat[1])
+    if d is None or d > 30.0:
+        return stop
+    return {
+        **stop,
+        "iso": _iso(t),
+        "lat": coords[0],
+        "lon": coords[1],
+    }
+
+
 def official_dated_stops(marks: list | None, clock: dict | None = None) -> list[dict]:
     """Escales datées, Saint-Maur + 15 mai 2026 en tête. Aucune autre date inventée."""
     raw = marks if marks else (clock or {}).get("marks")
@@ -2956,7 +3033,7 @@ def official_dated_stops(marks: list | None, clock: dict | None = None) -> list[
             "lat": src.get("lat") if isinstance(src.get("lat"), (int, float)) else None,
             "lon": src.get("lon") if isinstance(src.get("lon"), (int, float)) else None,
         }
-    rest = [s for s in dated if not is_saint_maur(s["name"])]
+    rest = [_align_quay_stop_to_passage(s, clock) for s in dated if not is_saint_maur(s["name"])]
     # Premier départ mer (La Rochelle, filmNm ~122) : garder au 15 mai même
     # sans iso, et ne pas lui coller la date du retour (même nom, 2027).
     sea = next(
@@ -5460,21 +5537,21 @@ def _compact_sea_opening(
     stats = ", ".join(x for x in (nm, days) if x)
     if en:
         if when and stats:
-            raw = f"On {when}, heading for {dest_name}: {stats}."
+            raw = f"On {when}, departure for {dest_name}: {stats}."
         elif when:
-            raw = f"On {when}, heading for {dest_name}."
+            raw = f"On {when}, departure for {dest_name}."
         elif stats:
-            raw = f"Heading for {dest_name}: {stats}."
+            raw = f"Departure for {dest_name}: {stats}."
         else:
-            raw = f"Heading for {dest_name}."
+            raw = f"Departure for {dest_name}."
     elif when and stats:
-        raw = f"Le {when}, cap sur {dest_name} : {stats}."
+        raw = f"Le {when}, départ vers {dest_name} : {stats}."
     elif when:
-        raw = f"Le {when}, cap sur {dest_name}."
+        raw = f"Le {when}, départ vers {dest_name}."
     elif stats:
-        raw = f"Cap sur {dest_name} : {stats}."
+        raw = f"Départ vers {dest_name} : {stats}."
     else:
-        raw = f"Cap sur {dest_name}."
+        raw = f"Départ vers {dest_name}."
     facts = _facts_with_rounded({
         "iso": _iso(dep_ms) if dep_ms else None,
         "when": when,
@@ -5626,13 +5703,26 @@ def _arrival_sentence(
     if compact:
         when = day_month(rebase_iso(stop["iso"], OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
         dest = _stop_spoken(stop.get("name") or "")
+        name = short_name(stop.get("name") or "") or dest
         extra = ""
         if harbor and _harbor_differs_from_city(harbor, dest):
             extra = f", at {harbor}" if en else f", à {harbor}"
         if en:
-            raw = f"Arrival on {when}{extra}." if when else (f"Arrival{extra}." if extra else "")
+            if name and when and chapter_i != 0:
+                raw = f"Arrival at {name} on {when}{extra}."
+            elif name:
+                raw = f"Arrival at {name}{extra}."
+            else:
+                raw = f"Arrival on {when}{extra}." if when else (f"Arrival{extra}." if extra else "")
         else:
-            raw = f"Arrivée le {when}{extra}." if when else (f"Arrivée{extra}." if extra else "")
+            if name and when and chapter_i != 0:
+                raw = f"Arrivée à {name} le {when}{extra}."
+            elif name:
+                raw = f"Arrivée à {name}{extra}."
+            elif when:
+                raw = f"Arrivée le {when}{extra}."
+            else:
+                raw = f"Arrivée{extra}." if extra else ""
         if not raw:
             return ""
         facts = _facts_with_rounded({
@@ -6073,7 +6163,7 @@ def _flatten_changes(moments: list[dict], t_a: int, t_b: int, first: bool) -> li
                 **change,
                 "id": str(change.get("id") or f"{row.get('seq')}:{change.get('kind')}:{i}"),
                 "t": row.get("t"),
-                "tMs": t,
+                "tMs": change.get("tMs") if change.get("tMs") is not None else t,
                 "legIdx": row.get("legIdx"),
             }
             pair = _row_latlon(row)
@@ -7030,7 +7120,29 @@ _NAMED_PLACE_COORDS = {
     "tangier": (35.78, -5.81),
     "algeciras": (36.13, -5.45),
     "ceuta": (35.89, -5.32),
+    "la rochelle": (46.15, -1.16),
+    "ajaccio": (41.92, 8.74),
+    "fort-de-france": (14.60, -61.07),
+    "pointe-à-pitre": (16.24, -61.53),
+    "pointe-a-pitre": (16.24, -61.53),
+    "cayenne": (4.94, -52.33),
+    "papeete": (-17.54, -149.57),
+    "nouméa": (-22.27, 166.44),
+    "noumea": (-22.27, 166.44),
 }
+
+
+def _canonical_place_coords(name: str) -> Optional[tuple[float, float]]:
+    """Coordonnées géographiques (RG14), sans lat/lon d'horloge parfois décalés."""
+    raw = str(name or "").strip()
+    if not raw:
+        return None
+    key = norm_stop(raw)
+    folded = raw.casefold()
+    for token, pair in _NAMED_PLACE_COORDS.items():
+        if token in folded or token in key:
+            return pair
+    return None
 
 
 def _is_depart_sentence(text: str) -> bool:
@@ -7254,19 +7366,24 @@ def _named_place_coords(name: str, marks: list | None = None) -> Optional[tuple[
     if not raw:
         return None
     key = norm_stop(raw)
+    geo = _canonical_place_coords(raw)
+    mark_pair: Optional[tuple[float, float]] = None
     for mark in marks or []:
         if not isinstance(mark, dict):
             continue
         if key and key in norm_stop(mark.get("name") or ""):
             try:
-                return float(mark["lat"]), float(mark["lon"])
+                mark_pair = (float(mark["lat"]), float(mark["lon"]))
             except (TypeError, ValueError, KeyError):
                 continue
-    folded = raw.casefold()
-    for token, pair in _NAMED_PLACE_COORDS.items():
-        if token in folded or token in key:
-            return pair
-    return None
+            break
+    if geo and mark_pair:
+        d = _nm_between(geo[0], geo[1], mark_pair[0], mark_pair[1])
+        if d is not None and d > 50.0:
+            return geo
+    if mark_pair:
+        return mark_pair
+    return geo
 
 
 def _clock_latlon_at(clock: dict | None, t_ms: Optional[int]) -> Optional[tuple[float, float]]:
@@ -7296,17 +7413,19 @@ def _clock_latlon_at(clock: dict | None, t_ms: Optional[int]) -> Optional[tuple[
     return best
 
 
-def _clock_time_near_place(
+def _clock_time_near_coords(
     clock: dict | None,
-    place: str,
+    lat: Any,
+    lon: Any,
     t_a: Optional[int],
     t_b: Optional[int],
-    marks: list | None = None,
 ) -> Optional[int]:
-    coords = _named_place_coords(place, marks or (clock or {}).get("marks"))
-    if coords is None or clock is None:
+    if clock is None:
         return None
-    plat, plon = coords
+    try:
+        plat, plon = float(lat), float(lon)
+    except (TypeError, ValueError):
+        return None
     t0 = _ms(clock.get("t0"))
     best_t: Optional[int] = None
     best_d: Optional[float] = None
@@ -7331,6 +7450,90 @@ def _clock_time_near_place(
         if best_d is None or d < best_d:
             best_d, best_t = d, t
     return best_t
+
+
+def _clock_time_near_place(
+    clock: dict | None,
+    place: str,
+    t_a: Optional[int],
+    t_b: Optional[int],
+    marks: list | None = None,
+) -> Optional[int]:
+    coords = _named_place_coords(place, marks or (clock or {}).get("marks"))
+    if coords is None:
+        return None
+    return _clock_time_near_coords(clock, coords[0], coords[1], t_a, t_b)
+
+
+def _snap_change_anchor_ms(
+    change: dict,
+    clock: dict | None,
+    t_a: Optional[int],
+    t_b: Optional[int],
+    marks: list | None = None,
+) -> Optional[int]:
+    """Instant du jalon sur la trace : le bateau est au lieu quand la phrase le nomme (RG14)."""
+    kind = str(change.get("kind") or "")
+    if kind in {"escale", "stop", "approche"}:
+        named = change_place_name(change)
+        snapped = _clock_time_near_place(clock, named, t_a, t_b, marks) if named else None
+        if snapped is not None:
+            return int(snapped)
+    if kind not in {"coast", "port", "marina", "approche", "escale", "stop"}:
+        return change.get("tMs")
+    t_ms = change.get("tMs")
+    if t_ms is None:
+        return None
+    place = change_place_name(change)
+    snapped = _clock_time_near_place(clock, place, t_a, t_b, marks) if place else None
+    if snapped is None and change.get("lat") is not None and change.get("lon") is not None:
+        snapped = _clock_time_near_coords(clock, change.get("lat"), change.get("lon"), t_a, t_b)
+    if snapped is None:
+        return t_ms
+    coords = _named_place_coords(place, marks) if place else None
+    if coords is None and change.get("lat") is not None and change.get("lon") is not None:
+        try:
+            coords = (float(change["lat"]), float(change["lon"]))
+        except (TypeError, ValueError):
+            coords = None
+    if coords is None:
+        return snapped
+    boat_now = _clock_latlon_at(clock, int(t_ms))
+    boat_snap = _clock_latlon_at(clock, int(snapped))
+    if boat_now is None or boat_snap is None:
+        return snapped
+    d_now = _nm_between(coords[0], coords[1], boat_now[0], boat_now[1])
+    d_snap = _nm_between(coords[0], coords[1], boat_snap[0], boat_snap[1])
+    if d_now is not None and d_snap is not None and d_snap + 0.01 < d_now:
+        return int(snapped)
+    if d_now is not None and d_now > 30.0 and d_snap is not None and d_snap <= 30.0:
+        return int(snapped)
+    return t_ms
+
+
+def anchor_moment_changes(rows: list[dict], clock: dict | None) -> None:
+    """Recolle tMs des jalons côte/port sur le passage horloge (stock officiel, lot RG14)."""
+    if not rows or not clock:
+        return
+    marks = clock.get("marks") or []
+    span = 21 * 86_400_000
+    for row in rows:
+        t_row = _ms(row.get("t"))
+        if t_row is None:
+            continue
+        t_a, t_b = t_row - span, t_row + span
+        for change in row.get("changes") or []:
+            if not isinstance(change, dict):
+                continue
+            if str(change.get("kind") or "") not in {"coast", "port", "marina"}:
+                continue
+            base = change.get("tMs")
+            if base is None:
+                base = t_row
+            packed = {**change, "tMs": base}
+            snapped = _snap_change_anchor_ms(packed, clock, t_a, t_b, marks)
+            if snapped is not None and snapped != base:
+                change["tMs"] = snapped
 
 
 def _closest_member_to_boat(
@@ -7580,6 +7783,120 @@ def _keep_one_amp_in_script(chapters: list[dict]) -> None:
             break
         amp_n, _proj = _count_amp_project(chapters)
         guard += 1
+
+
+_FILM_STRUCTURE_OPEN_RE = re.compile(
+    r"quitte|quitté|leaves|left |s'envole|flies |par la route|by road|"
+    r"expédition|expedition|reprend la mer|sets sail again|départ vers|departure for",
+    re.I,
+)
+_FILM_STRUCTURE_ARRIVAL_RE = re.compile(r"Arrivée à|Arrival at", re.I)
+_FILM_STRUCTURE_TODAY_RE = re.compile(r"Aujourd|Today,", re.I)
+_FILM_STRUCTURE_AIR_RE = re.compile(
+    r"s'envole|flies from|the crew flies|prend l'avion|return flight|attend à|"
+    r"second voilier|second sailing boat|embarque sur",
+    re.I,
+)
+
+
+def _chapter_structure_fault_sentence(text: str, lang: str) -> str | None:
+    """Même règle que test_film_discours._structure_fault (ouverture avant arrivée)."""
+    sents = _sentences(text)
+    if not sents:
+        return "(chapitre vide)"
+    if _FILM_STRUCTURE_AIR_RE.search(text):
+        return None
+    open_i = next((i for i, s in enumerate(sents) if _FILM_STRUCTURE_OPEN_RE.search(s)), None)
+    if open_i is None:
+        return sents[0]
+    close_i = next(
+        (
+            i for i, s in enumerate(sents)
+            if _FILM_STRUCTURE_ARRIVAL_RE.search(s) or _FILM_STRUCTURE_TODAY_RE.search(s)
+        ),
+        None,
+    )
+    if close_i is None:
+        return sents[0]
+    if close_i < open_i:
+        return sents[close_i]
+    return None
+
+
+def _prepend_film_opens_to_chapter(
+    chapter: dict,
+    opens: list[str],
+    t_a: int,
+    t_b: int,
+    lang: str,
+) -> None:
+    if not opens:
+        return
+    text = (chapter.get("text") or "").strip()
+    head = " ".join(opens).strip()
+    if not head or head in text:
+        return
+    if _chapter_structure_fault_sentence(text, lang) is None:
+        return
+    old = text
+    new_text = speak_film_text(f"{head} {old}".strip(), lang)
+    at = new_text.find(old)
+    shift = at if at >= 0 else len(new_text) - len(old)
+    open_anchored = [(sent, t_a, {"role": "depart"}) for sent in opens]
+    open_anchors = chapter_anchors(head, open_anchored, t_a, t_b, lang)
+    shifted: list[dict] = []
+    for a in chapter.get("anchors") or []:
+        if not isinstance(a, dict):
+            continue
+        row = dict(a)
+        row["charIdx"] = int(row.get("charIdx") or 0) + shift
+        shifted.append(row)
+    merged = open_anchors + shifted
+    merged.sort(key=lambda r: (int(r.get("charIdx") or 0), str(r.get("t") or "")))
+    chapter["text"] = new_text
+    chapter["anchors"] = merged
+
+
+def _drop_degenerate_chapters(chapters: list[dict]) -> list[dict]:
+    """Jambe from==to sans vol ni escale : ne pas laisser un seul « départ vers »."""
+    kept: list[dict] = []
+    for ch in chapters:
+        if same_stop(ch.get("fromName") or "", ch.get("toName") or ""):
+            text = ch.get("text") or ""
+            if _FILM_STRUCTURE_AIR_RE.search(text):
+                kept.append(ch)
+                continue
+            sents = _sentences(text)
+            if len(sents) <= 1 and not _FILM_STRUCTURE_ARRIVAL_RE.search(text):
+                continue
+        kept.append(ch)
+    return kept
+
+
+def _finalize_chapter_zero_opens(
+    chapters: list[dict],
+    windows: list[dict],
+    *,
+    start_name: str,
+    sea_name: str,
+    lang: str,
+    display_t0: str | None,
+    review: dict | None,
+    seconds: Any,
+) -> None:
+    """Après budget : le chapitre 0 garde l'ouverture (RG10 / variante 2:30)."""
+    if not chapters or not windows:
+        return
+    w0 = windows[0]
+    opens = _film_open_sentences(
+        start_name=start_name,
+        sea_name=sea_name,
+        lang=lang,
+        display_t0=display_t0,
+        review=review,
+        compact=_film_compact_template(seconds),
+    )
+    _prepend_film_opens_to_chapter(chapters[0], opens, w0["tA"], w0["tB"], lang)
 
 
 def _film_apply_char_budget(chapters: list[dict], seconds: Any) -> None:
@@ -7968,6 +8285,16 @@ def build_raw_from_moments(
         def speak_change(change: dict) -> None:
             if change.get("kind") in {"escale", "marina"}:
                 return
+            if _is_departure_port_echo(
+                change,
+                str(w.get("fromName") or ""),
+                dest_name or "",
+            ):
+                return
+            if str(change.get("kind") or "") in {"stop", "escale"} and not _moment_near_named_place(
+                change, w.get("clock") or clock, marks,
+            ):
+                return
             if _is_air_window(w) and _is_air_only_stop(str(change.get("title") or "")):
                 return
             title = short_name(change.get("title") or "")
@@ -7998,6 +8325,17 @@ def build_raw_from_moments(
                 extra["lat"] = change.get("lat")
                 extra["lon"] = change.get("lon")
             t_ms = change.get("tMs")
+            if change.get("kind") in {"stop", "escale", "approche"} and dest_name:
+                named = change_place_name(change) or title
+                if named and same_stop(named, dest_name):
+                    t_ms = w["tB"]
+            t_ms = _snap_change_anchor_ms(
+                {**change, "tMs": t_ms},
+                w.get("clock") or clock,
+                w["tA"],
+                w["tB"],
+                marks,
+            )
             # RC35 / RC48 : l'instant du jalon, pas le plus proche homonyme plus
             # loin sur l'horloge (Gibraltar recollé après le Maroc ; Mata-Utu /
             # Nouméa recollés en octobre au milieu d'août–septembre).
@@ -8131,6 +8469,17 @@ def build_raw_from_moments(
     _ensure_air_sentences(chapters, marks=marks, moments=moments, lang=lang)
     if has_budget and target > 0:
         _film_apply_char_budget(chapters, seconds)
+    _finalize_chapter_zero_opens(
+        chapters,
+        windows,
+        start_name=start_name,
+        sea_name=sea_name,
+        lang=lang,
+        display_t0=display_t0,
+        review=review,
+        seconds=seconds,
+    )
+    chapters[:] = _drop_degenerate_chapters(chapters)
     chars = script_chars(chapters)
     return _with_dc_subjects({
         "chapters": chapters,
