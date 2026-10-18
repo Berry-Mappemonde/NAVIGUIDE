@@ -1,4 +1,4 @@
-import { featuresToSegments, legsDistanceNm } from "./geo.js";
+import { featuresToSegments, legsDistanceNm, wrapLon } from "./geo.js";
 import { waypointsFromCollection } from "./waypointsFromCollection.js";
 
 /** Côte lisible pour un point tracé — pas le voyage Berry. */
@@ -40,7 +40,8 @@ export function buildLocalCustomBriefing(geojson, language = "fr") {
   const trail = wps
     .map((p) => {
       const lat = `${Math.abs(p.lat).toFixed(2)}°${p.lat >= 0 ? "N" : "S"}`;
-      const lon = `${Math.abs(p.lon).toFixed(2)}°${p.lon >= 0 ? "E" : "W"}`;
+      const shownLon = wrapLon(Number(p.lon));
+      const lon = `${Math.abs(shownLon).toFixed(2)}°${shownLon >= 0 ? "E" : "W"}`;
       return `${p.name} (${lat}, ${lon})`;
     })
     .join(" → ");

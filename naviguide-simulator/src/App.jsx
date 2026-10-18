@@ -70,7 +70,7 @@ import {
   shouldFocusTracerJump,
   shouldKeepSceneVisible,
 } from "./utils/sceneGate.js";
-import { summarizeRoute, featuresToSegments, legsDistanceNm } from "./utils/geo.js";
+import { routeStats, featuresToSegments, legsDistanceNm } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
 import { normalizeExpeditionPlan } from "./utils/expeditionPlan.js";
@@ -1561,7 +1561,7 @@ export default function App() {
     const key = drawingNotice.code === "on_land"
       ? "pointOnLand"
       : drawingNotice.code === "limit"
-        ? "drawPointLimit"
+        ? "drawPointLimitReached"
         : "rhumbCrossesLand";
     setDrawNotice({ kind: drawingNotice.code === "limit" ? "notice" : "error", text: t(key, { max: DRAW_MAX_POINTS }) });
   }, [drawingNotice, t]);
@@ -1569,7 +1569,7 @@ export default function App() {
     () => (routeForView ? featuresToSegments(routeForView) : segments),
     [routeForView, segments],
   );
-  const stats = useMemo(() => summarizeRoute(statsSegs), [statsSegs]);
+  const stats = useMemo(() => routeStats(statsSegs), [statsSegs]);
   const statsPoints = useMemo(
     () => (routeForView
       ? (routeForView.features || []).filter((f) => f.geometry?.type === "Point").map((f) => ({
@@ -1928,6 +1928,21 @@ export default function App() {
                 {t("searouteDrawFailed")}
               </div>
             )}
+            {drawNotice && (
+              // Under the drawing pill, above the map and the panels: a point
+              // refused (on land, limit) is always said, never silently dropped.
+              <div
+                role="status"
+                data-testid={drawNotice.kind === "error" ? "route-import-error" : "route-import-notice"}
+                className={`border text-[11px] font-semibold px-3 py-1 rounded-full shadow-lg ${
+                  drawNotice.kind === "error"
+                    ? "bg-rose-950/95 border-rose-400/60 text-rose-50"
+                    : "bg-slate-900/95 border-sky-400/50 text-sky-50"
+                }`}
+              >
+                {drawNotice.text}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1937,10 +1952,11 @@ export default function App() {
           📋 {clipboardToast} {t("copied")}
         </div>
       )}
-      {drawNotice && (
+      {drawNotice && !drawingMode && (
         <div
+          role="status"
           data-testid={drawNotice.kind === "error" ? "route-import-error" : "route-import-notice"}
-          className="absolute top-5 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 text-white text-xs px-4 py-2 rounded-full"
+          className="absolute top-16 left-1/2 -translate-x-1/2 z-[2100] bg-slate-900/95 text-white text-xs px-4 py-2 rounded-full pointer-events-none"
         >
           {drawNotice.text}
         </div>

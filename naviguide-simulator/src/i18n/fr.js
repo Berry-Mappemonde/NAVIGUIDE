@@ -576,7 +576,8 @@ export default {
   skipperExpertAlongAmp:       "AMP sur le trait",
   skipperExpertAmpAhead:       "AMP devant, au moins",
 
-  pointOnLand:        "Point sur terre",
+  pointOnLand:        "Point sur terre : non ajouté",
   rhumbCrossesLand:   "La ligne droite traverse la terre",
+  drawPointLimitReached: "Limite de {max} points atteinte",
   drawPointLimit:     "{max} points maximum",
 };

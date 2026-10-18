@@ -15,12 +15,23 @@ export function isNamedEscale(stop) {
  * Air hops (Cayenne → Halifax / SPM): 0 nm at sea, film duration separately.
  * Longitudes unwrapped so the antimeridian does not cut the film.
  */
+function legScale(seg) {
+  const nm = Number(seg?.nm);
+  if (!Number.isFinite(nm) || nm <= 0) return 1;
+  const c = seg.coords || [];
+  let geom = 0;
+  for (let i = 1; i < c.length; i += 1) {
+    geom += haversineNm(c[i - 1][1], c[i - 1][0], c[i][1], unwrapLon(c[i - 1][0], c[i][0]));
+  }
+  return geom > 0 ? nm / geom : 1;
+}
+
 export function flattenRoute(segments) {
   const points = [];
   let cumNm = 0;
   let filmCum = 0;
 
-  const add = (lon, lat, { jump = false, nonMaritime = false, air = false } = {}) => {
+  const add = (lon, lat, { jump = false, nonMaritime = false, air = false, scale = 1 } = {}) => {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
     if (points.length) {
       const prev = points[points.length - 1];
@@ -30,7 +41,7 @@ export function flattenRoute(segments) {
       if (jump) {
         filmCum += AIR_FILM_NM;
       } else {
-        const d = haversineNm(prev.lat, prev.lon, lat, lon);
+        const d = haversineNm(prev.lat, prev.lon, lat, lon) * scale;
         if (!air) cumNm += d;
         filmCum += d;
       }
@@ -50,6 +61,10 @@ export function flattenRoute(segments) {
     const coords = seg?.coords;
     if (!coords || coords.length < 2) continue;
     const air = isAirSegment(seg);
+    // A drawn leg carries the length the router gave (`nm`): its vertices
+    // are spread over that length, so the Expedition box, the stage card and
+    // the playhead read the same distance as the drawing box and the export.
+    const scale = legScale(seg);
     let start = 0;
     if (points.length) {
       const [lon0, lat0] = coords[0];
@@ -61,7 +76,7 @@ export function flattenRoute(segments) {
       }
     }
     for (let i = start; i < coords.length; i++) {
-      add(coords[i][0], coords[i][1], { nonMaritime: seg.nonMaritime, air });
+      add(coords[i][0], coords[i][1], { nonMaritime: seg.nonMaritime, air, scale });
     }
   }
   const totalNm = points.length ? points[points.length - 1].cumNm : 0;

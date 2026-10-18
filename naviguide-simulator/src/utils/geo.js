@@ -104,6 +104,45 @@ export function splitAntimeridianCoords(coords) {
   return parts.filter((p) => p.length >= 2);
 }
 
+/**
+ * Une polyligne dépliée (lon hors [−180, 180] après l'antiméridien), ramenée
+ * dans [−180, 180] pour l'affichage et les exports : coupée au franchissement,
+ * avec un point au bord (±180) de chaque côté. Le tracé carte garde la forme
+ * dépliée ; seuls les fichiers et les textes reçoivent celle-ci.
+ */
+export function wrapLonParts(coords) {
+  const parts = [];
+  let part = [];
+  let prev = null;
+  for (const c of coords || []) {
+    const lon = Number(c?.[0]);
+    const lat = Number(c?.[1]);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+    if (prev) {
+      // Bord franchi entre prev et c (sur la forme dépliée, sans saut).
+      const a = unwrapLon(prev[0], prev[0]);
+      const b = unwrapLon(a, lon);
+      const k0 = Math.floor((a + 180) / 360);
+      const k1 = Math.floor((b + 180) / 360);
+      if (k0 !== k1) {
+        const edge = (Math.max(k0, k1) * 360) - 180;
+        const t = (edge - a) / (b - a);
+        const edgeLat = prev[1] + (lat - prev[1]) * t;
+        const out = b > a ? 180 : -180;
+        part.push([out, edgeLat]);
+        if (part.length >= 2) parts.push(part);
+        part = [[-out, edgeLat]];
+      }
+    }
+    const point = [wrapLon(lon), lat];
+    if (c.length > 2) point.push(...c.slice(2));
+    part.push(point);
+    prev = [lon, lat];
+  }
+  if (part.length >= 2) parts.push(part);
+  return parts;
+}
+
 /** Fenêtre navigable RA4 : une copie de chaque côté, pas l'infini. */
 export const WORLD_COPY_LON_BOUND = 540;
 /** 0, ±360, ±720 au plus — jamais une répétition infinie du monde. */
@@ -244,10 +283,6 @@ export function worldCopyParts(parts) {
 }
 
 /**
- * Distance nautique + nombre de segments d'une liste de polylignes
- * `segments` : [{ coords: [[lon, lat], ...] }]
- */
-/**
  * Distance of a drawn route, leg by leg: the length the server gave for the
  * leg when there is one, otherwise the great-circle sum of its vertices.
  * The drawing box and the local briefing both use it, so they agree.
@@ -266,6 +301,20 @@ export function legsDistanceNm(legs) {
   return nm;
 }
 
+/**
+ * What the Expedition box shows: the distance through legsDistanceNm (the
+ * length of each leg, as in the drawing box, the briefing and the export),
+ * and the vertex segment count of summarizeRoute.
+ */
+export function routeStats(segments) {
+  const { segments: count } = summarizeRoute(segments);
+  return { nm: Math.round(legsDistanceNm(segments) * 10) / 10, segments: count };
+}
+
+/**
+ * Distance nautique + nombre de segments d'une liste de polylignes
+ * `segments` : [{ coords: [[lon, lat], ...] }]
+ */
 export function summarizeRoute(segments) {
   let nm = 0;
   let count = 0;

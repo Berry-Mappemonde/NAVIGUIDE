@@ -99,3 +99,39 @@ test("↶ pendant le calcul d'une jambe ne vide pas la page", async ({ page }) =
   expect(pageErrors, pageErrors.join("\n")).toEqual([]);
   expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
 });
+
+test("↶ puis D aussitôt : la jambe B-C n'apparaît jamais", async ({ page }) => {
+  test.setTimeout(90_000);
+  await slowRoute(page);
+  await page.goto("/");
+  await dismissNotForNav(page);
+  await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
+  await enterTracer(page);
+  await page.waitForFunction(() => typeof window.__naviguideAddDrawnPoint === "function");
+  const undo = page.getByTitle(/Annuler le dernier point|Undo last point/).filter({ hasText: "↶" });
+  // Toutes les jambes vues pendant le test, image par image.
+  await page.evaluate(() => {
+    window.__seenLegs = new Set();
+    const tick = () => {
+      for (const s of window.__naviguideDrawn?.segments || []) {
+        if (s) window.__seenLegs.add(`${s.from?.name}-${s.to?.name}`);
+      }
+      window.__seenLegsRaf = requestAnimationFrame(tick);
+    };
+    tick();
+  });
+  await add(page, A);
+  await add(page, B);
+  await page.waitForFunction(() => window.__naviguideDrawn?.segments?.length === 1, null, { timeout: 15_000 });
+  await add(page, C);
+  await page.waitForTimeout(300);
+  await undo.click();
+  await add(page, D);
+  await page.waitForFunction(() => window.__naviguideDrawn?.segments?.length === 2, null, { timeout: 15_000 });
+  // La réponse tardive B→C est passée : toujours pas de B-C.
+  await page.waitForTimeout(ROUTE_DELAY_MS + 500);
+  expect(await drawn(page)).toEqual({ names: ["A", "B", "D"], legs: ["A-B", "B-D"] });
+  const seen = await page.evaluate(() => [...window.__seenLegs]);
+  expect(seen).not.toContain("B-C");
+  expect(seen).toContain("B-D");
+});

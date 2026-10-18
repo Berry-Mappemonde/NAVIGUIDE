@@ -170,3 +170,67 @@ def test_non_finite_or_absurd_longitude_is_422():
             "end_lon": -123.0,
         })
         assert response.status_code == 422, bad
+
+
+def test_end_longitude_beyond_540_is_422_and_540_is_accepted(monkeypatch):
+    seen = []
+
+    def fake_route(start, end):
+        seen.append((start, end))
+        return {
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": [[start[0], start[1]], [end[0], end[1]]]},
+            "properties": {"length": 1, "units": "km"},
+        }
+
+    monkeypatch.setattr(main, "searoute_with_exact_end", fake_route)
+    monkeypatch.setattr(main, "endpoint_on_land", lambda *_a, **_k: False)
+    client = TestClient(main.app)
+    for bad in (540.01, 541, -540.5, 900):
+        response = client.get("/route", params={
+            "start_lat": 0.0, "start_lon": 170.0, "end_lat": 1.0, "end_lon": bad,
+        })
+        assert response.status_code == 422, bad
+    assert seen == []
+    for edge in (540, -540):
+        response = client.get("/route", params={
+            "start_lat": 0.0, "start_lon": 170.0, "end_lat": 1.0, "end_lon": edge,
+        })
+        assert response.status_code == 200, (edge, response.text)
+        _start, end = seen[-1]
+        assert -180.0 <= end[0] <= 180.0
+        assert abs(abs(end[0]) - 180.0) < 1e-6
+    response = client.get("/route", params={
+        "start_lat": 0.0, "start_lon": 540, "end_lat": 1.0, "end_lon": 179.0,
+    })
+    assert response.status_code == 200, response.text
+
+
+def test_runner_caps_concurrent_searoute_processes():
+    import threading
+    import time as _time
+
+    import searoute_worker
+
+    assert searoute_worker.MAX_BUSY == 4
+    runner = searoute_worker.ProcessRunner(max_busy=1)
+    try:
+        results = {}
+
+        def slow():
+            results["slow"] = runner.run("time:sleep", (1.5,), 20.0)
+
+        t = threading.Thread(target=slow)
+        t.start()
+        _time.sleep(0.3)
+        t0 = _time.monotonic()
+        # The only slot is busy: this call waits its deadline, then gives up
+        # without starting a second process.
+        assert runner.run("time:sleep", (0,), 0.3) is searoute_worker.TIMED_OUT
+        assert _time.monotonic() - t0 < 1.0
+        t.join(30)
+        assert results["slow"] is None
+        # Slot free again: the next call runs.
+        assert runner.run("time:sleep", (0,), 20.0) is None
+    finally:
+        runner.shutdown()

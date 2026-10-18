@@ -576,7 +576,8 @@ export default {
   skipperExpertAlongAmp:       "MPA along the track",
   skipperExpertAmpAhead:       "MPA ahead, at least",
 
-  pointOnLand:        "Point on land",
+  pointOnLand:        "Point on land: not added",
   rhumbCrossesLand:   "Straight line crosses land",
+  drawPointLimitReached: "{max}-point limit reached",
   drawPointLimit:     "{max} points maximum",
 };

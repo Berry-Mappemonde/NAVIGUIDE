@@ -63,6 +63,19 @@ async function loadLeg(from, to) {
   }
 }
 
+/**
+ * Whether a leg still on the drawing is loading. `pending` maps a leg slot to
+ * the number of fetches in flight for it; a slot past the last point (its
+ * point was undone) no longer counts, the others keep the spinner on.
+ */
+export function legsStillLoading(pending, pointCount) {
+  const lastSlot = Number(pointCount) - 2;
+  for (const [slot, count] of pending || []) {
+    if (count > 0 && slot <= lastSlot) return true;
+  }
+  return false;
+}
+
 /** Same path as N map clicks: clear, then one addPoint per imported waypoint. */
 export async function importPointsSequential(addPoint, reset, points) {
   reset();
@@ -105,6 +118,7 @@ export function useRouteDrawing() {
   const epochRef = useRef(0);
   const queueRef = useRef(Promise.resolve());
   const pendingRef = useRef(0);
+  const pendingSlotsRef = useRef(new Map());
   const slotGenRef = useRef([]);
   const noticeTokenRef = useRef(0);
 
@@ -122,6 +136,7 @@ export function useRouteDrawing() {
     epochRef.current += 1;
     slotGenRef.current = [];
     pendingRef.current = 0;
+    pendingSlotsRef.current = new Map();
     setDrawingLoading(false);
     publishDrawn([], []);
   }, []);
@@ -146,6 +161,8 @@ export function useRouteDrawing() {
     const seen = epochRef.current;
     const gen = slotGenRef.current[slot] || 0;
     pendingRef.current += 1;
+    const slots = pendingSlotsRef.current;
+    slots.set(slot, (slots.get(slot) || 0) + 1);
     setDrawingLoading(true);
     try {
       const result = await loadLeg(from, to);
@@ -175,7 +192,12 @@ export function useRouteDrawing() {
       publishDrawn(pointsRef.current, segmentsRef.current);
     } finally {
       pendingRef.current = Math.max(0, pendingRef.current - 1);
-      if (pendingRef.current === 0) setDrawingLoading(false);
+      const left = (slots.get(slot) || 0) - 1;
+      if (left > 0) slots.set(slot, left);
+      else slots.delete(slot);
+      if (slots === pendingSlotsRef.current) {
+        setDrawingLoading(legsStillLoading(slots, pointsRef.current.length));
+      }
     }
   }, [notify]);
 
@@ -242,7 +264,8 @@ export function useRouteDrawing() {
     setDrawnPoints([...pointsRef.current]);
     setDrawnSegments(denseSegments(segmentsRef.current));
     publishDrawn(pointsRef.current, segmentsRef.current);
-    setDrawingLoading(false);
+    // Only the undone leg stops counting: earlier legs still loading keep the spinner.
+    setDrawingLoading(legsStillLoading(pendingSlotsRef.current, pointsRef.current.length));
     setCanRedo(true);
   }, []);
 

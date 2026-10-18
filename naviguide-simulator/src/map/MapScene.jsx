@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
-import { featuresToSegments } from "../utils/geo.js";
+import { featuresToSegments, wrapLon } from "../utils/geo.js";
 import { useToggleLayers } from "../layers/useToggleLayers.js";
 import { useClimatologyLayer } from "../layers/useClimatologyLayer.js";
 import { useGribCorridorLayer } from "../layers/useGribCorridorLayer.js";
@@ -150,7 +150,7 @@ export function MapScene({
     const onContextMenu = (event) => {
       L.DomEvent.preventDefault(event);
       callbacksRef.current.onCoordinatesCopied?.(
-        `${event.latlng.lat.toFixed(6)}, ${event.latlng.lng.toFixed(6)}`,
+        `${event.latlng.lat.toFixed(6)}, ${wrapLon(event.latlng.lng).toFixed(6)}`,
       );
     };
     map.on("click", onClick);

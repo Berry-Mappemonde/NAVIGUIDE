@@ -11,9 +11,13 @@ import atexit
 import importlib
 import multiprocessing
 import threading
+import time
 
 TIMED_OUT = object()
 _MAX_IDLE = 2
+# At most this many searoute processes run at once; a call waits its turn
+# within its own deadline, then gives up (TIMED_OUT) without starting one.
+MAX_BUSY = 4
 _CTX = multiprocessing.get_context("spawn")
 
 
@@ -71,8 +75,10 @@ class _Worker:
 class ProcessRunner:
     """Runs `module:function` calls in worker processes, killed on timeout."""
 
-    def __init__(self, max_idle: int = _MAX_IDLE) -> None:
+    def __init__(self, max_idle: int = _MAX_IDLE, max_busy: int = MAX_BUSY) -> None:
         self._idle: list[_Worker] = []
+        self._slots = threading.BoundedSemaphore(max(1, int(max_busy)))
+        self.max_busy = max(1, int(max_busy))
         self._lock = threading.Lock()
         self._max_idle = max_idle
         self.last_worker: _Worker | None = None  # tests: the process that ran the last call
@@ -95,6 +101,18 @@ class ProcessRunner:
 
     def run(self, target: str, args: tuple, timeout_s: float):
         """Value of target(*args); TIMED_OUT after timeout_s; raises RuntimeError on a child error."""
+        started = time.monotonic()
+        if not self._slots.acquire(timeout=max(0.0, float(timeout_s))):
+            return TIMED_OUT
+        try:
+            left = float(timeout_s) - (time.monotonic() - started)
+            if left <= 0:
+                return TIMED_OUT
+            return self._run(target, args, left)
+        finally:
+            self._slots.release()
+
+    def _run(self, target: str, args: tuple, timeout_s: float):
         worker = self._take()
         self.last_worker = worker
         try:
