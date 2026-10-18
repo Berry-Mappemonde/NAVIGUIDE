@@ -6,7 +6,7 @@ cochés sur 91 (dont 22 par le bot), **8 KO du porteur — aucun nouveau**
 (🆕 : 0) depuis la session précédente (2026-09-26T22:32:16Z), et une revue
 globale **vide** (`REVUE_GLOBALE.md` sans contenu). Les 8 KO sont tous sur
 la pile #325 → #334 et **déjà planifiés** par
-`docs/PLAN_CORRECTIONS_2026-09-26-s4.md` (lots RF1 → RF10, codés — PR #345 →
+`docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md` (lots RF1 → RF10, codés — PR #345 →
 #359) ; les KO du réviseur de nuit sur les PR suivantes sont couverts par les
 lots correctifs de la file (RC12 → RC18, codés — PR #361 → #386). Cette
 session est donc un **passage de contrôle** : ce plan ne replanifie rien — il

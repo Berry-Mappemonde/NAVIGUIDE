@@ -1,3 +1,5 @@
+Copie NAVIGUIDE. L'original entier est dans le dépôt Blue Intelligence (`docs/PLAN_SEPARATION_DEPOTS.md`). Cette copie garde les sections qui nomment ce dépôt, la preuve d'historique (`poe_pipeline.py`, août 2026) et les dix contrôles de la section 9. La procédure Mongo de l'OVH n'est pas recopiée.
+
 # Séparation des dépôts — Blue Intelligence et NAVIGUIDE
 
 Plan à exécuter à la lettre. Il remplace la version du 17 octobre 2026 qui
@@ -104,268 +106,9 @@ Les commandes des sections 3, 5 et 6 utilisent ces trois noms.
 Les autres **DÉCISION PROPRIÉTAIRE** sont en section 10.2. Aucune
 n'empêche la sauvegarde (section 1).
 
-## 1. Sauvegarder et compter, avant toute autre action
+## 1. Mongo sur l'OVH
 
-But : une copie des fichiers NAVIGUIDE hors de l'OVH, avec les comptes
-SQLite et les SHA-256, avant le renommage, le filtre et le DNS. Ce n'est
-pas une migration Mongo. La base `naviguide_simulator` n'est pas sur le
-serveur : il n'y a rien à dumper.
-
-La base Blue Intelligence (`blueintel_db`) n'est pas migrée. On la compte
-quand même, pour voir qu'elle n'a pas bougé. Le cron quotidien
-(`infra/vps/blue-intelligence-backup.cron`) ne sauve que cette base. Il
-ne sauve ni le SQLite ni les dossiers du simulateur. On ne le lance pas
-ici, et on n'écrit rien dans `~/backups/mongodb/` : ce cron y efface les
-`blue-*.archive.gz` de plus de 14 jours.
-
-Le mot de passe admin est dans
-`~/.config/blue-intelligence/mongo.env` (`MONGO_ADMIN_USER`,
-`MONGO_ADMIN_PWD`), créé par `infra/vps/install-mongodb.sh`. On ne
-l'affiche pas.
-
-### 1.1 Sur l'OVH — vérifier le relevé, compter `blueintel_db`
-
-```bash
-ssh ubuntu@135.125.226.16
-```
-
-```bash
-set +x
-whoami
-STAMP=$(date -u +%F)
-DEST="$HOME/backups/naviguide-split-$STAMP"
-APP="$HOME/blue-intelligence-map"
-SIM="$APP/naviguide-simulator/server"
-mkdir -p "$DEST"
-test "$(whoami)" = ubuntu || { echo "STOP compte inattendu"; exit 1; }
-test -d "$APP" || { echo "STOP dossier $APP absent"; exit 1; }
-
-. "$HOME/.config/blue-intelligence/mongo.env"
-test "$DB_NAME" = blueintel_db || { echo "STOP DB_NAME n'est pas blueintel_db"; exit 1; }
-MONGO_URI="mongodb://${MONGO_ADMIN_USER}:${MONGO_ADMIN_PWD}@127.0.0.1:27017/?authSource=admin"
-
-ENV_FILE="$HOME/.config/naviguide/simulator.env"
-{
-  echo "date_utc=$(date -u +%FT%TZ)"
-  echo "DB_NAME=$DB_NAME"
-  if [ -f "$ENV_FILE" ] && grep -q '^SIMULATOR_MONGO_URL=.' "$ENV_FILE"; then
-    echo "SIMULATOR_MONGO_URL=posé"
-  else
-    echo "SIMULATOR_MONGO_URL=absent"
-  fi
-  grep -E '^(NAVIGUIDE_VOYAGE_DIR|NAVIGUIDE_GRIB_DIR|NAVIGUIDE_FORECAST_CACHE|NAVIGUIDE_SAILDOCS_INBOX|NAVIGUIDE_OFFICIAL_STORE_DIR|BI_API_URL)=' \
-    "$ENV_FILE" 2>/dev/null || true
-} > "$DEST/etat-env.txt"
-grep -q '^SIMULATOR_MONGO_URL=absent$' "$DEST/etat-env.txt" || { echo "STOP SIMULATOR_MONGO_URL est posé : ne pas continuer ce plan"; exit 1; }
-
-mongosh --quiet "$MONGO_URI" --eval '
-const names = db.adminCommand({listDatabases:1}).databases.map(d => d.name).sort();
-print("DBS " + names.join(","));
-const users = db.getSiblingDB("admin").system.users.distinct("user");
-print("SIM_USER " + (users.indexOf("naviguide_sim") >= 0 ? "présent" : "absent"));
-' | tee "$DEST/etat-mongo.txt"
-grep -q 'DBS admin,blueintel_db,config,local$' "$DEST/etat-mongo.txt" || { echo "STOP liste de bases différente du 17 oct."; exit 1; }
-grep -q 'SIM_USER absent$' "$DEST/etat-mongo.txt" || { echo "STOP utilisateur naviguide_sim apparu"; exit 1; }
-
-mongosh --quiet "$MONGO_URI" --eval '
-const d = db.getSiblingDB("blueintel_db");
-d.getCollectionNames().filter(c => !c.startsWith("system.")).sort()
-  .forEach(c => print("blueintel_db\t" + c + "\t" + d.getCollection(c).countDocuments()));
-' | tee "$DEST/comptes-mongo-avant.tsv"
-unset MONGO_URI
-```
-
-`etat-env.txt` ne contient pas l'URI : elle porte le mot de passe. Une
-ligne `STOP` : on ne passe pas à la copie. Une base `naviguide_simulator`
-apparue après le 17 octobre changerait la nature de la migration. Ce
-plan ne la dump pas « pour voir ».
-
-Le code Blue Intelligence ouvre notamment `poe_ports`, `poe_seed_ports`,
-`poe_runs`, `eez_zones`, `projects`, `marinas`, `capitaineries`,
-`amp_sites`, `review_gold`. Le tableau réel de `blueintel_db` fait foi.
-Il n'y a pas de collection simulateur à compter : le stock RF2 est le
-dossier `official-store/`.
-
-Contrôle des chemins. Un dossier obligatoire absent, ou un dossier
-absent le 17 octobre devenu présent : `STOP`. On ne le copie pas en
-silence.
-
-```bash
-for d in "$SIM/voyage_data" "$SIM/polar_data" "$SIM/grib_data" "$SIM/saildocs_inbox"; do
-  test -d "$d" || { echo "STOP absent $d"; exit 1; }
-  echo "présent $d"
-done
-test -f "$SIM/voyage_data/naviguide.sqlite" || { echo "STOP sqlite absent"; exit 1; }
-test -d "$SIM/voyage_data/official-store" || { echo "STOP official-store absent"; exit 1; }
-test -f "$SIM/voyage_data/naviguide.sqlite.bak-rekey-20261015" || { echo "STOP naviguide.sqlite.bak-rekey-20261015 absent"; exit 1; }
-test -d "$HOME/moments-restore-20261018T033021Z" || { echo "STOP moments-restore-20261018T033021Z absent sur OVH"; exit 1; }
-for ghost in "$SIM/forecast_cache" /var/lib/naviguide "$HOME/.cache/naviguide"; do
-  if [ -e "$ghost" ]; then echo "STOP apparu depuis le 17 oct. : $ghost"; exit 1; fi
-  echo "toujours absent $ghost"
-done
-{
-  echo "chemin octets"
-  du -sb "$SIM/voyage_data" "$SIM/voyage_data/official-store" \
-    "$SIM/polar_data" "$SIM/grib_data" "$SIM/saildocs_inbox"
-} | tee "$DEST/etat-tailles-source.txt"
-```
-
-Place libre : la copie locale pèse la taille de `voyage_data` (5,5 Go
-le 17 octobre) plus les trois autres dossiers. On exige 8 Go libres.
-S'il en manque, on s'arrête. On ne supprime rien pour faire de la place.
-
-```bash
-free=$(df -B1 --output=avail "$HOME" | tail -1)
-echo "libre_octets $free" | tee "$DEST/etat-disque.txt"
-test "$free" -ge 8000000000 || { echo "STOP moins de 8 Go libres"; exit 1; }
-```
-
-### 1.2 Sur l'OVH — copie cohérente, puis redémarrage
-
-`naviguide-simulator` est arrêté le temps de la copie, puis relancé
-avant la section 2. `systemctl stop` ne désinstalle pas l'unité et ne
-touche pas aux fichiers. On n'arrête pas `blue-intelligence`.
-
-```bash
-sudo systemctl stop naviguide-simulator
-test "$(systemctl is-active naviguide-simulator)" = inactive || { echo "STOP le simulateur tourne encore"; exit 1; }
-command -v fuser >/dev/null || { echo "STOP fuser absent (paquet psmisc) — relancer le service avant d'installer quoi que ce soit"; sudo systemctl start naviguide-simulator; exit 1; }
-if sudo fuser "$SIM/voyage_data/naviguide.sqlite"; then
-  echo "STOP un processus tient encore le sqlite"
-  sudo systemctl start naviguide-simulator
-  exit 1
-fi
-echo "sqlite libre"
-
-mkdir -p "$DEST/fichiers/voyage_data"
-sqlite3 "$SIM/voyage_data/naviguide.sqlite" ".backup $DEST/fichiers/voyage_data/naviguide.sqlite"
-test -s "$DEST/fichiers/voyage_data/naviguide.sqlite" || { echo "STOP backup sqlite vide"; sudo systemctl start naviguide-simulator; exit 1; }
-
-rsync -a \
-  --exclude 'naviguide.sqlite' \
-  --exclude 'naviguide.sqlite-wal' \
-  --exclude 'naviguide.sqlite-shm' \
-  "$SIM/voyage_data/" "$DEST/fichiers/voyage_data/"
-rsync -a "$SIM/polar_data/" "$DEST/fichiers/polar_data/"
-rsync -a "$SIM/grib_data/" "$DEST/fichiers/grib_data/"
-rsync -a "$SIM/saildocs_inbox/" "$DEST/fichiers/saildocs_inbox/"
-
-sudo systemctl start naviguide-simulator
-test "$(systemctl is-active naviguide-simulator)" = active || { echo "STOP redémarrage échoué — ne rien faire d'autre avant que ce service soit active"; exit 1; }
-```
-
-Le fichier copié est celui de `.backup`, pas une copie brute du SQLite
-ouvert. `.backup` est la commande retenue. On ne fait `.dump` en plus :
-cela doublerait l'espace. Si `.backup` échoue, on relance le service
-comme la ligne `STOP backup sqlite vide`, et on s'arrête.
-
-`.dump` n'est le recours que si `sqlite3` refuse `.backup`. Dans ce cas
-seulement, service toujours arrêté :
-
-```bash
-sqlite3 "$SIM/voyage_data/naviguide.sqlite" .dump > "$DEST/fichiers/voyage_data/naviguide.sql"
-```
-
-Puis on note `format=sql` dans le manifeste. La section 8 restaure alors
-avec `sqlite3 naviguide.sqlite < naviguide.sql` au lieu de copier le
-fichier `.backup`. On ne mélange pas les deux formats.
-
-Comptes sur **le fichier de sauvegarde** (le service a déjà repris, le
-fichier vivant peut avoir bougé) :
-
-```bash
-python3 - << PY | tee "$DEST/comptes-sqlite-avant.tsv"
-import sqlite3
-path = "$DEST/fichiers/voyage_data/naviguide.sqlite"
-con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-query = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY 1"
-for (name,) in con.execute(query):
-    ident = '"' + name.replace('"', '""') + '"'
-    n = con.execute(f"SELECT COUNT(*) FROM {ident}").fetchone()[0]
-    print(f"{name}\t{n}")
-con.close()
-PY
-grep -q '^pearls	' "$DEST/comptes-sqlite-avant.tsv" || { echo "STOP table pearls absente"; exit 1; }
-grep -q '^kv	' "$DEST/comptes-sqlite-avant.tsv" || { echo "STOP table kv absente"; exit 1; }
-grep -q '^moments	' "$DEST/comptes-sqlite-avant.tsv" || { echo "STOP table moments absente"; exit 1; }
-```
-
-Le 17 octobre les comptes étaient `pearls` 11 159, `kv` 95 136,
-`moments` 1 dans le SQLite **live**. Au 18 octobre 2026 le live tient
-encore **1** ligne `moments` pour le voyage officiel : le split et la
-migration Contabo se font avec ce chiffre. Ce n'est **pas** un échec.
-Le journal complet (**1142** lignes) est dans
-`naviguide.sqlite.bak-rekey-20261015`, dans les dossiers
-`official-store/<clé>/` et dans `~/moments-restore-20261018T033021Z/`.
-On copie tout sur Contabo (section 8). La remise en service du journal
-live est le lot **MR1** (NAVIGUIDE), après le split. Un compte live à 0,
-ou une table manquante, est un `STOP`.
-
-Secrets, s'ils sont là. On ne les affiche pas.
-
-```bash
-mkdir -p "$DEST/secrets"
-cp -a "$HOME/.config/naviguide/simulator.env" "$DEST/secrets/" 2>/dev/null || echo "simulator.env absent"
-cp -a "$HOME/.config/naviguide/naviguide.env" "$DEST/secrets/" 2>/dev/null || echo "naviguide.env absent"
-chmod 700 "$DEST/secrets"
-```
-
-Sommes, après le redémarrage (la sauvegarde ne change plus) :
-
-```bash
-(
-  cd "$DEST"
-  find fichiers -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
-  sha256sum comptes-mongo-avant.tsv comptes-sqlite-avant.tsv etat-env.txt \
-    etat-mongo.txt etat-tailles-source.txt etat-disque.txt >> SHA256SUMS
-)
-```
-
-On ne copie pas vers Contabo : `~/backups/mongodb/blue-*.archive.gz`,
-`backend/data/`, `~/.config/blue-intelligence/mongo.env`, `backend/.env`,
-ni la base `blueintel_db`.
-
-### 1.3 Sur le Mac — la copie qui quitte le serveur
-
-`voyage_data` pesait 5,5 Go. `rsync` reprend si la liaison coupe.
-`scp -r` ne reprend pas : on ne l'utilise pas pour ce dossier.
-
-```bash
-STAMP=$(date -u +%F)
-mkdir -p "$HOME/Backups/naviguide-split-$STAMP"
-rsync -a --partial ubuntu@135.125.226.16:backups/naviguide-split-$STAMP/ \
-  "$HOME/Backups/naviguide-split-$STAMP/"
-cd "$HOME/Backups/naviguide-split-$STAMP"
-python3 - << 'PY'
-import hashlib, pathlib
-bad = 0
-for line in pathlib.Path("SHA256SUMS").read_text().splitlines():
-    if not line.strip():
-        continue
-    digest, rel = line.split(None, 1)
-    rel = rel.lstrip("*").strip()
-    got = hashlib.sha256(pathlib.Path(rel).read_bytes()).hexdigest()
-    if got != digest:
-        print("ECHEC", rel)
-        bad += 1
-print("fichiers", sum(1 for line in pathlib.Path("SHA256SUMS").read_text().splitlines() if line.strip()), "echecs", bad)
-raise SystemExit(bad)
-PY
-```
-
-Le chemin distant est relatif au dossier personnel du compte `ubuntu`.
-La dernière ligne doit finir par `echecs 0`. Une ligne `ECHEC` : on s'arrête,
-on ne supprime pas la copie OVH, on relance le `rsync`. Écrire à côté,
-sur le Mac seulement,
-un `MANIFESTE.md` : date, les quatre dossiers, les comptes `blueintel_db`,
-les comptes `pearls` / `kv` / `moments`, la phrase
-`SIMULATOR_MONGO_URL=absent`, et la comparaison avec le relevé du
-17 octobre. Ne pas commiter ce manifeste.
-
-La section 8 refait une copie cohérente le jour du transfert (les
-fichiers auront vécu entre-temps) et compare les SHA-256 de **cette**
-copie-là. Tant que le manifeste de la section 1 n'existe pas sur le Mac,
-on ne passe pas à la section 2.
+La procédure (copie cohérente, comptes, redémarrage) est dans le dépôt Blue Intelligence, `docs/PLAN_SEPARATION_DEPOTS.md`, section 1. On ne la lance pas depuis ce dépôt. `blueintel_db` reste sur l'OVH. On ne lance pas `sync-from-atlas.sh`.
 
 ## 2. Geler les automatismes
 
@@ -1628,23 +1371,23 @@ Blue Intelligence :
 
 NAVIGUIDE :
 
-- `docs/PLAN_AUDIT_CALCULS.md`
-- `docs/PLAN_BATCH_2026-10-14.md`
-- `docs/PLAN_BATCH_SUIVANT_2026-09-29.md`
-- `docs/PLAN_CORRECTIONS_2026-09-22.md`
-- `docs/PLAN_CORRECTIONS_2026-09-23.md`
-- `docs/PLAN_CORRECTIONS_2026-09-26-s2.md`
-- `docs/PLAN_CORRECTIONS_2026-09-26-s4.md`
-- `docs/PLAN_CORRECTIONS_2026-09-27-s5.md`
-- `docs/PLAN_CORRECTIONS_2026-09-28-film.md`
-- `docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md`
-- `docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md`
-- `docs/PLAN_DEUX_MODES_2026-09-29.md`
-- `docs/PLAN_FILM_REVOIR_EXPEDITION.md`
-- `docs/PLAN_ICI_JOURNAL_EXPERT.md`
-- `docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md`
-- `docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md`
-- `docs/SPECS_E2E_TRIAGE_2026-09-29.md`
+- `docs/archives/PLAN_AUDIT_CALCULS.md`
+- `docs/archives/PLAN_BATCH_2026-10-14.md`
+- `docs/archives/PLAN_BATCH_SUIVANT_2026-09-29.md`
+- `docs/archives/PLAN_CORRECTIONS_2026-09-22.md`
+- `docs/archives/PLAN_CORRECTIONS_2026-09-23.md`
+- `docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md`
+- `docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md`
+- `docs/archives/PLAN_CORRECTIONS_2026-09-27-s5.md`
+- `docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md`
+- `docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md`
+- `docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md`
+- `docs/archives/PLAN_DEUX_MODES_2026-09-29.md`
+- `docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md`
+- `docs/archives/PLAN_ICI_JOURNAL_EXPERT.md`
+- `docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md`
+- `docs/archives/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md`
+- `docs/archives/SPECS_E2E_TRIAGE_2026-09-29.md`
 
 `docs/FILM_DISCOURS_ETAT_2026-09-28.md` traverse le filtre entier, à
 son chemin, dans NAVIGUIDE. Le commit de la section 6.5 le déplace
@@ -1884,7 +1627,7 @@ Documents que le code ouvre ou que les prompts disent de lire :
 |---|---|
 | `docs/LOTS_ORDRE_ET_PROMPTS.md` | `run_lots.py` `PROMPTS_MD` (ligne 59). `plan_corrections.py` `FIXED_DOCS` (ligne 70) et les prompts (lignes 10, 13, 208, 235, 272, 276). `review_agent.py` (lignes 129, 130, 203). `loop.py` lit `rl.PROMPTS_MD`, sans second chemin. |
 | `docs/REGLES_WORKFLOW_AGENT.md` | `FIXED_DOCS`. Prompts de `plan_corrections.py` (207, 276), `review_agent.py` (129, 203), `run_lots.py` (643–644). |
-| `docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md` | `FIXED_DOCS`. Prompt `plan_corrections.py` ligne 211. |
+| `docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md` | `FIXED_DOCS`. Prompt `plan_corrections.py` ligne 211. |
 | `docs/PLAN_CORRECTIONS_{date}*.md` | `plan_corrections.py` `previous_plans` (glob sous `docs/`). |
 | `docs/PLAN_CORRECTIONS_{tag}.md` | Sortie demandée par les prompts de `plan_corrections.py`, et attribut `plan=` des balises `<!-- LOT -->`. |
 | Branche `docs/plan-corrections-{tag}` | `plan_corrections.py` (checkout, push, recherche de la PR). |
@@ -1894,7 +1637,7 @@ Documents que le code ouvre ou que les prompts disent de lire :
 | `docs/HACKATHON_DEVPOST_SOUMISSION.md` | `devpost_answers.py` `SUBMISSION_DOC` (ligne 38) et le prompt ligne 114. |
 | `README.md` | Prompt `devpost_answers.py` ligne 114. |
 | `docs/ESPRIT_DE_L_APPLICATION.md` | Même prompt. |
-| `docs/PLAN_DEUX_MODES_2026-09-29.md` | Même prompt. |
+| `docs/archives/PLAN_DEUX_MODES_2026-09-29.md` | Même prompt. |
 | `infra/vps/README.md` | Même prompt, section « politique LLM ». |
 | `docs/DEVPOST_REPONSES_{date}.md` | Sortie demandée par `devpost_answers.py` (ligne 133). |
 | Branche `docs/devpost-reponses-{date}` | Même script, ligne 135. |
@@ -2146,7 +1889,7 @@ index efb164f5..eb45b2a5 100644
 -        if: always()
 -        run: node scripts/e2e-summary.mjs test-results/e2e.json >> "$GITHUB_STEP_SUMMARY"
 -      # Le rapport JSON (quelques dizaines de ko) est toujours conservé : c'est lui qui liste
--      # les « verts avec réserve » (chemins à vide) relus dans docs/SPECS_E2E_TRIAGE_2026-09-29.md.
+-      # les « verts avec réserve » (chemins à vide) relus dans docs/archives/SPECS_E2E_TRIAGE_2026-09-29.md.
 -      - uses: actions/upload-artifact@v7
 -        if: always()
 -        with:
@@ -2327,7 +2070,7 @@ END_BI_CI'
 -        if: always()
 -        run: node scripts/e2e-summary.mjs test-results/e2e.json >> "$GITHUB_STEP_SUMMARY"
 -      # Le rapport JSON (quelques dizaines de ko) est toujours conservé : c'est lui qui liste
--      # les « verts avec réserve » (chemins à vide) relus dans docs/SPECS_E2E_TRIAGE_2026-09-29.md.
+-      # les « verts avec réserve » (chemins à vide) relus dans docs/archives/SPECS_E2E_TRIAGE_2026-09-29.md.
 -      - uses: actions/upload-artifact@v7
 -        if: always()
 -        with:

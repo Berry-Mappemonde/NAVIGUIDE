@@ -1,17 +1,10 @@
 ---
-description: Production database — the VPS is the source of truth
+description: Le simulateur n'a pas de Mongo
 alwaysApply: true
 ---
 
 base-de-donnees-vps :
 
-- Since the DNS cutover on 2026-09-10, the **live** MongoDB is the one
-  self-hosted on the OVH VPS (135.125.226.16, `127.0.0.1:27017`, systemd
-  service `blue-intelligence`). MongoDB Atlas is **frozen** at the
-  pre-cutover state and no longer receives writes.
-- **NEVER run `infra/vps/sync-from-atlas.sh`**: it would overwrite recent
-  VPS data with the stale Atlas snapshot. The script has a lock
-  (`FORCE_RESYNC`) — do not bypass it without an explicit user decision,
-  with full awareness of the data loss.
-- Data restore: use only the VPS daily local backups (`~/backups/mongodb/`,
-  14-day rotation) — procedure in `infra/vps/README.md`.
+- Le simulateur n'a pas de Mongo.
+- `blueintel_db` reste sur l'OVH.
+- On ne lance pas `sync-from-atlas.sh`.

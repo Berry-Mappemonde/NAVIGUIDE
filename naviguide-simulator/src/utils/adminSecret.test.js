@@ -48,7 +48,7 @@ describe("adminSecret", () => {
     const calls = [];
     const win = {
       localStorage: globalThis.window.localStorage,
-      location: { href: "https://simulator.naviguide.fr/?admin=abc123&lang=fr#map" },
+      location: { href: "https://naviguide.fr/?admin=abc123&lang=fr#map" },
       history: { state: null, replaceState: (...a) => calls.push(a) },
     };
     assert.equal(captureAdminSecretFromUrl(win), true);
@@ -60,7 +60,7 @@ describe("adminSecret", () => {
   it("does nothing without the parameter", () => {
     const win = {
       localStorage: globalThis.window.localStorage,
-      location: { href: "https://simulator.naviguide.fr/?lang=fr" },
+      location: { href: "https://naviguide.fr/?lang=fr" },
       history: { state: null, replaceState: () => { throw new Error("must not be called"); } },
     };
     assert.equal(captureAdminSecretFromUrl(win), false);

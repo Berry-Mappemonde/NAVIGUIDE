@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Devpost — l'agent Fable entre Grok Bot et le brouillon (porteur, 29 sept.).
 
-Chaîne :  Grok Bot relève le formulaire (📋, issue #432)  →  CE SCRIPT lance un agent Fable (CLI Cursor
+Chaîne :  Grok Bot relève le formulaire (📋, issue #1, ex-#432)  →  CE SCRIPT lance un agent Fable (CLI Cursor
 local) qui propose les réponses (✍️)  →  Grok Bot recopie dans le brouillon (📝)  →  le porteur vérifie et
 soumet lui-même.
 
@@ -30,7 +30,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import run_lots as rl  # noqa: E402
 
-ISSUE = 432
+ISSUE = 1  # ex-#432 du monodépôt, transférée le 18 oct. 2026
 MODEL = "claude-fable-5-thinking-xhigh"
 FORM_MARK = "📋 Formulaire Devpost relevé"
 ANSWERS_MARK = "✍️ Réponses proposées"
@@ -111,7 +111,7 @@ def build_prompt(form_comment: dict, date_tag: str, share: dict | None = None) -
     share_txt = share.get("sentenceEn") or "(mesure indisponible : lance python3 infra/agents/devpost_code_share.py et recopie la phrase)"
     return f"""Tu es l'agent Fable de la soumission Devpost de NAVIGUIDE (dépôt Berry-Mappemonde/NAVIGUIDE, hackathon Nebius × NVIDIA Global AI Hackathon). Tu travailles dans ce worktree (main à jour). Tu ne touches à AUCUN code : tu écris un document et un commentaire.
 
-Lis d'abord, en entier : {SUBMISSION_DOC} (la soumission v1.0 du 20 sept. : textes déjà écrits, réponses déjà tranchées, liste de contrôle § 0, critères § 5), README.md, docs/ESPRIT_DE_L_APPLICATION.md, docs/PLAN_DEUX_MODES_2026-09-29.md (l'application a maintenant deux modes : Suivre et Tracer — le mot « Simulation » ne doit plus apparaître), infra/vps/README.md § politique LLM (on-demand ; juge Ultra coupé ; veille Tavily rallumée le 15 oct. : une recherche par escale).
+Lis d'abord, en entier : {SUBMISSION_DOC} (la soumission v1.0 du 20 sept. : textes déjà écrits, réponses déjà tranchées, liste de contrôle § 0, critères § 5), README.md, docs/ESPRIT_DE_L_APPLICATION.md, docs/archives/PLAN_DEUX_MODES_2026-09-29.md (l'application a maintenant deux modes : Suivre et Tracer — le mot « Simulation » ne doit plus apparaître), infra/vps/README.md § politique LLM (on-demand ; juge Ultra coupé ; veille Tavily rallumée le 15 oct. : une recherche par escale).
 
 Puis lis le relevé de Grok Bot ci-dessous : le formulaire Devpost tel qu'il est AUJOURD'HUI ({n_fields} champs relevés), les règles, les critères de jugement. C'est la seule source pour les libellés, les options et les limites de caractères : ne suppose aucun champ qui n'y est pas.
 

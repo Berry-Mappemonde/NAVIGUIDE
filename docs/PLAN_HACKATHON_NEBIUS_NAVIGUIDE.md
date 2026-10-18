@@ -17,7 +17,7 @@ Working documents stay beside this plan, each with its own job:
 
 ## 1. Product
 
-**NAVIGUIDE** (`naviguide-simulator/`, live at `https://simulator.naviguide.fr`): the boat glides along the route, rules decide *when* to speak, sources decide *what is true*, and Nemotron on Nebius Token Factory decides *how to say it*. A number on screen comes from a calculation or a source. A server-side filter rejects any figure the model did not receive.
+**NAVIGUIDE** (`naviguide-simulator/`, live at `https://naviguide.fr`): the boat glides along the route, rules decide *when* to speak, sources decide *what is true*, and Nemotron on Nebius Token Factory decides *how to say it*. A number on screen comes from a calculation or a source. A server-side filter rejects any figure the model did not receive.
 
 Blue Intelligence (`https://blueintelligence.online`) is the memory (ports of entry, marinas, harbour masters, marine protected areas). The simulator calls it through `BI_API_URL`. The Nebius jury grades the briefing, not the PoE agent.
 
@@ -75,7 +75,7 @@ The video file does not go into git. The form receives the YouTube link.
 
 ## 6. Checklist before Submit
 
-- [ ] `https://simulator.naviguide.fr` responds, and a **Written** click shows the Token Factory label (ED1 / RG11 in production, `NEBIUS_API_KEY` on the VPS, `on-demand` mode).
+- [ ] `https://naviguide.fr` responds, and a **Written** click shows the Token Factory label (ED1 / RG11 in production, `NEBIUS_API_KEY` on the VPS, `on-demand` mode).
 - [ ] The 2:30 pill lasts 2:30 (RC27).
 - [ ] English README of the submitted repository: install, run, section “How we use Nemotron on Token Factory”.
 - [ ] MIT licence visible. Repository URL = the **NAVIGUIDE** repository once the split is green; until then the current public repository, and update the URL as soon as the new repository is pushed.

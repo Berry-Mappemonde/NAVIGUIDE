@@ -185,14 +185,17 @@ suppose que l'autre est **au moins dans la même pile** (branche empilée) ;
 en chaîne nocturne, le script empile chaque lot sur la branche du précédent,
 donc l'ordre du tableau suffit.
 
+| 122 | RJ1 | corrections 8 | S | — | Suivre × ma route : le Journal montre ce que la route croise, pas seulement les 2 premières heures |
+| 123 | RJ2 | corrections 8 | S | — | Fiche Ici : l'ouverture est la phrase du film, plus « Le bateau navigue dans Zone économique exclusive… » |
+
 ## 2. Les prompts
 
 Le socle commun est dans chaque prompt (répété volontairement : un agent ne
 lit que son prompt). Les numéros de lignes sont indicatifs (`rg -n` d'abord).
 
-<!-- LOT id="P2" title="Vitesse réelle, zéro à quai" plan="docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md" size="S" deps="" -->
+<!-- LOT id="P2" title="Vitesse réelle, zéro à quai" plan="docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le « Lot P2 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le « Lot P2 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot P2 — Vitesse réelle, zéro à quai.
 Objectif : un bateau à quai a une vitesse de 0 ; en mer, la vitesse citée est celle du moment, pas celle de la jambe planifiée.
@@ -207,9 +210,9 @@ Si quelque chose bloque, décide seul la solution la plus simple, note-la dans l
 Quand tu as fini : numéro de PR, compteurs de tests, liste des captures, ce que tu n'as pas fait.
 ```
 
-<!-- LOT id="C1" title="Résumé de l'expédition juste" plan="docs/PLAN_AUDIT_CALCULS.md" size="S" deps="" -->
+<!-- LOT id="C1" title="Résumé de l'expédition juste" plan="docs/archives/PLAN_AUDIT_CALCULS.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_AUDIT_CALCULS.md § 0 (constat A5) et le « Lot C1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_AUDIT_CALCULS.md § 0 (constat A5) et le « Lot C1 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot C1 — Résumé de l'expédition juste.
 Objectif : l'encadré « Expédition » (outils droite) ne compte plus les sommets du routeur (« 36 segments · 36 waypoints ») mais les étapes entre escales : « 39 425,9 nm · 16 étapes (15 mer, 1 terre) · 17 escales · 1 248 points ».
@@ -236,9 +239,9 @@ Interdits : un chiffre produit par un LLM (le filtre reste) ; une clé dans le d
 Si quelque chose bloque (id de modèle inconnu, format de réponse), décide seul, garde les ids surchargeables par variable d'environnement, note-le dans la PR. Quand tu as fini : numéro de PR, compteurs, captures, ce que tu n'as pas fait.
 ```
 
-<!-- LOT id="M" title="Crédits carte et citations" plan="docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md" size="S" deps="" -->
+<!-- LOT id="M" title="Crédits carte et citations" plan="docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le « Lot M » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le « Lot M » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot M — Crédits carte et citations.
 Objectif : une seule mention Esri, fournisseurs nommés une fois avec un lien chacun, OpenStreetMap lié ; dans le briefing chaque source citée est un lien et rien n'est dit deux fois.
@@ -250,9 +253,9 @@ Branche fix/lot-m-credits-citations depuis la base indiquée (main sinon). Une P
 Interdits : retirer une surface visible ; chiffre LLM ; vidéo ; secret. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="N" title="Panneau gauche stable" plan="docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md" size="S" deps="" -->
+<!-- LOT id="N" title="Panneau gauche stable" plan="docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le « Lot N » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le « Lot N » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot N — Panneau gauche stable.
 Objectif : le chat journal de bord en haut du panneau gauche ; les blocs à contenu variable (carte NOW, sac ici, récit) ont une hauteur fixe avec défilement interne : rien ne saute quand le sac change.
@@ -264,9 +267,9 @@ Branche feat/lot-n-panneau-gauche depuis la base indiquée (main sinon). PR vers
 Interdits : retirer/cacher une surface visible sur main (la fiche d'escale, le journal, le FREE restent) ; chiffre LLM ; vidéo ; secret. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="O" title="Barre film compacte, un seul bouton son" plan="docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md" size="S" deps="" -->
+<!-- LOT id="O" title="Barre film compacte, un seul bouton son" plan="docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le « Lot O » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le « Lot O » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot O — Barre film compacte, un seul bouton son.
 Objectif : une seule rangée de commandes : Masquer la barre · Écouter · [Suivre l'expédition | Simulation] · Revoir l'expédition ; à droite les commandes de lecture compactes ; un seul bouton son (le 🔊 du replay disparaît, « Écouter » pilote replay.voice).
@@ -278,9 +281,9 @@ Branche feat/lot-o-barre-film depuis la base indiquée (main sinon). PR vers mai
 Interdits : retirer une commande existante autre que le doublon son ; chiffre LLM ; vidéo ; secret. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="F1" title="Film 2 min 30 : chapitrage et cinématique menée par la voix" plan="docs/PLAN_FILM_REVOIR_EXPEDITION.md" size="M" deps="O" -->
+<!-- LOT id="F1" title="Film 2 min 30 : chapitrage et cinématique menée par la voix" plan="docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md" size="M" deps="O" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_FILM_REVOIR_EXPEDITION.md § 0, § 1, § 4 et le « Lot F1 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot O (barre film compacte) est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md § 0, § 1, § 4 et le « Lot F1 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot O (barre film compacte) est dans ta base.
 
 Lot F1 — Chapitrage et cinématique menée par la voix.
 Objectif : « Revoir l'expédition » dure 150 s (option 180 s), la voix mène et le bateau suit (onboundary/onend), zoom fixe par chapitre, bateau au tiers avant de l'écran, sous-titre du chapitre dans la barre film.
@@ -292,9 +295,9 @@ Branche feat/lot-f1-film-voix depuis la base indiquée (la branche du lot O si e
 Interdits : retirer une surface visible (le replay actuel reste accessible : c'est lui qu'on améliore) ; chiffre LLM ; vidéo ; secret. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="F2" title="Événements climo et sci, enrichissement wx et stop" plan="docs/PLAN_FILM_REVOIR_EXPEDITION.md" size="M" deps="" -->
+<!-- LOT id="F2" title="Événements climo et sci, enrichissement wx et stop" plan="docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_FILM_REVOIR_EXPEDITION.md § 2.1 et le « Lot F2 » (texte intégral), et docs/audits/CALCULS_ETAT_DE_L_ART.md ligne 19 (seuils WMO). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md § 2.1 et le « Lot F2 » (texte intégral), et docs/audits/CALCULS_ETAT_DE_L_ART.md ligne 19 (seuils WMO). Tu travailles dans naviguide-simulator/.
 
 Lot F2 — Événements « changement de régime » (climo) et « station croisée » (sci) ; wx et stop enrichis.
 Fichiers à ouvrir (seulement) : server/voyage_journal.py (+ server/tests/test_voyage_journal.py), server/ici_warm.py (route_events_from_pearls), server/escale_api.py (section tourisme en cache), src/engine/journalFormat.js (+ test), src/engine/momentCard.js (cardFromJournalEntry) (+ test), src/i18n/fr.js, src/i18n/en.js.
@@ -318,9 +321,9 @@ Branche feat/lot-l2-cascade-usages depuis la base indiquée (branche L1 si non m
 Interdits : chiffre LLM ; clé dans le diff ; appel LLM depuis le navigateur ; retirer une surface. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="F3" title="Script du film : brut, sélection, version rédigée par Nemotron" plan="docs/PLAN_FILM_REVOIR_EXPEDITION.md" size="M" deps="F1,F2,L1" -->
+<!-- LOT id="F3" title="Script du film : brut, sélection, version rédigée par Nemotron" plan="docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md" size="M" deps="F1,F2,L1" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_FILM_REVOIR_EXPEDITION.md § 2.2, § 2.3 et le « Lot F3 » (texte intégral), et docs/PLAN_NEMOTRON_NEBIUS_TAVILY.md § 1 (U2, U3). Tu travailles dans naviguide-simulator/. Les lots F1, F2 et L1 sont dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md § 2.2, § 2.3 et le « Lot F3 » (texte intégral), et docs/PLAN_NEMOTRON_NEBIUS_TAVILY.md § 1 (U2, U3). Tu travailles dans naviguide-simulator/. Les lots F1, F2 et L1 sont dans ta base.
 
 Lot F3 — Script du film : brut (règles), sélection des événements, version rédigée par Nemotron.
 Fichiers à ouvrir (seulement) : src/engine/expeditionStory.js (+ test), nouveau server/film_script.py (+ server/tests/test_film_script.py), server/story_cache.py (namespace "film"), server/story_cascade.py (cascade_text, tiers), server/main.py (route GET /voyage/official/film?lang=fr&seconds=150), src/hooks/useReplay.js (consomme le plan), src/components/SimulationFilmBar.jsx (libellé source du récit + bascule brut/rédigé), src/i18n/fr.js, src/i18n/en.js.
@@ -331,9 +334,9 @@ Branche feat/lot-f3-script-film depuis la base indiquée. PR vers main, gabarit 
 Interdits : un nombre produit par un LLM (le filtre doit le prouver par un test) ; clé dans le diff ; vidéo ; retirer une surface. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="F4" title="Bulle événement sur le bateau" plan="docs/PLAN_FILM_REVOIR_EXPEDITION.md" size="S" deps="F1" -->
+<!-- LOT id="F4" title="Bulle événement sur le bateau" plan="docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md" size="S" deps="F1" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_FILM_REVOIR_EXPEDITION.md § 3 et le « Lot F4 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot F1 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md § 3 et le « Lot F4 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot F1 est dans ta base.
 
 Lot F4 — Bulle événement ancrée au bateau.
 Fichiers à ouvrir (seulement) : nouveau src/components/EventBubble.jsx (+ EventBubble.test.js, test de contrat), src/map/MapSceneController.js PAR EXTRAIT : rg -n "syncMarkers|mainMarker|bindPopup|L.popup" src/map/MapSceneController.js, src/hooks/useReplay.js (cartes du chapitre → bulle), src/components/MomentCards.jsx (hors film : une carte NOW d'alerte/décision ouvre aussi la bulle — ajout), src/index.css (mode clair), src/i18n/fr.js, src/i18n/en.js.
@@ -357,9 +360,9 @@ Branche feat/lot-l3-juge-verite depuis la base indiquée (branche L1 si non merg
 Interdits : supprimer un texte de fiche (barrer seulement) ; chiffre LLM ; clé dans le diff ; retirer une surface. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="F5" title="Film en anglais et plein écran film" plan="docs/PLAN_FILM_REVOIR_EXPEDITION.md" size="S" deps="F3,F4" -->
+<!-- LOT id="F5" title="Film en anglais et plein écran film" plan="docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md" size="S" deps="F3,F4" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_FILM_REVOIR_EXPEDITION.md « Lot F5 » et docs/HACKATHON_DEVPOST_SOUMISSION.md § 2 (plan de la vidéo). Tu travailles dans naviguide-simulator/. Les lots F3 et F4 sont dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md « Lot F5 » et docs/HACKATHON_DEVPOST_SOUMISSION.md § 2 (plan de la vidéo). Tu travailles dans naviguide-simulator/. Les lots F3 et F4 sont dans ta base.
 
 Lot F5 — Version anglaise du film et « plein écran film ».
 Fichiers à ouvrir (seulement) : src/i18n/en.js, src/i18n/fr.js, server/film_script.py (lang=en : mêmes règles, gabarits anglais), src/components/SimulationFilmBar.jsx (bouton « Plein écran film » data-testid="film-fullscreen" qui masque les sidebars par CSS et les rend au clic ou à Échap — SANS les démonter), src/App.jsx PAR EXTRAIT : rg -n "Sidebar |ToolsSidebar " src/App.jsx, src/index.css.
@@ -370,9 +373,9 @@ Branche feat/lot-f5-film-anglais depuis la base indiquée. PR vers main, gabarit
 Interdits : démonter/retirer les sidebars (masquage CSS réversible seulement) ; chiffre LLM ; vidéo ; secret. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="S" title="Route dessinée transpacifique" plan="docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md" size="S" deps="" -->
+<!-- LOT id="S" title="Route dessinée transpacifique" plan="docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le « Lot S » (texte intégral), et docs/audits/CALCULS_ETAT_DE_L_ART.md ligne 22. Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le « Lot S » (texte intégral), et docs/audits/CALCULS_ETAT_DE_L_ART.md ligne 22. Tu travailles dans naviguide-simulator/.
 
 Lot S — Route dessinée Brisbane → San Francisco directe dans le Pacifique.
 Cause racine : longitude dépliée (236,84°) envoyée à GET /route puis à searoute qui attend [−180, 180].
@@ -384,9 +387,9 @@ Branche fix/lot-s-route-transpacifique depuis la base indiquée (main sinon). PR
 Interdits : chiffre LLM ; vidéo ; secret ; retirer une surface. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="T" title="Sac ici() et cartes pour la route dessinée" plan="docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md" size="S" deps="S" -->
+<!-- LOT id="T" title="Sac ici() et cartes pour la route dessinée" plan="docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md" size="S" deps="S" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le « Lot T » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot S (wrapLon) est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le « Lot T » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot S (wrapLon) est dans ta base.
 
 Lot T — Après « Terminer », le briefing raconte le sac autour du bateau de la route dessinée ; aucune carte ne cite un lieu à plus de 60 nm.
 Fichiers à ouvrir (seulement) : src/hooks/useIciDossier.js (rg -n "q.set\(" src/hooks/useIciDossier.js), src/hooks/useIciAlong.js, src/engine/momentCard.js (boucle FREE l. 320–330 et 485–530), src/utils/geo.js (wrapLon du lot S), tests momentCard.test.js, useIciDossier.test.js (créer si absent), src/i18n/fr.js, src/i18n/en.js.
@@ -397,9 +400,9 @@ Branche fix/lot-t-sac-route-dessinee depuis la base indiquée (branche S si non 
 Interdits : chiffre LLM ; vidéo ; secret ; retirer une surface. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="C2" title="Hindcast : le vent et la mer que le bateau a vraiment rencontrés" plan="docs/PLAN_AUDIT_CALCULS.md" size="L" deps="P2" -->
+<!-- LOT id="C2" title="Hindcast : le vent et la mer que le bateau a vraiment rencontrés" plan="docs/archives/PLAN_AUDIT_CALCULS.md" size="L" deps="P2" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_AUDIT_CALCULS.md § 0 (A1–A3), § 2 et le « Lot C2 » (texte intégral), et docs/audits/CALCULS_ETAT_DE_L_ART.md (lignes 6, 9, compléments hindcast). Tu travailles dans naviguide-simulator/. Le lot P2 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_AUDIT_CALCULS.md § 0 (A1–A3), § 2 et le « Lot C2 » (texte intégral), et docs/audits/CALCULS_ETAT_DE_L_ART.md (lignes 6, 9, compléments hindcast). Tu travailles dans naviguide-simulator/. Le lot P2 est dans ta base.
 
 Lot C2 — Horloge à trois régimes : hindcast (passé), prévision (7 j), climatologie (au-delà) ; position d'aujourd'hui = somme des vitesses réelles. TOUTES les sources sont utilisées ensemble : Open-Meteo ET Copernicus Marine (décision du porteur), fusionnées par médiane.
 Fichiers à ouvrir (seulement) : nouveau server/hindcast.py (+ server/tests/test_hindcast.py avec faux serveurs HTTP et faux copernicusmarine), server/copernicus/getWind.py, getWave.py, getCurrent.py (ajouter un paramètre d'intervalle de temps start/end sans casser l'appel actuel), server/forecast_blend.py, server/voyage_clock.py (build_voyage_clock, l. 206–356), server/voyage_api.py (_fill_forecast → _fill_hindcast_then_forecast, tâche quotidienne), server/pearl_store.py (ns "hindcast"), server/voyage_journal.py (wx depuis le hindcast : durée, max), server/tests/test_voyage_clock.py, docs/REGLES_PARAMETRES.md, src/components/SimulationFilmBar.jsx PAR EXTRAIT (afficher le régime : data-testid="clock-regime" — ajout), src/i18n/fr.js, src/i18n/en.js.
@@ -410,9 +413,9 @@ Branche feat/lot-c2-hindcast depuis la base indiquée. PR vers main, gabarit REG
 Interdits : chiffre LLM ; secret ; vidéo ; retirer une surface. Décide seul en cas de blocage (ex. variable Open-Meteo indisponible → la laisser vide, jamais inventer) et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="C3" title="Une seule vitesse, partout" plan="docs/PLAN_AUDIT_CALCULS.md" size="M" deps="C2" -->
+<!-- LOT id="C3" title="Une seule vitesse, partout" plan="docs/archives/PLAN_AUDIT_CALCULS.md" size="M" deps="C2" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_AUDIT_CALCULS.md § 0 (A2), § 2 et le « Lot C3 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot C2 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_AUDIT_CALCULS.md § 0 (A2), § 2 et le « Lot C3 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot C2 est dans ta base.
 
 Lot C3 — Une seule vitesse partout (barre film, chat, bulle « Aujourd'hui », fiche), avec son régime ; route parcourue teintée par régime.
 Fichiers à ouvrir (seulement) : src/hooks/useExpeditionSpeed.js, src/engine/voyageClock.js (sampleClockAtHours : vitesse du pas courant), src/App.jsx PAR EXTRAIT : rg -n "expeditionSpeed|boatKnots" src/App.jsx, server/logbook_chat.py (contexte : même vitesse + régime), src/components/SimulationFilmBar.jsx (régime), src/layers/useRouteLayer.js (teinte par régime — ajout, la route reste), src/i18n/fr.js, src/i18n/en.js, tests associés.
@@ -423,9 +426,9 @@ Branche feat/lot-c3-une-vitesse depuis la base indiquée. PR vers main, gabarit 
 Interdits : chiffre LLM ; secret ; vidéo ; retirer une surface. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="U" title="Zoom réactif" plan="docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md" size="M" deps="" -->
+<!-- LOT id="U" title="Zoom réactif" plan="docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le « Lot U » (texte intégral), et docs/audits/PROFIL_BUILD_PROD_2026-09-19.md (méthode de profil). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le « Lot U » (texte intégral), et docs/audits/PROFIL_BUILD_PROD_2026-09-19.md (méthode de profil). Tu travailles dans naviguide-simulator/.
 
 Lot U — Zoom réactif : le zoom à la molette répond immédiatement ; aucune tâche > 50 ms pendant un zoom.
 Fichiers à ouvrir (seulement) : src/map/MapSceneController.js PAR EXTRAIT : rg -n "syncWaypoints|onMoveEnd|syncDynamicWorldCopies|zoomend|zoomanim" src/map/MapSceneController.js, src/hooks/useMarkerOffsets.js, src/layers/useToggleLayers.js (WMS ZEE), src/map/MapSceneMarkers.test.js.
@@ -462,9 +465,9 @@ Branche feat/lot-l5-revue-commentee depuis la base indiquée. PR vers main, gaba
 Interdits : chiffre LLM ; clé ; retirer une surface ; vidéo. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="C4" title="Courant, polaire de vagues, efficacité de croisière, climatologie échantillonnée, pas d'isochrone" plan="docs/PLAN_AUDIT_CALCULS.md" size="M" deps="C2" -->
+<!-- LOT id="C4" title="Courant, polaire de vagues, efficacité de croisière, climatologie échantillonnée, pas d'isochrone" plan="docs/archives/PLAN_AUDIT_CALCULS.md" size="M" deps="C2" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_AUDIT_CALCULS.md § 0 (A3, A4, A7) et le « Lot C4 » (texte intégral), et docs/audits/CALCULS_ETAT_DE_L_ART.md (lignes 4, 7, 8, 10, 21). Tu travailles dans naviguide-simulator/. Le lot C2 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_AUDIT_CALCULS.md § 0 (A3, A4, A7) et le « Lot C4 » (texte intégral), et docs/audits/CALCULS_ETAT_DE_L_ART.md (lignes 4, 7, 8, 10, 21). Tu travailles dans naviguide-simulator/. Le lot C2 est dans ta base.
 
 Lot C4 — Courant additionné, polaire de vagues, POLAR_EFFICIENCY, climatologie échantillonnée, pas d'isochrone.
 Fichiers à ouvrir (seulement) : server/voyage_clock.py (polar_boat_speed, boucle d'intégration), server/isochrone.py (_boat_speed, run_leg_isochrone : time_step_h, heading_step_deg, max_steps), server/climatology_atlas.py (p25/p50/p75 de la rose), src/engine/skipperOrders.js (planningSpeedFor), server/tests/test_voyage_clock.py, server/tests/test_isochrone_leg.py, src/engine/skipperOrders.test.js, docs/REGLES_PARAMETRES.md.
@@ -475,9 +478,9 @@ Branche feat/lot-c4-calculs-mer depuis la base indiquée. PR vers main, gabarit 
 Interdits : chiffre LLM ; secret ; retirer une surface ; vidéo. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="C5" title="Cahier des calculs et tests croisés client / serveur" plan="docs/PLAN_AUDIT_CALCULS.md" size="S" deps="C4" -->
+<!-- LOT id="C5" title="Cahier des calculs et tests croisés client / serveur" plan="docs/archives/PLAN_AUDIT_CALCULS.md" size="S" deps="C4" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_AUDIT_CALCULS.md § 1 et le « Lot C5 », et docs/audits/CALCULS_ETAT_DE_L_ART.md. Tu travailles dans naviguide-simulator/. Le lot C4 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_AUDIT_CALCULS.md § 1 et le « Lot C5 », et docs/audits/CALCULS_ETAT_DE_L_ART.md. Tu travailles dans naviguide-simulator/. Le lot C4 est dans ta base.
 
 Lot C5 — Cahier des calculs (une fiche par ligne du § 1 : formule, unités, source, test qui la protège) et tests croisés client / serveur.
 Fichiers à ouvrir (seulement) : nouveau docs/audits/CALCULS.md, src/utils/geo.test.js, nouveau server/tests/test_polar_parity.py et src/engine/polar.parity.test.js (mêmes 20 cas TWA × TWS depuis une fixture JSON partagée server/tests/fixtures/polar_cases.json → même vitesse à 0,05 kn), server/weather_pipeline.py (+ test : unités m/s → kn ; convention courant « vers » : uo = 1, vo = 0 → 90° ; vent et vagues « de »), src/utils/geo.js.
@@ -488,9 +491,9 @@ Branche docs/lot-c5-cahier-calculs depuis la base indiquée. PR vers main, gabar
 Interdits : modifier un calcul dans ce lot (documenter et tester seulement ; si un test révèle un écart, l'écrire dans la PR sans le corriger) ; secret ; vidéo. Fin : PR, compteurs, reste à faire.
 ```
 
-<!-- LOT id="C7" title="Conventions paramétrées et repli déclaré" plan="docs/PLAN_AUDIT_CALCULS.md" size="S" deps="C5" -->
+<!-- LOT id="C7" title="Conventions paramétrées et repli déclaré" plan="docs/archives/PLAN_AUDIT_CALCULS.md" size="S" deps="C5" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_AUDIT_CALCULS.md § 1 (lignes 5, 15, 16, 18) et le « Lot C7 », et docs/audits/CALCULS_ETAT_DE_L_ART.md (mêmes lignes). Tu travailles dans naviguide-simulator/. Le lot C5 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_AUDIT_CALCULS.md § 1 (lignes 5, 15, 16, 18) et le « Lot C7 », et docs/audits/CALCULS_ETAT_DE_L_ART.md (mêmes lignes). Tu travailles dans naviguide-simulator/. Le lot C5 est dans ta base.
 
 Lot C7 — Conventions paramétrées et repli déclaré : jours à quai par escale (table sourcée), tronçon route et saut avion documentés, repli de vitesse sans polaire déclaré à l'écran, distance film expliquée.
 Fichiers à ouvrir (seulement) : server/voyage_clock.py (port_days_for l. 24–34, LAND_CALENDAR_HOURS, AIR_CALENDAR_HOURS, MIN_KNOTS, _emit), nouveau server/data/port_days.json, server/climatology_zones.py (boat_speed_from_wind), server/voyage_api.py (exposer params dans GET /voyage/official), src/components/ToolsSidebar.jsx PAR EXTRAIT (rg -n "filmNm|routeDistanceNm" src/components/ToolsSidebar.jsx : info-bulle), src/components/SimulationFilmBar.jsx PAR EXTRAIT (libellé « (repli sans polaire) » — ajout), src/i18n/fr.js, src/i18n/en.js, docs/REGLES_PARAMETRES.md, server/tests/test_voyage_clock.py.
@@ -501,9 +504,9 @@ Branche feat/lot-c7-conventions depuis la base indiquée. PR vers main, gabarit 
 Interdits : changer une valeur de convention sans source écrite ; chiffre LLM ; secret ; vidéo ; retirer une surface. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="C6" title="ETA probabiliste par ensembles" plan="docs/PLAN_AUDIT_CALCULS.md" size="M" deps="C4" -->
+<!-- LOT id="C6" title="ETA probabiliste par ensembles" plan="docs/archives/PLAN_AUDIT_CALCULS.md" size="M" deps="C4" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_AUDIT_CALCULS.md § 1 (ligne 9) et le « Lot C6 », et docs/audits/CALCULS_ETAT_DE_L_ART.md (ligne 9 et complément « Ensembles »). Tu travailles dans naviguide-simulator/. Les lots C2 et C4 sont dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_AUDIT_CALCULS.md § 1 (ligne 9) et le « Lot C6 », et docs/audits/CALCULS_ETAT_DE_L_ART.md (ligne 9 et complément « Ensembles »). Tu travailles dans naviguide-simulator/. Les lots C2 et C4 sont dans ta base.
 
 Lot C6 — Au-delà de 7 jours, l'arrivée est une fourchette (p10–p90) calculée sur les membres d'ensemble, pas une date unique.
 Fichiers à ouvrir (seulement) : nouveau server/ensemble_eta.py (+ server/tests/test_ensemble_eta.py avec faux serveur HTTP), server/hindcast.py (réutiliser le client HTTP et le cache), server/voyage_api.py (GET /voyage/official/eta?stop=<nom> → {p10, p50, p90, members, source, computedAt}), src/components/EscaleLegend.jsx (fourchette sous la date — ajout), src/components/PlanReview.jsx (colonne ou ligne « p10–p90 » — ajout), src/hooks/usePlanReview.js, src/i18n/fr.js, src/i18n/en.js, docs/REGLES_PARAMETRES.md.
@@ -595,7 +598,7 @@ Interdits : toucher à Leaflet ; vidéo ; secret. Décide seul en cas de blocage
 
 <!-- LOT id="G5" title="Popups, bulle événement et tracer ma route sur le globe" plan="docs/PLAN_GLOBE_3D.md" size="M" deps="G4" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_GLOBE_3D.md et le « Lot G5 », et docs/PLAN_FILM_REVOIR_EXPEDITION.md § 3 (bulle). Tu travailles dans naviguide-simulator/src/globe/. Le lot G4 est dans ta base ; si F4 (EventBubble) est dans ta base, réutilise le composant, sinon prévois le point d'ancrage.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_GLOBE_3D.md et le « Lot G5 », et docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md § 3 (bulle). Tu travailles dans naviguide-simulator/src/globe/. Le lot G4 est dans ta base ; si F4 (EventBubble) est dans ta base, réutilise le composant, sinon prévois le point d'ancrage.
 
 Lot G5 — Popup satellite (Vent / Vagues / Courants, mêmes onglets et chiffres) ancrée (maplibregl.Popup.setLngLat), bulle événement ancrée au marqueur bateau, mode Tracer ma route par clics (mêmes callbacks drawing.add/undo/finish que Leaflet), résultat searoute affiché en ligne (longitudes dépliées).
 Constat de la revue du 23 sept. (lot RD1) : sur Leaflet, le clic route ne répondait plus (copies du monde non normalisées) et des clics carte ouvraient le panneau gauche — jamais demandé. Étapes ajoutées : sur le globe, un clic sur la route (hors jambes avion) ouvre le pop-up Copernicus à toutes les longitudes (normaliser modulo 360 si le globe déplie les longitudes) ; AUCUN clic sur la carte ou sur un marqueur n'ouvre un panneau latéral (le clic drapeau remplit la section Ici seulement si le panneau est déjà ouvert, parité RD1) ; test de contrat sur les deux comportements.
@@ -610,7 +613,7 @@ Interdits : toucher à Leaflet ; vidéo ; secret. Décide seul en cas de blocage
 
 <!-- LOT id="G6" title="Le film sur le globe" plan="docs/PLAN_GLOBE_3D.md" size="S" deps="G5,F1" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_GLOBE_3D.md « Lot G6 » et docs/PLAN_FILM_REVOIR_EXPEDITION.md § 4. Tu travailles dans naviguide-simulator/src/globe/. Les lots G5 et F1 sont dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_GLOBE_3D.md « Lot G6 » et docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md § 4. Tu travailles dans naviguide-simulator/src/globe/. Les lots G5 et F1 sont dans ta base.
 
 Lot G6 — Caméra du film sur le globe : easeTo 30 Hz, altitude (zoom) constante par chapitre, pitch 25–35°, orbite douce (bearing +2°/s) pendant les bulles longues ; le plan de film (useReplay) pilote les deux vues par le même état.
 Constat de la revue du 26 sept., session 4 (lot RF6) : sur Leaflet, la caméra du film avançait par setView à chaque frame React — sauts visibles dès que la cadence chute, fond de carte en damier gris (priorité 4 du porteur : « un vrai film »). Étape ajoutée : sur le globe, la caméra du film est une boucle impérative découplée du rendu React (comme RF6) — le bateau glisse, aucun saut, fond chargé ; test de contrat : positions caméra intermédiaires régulières sur 4 s en milieu de chapitre.
@@ -640,9 +643,9 @@ Socle commun rappelé dans chaque prompt : la rubrique « Recette » de la PR es
 **rien de superflu à l'écran** (REGLES § 1) ; les captures sont référencées par
 leur URL complète sur la branche.
 
-<!-- LOT id="R1" title="Nettoyage : textes parasites, Esri une fois, polaire, bouton mort, bascule grisée" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
+<!-- LOT id="R1" title="Nettoyage : textes parasites, Esri une fois, polaire, bouton mort, bascule grisée" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (surtout § 1 « rien de superflu à l'écran » et § 4), puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (surtout § 1 « rien de superflu à l'écran » et § 4), puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R1 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot R1 — Nettoyage.
 Objectif : plus une phrase d'explication dans l'interface ; « Esri » une seule fois dans les crédits carte ; « Polaires chargées » sans nom de bateau ; le bouton « remettre le chiffre du profil » marche ; les pilules brut / rédigé sont grisées pendant le film.
@@ -654,9 +657,9 @@ Branche fix/lot-r1-nettoyage depuis la base indiquée (main sinon). Une PR vers 
 Interdits : retirer une surface visible autre que ces trois phrases ; ajouter un texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul en cas de blocage et note-le dans la PR. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="R2" title="Barre film : une rangée, Masquer partout, Escale précédente" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="R1" -->
+<!-- LOT id="R2" title="Barre film : une rangée, Masquer partout, Escale précédente" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="R1" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu à l'écran », § 4), puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R2 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot R1 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu à l'écran », § 4), puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R2 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot R1 est dans ta base.
 
 Lot R2 — Barre film : une seule rangée, « Masquer la barre » partout, « Escale précédente ».
 Objectif : la rangée de légende des régimes (hindcast · prévision · climatologie) quitte la barre film ; « Masquer la barre » est disponible en Suivre et en Simulation, Cinéma ou non ; un bouton « Escale précédente » se tient à gauche de « Prochaine escale ».
@@ -668,9 +671,9 @@ Branche fix/lot-r2-barre-film depuis la base indiquée. Une PR vers main, gabari
 Interdits : retirer une commande existante ; ajouter une rangée ou un texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="R3" title="Revoir l'expédition : premier clic fiable, voix jusqu'au bout, caméra directe, voix EN audible" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="M" deps="" -->
+<!-- LOT id="R3" title="Revoir l'expédition : premier clic fiable, voix jusqu'au bout, caméra directe, voix EN audible" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R3 » (texte intégral), puis docs/PLAN_FILM_REVOIR_EXPEDITION.md § 0 et § 4 (contrat F1). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R3 » (texte intégral), puis docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md § 0 et § 4 (contrat F1). Tu travailles dans naviguide-simulator/.
 
 Lot R3 — Revoir l'expédition : fiable dès le premier clic.
 Objectif : le premier clic sur « Revoir l'expédition » lance le film et la voix ; la voix ne s'arrête plus avant la fin ; la caméra se pose directement sur la première jambe (plus de détour vers l'Asie) ; en anglais la voix est compréhensible.
@@ -683,9 +686,9 @@ Branche fix/lot-r3-revoir-fiable depuis la base indiquée. Une PR vers main, gab
 Interdits : changer la durée cible (150 s / 180 s) ; retirer une surface visible ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="R4" title="Film fluide : le bateau glisse, la caméra suit" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="M" deps="R3" -->
+<!-- LOT id="R4" title="Film fluide : le bateau glisse, la caméra suit" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="M" deps="R3" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R4 » (texte intégral), puis docs/PLAN_FILM_REVOIR_EXPEDITION.md § 4. Tu travailles dans naviguide-simulator/. Le lot R3 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R4 » (texte intégral), puis docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md § 4. Tu travailles dans naviguide-simulator/. Le lot R3 est dans ta base.
 
 Lot R4 — Film fluide.
 Objectif : pendant une jambe, le bateau avance sans à-coups et la carte glisse avec lui — un film, pas une suite de captures. Aujourd'hui, avec la voix, le temps rejoué n'avance qu'à chaque onboundary (mot par mot) : la position est un escalier.
@@ -697,9 +700,9 @@ Branche fix/lot-r4-film-fluide depuis la base indiquée. Une PR vers main, gabar
 Interdits : changer la durée cible ; zoomer pendant une jambe ; retirer une surface visible ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="R5" title="Récit : connecteurs variés, kilomètres à terre" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
+<!-- LOT id="R5" title="Récit : connecteurs variés, kilomètres à terre" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R5 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R5 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot R5 — Récit sans « puis, puis, puis », kilomètres à terre.
 Objectif : les paragraphes du récit et du script du film commencent par des connecteurs variés ; l'étape terrestre (Saint-Maur → La Rochelle) est comptée en kilomètres et en heures de route, pas en milles nautiques.
@@ -711,9 +714,9 @@ Branche fix/lot-r5-recit-connecteurs depuis la base indiquée. Une PR vers main,
 Interdits : chiffre produit par un LLM ; retirer une surface visible ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="R6" title="Bulles sur le bateau : pendant le film seulement, événements importants, fermables" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="M" deps="R3" -->
+<!-- LOT id="R6" title="Bulles sur le bateau : pendant le film seulement, événements importants, fermables" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="M" deps="R3" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R6 » (texte intégral), puis docs/PLAN_FILM_REVOIR_EXPEDITION.md « Lot F4 ». Tu travailles dans naviguide-simulator/. Le lot R3 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R6 » (texte intégral), puis docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md « Lot F4 ». Tu travailles dans naviguide-simulator/. Le lot R3 est dans ta base.
 
 Lot R6 — Bulles événement : pendant le film seulement, événements importants, croix.
 Objectif : plus aucune bulle sur le bateau hors film (la bulle « balisage » à l'ouverture disparaît) ; pendant « Revoir l'expédition », une bulle ancrée au bateau apparaît à chaque événement important (escale, entrée de ZEE, alerte météo, AMP, station scientifique, changement de régime), une seule à la fois, fermable par une croix et Échap sans arrêter le film ; la carte NOW du panneau gauche montre le même texte.
@@ -726,9 +729,9 @@ Branche fix/lot-r6-bulles-film depuis la base indiquée. Une PR vers main, gabar
 Interdits : bulle hors film ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="R7" title="Fiche d'escale sur la carte, au clic sur le drapeau, sans Écouter" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
+<!-- LOT id="R7" title="Fiche d'escale sur la carte, au clic sur le drapeau, sans Écouter" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R7 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R7 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot R7 — Fiche d'escale sur la carte.
 Objectif : la fiche d'escale sort du panneau gauche ; elle s'ouvre en popup ancrée au drapeau de l'escale quand on clique le drapeau (et depuis la légende des escales), sans bouton Écouter, avec une croix.
@@ -740,9 +743,9 @@ Branche fix/lot-r7-fiche-escale-carte depuis la base indiquée. Une PR vers main
 Interdits : retirer le contenu de la fiche (il change de place, pas de contenu) ; bouton Écouter ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="R11" title="Fourchette d'arrivée lisible et jours de mer cohérents" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
+<!-- LOT id="R11" title="Fourchette d'arrivée lisible et jours de mer cohérents" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R11 » (texte intégral), puis docs/PLAN_AUDIT_CALCULS.md « Lot C6 ». Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R11 » (texte intégral), puis docs/archives/PLAN_AUDIT_CALCULS.md « Lot C6 ». Tu travailles dans naviguide-simulator/.
 
 Lot R11 — Fourchette d'arrivée lisible, jours de mer cohérents.
 Objectif : sous la prochaine escale et dans la Revue du plan, « arrivée entre le 31 oct. et le 4 nov. » (deux dates, rien d'autre : « p10–p90 » et « membres » passent en info-bulle) ; les jours de mer d'une jambe sont cohérents avec sa distance et la vitesse planifiée (aujourd'hui Nouméa → Dzaoudzi affiche « 4,5 jours de mer » pour 42 jours).
@@ -754,9 +757,9 @@ Branche fix/lot-r11-eta-lisible depuis la base indiquée. Une PR vers main, gaba
 Interdits : chiffre produit par un LLM ; texte d'aide ; retirer une surface visible ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="R12" title="Carte bornée aux pôles, zoom vérifié sur build de prod" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
+<!-- LOT id="R12" title="Carte bornée aux pôles, zoom vérifié sur build de prod" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R12 » (texte intégral), puis docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md « Lot U ». Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R12 » (texte intégral), puis docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md « Lot U ». Tu travailles dans naviguide-simulator/.
 
 Lot R12 — Carte : limites de déplacement, zoom vérifié sur le build de prod.
 Objectif : on ne peut plus tirer la carte au-delà des pôles (plus d'écran entièrement bleu) ; le zoom molette est vérifié fluide sur le build de prod, et corrigé s'il ne l'est pas.
@@ -768,9 +771,9 @@ Branche fix/lot-r12-carte-bornes-zoom depuis la base indiquée. Une PR vers main
 Interdits : borner la longitude ; retirer une couche ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="R13" title="Redites : compter, puis supprimer" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="R1" -->
+<!-- LOT id="R13" title="Redites : compter, puis supprimer" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="R1" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu à l'écran »), puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R13 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot R1 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu à l'écran »), puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R13 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot R1 est dans ta base.
 
 Lot R13 — Redites : un outil qui compte, une première passe qui supprime.
 Objectif : un libellé n'apparaît qu'une fois par écran ; le nom du bateau une fois (Paramètres avancés) ; « climatologie » et « Polaire » au plus une fois par écran.
@@ -785,11 +788,11 @@ Interdits : supprimer un texte qui porte une information absente ailleurs sur l'
 ### Corrections 2 — revue du 21 septembre au soir (RA1 → RA8)
 
 À enchaîner après la pile R1 → R13 mergée. Détail, anchors et recette dans
-`docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md`.
+`docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md`.
 
-<!-- LOT id="RA1" title="La pensée du modèle ne s'affiche jamais" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="" -->
+<!-- LOT id="RA1" title="La pensée du modèle ne s'affiche jamais" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA1 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RA1 — La pensée du modèle ne s'affiche jamais.
 Objectif : la fiche d'escale (surtout en anglais) et le chat affichent de vraies phrases, jamais le prompt ni le raisonnement du modèle (« Analyze User Input: Task: Translate… Wait, let me re-read… »).
@@ -802,9 +805,9 @@ Branche fix/lot-ra1-pensee-modele depuis la base indiquée (main sinon). PR vers
 Interdits : afficher le raisonnement ; inventer un chiffre ; retirer une surface visible ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RA2" title="L'ordre du récit suit exactement le voyage" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="S" deps="" -->
+<!-- LOT id="RA2" title="L'ordre du récit suit exactement le voyage" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA2 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA2 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RA2 — L'ordre du récit suit exactement le voyage.
 Objectif : le récit (FR et EN) et le film énoncent les escales dans l'ordre exact de la route (Saint-Maur → La Rochelle → Ajaccio/Corse → Fort-de-France → …), chaque « départ vers X » suivi de « arrivée à X », sans répéter une escale. Aujourd'hui il annonce « départ vers Fort-de-France » puis « escale à Ajaccio » (décalage d'une jambe) et répète Ajaccio.
@@ -816,9 +819,9 @@ Branche fix/lot-ra2-ordre-recit depuis la base indiquée. PR vers main, gabarit 
 Interdits : inventer une date/distance ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RA3" title="Revoir l'expédition : fond de carte, pas de saut, zoom stable, dézoom archipels, bulle utile" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="RA2" -->
+<!-- LOT id="RA3" title="Revoir l'expédition : fond de carte, pas de saut, zoom stable, dézoom archipels, bulle utile" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="RA2" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA3 » (texte intégral), puis docs/PLAN_FILM_REVOIR_EXPEDITION.md § 4. Tu travailles dans naviguide-simulator/. Le lot RA2 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA3 » (texte intégral), puis docs/archives/PLAN_FILM_REVOIR_EXPEDITION.md § 4. Tu travailles dans naviguide-simulator/. Le lot RA2 est dans ta base.
 
 Lot RA3 — Revoir l'expédition : le rendu.
 Objectif : pendant tout le film, le fond de carte reste visible ; le bateau glisse le long du trait sans saut jusqu'à la fin ; le zoom ne saute pas quand le film s'arrête (Cayenne) ; dans les Caraïbes la caméra montre l'archipel sans sauter d'île en île ; une bulle utile apparaît à l'approche des escales.
@@ -830,9 +833,9 @@ Branche fix/lot-ra3-film-rendu depuis la base indiquée. PR vers main, gabarit R
 Interdits : zoomer pendant une jambe ; laisser la carte sans tuiles ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RA4" title="Jambes avion, position live stable, carte non répétée à l'infini" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="RA3" -->
+<!-- LOT id="RA4" title="Jambes avion, position live stable, carte non répétée à l'infini" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="RA3" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA4 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RA3 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA4 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RA3 est dans ta base.
 
 Lot RA4 — Jambes avion, position live stable, bornes de longitude.
 Objectif : les jambes avion (Cayenne ↔ Saint-Pierre-et-Miquelon, sauts Pacifique) sont en noir pointillé, non colorées par régime, non cliquables et hors de la distance « à la voile » ; la position live est stable au rechargement ; la carte ne se répète pas à l'infini en longitude.
@@ -844,9 +847,9 @@ Branche fix/lot-ra4-avion-live-bornes depuis la base indiquée. PR vers main, ga
 Interdits : colorer une jambe avion ; compter l'avion dans la distance voile ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RA5" title="Logique des boutons de lecture, pas de fiche d'escale pendant le film" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="RA4" -->
+<!-- LOT id="RA5" title="Logique des boutons de lecture, pas de fiche d'escale pendant le film" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="RA4" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA5 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RA4 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA5 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RA4 est dans ta base.
 
 Lot RA5 — Logique des boutons + fiche d'escale hors film.
 Objectif : « Stop » arrête vraiment le film (voix + animation + caméra) et revient à la vue Suivre ; « Stop auto » (arrêt à la prochaine escale) et « Écouter » (voix on/off) sont distincts et font ce qu'ils disent ; aucun état où plus aucun bouton ne répond ; passer de Simulation à Suivre ou lancer Revoir ferme la fiche d'escale ; la croix et Échap ferment la fiche.
@@ -858,9 +861,9 @@ Branche fix/lot-ra5-boutons-lecture depuis la base indiquée. PR vers main, gaba
 Interdits : fiche d'escale pendant le film ; bouton sans effet ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RA6" title="Finitions : redite skipper, crédits au-dessus de la barre, km à terre, cadre de réponse du chat" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="S" deps="" -->
+<!-- LOT id="RA6" title="Finitions : redite skipper, crédits au-dessus de la barre, km à terre, cadre de réponse du chat" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu »), puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA6 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu »), puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA6 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RA6 — Finitions.
 Objectif : plus de redite « Croisière · 36 h » à côté de « Paramètres avancés » ; les crédits carte ne sont plus coupés par la barre de lecture ; l'info-bulle de vitesse existe aussi en Suivre ; la jambe terrestre s'affiche en km dans la barre film ; le chat a un cadre de réponse (plus de grand vide violet) ; le détecteur de redites voit les états repliés/dépliés.
@@ -872,9 +875,9 @@ Branche fix/lot-ra6-finitions depuis la base indiquée. PR vers main, gabarit RE
 Interdits : ajouter un texte d'aide ; laisser une redite ; retirer une surface ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RA7" title="Fourchette d'arrivée sous la prochaine escale, intervalle resserré" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="S" deps="" -->
+<!-- LOT id="RA7" title="Fourchette d'arrivée sous la prochaine escale, intervalle resserré" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA7 » (texte intégral), puis docs/PLAN_AUDIT_CALCULS.md « Lot C6 ». Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA7 » (texte intégral), puis docs/archives/PLAN_AUDIT_CALCULS.md « Lot C6 ». Tu travailles dans naviguide-simulator/.
 
 Lot RA7 — Fourchette d'arrivée lisible et resserrée.
 Objectif : « arriver entre le … et le … » (deux dates courtes) s'affiche sous la prochaine escale en Suivre ; l'intervalle est de quelques jours, plus « 13 nov. → 10 juin » (7 mois) — cause : un membre d'ensemble à vitesse ~0 fait exploser p90.
@@ -886,9 +889,9 @@ Branche fix/lot-ra7-fourchette depuis la base indiquée. PR vers main, gabarit R
 Interdits : inventer une date ; membre à vitesse nulle ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RA8" title="Vitesse réelle par la météo historique (archive Open-Meteo/ERA5) le long de la route" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="" -->
+<!-- LOT id="RA8" title="Vitesse réelle par la météo historique (archive Open-Meteo/ERA5) le long de la route" plan="docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA8 » (texte intégral), puis docs/PLAN_AUDIT_CALCULS.md « Lot C2 ». Tu travailles dans naviguide-simulator/. Ce lot passe APRÈS que le film soit solide.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA8 » (texte intégral), puis docs/archives/PLAN_AUDIT_CALCULS.md « Lot C2 ». Tu travailles dans naviguide-simulator/. Ce lot passe APRÈS que le film soit solide.
 
 Lot RA8 — Vitesse réelle par la météo historique le long de la route.
 Objectif : en Suivre, la vitesse du tronçon déjà parcouru vient de la météo historique le long de la route depuis le 15 mai 2026 ; les 10 jours devant = prévision GFS ; au-delà = climatologie. Aujourd'hui la route est violette (climatologie) partout car le hindcast n'alimente pas encore la vitesse / le régime.
@@ -904,13 +907,13 @@ Interdits : appel réseau dans les tests ; bloquer le démarrage ; chiffre LLM ;
 ### Corrections 3 — revue du 22 septembre au matin (RB1 → RB8)
 
 À enchaîner après la pile RA1 → RA8 mergée. Détail, causes racines
-(fichier:ligne) et recette dans `docs/PLAN_CORRECTIONS_2026-09-22.md`. Le
+(fichier:ligne) et recette dans `docs/archives/PLAN_CORRECTIONS_2026-09-22.md`. Le
 programme continue ensuite avec R8a → D0 ; les constats du 22 sept. qui
 relèvent de ces lots sont fondus dans leurs prompts (R8a, R8c, R9c, R10d).
 
-<!-- LOT id="RB1" title="Halifax ↔ Saint-Pierre redevient une jambe mer ; l'avion ne vole que Cayenne ↔ Halifax" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="M" deps="" -->
+<!-- LOT id="RB1" title="Halifax ↔ Saint-Pierre redevient une jambe mer ; l'avion ne vole que Cayenne ↔ Halifax" plan="docs/archives/PLAN_CORRECTIONS_2026-09-22.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB1 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RB1 — Halifax ↔ Saint-Pierre redevient une jambe MER (régression majeure de la revue du 22 sept.).
 Objectif : le trajet Halifax ↔ Saint-Pierre-et-Miquelon est une jambe en mer (trait coloré par régime, cliquable, climatologie et vitesse calculées dessus) ; seuls Cayenne ↔ Halifax (aller-retour) et les sauts Pacifique restent avion (noir pointillé, non cliquable, hors distance voile). La chorégraphie d'avant est conservée : le bateau reste stationné à Cayenne, l'avion va à Halifax, un bateau relais apparaît à Halifax, navigue jusqu'à Saint-Pierre et revient, l'avion repart vers Cayenne pendant que le bateau relais disparaît, puis le bateau de Cayenne continue vers la Polynésie.
@@ -923,9 +926,9 @@ Branche fix/lot-rb1-halifax-mer depuis la base indiquée. PR vers main, gabarit 
 Interdits : reclasser une vraie jambe avion en mer ; retirer une surface ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RB2" title="Zoom horizontal compact en bas à droite, à côté des crédits" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="" -->
+<!-- LOT id="RB2" title="Zoom horizontal compact en bas à droite, à côté des crédits" plan="docs/archives/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB2 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB2 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RB2 — Le zoom en bas à droite, horizontal et compact.
 Objectif : plus de boutons + − en haut à gauche (masqués par le sidebar) ; un contrôle de zoom horizontal, compact, en bas à droite de la carte, juste à côté des citations « Leaflet | Tuiles © Esri — HERE, Garmin, OpenStreetMap contributors », jamais recouvert par la barre de lecture ni les sidebars.
@@ -938,9 +941,9 @@ Branche fix/lot-rb2-zoom-bas-droite depuis la base indiquée. PR vers main, gaba
 Interdits : masquer les crédits ; retirer une surface ; texte d'aide ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RB3" title="Plus jamais de prompt : le cache des fiches est re-nettoyé" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="" -->
+<!-- LOT id="RB3" title="Plus jamais de prompt : le cache des fiches est re-nettoyé" plan="docs/archives/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB3 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB3 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RB3 — Plus jamais de prompt (fiche d'escale, journal), même depuis le cache.
 Objectif : la fiche d'escale et le journal de bord n'affichent jamais un prompt ni un raisonnement — y compris quand le texte sort du cache (le porteur voit encore « Input: A large JSON object… Task: Present a scale stop… » sur la fiche de Pointe-à-Pitre, et « toujours un prompt » au journal).
@@ -953,9 +956,9 @@ Branche fix/lot-rb3-cache-prompt depuis la base indiquée. PR vers main, gabarit
 Interdits : afficher un prompt ou un raisonnement ; inventer un chiffre ; vider le cache entier sans raison ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RB4" title="Barre de lecture sans scroll : un bouton de vitesse à 4 niveaux, flèches, haut-parleur" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="" -->
+<!-- LOT id="RB4" title="Barre de lecture sans scroll : un bouton de vitesse à 4 niveaux, flèches, haut-parleur" plan="docs/archives/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu »), puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB4 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu »), puis docs/archives/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB4 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RB4 — Barre de lecture compacte, sans barre de scroll.
 Objectif : la barre de lecture tient sur une ligne sans barre de défilement. Un SEUL bouton de vitesse qui cycle à chaque clic : réel → lecture → normale → accélérée → réel (mêmes vitesses qu'avant, aucun niveau supprimé). « Escale précédente / Aller à la prochaine escale » deviennent deux flèches ‹ › (libellé complet en info-bulle). « Écouter » devient l'icône haut-parleur (état coupé/actif visible, libellé en info-bulle). Le libellé météo dit la vérité : « climatologie + GFS » si les deux alimentent le point courant, sinon seulement celui qui est employé (détail des modèles en info-bulle).
@@ -968,9 +971,9 @@ Branche fix/lot-rb4-barre-compacte depuis la base indiquée. PR vers main, gabar
 Interdits : barre de scroll ; retirer un bouton existant ; rangée ajoutée ; texte d'aide ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RB5" title="Le film part de Saint-Maur le 15 mai 2026 ; la voix dit « milles nautiques »" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="M" deps="" -->
+<!-- LOT id="RB5" title="Le film part de Saint-Maur le 15 mai 2026 ; la voix dit « milles nautiques »" plan="docs/archives/PLAN_CORRECTIONS_2026-09-22.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB5 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB5 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RB5 — Le film dit le voyage officiel.
 Objectif : la voix du film commence par « L'expédition Berry-Mappemonde a quitté Saint-Maur le 15 mai 2026… » (jamais « La Rochelle », jamais « 25 avril 2027 ») et énonce les escales dans l'ordre exact de la route (Saint-Maur → La Rochelle → Ajaccio → Fort-de-France → …) ; dans tout texte déclamé, les unités sont en toutes lettres (« milles nautiques » / « nautical miles », jamais « nm » que la voix lit « nanètres »).
@@ -983,9 +986,9 @@ Branche fix/lot-rb5-film-officiel depuis la base indiquée. PR vers main, gabari
 Interdits : inventer une date ou une distance ; retirer une surface ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RB6" title="La voix ne coupe plus, Stop coupe tout, la caméra ne saute pas sur la Polynésie" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="M" deps="RB5" -->
+<!-- LOT id="RB6" title="La voix ne coupe plus, Stop coupe tout, la caméra ne saute pas sur la Polynésie" plan="docs/archives/PLAN_CORRECTIONS_2026-09-22.md" size="M" deps="RB5" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB6 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RB5 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB6 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RB5 est dans ta base.
 
 Lot RB6 — Voix et Stop fiables pendant Revoir.
 Objectif : la voix du film ne s'arrête plus en plein milieu d'une phrase ; un incident de voix ne termine pas le film et ne recale jamais la caméra sur la position live (la « Polynésie » du porteur) ; Stop coupe tout (voix + animation + caméra) au premier clic, même pendant qu'une utterance joue.
@@ -998,9 +1001,9 @@ Branche fix/lot-rb6-voix-stop depuis la base indiquée. PR vers main, gabarit RE
 Interdits : bouton sans effet ; retour au live sur incident de voix ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RB7" title="Fourchette d'arrivée réellement affichée : ensemble ETA préchauffé" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="" -->
+<!-- LOT id="RB7" title="Fourchette d'arrivée réellement affichée : ensemble ETA préchauffé" plan="docs/archives/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB7 » (texte intégral), puis docs/PLAN_AUDIT_CALCULS.md « Lot C6 ». Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB7 » (texte intégral), puis docs/archives/PLAN_AUDIT_CALCULS.md « Lot C6 ». Tu travailles dans naviguide-simulator/.
 
 Lot RB7 — La fourchette d'arrivée s'affiche vraiment.
 Objectif : « arrivée entre le … et le … » apparaît sous la prochaine escale (Suivre) et dans la Revue du plan sans que le porteur recharge, au plus quelques minutes après le lancement — les 2 KO bot de RA7 venaient d'un ensemble jamais prêt (« perles pas encore chauffées »).
@@ -1013,9 +1016,9 @@ Branche fix/lot-rb7-eta-prechauffe depuis la base indiquée. PR vers main, gabar
 Interdits : inventer une date ; bloquer le démarrage ; membre à vitesse nulle ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RB8" title="La route sur les deux copies du monde ; survol d'un segment parcouru" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="RB1" -->
+<!-- LOT id="RB8" title="La route sur les deux copies du monde ; survol d'un segment parcouru" plan="docs/archives/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="RB1" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB8 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RB1 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB8 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RB1 est dans ta base.
 
 Lot RB8 — La route dessinée des deux côtés du monde, survol du parcouru.
 Objectif : en tirant la carte vers la droite jusqu'à la butée, le trajet complet (Halifax, Antilles compris) est dessiné aussi sur la copie de droite (côté africain), comme il l'est déjà à gauche ; et le survol d'un segment déjà parcouru montre la vitesse hindcast de l'époque (complète l'item non vérifiable de RA8), rien sur les jambes avion.
@@ -1030,16 +1033,16 @@ Interdits : répétition infinie du monde ; nouveau panneau ; retirer une surfac
 
 ### Nuit 3 — « Ici et maintenant », journal des moments, expert en circumnavigation (R8a → R10d)
 
-Pré-rédigés le 21 sept. au soir d'après `docs/PLAN_ICI_JOURNAL_EXPERT.md` (contrats de
+Pré-rédigés le 21 sept. au soir d'après `docs/archives/PLAN_ICI_JOURNAL_EXPERT.md` (contrats de
 données § 1.1, § 2.1, § 3.1 ; sous-lots § 1.2, § 2.3, § 3.4). Choix par défaut
 des deux points restés ouverts : poids du score de l'expert **fixes** (constantes
 dans `plan_advisor.py`, montrées en info-bulle) ; journal des simulations **local
 au navigateur**. Le correcteur du matin peut y **fondre** des corrections
 (« Constat de la revue du <date> : … »).
 
-<!-- LOT id="R8a" title="Le modèle build_moment (serveur, sans UI)" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="S" deps="" -->
+<!-- LOT id="R8a" title="Le modèle build_moment (serveur, sans UI)" plan="docs/archives/PLAN_ICI_JOURNAL_EXPERT.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 0, § 1.1 (contrat Moment) et le sous-lot « R8a » (§ 1.2). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_ICI_JOURNAL_EXPERT.md § 0, § 1.1 (contrat Moment) et le sous-lot « R8a » (§ 1.2). Tu travailles dans naviguide-simulator/.
 
 Lot R8a — Le modèle build_moment.
 Objectif : une seule fonction serveur produit l'encadré « ici et maintenant » : build_moment(perle, clock_point, leg, skipper_thresholds) → Moment (contrat § 1.1) et signature(moment) (champs stables seulement). Aucun changement visible.
@@ -1052,9 +1055,9 @@ Branche feat/lot-r8a-moment depuis la base indiquée. PR vers main, gabarit REGL
 Interdits : UI ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, reste à faire.
 ```
 
-<!-- LOT id="R8b" title="GET /ici/moment et l'encadré unique sans titre" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R8a" -->
+<!-- LOT id="R8b" title="GET /ici/moment et l'encadré unique sans titre" plan="docs/archives/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R8a" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu »), puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 1.0 (ce que le porteur verra), § 1.1 et le sous-lot « R8b ». Tu travailles dans naviguide-simulator/. R8a est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu »), puis docs/archives/PLAN_ICI_JOURNAL_EXPERT.md § 1.0 (ce que le porteur verra), § 1.1 et le sous-lot « R8b ». Tu travailles dans naviguide-simulator/. R8a est dans ta base.
 
 Lot R8b — L'endpoint et l'encadré.
 Objectif : GET /ici/moment?lat&lon&t&mode renvoie un Moment (perle la plus proche ou sac calculé comme /ici, puis build_moment) ; un composant IciMaintenant rend un Moment dans UN encadré SANS TITRE (aucun bandeau « Ici et maintenant »), sélecteur discret Maintenant · Récit · Journal, sections Étape / Alertes (pastilles fermables une à une) / Ici / Autour du bateau / Sources, hauteur = tout le reste du panneau (flex-1 min-h-0 overflow-auto), mode clair inclus. Pas encore branché dans le panneau (R8c).
@@ -1066,9 +1069,9 @@ Branche feat/lot-r8b-encadre depuis la base indiquée. PR vers main, gabarit REG
 Interdits : titre ou bandeau sur l'encadré ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="R8c" title="Branchement : un seul encadré, plus aucune pop-up sur la carte" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R8b" -->
+<!-- LOT id="R8c" title="Branchement : un seul encadré, plus aucune pop-up sur la carte" plan="docs/archives/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R8b" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 1.0 et le sous-lot « R8c ». Tu travailles dans naviguide-simulator/. R8b est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_ICI_JOURNAL_EXPERT.md § 1.0 et le sous-lot « R8c ». Tu travailles dans naviguide-simulator/. R8b est dans ta base.
 
 Lot R8c — Le branchement et le retrait des anciens blocs ET des pop-up de carte.
 Objectif : le panneau gauche = carte Berry → chat (inchangé) → IciMaintenant (tout le reste) ; les vues Récit et Journal reçoivent les composants existants (récit de la traversée, journal) ; les blocs séparés (MomentCards inline, FREE, sac ici, récit, journal, fiche d'escale) disparaissent du panneau ; sur la carte, PLUS AUCUNE pop-up flottante : la carte « À bord, maintenant · décision » en haut, les fiches « Pendant ce temps autour du bateau » en bas à droite (et leur bouton Écouter), la popup d'escale — leur contenu vit dans l'encadré. Simulation et Tracer passent par le même endpoint (position du curseur / route dessinée). Aucune surface de main inaccessible, rien de dupliqué carte + encadré.
@@ -1082,9 +1085,9 @@ Branche feat/lot-r8c-branchement depuis la base indiquée. PR vers main, gabarit
 Interdits : retirer une information (elle change de place) ; laisser une pop-up hors film ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="R9a" title="Table moments, remplissage le long des perles, endpoint" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R8a" -->
+<!-- LOT id="R9a" title="Table moments, remplissage le long des perles, endpoint" plan="docs/archives/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R8a" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 2.0, § 2.1 (ligne de journal) et le sous-lot « R9a ». Tu travailles dans naviguide-simulator/. R8a est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_ICI_JOURNAL_EXPERT.md § 2.0, § 2.1 (ligne de journal) et le sous-lot « R9a ». Tu travailles dans naviguide-simulator/. R8a est dans ta base.
 
 Lot R9a — Le journal des moments (serveur).
 Objectif : pour le voyage officiel, une table dérivée `moments` : on parcourt les perles dans l'ordre de la route, build_moment → signature, une ligne par changement de signature avec `changes` = diff_moments(prev, cur) (kind, score 1–3, title, fact) ; remplie en tâche de fond après le réchauffage des perles, rafraîchie chaque jour ; GET /voyage/official/moments?until= la lit. Aucun changement visible.
@@ -1096,9 +1099,9 @@ Branche feat/lot-r9a-journal depuis la base indiquée. PR vers main, gabarit REG
 Interdits : UI ; chiffre LLM ; bloquer le démarrage ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, reste à faire.
 ```
 
-<!-- LOT id="R9b" title="La vue Journal, et l'encadré lit le journal" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="S" deps="R8c,R9a" -->
+<!-- LOT id="R9b" title="La vue Journal, et l'encadré lit le journal" plan="docs/archives/PLAN_ICI_JOURNAL_EXPERT.md" size="S" deps="R8c,R9a" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 2.0 et le sous-lot « R9b ». Tu travailles dans naviguide-simulator/. R8c et R9a sont dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_ICI_JOURNAL_EXPERT.md § 2.0 et le sous-lot « R9b ». Tu travailles dans naviguide-simulator/. R8c et R9a sont dans ta base.
 
 Lot R9b — La vue Journal.
 Objectif : dans l'encadré, la vue Journal liste chronologiquement « date · position · ce qui a changé » (voyage officiel : serveur ; simulation / route dessinée : journal local au navigateur, localStorage, ≤ 2 000 entrées, construit depuis les Moments reçus) ; cliquer une entrée place le curseur / le film à cette date ; en Suivre, la vue Maintenant lit le moment du journal ≤ maintenant (cohérence exacte).
@@ -1110,9 +1113,9 @@ Branche feat/lot-r9b-vue-journal depuis la base indiquée. PR vers main, gabarit
 Interdits : texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="R9c" title="Le film raconte le journal : sélection sous budget, préchauffé, chapitre par chapitre" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R9a" -->
+<!-- LOT id="R9c" title="Le film raconte le journal : sélection sous budget, préchauffé, chapitre par chapitre" plan="docs/archives/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R9a" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 2.2 (règles de récit, préchauffage, découpe) et le sous-lot « R9c ». Tu travailles dans naviguide-simulator/. R9a est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_ICI_JOURNAL_EXPERT.md § 2.2 (règles de récit, préchauffage, découpe) et le sous-lot « R9c ». Tu travailles dans naviguide-simulator/. R9a est dans ta base.
 
 Lot R9c — Le film raconte le journal.
 Objectif : le script du film (GET /voyage/official/film) est construit depuis le journal des moments : chapitres = jambes, dans l'ORDRE EXACT de la route sans répétition (cohérent avec RA2) ; budget 2 400 caractères (150 s) réparti au prorata des jours de mer (plancher 120) ; sélection ≤ 3 changements par chapitre selon les règles de récit § 2.2 (escale, alerte la plus forte, fait de couleur ; regroupements) ; brut par gabarits (connecteurs variés) ; rédigé par Nemotron CHAPITRE PAR CHAPITRE (chaque prompt porte le résumé du chapitre suivant), sous filter_numbers, PRÉCHAUFFÉ en tâche de fond et servi depuis le cache (kv ns film-story) — jamais généré au clic ; events de chaque chapitre = les changements retenus (bulles).
@@ -1125,9 +1128,9 @@ Branche feat/lot-r9c-film-journal depuis la base indiquée. PR vers main, gabari
 Interdits : générer au clic ; un prompt de 2 400 caractères d'un coup ; chiffre LLM hors faits ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="R10a" title="L'évaluateur evaluate_plan : alertes pondérées par jambe, cyclone daté" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R8a" -->
+<!-- LOT id="R10a" title="L'évaluateur evaluate_plan : alertes pondérées par jambe, cyclone daté" plan="docs/archives/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R8a" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 3.0–3.2 (dont « l'alerte cyclone est datée ») et le sous-lot « R10a ». Tu travailles dans naviguide-simulator/. R8a est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_ICI_JOURNAL_EXPERT.md § 3.0–3.2 (dont « l'alerte cyclone est datée ») et le sous-lot « R10a ». Tu travailles dans naviguide-simulator/. R8a est dans ta base.
 
 Lot R10a — L'évaluateur de plan.
 Objectif : evaluate_plan(plan) → {legs:[{alerts:[{kind, severity, when, where, fact, weight}], score, frozen}], total} (contrat § 3.1) : échantillon tous les 60 nm, daté avec la vitesse planifiée, interrogeant climatologie du mois (vent P90, Hs P90, saison cyclonique), prévision < 10 j, hindcast figé pour le passé, seuils du skipper, ZEE / ports d'entrée, AMP, piraterie (N4 si présent), couloirs (N3 si présent). L'alerte cyclone ne compte QUE si l'échantillon passe dans une fenêtre de ± 15 jours de la date historique du cyclone (sinon le mois de saison) — jamais au simple croisement géométrique. < 2 s par plan, cache par (hash du trait, dates au jour, seuils). Aucun changement visible.
@@ -1139,9 +1142,9 @@ Branche feat/lot-r10a-evaluateur depuis la base indiquée. PR vers main, gabarit
 Interdits : UI ; chiffre LLM ; appel réseau dans les tests ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, reste à faire.
 ```
 
-<!-- LOT id="R10b" title="Le compromis par décalage de date : advise" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R10a" -->
+<!-- LOT id="R10b" title="Le compromis par décalage de date : advise" plan="docs/archives/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R10a" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 3.1–3.2 et le sous-lot « R10b ». Tu travailles dans naviguide-simulator/. R10a est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_ICI_JOURNAL_EXPERT.md § 3.1–3.2 et le sous-lot « R10b ». Tu travailles dans naviguide-simulator/. R10a est dans ta base.
 
 Lot R10b — Le compromis par décalage de date.
 Objectif : advise(plan, leg_idx) : candidats d ∈ {−21, −14, −7, 0, +7, +14, +21} jours sur le départ de la jambe, propagés à toutes les escales suivantes (jours à quai conservés) ; score = Σ weight des alertes + 0,3 × |d| + 0,02 × extraNm (constantes FIXES dans plan_advisor.py, exposées dans la réponse pour l'info-bulle) ; meilleur + 3 alternatives ; phrase gabarit depuis les facts ; GET /voyage/official/advice?leg= avec état pending|done (calcul en tâche de fond), réécriture LLM de la phrase via ADVICE_SYSTEM sous filter_numbers (repli gabarit). Aucun changement visible.
@@ -1153,9 +1156,9 @@ Branche feat/lot-r10b-compromis-dates depuis la base indiquée. PR vers main, ga
 Interdits : UI ; chiffre LLM hors facts ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, reste à faire.
 ```
 
-<!-- LOT id="R10c" title="L'écart local borné : corridor et cap de distance" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R10b" -->
+<!-- LOT id="R10c" title="L'écart local borné : corridor et cap de distance" plan="docs/archives/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R10b" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 3.2 et le sous-lot « R10c ». Tu travailles dans naviguide-simulator/. R10b est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_ICI_JOURNAL_EXPERT.md § 3.2 et le sous-lot « R10c ». Tu travailles dans naviguide-simulator/. R10b est dans ta base.
 
 Lot R10c — L'écart local borné.
 Objectif : aux candidats de date s'ajoutent des corridors {référence, nord, sud} (trait décalé de 150 nm puis relissé par grands cercles), distance ≤ +20 % ; l'isochrone ne sert plus qu'À L'INTÉRIEUR du corridor retenu (corridor ± 300 nm, cap +20 %, seuils du skipper), jamais d'écart libre — le cas « La Rochelle → Ajaccio, vent max 30 kn » rend ≤ 1 650 nm, plus jamais 4 643.
@@ -1167,9 +1170,9 @@ Branche feat/lot-r10c-ecart-borne depuis la base indiquée. PR vers main, gabari
 Interdits : écart libre ; retirer une surface ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="R10d" title="Revue du plan conseillée, deux colonnes, Appliquer ; Demander conseil" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R10c,R8c" -->
+<!-- LOT id="R10d" title="Revue du plan conseillée, deux colonnes, Appliquer ; Demander conseil" plan="docs/archives/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R10c,R8c" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu »), puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 3.3 et le sous-lot « R10d ». Tu travailles dans naviguide-simulator/. R10c et R8c sont dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu »), puis docs/archives/PLAN_ICI_JOURNAL_EXPERT.md § 3.3 et le sous-lot « R10d ». Tu travailles dans naviguide-simulator/. R10c et R8c sont dans ta base.
 
 Lot R10d — L'interface de l'expert.
 Objectif : Revue du plan : chaque jambe a « alertes : n » teinté ; « Ce que je changerais » = la phrase du meilleur compromis de la jambe la plus chargée avec trois pastilles « 11 → 5 alertes · +41 nm · +7 j » et un bouton Appliquer (flux existant draft / recompute / accept) qui affiche deux colonnes (aujourd'hui / conseillé : distance, jours de mer, alertes, dates d'escale décalées) ; plus de tableau à six routes sans explication ; Ordres du skipper : « Recalculer l'itinéraire » devient « Demander conseil » → même carte deux colonnes pour la jambe courante.
@@ -1185,11 +1188,11 @@ Interdits : texte d'aide ; retirer une surface ; chiffre LLM hors facts ; vidéo
 ### Ancien NAVIGUIDE — ce qui reste utile (N1 → N4)
 
 Décisions du porteur du 21 sept. : import ET export, GeoJSON ET KML ; anti-trafic et
-piraterie gardés ; pas de discours thématiques. Détail : `docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md`.
+piraterie gardés ; pas de discours thématiques. Détail : `docs/archives/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md`.
 
-<!-- LOT id="N1" title="Importer GeoJSON / KML dans Tracer ma route" plan="docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md" size="M" deps="" -->
+<!-- LOT id="N1" title="Importer GeoJSON / KML dans Tracer ma route" plan="docs/archives/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md § 0 et le lot « N1 » (texte intégral). Tu travailles dans naviguide-simulator/. Tu LIS naviguide/ (ancien code), tu ne le modifies jamais.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md § 0 et le lot « N1 » (texte intégral). Tu travailles dans naviguide-simulator/. Tu LIS naviguide/ (ancien code), tu ne le modifies jamais.
 
 Lot N1 — Importer GeoJSON / KML dans « Tracer ma route ».
 Objectif : un bouton Importer (à côté de Terminé / Effacer) accepte .geojson / .json / .kml ; les points (ou la ligne s'il n'y a pas de points) deviennent les waypoints de la route dessinée dans l'ordre du fichier ; le tracé se calcule comme après des clics (searoute par jambes) ; Terminé remplit le sac (lot T). Le dessin au clic reste tel quel.
@@ -1202,9 +1205,9 @@ Branche feat/lot-n1-import-route depuis la base indiquée. PR vers main, gabarit
 Interdits : modifier naviguide/ ; retirer le dessin au clic ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="N2" title="Exporter GeoJSON / KML de la route de la vue, panneau droit" plan="docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md" size="S" deps="" -->
+<!-- LOT id="N2" title="Exporter GeoJSON / KML de la route de la vue, panneau droit" plan="docs/archives/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md § 0 et le lot « N2 » (texte intégral). Tu travailles dans naviguide-simulator/. Tu LIS naviguide/, tu ne le modifies jamais.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md § 0 et le lot « N2 » (texte intégral). Tu travailles dans naviguide-simulator/. Tu LIS naviguide/, tu ne le modifies jamais.
 
 Lot N2 — Exporter GeoJSON / KML.
 Objectif : panneau droit, bloc Exporter avec deux boutons GeoJSON et KML qui téléchargent la route de la vue (Suivre = officielle avec escales ; Tracer = dessinée ; Simulation = simulée) ; une LineString par jambe (properties from/to/nm/kind mer|terre|air), un Point par escale ; KML équivalent (jambes avion en pointillé) ; nom naviguide-<mode>-<AAAA-MM-JJ>.geojson|kml.
@@ -1217,9 +1220,9 @@ Branche feat/lot-n2-export-route depuis la base indiquée. PR vers main, gabarit
 Interdits : modifier naviguide/ ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="N3" title="Score anti-trafic par jambe depuis le moteur searoute" plan="docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md" size="M" deps="" -->
+<!-- LOT id="N3" title="Score anti-trafic par jambe depuis le moteur searoute" plan="docs/archives/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md § 0 et le lot « N3 » (texte intégral). Tu travailles dans naviguide-simulator/. Tu LIS naviguide/, tu ne le modifies jamais.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md § 0 et le lot « N3 » (texte intégral). Tu travailles dans naviguide-simulator/. Tu LIS naviguide/, tu ne le modifies jamais.
 
 Lot N3 — Score anti-trafic.
 Objectif : chaque jambe en mer porte antiShipping {score 0–1, lanes[]} calculé après searoute (métadonnée, le trait ne change pas) ; Revue du plan : « couloirs : Gibraltar » sous la jambe, teinte ambre si score < 0,55 ; panneau droit : pastille pour la route de la vue ; exposé à l'expert (R10a, alerte traffic poids 1).
@@ -1232,9 +1235,9 @@ Branche feat/lot-n3-anti-trafic depuis la base indiquée. PR vers main, gabarit 
 Interdits : modifier naviguide/ ; décaler le trait ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="N4" title="Zones de piraterie → cartes NOW et alertes" plan="docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md" size="S" deps="" -->
+<!-- LOT id="N4" title="Zones de piraterie → cartes NOW et alertes" plan="docs/archives/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md § 0 et le lot « N4 » (texte intégral). Tu travailles dans naviguide-simulator/. Tu LIS naviguide/, tu ne le modifies jamais.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md § 0 et le lot « N4 » (texte intégral). Tu travailles dans naviguide-simulator/. Tu LIS naviguide/, tu ne le modifies jamais.
 
 Lot N4 — Piraterie.
 Objectif : quand le bateau est dans une zone de piraterie recensée (Suivre, Simulation, film), une carte NOW « Piraterie — <zone> · <niveau> · IMB/UKMTO » apparaît (alerte si HIGH, décision sinon) et disparaît hors zone ; exposée à l'expert (R10a : alerte piracy, poids 3 HIGH / 2 MEDIUM / 1 LOW). Aucun score composite, aucune note inventée.
@@ -1281,14 +1284,14 @@ Interdits : créer ou pousser un dépôt ; supprimer des fichiers du dépôt cou
 
 À enchaîner après la pile RB1 → RC5 (#269 → #302) mergée. Détail, causes
 racines (fichier:ligne, lues sur la tête de pile #302) et recette dans
-`docs/PLAN_CORRECTIONS_2026-09-23.md`. Les constats qui relèvent du globe
+`docs/archives/PLAN_CORRECTIONS_2026-09-23.md`. Les constats qui relèvent du globe
 sont fondus dans G2 et G5 ; « Demander conseil » (#290) et les 502
 `/bi/climatology/*` (#302) sont des artefacts du poste de recette — voir le
 plan § 3.
 
-<!-- LOT id="RD1" title="Le clic sur la carte fait ce qu'il dit : route → pop-up Copernicus, jamais le panneau gauche" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="M" deps="" -->
+<!-- LOT id="RD1" title="Le clic sur la carte fait ce qu'il dit : route → pop-up Copernicus, jamais le panneau gauche" plan="docs/archives/PLAN_CORRECTIONS_2026-09-23.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD1 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RD1 — Le clic sur la carte fait ce qu'il dit (revue du 23 sept. : « l'effet escompté, c'est que ça ouvre le pop-up Copernicus » ; « pourquoi le side bar gauche s'ouvre ? j'ai jamais demandé ça »).
 Objectif : un clic sur la route (trait coloré ou trait bleu, hors jambes avion) ouvre le pop-up Copernicus (onglets Vent / Vagues / Courants), sur toutes les copies du monde et à tous les zooms ; aucun clic carte n'ouvre le panneau gauche ; les carrés verts ▤ des lignes d'escales disparaissent.
@@ -1301,9 +1304,9 @@ Branche fix/lot-rd1-clics-carte depuis la base indiquée. PR vers main, gabarit 
 Interdits : ouvrir un panneau au clic carte ; retirer le pop-up Copernicus ; retirer une surface demandée ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RD2" title="Habillage carte : crédits sur le fond de carte, toggles alignés, point de tracé sous le clic" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="S" deps="" -->
+<!-- LOT id="RD2" title="Habillage carte : crédits sur le fond de carte, toggles alignés, point de tracé sous le clic" plan="docs/archives/PLAN_CORRECTIONS_2026-09-23.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 rien de superflu), puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD2 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 rien de superflu), puis docs/archives/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD2 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RD2 — Habillage carte (revue du 23 sept. : « les citations sont devenues blanches, ils doivent avoir le fond de carte derrière eux » ; « le toggle du side bar gauche, mets-le à la même hauteur que celui du droit » ; « ça met le point de manière imprécise, on n'arrive pas à viser »).
 Objectif : les crédits et le zoom se lisent sur le fond de carte sans bande blanche opaque (les deux thèmes) ; les deux chevrons d'ouverture des panneaux sont à la même hauteur ; en Tracer ma route le point se pose exactement sous le clic.
@@ -1316,9 +1319,9 @@ Branche fix/lot-rd2-habillage-carte depuis la base indiquée. PR vers main, gaba
 Interdits : masquer ou raccourcir les crédits ; déplacer le zoom ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RD3" title="Panneau droit : encadré jaune retiré, nom du bateau une fois, remise du chiffre au profil réparée" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="S" deps="" -->
+<!-- LOT id="RD3" title="Panneau droit : encadré jaune retiré, nom du bateau une fois, remise du chiffre au profil réparée" plan="docs/archives/PLAN_CORRECTIONS_2026-09-23.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 rien de superflu, rien de non demandé), puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD3 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 rien de superflu, rien de non demandé), puis docs/archives/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD3 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RD3 — Panneau droit (revue du 23 sept. : « un encadré jaune que j'ai jamais demandé » ; KO bot #302 : « Leopard 46 » aussi dans Paramètres avancés ; « la remise du chiffre du profil ne marche plus »).
 Objectif : plus d'encadré jaune listant les couloirs commerciaux (la pastille « couloirs : X » par jambe de la Revue du plan reste) ; le nom du bateau ne se lit qu'une fois (sous Polaires) ; la remise d'un chiffre au profil (34 → 29 → ↺ → 34) remarche.
@@ -1331,9 +1334,9 @@ Branche fix/lot-rd3-panneau-droit depuis la base indiquée. PR vers main, gabari
 Interdits : retirer la pastille par jambe (N3) ; inventer une cause non reproduite ; retirer une surface demandée ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RD4" title="Le voyage officiel existe dès le démarrage serveur : fourchette, journal, moments, film" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="M" deps="" -->
+<!-- LOT id="RD4" title="Le voyage officiel existe dès le démarrage serveur : fourchette, journal, moments, film" plan="docs/archives/PLAN_CORRECTIONS_2026-09-23.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD4 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD4 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RD4 — Le voyage officiel est semé au démarrage (KO bot #275 : eta members: 0, pas de « arrivée entre le … et le … » ; KO #284 : journal à 0 entrée ; KO #285 : film en repli — tous causés par GET /voyage/official → 404 sur un poste frais).
 Objectif : sur un poste relancé de zéro, GET /voyage/official ne renvoie jamais 404 ; l'ensemble ETA a des membres (la fourchette « arrivée entre le … et le … » s'affiche sous la prochaine escale en quelques minutes) ; le journal des moments et le film officiel se remplissent sans dépendre d'un client.
@@ -1346,9 +1349,9 @@ Branche fix/lot-rd4-voyage-seme depuis la base indiquée. PR vers main, gabarit 
 Interdits : bloquer le démarrage ; inventer une date ou un membre d'ensemble ; appel réseau dans les tests ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RD5" title="Démarrage en Suivre ; dates de départ réglables, avec l'année" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="S" deps="" -->
+<!-- LOT id="RD5" title="Démarrage en Suivre ; dates de départ réglables, avec l'année" plan="docs/archives/PLAN_CORRECTIONS_2026-09-23.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD5 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD5 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RD5 — Démarrage et dates (revue du 23 sept. : « quand on recharge, on tombe sur le mode simulation » ; « la date de départ n'est plus réglable ; il faut qu'elle soit réglable, sauf qu'il ne faut pas que ce soit la même que le mode simulation » ; « 15 mai 8h00 UTC, il n'y a même pas l'année »).
 Objectif : l'application s'ouvre en Suivre ; en Simulation le champ « Date de départ » est visible sans dérouler et pilote l'horloge ; l'horloge de la barre film affiche l'année ; la date de départ de « Revoir l'expédition » est réglable (2025 possible), distincte de la Simulation, défaut 15 mai 2026.
@@ -1361,9 +1364,9 @@ Branche fix/lot-rd5-demarrage-dates depuis la base indiquée. PR vers main, gaba
 Interdits : inventer une date ; changer le défaut officiel (15 mai 2026) ; retirer une surface ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RD6" title="Encadré gauche : onglet Récit jamais vide, journal qui nomme, sans trou" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="S" deps="RD4" -->
+<!-- LOT id="RD6" title="Encadré gauche : onglet Récit jamais vide, journal qui nomme, sans trou" plan="docs/archives/PLAN_CORRECTIONS_2026-09-23.md" size="S" deps="RD4" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 : un onglet marche ou n'existe pas), puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD6 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RD4 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 : un onglet marche ou n'existe pas), puis docs/archives/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD6 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RD4 est dans ta base.
 
 Lot RD6 — L'encadré gauche tient parole (revue du 23 sept. : « Récit est toujours vide », « il y a un espace », « il faudrait qu'on sache à chaque fois ce sont lesquels »).
 Objectif : l'onglet Récit n'est jamais un espace vide (absent hors Suivre, rempli en Suivre) ; chaque ligne du Journal nomme son événement ; plus d'espace mort sous les onglets Maintenant · Récit · Journal.
@@ -1376,9 +1379,9 @@ Branche fix/lot-rd6-encadre-recit depuis la base indiquée. PR vers main, gabari
 Interdits : onglet ou slot vide ; texte d'aide ; nom inventé ; retirer une surface ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RD7" title="Le film déclame les vraies données du journal ; durée libre par défaut" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="M" deps="RD4" -->
+<!-- LOT id="RD7" title="Le film déclame les vraies données du journal ; durée libre par défaut" plan="docs/archives/PLAN_CORRECTIONS_2026-09-23.md" size="M" deps="RD4" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD7 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RD4 est dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD7 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RD4 est dans ta base.
 
 Lot RD7 — Le film raconte les vraies données (revue du 23 sept. : « tu trouves une solution pour exploiter les vraies données que je me suis cassé le cul à collecter » ; « on va désélectionner la durée par défaut … s'il n'y a pas d'option cochée, tu dis à peu près tout ce qu'il y a dans le produit du side bar gauche, et il prend le temps que ça prend »).
 Objectif : plus jamais « Le ciel reste haut / La mer porte le bateau / La route tient le cap / Le vent reste le vent » ; les durées 2:30 et 3:00 sont décochables et aucune n'est cochée par défaut ; sans durée cochée, le film déroule tout le journal des moments (marinas, ports, aires marines protégées, stations scientifiques, traces historiques de cyclones nommées et datées, culture des escales), dans l'ordre de la route, et prend le temps qu'il faut ; avec durée cochée, le budget est tenu jusqu'au bout (plus de film fini à ~121 s, KO bot #302).
@@ -1391,9 +1394,9 @@ Branche fix/lot-rd7-film-journal depuis la base indiquée. PR vers main, gabarit
 Interdits : phrase de remplissage ; chiffre produit par un LLM ; escale sautée ou répétée ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RD8" title="Couches climatologie en tuiles : la zone visible, au détail natif" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="M" deps="" -->
+<!-- LOT id="RD8" title="Couches climatologie en tuiles : la zone visible, au détail natif" plan="docs/archives/PLAN_CORRECTIONS_2026-09-23.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD8 » (texte intégral). Tu travailles dans backend/ (l'atlas Blue Intelligence, FastAPI) ET dans naviguide-simulator/. Si backend/.venv manque dans ton worktree : ln -s /Users/clement/Blue-Intelligence-Map/backend/.venv backend/.venv.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD8 » (texte intégral). Tu travailles dans backend/ (l'atlas Blue Intelligence, FastAPI) ET dans naviguide-simulator/. Si backend/.venv manque dans ton worktree : ln -s /Users/clement/Blue-Intelligence-Map/backend/.venv backend/.venv.
 
 Lot RD8 — Couches climatologie en tuiles (demande du porteur, 24 sept. : « un lot qui résout le poids de wind.geojson grâce à des tuiles »).
 Objectif : la couche vent (et vagues, courants) ne charge plus le globe entier (wind.geojson?spacing_deg=4 = 1,6 Mo, grossier partout : un point tous les 4°) mais des tuiles XYZ de la zone visible, au détail natif 1° quand on zoome ; une vue plein écran ≤ 1 Mo, une tuile ≤ 80 Ko ; le rendu (flèches, couleurs, popup au clic) ne change pas.
@@ -1406,9 +1409,9 @@ Branche feat/lot-rd8-tuiles-climato depuis la base indiquée. PR vers main, gaba
 Interdits : changer le rendu des flèches ou la popup ; retirer les routes .geojson ; toucher nginx ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RD9" title="La Revue du plan en onglet de l'encadré gauche ; le récit déclamé s'en nourrit" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="M" deps="RD6,RD7" -->
+<!-- LOT id="RD9" title="La Revue du plan en onglet de l'encadré gauche ; le récit déclamé s'en nourrit" plan="docs/archives/PLAN_CORRECTIONS_2026-09-23.md" size="M" deps="RD6,RD7" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 : un onglet marche ou n'existe pas), puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD9 » (texte intégral). Tu travailles dans naviguide-simulator/. Les lots RD6 et RD7 sont dans ta base.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 : un onglet marche ou n'existe pas), puis docs/archives/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD9 » (texte intégral). Tu travailles dans naviguide-simulator/. Les lots RD6 et RD7 sont dans ta base.
 
 Lot RD9 — La Revue du plan en onglet gauche, et dans le récit déclamé (demande du porteur, PR #305, 24 sept. : « met Revue du plan en onglet de l'encadré du sidebar gauche et fais en sorte que cette revue aussi soit utilisée par le récit déclamé »).
 Objectif : la Revue du plan (verdicts par jambe, pastille « couloirs : X » par jambe, commentaire « Ce que je changerais », conseil avec Appliquer) devient un onglet de l'encadré gauche, à côté de Maintenant · (Récit ·) Journal, et disparaît du panneau droit ; le récit déclamé du film dit ce que la revue dit de chaque jambe (verdict, couloirs nommés, saison).
@@ -1425,13 +1428,13 @@ Interdits : garder la revue en double (droite ET gauche) ; onglet vide ; phrase 
 
 À enchaîner après la pile #269 → #322 mergée. Détail, causes racines
 (fichier:ligne, lues sur la tête de pile #322) et recette dans
-`docs/PLAN_CORRECTIONS_2026-09-26-s2.md`. Les constats qui relèvent du globe
+`docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md`. Les constats qui relèvent du globe
 sont fondus dans G1, G4 et G5 ; les tuiles climato en 404 (#317) et les
 502/524 des consoles sont des artefacts du poste — voir le plan § 3.
 
-<!-- LOT id="RE1" title="Accueil en Simulation + Cinéma + monde ; Suivre → Simulation décoche le Cinéma et ouvre les panneaux" plan="docs/PLAN_CORRECTIONS_2026-09-26-s2.md" size="M" deps="" -->
+<!-- LOT id="RE1" title="Accueil en Simulation + Cinéma + monde ; Suivre → Simulation décoche le Cinéma et ouvre les panneaux" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-26-s2.md § 0, § 2 (décisions D1 et D2) et le « RE1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md § 0, § 2 (décisions D1 et D2) et le « RE1 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RE1 — Accueil et bascule des modes (revue du 26 sept., KO #312 : « l'application doit s'ouvrir sur le mode simulation en mode cinema et en vue monde dézoomée » ; KO #318 : « quand on passe du mode suivre au mode simulation, le mode Cinéma doit se déclicker et les panneaux droit et gauche doivent s'ouvrir » ; répété KO #322). Décision D1 du plan : cette demande REMPLACE le démarrage en Suivre de RD5 — le reste de RD5 (dates, année) ne bouge pas.
 Objectif : au chargement, l'app montre la carte monde entière, Simulation enfoncé, Cinéma enfoncé, panneaux fermés ; basculer de Suivre vers Simulation décoche le Cinéma et ouvre les deux panneaux.
@@ -1444,9 +1447,9 @@ Branche fix/lot-re1-accueil-bascule depuis la base indiquée. PR vers main, gaba
 Interdits : retirer une surface visible ; changer le comportement du bouton Cinéma manuel ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RE2" title="Liste des escales informative en Suivre ; la fiche ouverte est celle de l'escale cliquée" plan="docs/PLAN_CORRECTIONS_2026-09-26-s2.md" size="S" deps="" -->
+<!-- LOT id="RE2" title="Liste des escales informative en Suivre ; la fiche ouverte est celle de l'escale cliquée" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-26-s2.md § 0, § 2 (décision D3) et le « RE2 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md § 0, § 2 (décision D3) et le « RE2 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RE2 — Liste des escales (revue du 26 sept., KO #319 : « en mode suivre, on ne devrait pas pouvoir cliquer sur les escales dans la liste des escales du sidebar droit, elles devraient être là en mode informatif seulement » ; KO #309 : « un click sur l'escale Saint-Maur ou La Rochelle dans la liste d'escale ouvre la fiche d'escale Fort de France »).
 Objectif : en Suivre, les lignes de la liste des escales n'ont plus aucun effet au clic (informatif pur) ; en Simulation le clic-ligne garde son effet (déplacer le curseur) ; quand une fiche s'ouvre (drapeau, escale à quai), c'est TOUJOURS celle de l'escale désignée.
@@ -1459,9 +1462,9 @@ Branche fix/lot-re2-escales-informatives depuis la base indiquée. PR vers main,
 Interdits : retirer la liste ou une de ses colonnes ; casser le clic-ligne de Simulation ; inventer une cause non reproduite ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RE3" title="Journal lisible dans les deux thèmes ; pilules 2:30 / 3:00 seulement quand le film peut se lancer" plan="docs/PLAN_CORRECTIONS_2026-09-26-s2.md" size="S" deps="" -->
+<!-- LOT id="RE3" title="Journal lisible dans les deux thèmes ; pilules 2:30 / 3:00 seulement quand le film peut se lancer" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 : un bouton qui ne peut rien faire n'est pas affiché), puis docs/PLAN_CORRECTIONS_2026-09-26-s2.md § 0 et le « RE3 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 : un bouton qui ne peut rien faire n'est pas affiché), puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md § 0 et le « RE3 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RE3 — Lisibilité (revue du 26 sept., KO #312 et #322 : « les lignes du journal sont écrites en noir sur un fond sombre » ; KO #315 : « les boutons 2:30 et 3:00 sont visibles même quand ils ne devraient pas être visibles », capture du porteur à l'appui).
 Objectif : les lignes de l'onglet Journal se lisent dans les deux thèmes ; les pilules de durée du film n'apparaissent qu'à côté de « Revoir l'expédition », quand le film n'est pas lancé.
@@ -1474,9 +1477,9 @@ Branche fix/lot-re3-journal-pilules depuis la base indiquée. PR vers main, gaba
 Interdits : retirer l'onglet Journal ou les pilules là où elles servent ; changer le cycle coché/décoché de RD7 ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RE4" title="La date de départ de la barre pilote la ligne d'état" plan="docs/PLAN_CORRECTIONS_2026-09-26-s2.md" size="S" deps="" -->
+<!-- LOT id="RE4" title="La date de départ de la barre pilote la ligne d'état" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-26-s2.md § 0 et le « RE4 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md § 0 et le « RE4 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RE4 — Ligne d'état et date de départ (revue du 26 sept., KO #313 : « lorsque je change la date de départ dans la barre de lecture, la ligne "14 220 nm · j112 · 26 sept. 2026 · 09:14 UTC · Restants 1 985 nm · ETA 11 j · 8.3 kt · TWA 159° · LIVE · climatologie" ne se met pas à jour »).
 Objectif : changer la date de départ dans la barre (Suivre) recalcule la ligne d'état affichée — jour de voyage, dates, restants, ETA — pour le départ choisi ; remettre le défaut restaure la ligne LIVE ; le départ de la Simulation ne bouge pas.
@@ -1489,9 +1492,9 @@ Branche fix/lot-re4-date-ligne-etat depuis la base indiquée. PR vers main, gaba
 Interdits : toucher au départ de la Simulation ; inventer une date ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RE5" title="Fourchette d'arrivée : l'ensemble aboutit, ou la réponse dit pourquoi" plan="docs/PLAN_CORRECTIONS_2026-09-26-s2.md" size="M" deps="" -->
+<!-- LOT id="RE5" title="Fourchette d'arrivée : l'ensemble aboutit, ou la réponse dit pourquoi" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-26-s2.md § 0 et le « RE5 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md § 0 et le « RE5 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RE5 — Fourchette d'arrivée (revue du 26 sept., KO #322 : « les ETA d'escale ne sont pas vues » ; sondes bot #275, #320, #322 : l'ETA officielle répond 200 avec members: 0 et p10/p50/p90 null après plusieurs minutes, sur toutes les sessions depuis le 24 sept.).
 Objectif : la fourchette « arrivée entre le … et le … » apparaît sous la prochaine escale quelques minutes après le lancement ; quand l'ensemble est réellement indisponible, la réponse du serveur dit pourquoi (raison, dernière tentative) au lieu d'un members: 0 muet — jamais une date inventée.
@@ -1504,9 +1507,9 @@ Branche fix/lot-re5-eta-ensemble depuis la base indiquée. PR vers main, gabarit
 Interdits : inventer une fourchette sans membres ; supprimer le cache par point ; inventer une cause non lue dans les logs ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RE6" title="Couches climatologie jamais muettes : repli global si les tuiles échouent" plan="docs/PLAN_CORRECTIONS_2026-09-26-s2.md" size="S" deps="" -->
+<!-- LOT id="RE6" title="Couches climatologie jamais muettes : repli global si les tuiles échouent" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-26-s2.md § 0, § 3 (déploiement backend) et le « RE6 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md § 0, § 3 (déploiement backend) et le « RE6 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RE6 — Repli des couches climatologie (revue du 26 sept., KO #317 : « je ne vois pas les flèches de vent, la console affiche des erreurs » ; sonde bot : la route des tuiles n'existe pas sur le backend BI du poste — elle arrive avec le merge de la PR #317, qui déploie aussi le backend).
 Objectif : une couche climato allumée n'est plus jamais muette — si les tuiles échouent toutes, la couche recharge l'ancienne route globale (maille 4°) et le bandeau dit la source ; les tuiles sont retentées au mouvement suivant.
@@ -1519,9 +1522,9 @@ Branche fix/lot-re6-repli-climato depuis la base indiquée. PR vers main, gabari
 Interdits : retirer le chemin des tuiles ; changer le rendu des flèches ou la popup ; toucher au backend BI ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RE7" title="Le discours du film : un récit, pas le journal déversé" plan="docs/PLAN_CORRECTIONS_2026-09-26-s2.md" size="M" deps="RE5" -->
+<!-- LOT id="RE7" title="Le discours du film : un récit, pas le journal déversé" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md" size="M" deps="RE5" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (aucun chiffre produit par un LLM ; champ inconnu = silence), puis docs/PLAN_CORRECTIONS_2026-09-26-s2.md § 2 EN ENTIER (les onze défauts, le discours alternatif du porteur = la référence) et le « RE7 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (aucun chiffre produit par un LLM ; champ inconnu = silence), puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s2.md § 2 EN ENTIER (les onze défauts, le discours alternatif du porteur = la référence) et le « RE7 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RE7 — Le discours du film (revue globale du 26 sept., KO posé sur la PR #315/RD7 : 9 chapitres, 7 884 mots, ~52 minutes — « la lecture intégrale du journal, sans sélection, sans noms, sans dédoublonnage, sans géographie ni chronologie »).
 Objectif : sans durée cochée, le film raconte un récit de l'ordre de quelques minutes qui suit la route — chaque lieu nommé une fois, aucun libellé vide, avion dit, dernière jambe fermée — conforme au discours alternatif du porteur (plan § 2).
@@ -1538,7 +1541,7 @@ Interdits : phrase de remplissage ; chiffre ou nom produit par un LLM (les noms 
 
 À enchaîner après la pile #325 → #334 mergée. Détail, causes racines
 (fichier:ligne, lues sur la tête de pile #334) et recette dans
-`docs/PLAN_CORRECTIONS_2026-09-26-s4.md`. L'ordre suit les quatre priorités
+`docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md`. L'ordre suit les quatre priorités
 imposées par le porteur (console, console pendant le film, discours,
 cinématique), amendées par ses commentaires sur la PR #336 : les lots sont
 **numérotés RF1 → RF9 dans l'ordre d'exécution, sans trou** ; **RF2** — le
@@ -1550,9 +1553,9 @@ corrige leur place. Les constats qui relèvent du globe sont fondus dans G1,
 G4, G5 et G6 ; la fourchette ETA, les tuiles 404 et le chat sans modèle sont
 au plan § 3 (rien à replanifier).
 
-<!-- LOT id="RF1" title="Console : plus jamais de 400 sur /voyage/official/advice" plan="docs/PLAN_CORRECTIONS_2026-09-26-s4.md" size="S" deps="" -->
+<!-- LOT id="RF1" title="Console : plus jamais de 400 sur /voyage/official/advice" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (priorité 1) et le « RF1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (priorité 1) et le « RF1 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RF1 — Le 400 d'advice (revue du 26 sept. session 4, priorité 1 du porteur : « chaque erreur rouge a une cause et un lot » ; GET /voyage/official/advice?leg=…&lang=fr → 400 vu par le bot sur les 9 PR, tous écrans).
 Objectif : plus aucune ligne rouge advice dans la console au parcours nominal — le conseil accepte l'indice des jambes que le client affiche, répond un état honnête quand la jambe n'est pas calculable, et le client cesse de re-sonder.
@@ -1565,9 +1568,9 @@ Branche fix/lot-rf1-advice-400 depuis la base indiquée. PR vers main, gabarit R
 Interdits : retirer la revue du plan ou le conseil ; inventer une jambe ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RF2" title="Le voyage officiel est précalculé et stocké : le serveur sert, il ne calcule plus" plan="docs/PLAN_CORRECTIONS_2026-09-26-s4.md" size="M" deps="" -->
+<!-- LOT id="RF2" title="Le voyage officiel est précalculé et stocké : le serveur sert, il ne calcule plus" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (priorité 1, décision D5') et le « RF2 » (texte intégral). Tu travailles dans naviguide-simulator/ (plus infra/vps/README.md, pour de la documentation seulement).
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (priorité 1, décision D5') et le « RF2 » (texte intégral). Tu travailles dans naviguide-simulator/ (plus infra/vps/README.md, pour de la documentation seulement).
 
 Lot RF2 — Le voyage officiel précalculé et stocké (commentaires du porteur sur la PR #336 : « tout ce dont Suivre et Revoir ont besoin est précalculé une fois et stocké de façon persistante — puis servi tel quel par l'API » ; principe inverse de « calculer à la demande »).
 Objectif : les routes du voyage officiel répondent depuis un stock persistant (qui survit aux redémarrages et aux déploiements) en moins de 200 ms, sans appeler Copernicus, Open-Meteo, l'atlas BI ni un LLM au moment de la demande ; une entrée manquante répond honnêtement « en préparation », jamais un 500 ni un recalcul synchrone.
@@ -1582,9 +1585,9 @@ Branche fix/lot-rf2-stock-officiel depuis la base indiquée. PR vers main, gabar
 Interdits : des données factices (seed, fixture, constante) écrites dans le stock ou servies comme prêtes — la PR #338 du 26 sept. a été fermée pour ça ; une Recette qui cite des valeurs que ta PR écrit en dur ; calculer ou appeler un fournisseur externe dans le chemin d'une requête du voyage officiel ; répondre 500 quand une entrée manque ; un stock qui ne survit pas à un redémarrage ou à un déploiement ; lire ~/.config/blue-intelligence/mongo.env, utiliser MONGO_URL_LOCAL ou DB_NAME ; toucher au service blue-intelligence, à infra/vps/deploy-app.sh, au cron de sauvegarde ou à sync-from-atlas.sh ; dropDatabase ou accès admin ; exécuter la commande mongosh (elle se documente, elle ne se lance pas) ; un test qui se connecte à une vraie base ; toucher au backend BI ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RF3" title="Le serveur tient debout : plus de 500/429 au parcours nominal, le Journal se remplit" plan="docs/PLAN_CORRECTIONS_2026-09-26-s4.md" size="M" deps="RF2" -->
+<!-- LOT id="RF3" title="Le serveur tient debout : plus de 500/429 au parcours nominal, le Journal se remplit" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md" size="M" deps="RF2" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (priorité 1, le fil rouge) et le « RF3 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (priorité 1, le fil rouge) et le « RF3 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RF3 — Le serveur au parcours nominal (revue du 26 sept. session 4 : POST /voyage 500 puis 429, GET /ici 500, /ici/moment, /ici/pearls, /ici/warm/status, /voyage/official/eta, plan-review, /api/v1/polar/…/client en 500 ; conséquence : Journal vide — KO du porteur sur #327, #331, #333 et #334, dont deux revues non faites). Périmètre après RF2 (commentaires PR #336) : les recalculs (horloge climato, semis, préchauffages, journal) appartiennent au stock et au travail de fond de RF2 — ce lot garde ses corrections de ROBUSTESSE mais ne recalcule plus rien lui-même.
 Objectif : sur un poste relancé, le parcours nominal ne produit AUCUNE ligne rouge ; le voyage officiel répond ; le Journal du panneau gauche est rempli des événements depuis le départ ; « Polaires chargées » ne devient plus « Échec — Service des polaires indisponible ».
@@ -1597,9 +1600,9 @@ Branche fix/lot-rf3-serveur-nominal depuis la base indiquée. PR vers main, gaba
 Interdits : inventer une cause non lue dans les logs ; masquer une erreur au lieu de la corriger (pas de catch muet) ; toucher au backend BI ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RF4" title="Pendant le film : le client ne mitraille plus l'API — le film lit le stock" plan="docs/PLAN_CORRECTIONS_2026-09-26-s4.md" size="S" deps="RF2" -->
+<!-- LOT id="RF4" title="Pendant le film : le client ne mitraille plus l'API — le film lit le stock" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md" size="S" deps="RF2" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (priorité 2) et le « RF4 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (priorité 2) et le « RF4 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RF4 — La console pendant le film (revue du 26 sept. session 4, priorité 2 : « les erreurs de console qui apparaissent pendant le film » ; bot #333 : rafale GET /ici?lat=… pendant le film, compteur console > 1 000 ; bot #331 : HTTP 500 répétés /voyage/official/eta?stop=… et /ici pendant le film).
 Objectif : du lancement à la fin du film (avec ou sans durée cochée), la console reste vierge — le bateau du film ne déclenche plus aucune requête de position.
@@ -1612,9 +1615,9 @@ Branche fix/lot-rf4-film-sans-rafale depuis la base indiquée. PR vers main, gab
 Interdits : couper le film ou ses sous-titres ; débrancher le sac hors film ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RF5" title="Le récit dit l'avion ; la fin du film reste affichée" plan="docs/PLAN_CORRECTIONS_2026-09-26-s4.md" size="S" deps="RF3" -->
+<!-- LOT id="RF5" title="Le récit dit l'avion ; la fin du film reste affichée" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md" size="S" deps="RF3" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (aucun chiffre produit par un LLM ; champ inconnu = silence), puis docs/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (priorité 3) et le « RF5 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (aucun chiffre produit par un LLM ; champ inconnu = silence), puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (priorité 3) et le « RF5 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RF5 — L'avion et la fin du récit (revue du 26 sept. session 4, priorité 3 : le discours du film — les six règles sont le lot RE7, codé, PAS à refaire ici ; restent deux trous constatés : bot #331 « sous-titres nomment Cayenne (Guyane) mais aucun avion / vol, chapitres 0–2, ~107 s » ; bot #333 : le sous-titre de fin « Aujourd'hui, le bateau est à… » n'apparaît pas, barre récit absente une fois le film arrêté).
 Objectif : au passage de la Guyane on entend l'avion (aller et retour), quel que soit le budget ; à la fin du film, le sous-titre de clôture reste affiché tant que l'utilisateur n'a pas repris la main.
@@ -1627,9 +1630,9 @@ Branche fix/lot-rf5-avion-et-fin depuis la base indiquée. PR vers main, gabarit
 Interdits : refaire les six règles de RE7 ; phrase de remplissage ; chiffre ou nom produit par un LLM ; casser le budget 2:30/3:00 côté API (RD7) ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RF6" title="Cinématique : caméra qui suit, mouvements fluides, zoom stable, fond visible" plan="docs/PLAN_CORRECTIONS_2026-09-26-s4.md" size="M" deps="" -->
+<!-- LOT id="RF6" title="Cinématique : caméra qui suit, mouvements fluides, zoom stable, fond visible" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (priorité 4) et le « RF6 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (priorité 4) et le « RF6 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RF6 — La cinématique du film (revue du 26 sept. session 4, priorité 4 : « un vrai film — caméra qui suit le bateau, mouvements fluides, pas une série de sauts d'une position à l'autre ; zoom stable pendant une jambe » ; captures bot #331/#333/#334 : fond de carte en damier gris pendant tout le film).
 Objectif : la caméra suit un bateau qui glisse, sans à-coups, zoom constant pendant chaque jambe, un seul mouvement doux au changement de jambe, fond de carte toujours dessiné.
@@ -1642,9 +1645,9 @@ Branche fix/lot-rf6-cinematique depuis la base indiquée. PR vers main, gabarit 
 Interdits : toucher au script du film ou à la voix ; changer le zoom par chapitre ; retirer la barre récit ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RF7" title="Accueil en Suivre + Cinéma + monde (D1') ; Tracer monde entier, dézoom libre (D4')" plan="docs/PLAN_CORRECTIONS_2026-09-26-s4.md" size="S" deps="" -->
+<!-- LOT id="RF7" title="Accueil en Suivre + Cinéma + monde (D1') ; Tracer monde entier, dézoom libre (D4')" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (décisions D1' et D4') et le « RF7 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (décisions D1' et D4') et le « RF7 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RF7 — Accueil et Tracer (revue du 26 sept. session 4, KO #325 : « ce que je voulais c'est que l'application s'ouvre en mode Suivre + Cinéma + carte monde entière (dézoomée) » — cette demande REMPLACE l'accueil en Simulation du lot RE1 (D1 du plan s2) ; KO #327 : « en mode Tracer, l'application bugue et refuse de dézoomer : ce que je veux c'est qu'en mode Tracer, l'application affiche une carte monde entièrement dézoomée »).
 Objectif : au chargement, l'app montre la carte monde entière, Suivre enfoncé, Cinéma enfoncé, panneaux fermés, sans recadrage automatique sur le bateau ; l'entrée en Tracer montre le monde entier et le dézoom reste libre.
@@ -1657,9 +1660,9 @@ Branche fix/lot-rf7-accueil-suivre-tracer depuis la base indiquée. PR vers main
 Interdits : casser la bascule Suivre → Simulation de RE1 ; changer le comportement du bouton Cinéma manuel ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RF8" title="Liste des escales informative partout (D2') ; barre : pilules 2:30 / 3:00 dans le cadre, « Récit : règles » retiré, date au format (D3')" plan="docs/PLAN_CORRECTIONS_2026-09-26-s4.md" size="S" deps="" -->
+<!-- LOT id="RF8" title="Liste des escales informative partout (D2') ; barre : pilules 2:30 / 3:00 dans le cadre, « Récit : règles » retiré, date au format (D3')" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 : rien de superflu à l'écran — le seul retrait de ce lot, « Récit : règles », est demandé par le porteur, cite le KO #327 dans la PR ; les pilules 2:30 / 3:00 RESTENT), puis docs/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (décisions D2' et D3') et le « RF8 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 : rien de superflu à l'écran — le seul retrait de ce lot, « Récit : règles », est demandé par le porteur, cite le KO #327 dans la PR ; les pilules 2:30 / 3:00 RESTENT), puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md § 0, § 2 (décisions D2' et D3') et le « RF8 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RF8 — Liste informative et barre remise d'aplomb (revue du 26 sept. session 4, KO #326 : « le mieux c'est que les escales dans la liste des escales du sidebar droit soient juste informatives quelque soit le mode » — étend D3/RE2 ; KO #327 amendé par les commentaires du porteur sur la PR #336 : les pilules 2:30 / 3:00 sont GARDÉES (décochées par défaut, RD7) mais elles débordent de la barre film à droite de « Revoir l'expédition » et passent sous le panneau droit quand il est ouvert (captures du porteur, 26 sept. 18:10) — corriger leur place ; « supprime "Récit : règles" (jamais demandé), adapte l'encadré pour la date et l'heure de départ : met-le pile poil à la taille du format XX-XX-XXXX XX:XX »).
 Objectif : la liste des escales n'est cliquable dans aucun mode ; les pilules 2:30 / 3:00 restent dans le cadre de la barre quelle que soit la largeur disponible (jamais hors cadre, jamais sous un panneau) ; la barre ne montre plus « Récit : règles » ; l'encadré date + heure de départ fait exactement la taille de son format.
@@ -1672,9 +1675,9 @@ Branche fix/lot-rf8-liste-et-barre depuis la base indiquée. PR vers main, gabar
 Interdits : retirer les pilules 2:30 / 3:00 (le porteur les garde — PR #336) ; retirer la liste ou une de ses colonnes ; retirer le bouton Revoir l'expédition ou le champ date ; toucher au moteur de budget RD7 côté API ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RF9" title="Roses de vent : zoom fluide, l'application ne se fige plus" plan="docs/PLAN_CORRECTIONS_2026-09-26-s4.md" size="M" deps="" -->
+<!-- LOT id="RF9" title="Roses de vent : zoom fluide, l'application ne se fige plus" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-26-s4.md § 0 et le « RF9 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md § 0 et le « RF9 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RF9 — Performance des roses de vent (revue du 26 sept. session 4, KO #330 : « avec les roses vents affichées, le zoom est très lent et l'appli se fige »).
 Objectif : pastille Vent allumée, le zoom molette reste fluide et l'application ne se fige plus ; le rendu (roses, popups, bandeau) est identique à l'œil.
@@ -1687,9 +1690,9 @@ Branche fix/lot-rf9-roses-perf depuis la base indiquée. PR vers main, gabarit R
 Interdits : changer le dessin des roses ou la popup ; retirer le repli RE6 ; toucher au backend BI ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RF10" title="Hindcast ERA5 par cellule 0,25° et plage de dates, cache partagé persistant, quota Open-Meteo respecté, statut honnête" plan="docs/PLAN_CORRECTIONS_2026-09-26-s4.md" size="M" deps="RF2" -->
+<!-- LOT id="RF10" title="Hindcast ERA5 par cellule 0,25° et plage de dates, cache partagé persistant, quota Open-Meteo respecté, statut honnête" plan="docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md" size="M" deps="RF2" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-26-s4.md § 0 et le « RF10 » (texte intégral). Tu travailles dans naviguide-simulator/ (plus infra/vps/README.md, documentation seulement).
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-26-s4.md § 0 et le « RF10 » (texte intégral). Tu travailles dans naviguide-simulator/ (plus infra/vps/README.md, documentation seulement).
 
 Lot RF10 — Le hindcast qui tient dans le quota (constat du porteur, 26 sept. 23:10 : la route parcourue et la ligne d'état disent « climatologie » partout alors que l'historique Open-Meteo marchait avant ; l'archive Open-Meteo répond HTTP 429 « Daily API request limit exceeded » ; le cache du poste contient 5 737 entrées hindcast en 28 min, toutes vides ; `hindcastStatus` dit pourtant `ready`).
 Objectif : le vent passé du voyage officiel vient d'ERA5 (Open-Meteo archive) et le reste, avec ~1 300 appels pour tout le voyage au lieu de ~8 600, un cache qui survit aux rebuilds du poste et aux déploiements, jamais plus de N appels par jour, et un statut qui dit la vérité (ready / partial n/total / empty + raison).
@@ -1707,13 +1710,13 @@ Interdits : des données factices ou une valeur de vent inventée quand ERA5 man
 Batch décidé le 28 sept. après la revue globale de la pile #386 (mergée). Constats, transcription du
 film servi, mesures de cinématique et gabarit d'étape validé : `docs/FILM_DISCOURS_ETAT_2026-09-28.md`.
 Causes (fichier:ligne sur `main` @ `68970d2`), décisions D1 → D10 et détail des lots :
-`docs/PLAN_CORRECTIONS_2026-09-28-film.md`. Ordre d'exécution : la CI utile d'abord (RG16), le récit (RG1 → RG10),
+`docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md`. Ordre d'exécution : la CI utile d'abord (RG16), le récit (RG1 → RG10),
 la cinématique (RG12, RG13), la carte au dézoom (RG15), les ancres au bon mot (RG14), puis RH1 et RH2 du plan s5.
 RG11 (« Rédigé » par LLM) est documenté mais hors batch.
 
-<!-- LOT id="RG16" title="La CI Playwright utile : recette automatique des lots, bloquante, en moins de 4 minutes" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="" -->
+<!-- LOT id="RG16" title="La CI Playwright utile : recette automatique des lots, bloquante, en moins de 4 minutes" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 1 (« CI Playwright inutile »), § 3 (D11) et le « RG16 » (texte intégral). Tu travailles dans naviguide-simulator/, .github/workflows/ci.yml et docs/REGLES_WORKFLOW_AGENT.md.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 1 (« CI Playwright inutile »), § 3 (D11) et le « RG16 » (texte intégral). Tu travailles dans naviguide-simulator/, .github/workflows/ci.yml et docs/REGLES_WORKFLOW_AGENT.md.
 
 Lot RG16 — La CI Playwright utile (porteur, 28 sept. : « elle est longue et ne sert pas à grand chose » ; mesuré sur le run 36388263060 de main : job de 10 min dont 9 min de specs de lots, 58 specs rouges sur 101, job vert quand même par continue-on-error ; les rouges sont des contrats périmés — 12 specs attendent l'ouverture en Simulation décidée autrement par RF7, 9 attendent plan-review visible déplacé par RD9 dans un onglet, film-duration hors film (RE3 / RF8), « Aujourd'hui, le bateau est à » changé par RC17, « 15 mai 2025 », zoom d'accueil ≤ 2,25 changé par le plancher RC18, regime-legend /hindcast/ sans hindcast en CI, route-summary / expedition-story / ici-story-slot déplacés).
 Objectif : la suite Playwright est la recette automatique des lots — verte sur main, bloquante (plus de continue-on-error), en ≤ 4 minutes, lisible (les specs rouges sont nommés dans le résumé du job) ; chaque spec dit le contrat ACTUEL du produit ; un lot n'est fini que si son spec passe avec l'API sur le stock figé.
@@ -1726,9 +1729,9 @@ Branche fix/lot-rg16-ci-playwright-utile depuis la base indiquée. PR vers main,
 Interdits : affaiblir une assertion pour passer au vert ; supprimer un spec sans décision citée ; masquer une régression réelle ; toucher au code applicatif (hors data-testid manquant, à justifier) ; une fixture inventée dans le stock figé ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG1" title="Faits justes : départ lu sur l'horloge, le vol est un vol, la route est la route" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="" -->
+<!-- LOT id="RG1" title="Faits justes : départ lu sur l'horloge, le vol est un vol, la route est la route" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier (c'est la revue du porteur : transcription § 1, défauts § 3, gabarit § 4), puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier (c'est la revue du porteur : transcription § 1, défauts § 3, gabarit § 4), puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG1 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG1 — Faits justes (revue du 28 sept., défauts A1, A2, A5 : « Puis, le 18 mai, départ vers Ajaccio » alors que l'horloge a le bateau en mer depuis le 15 mai — moment « jour 1 » le 16 mai à 45,1° N / 4,7° W ; le vol Cayenne ⇄ Saint-Pierre raconté comme une traversée puis « départ vers Papeete » depuis Saint-Pierre ; « Départ vers La Rochelle » pour 227 km par la route).
 Objectif : chaque date et chaque lieu du film viennent de l'horloge du stock ; un vol est raconté comme un vol (le bateau reste au port) ; la navigation suivante repart du port où le bateau est resté ; Saint-Maur → La Rochelle est dit « par la route ». Les ancres (chapter_anchors) placent le bateau au port quand la voix dit « départ ».
@@ -1741,9 +1744,9 @@ Branche fix/lot-rg1-faits-justes depuis la base indiquée. PR vers main, gabarit
 Interdits : une date ou un lieu qui ne vient pas de l'horloge ; garder « 3 jours à quai » quand l'horloge ne s'arrête pas ; retirer une surface visible ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG2" title="Nommer ce qu'on traverse : eaux, côtes, détroits, ports longés, cap" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG1" -->
+<!-- LOT id="RG2" title="Nommer ce qu'on traverse : eaux, côtes, détroits, ports longés, cap" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG1" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG2 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG2 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG2 — Nommer ce qu'on traverse (revue du 28 sept., défauts B1, B2, B6, D4 : la voix dit « 3 zones économiques exclusives traversées » ×7 alors que le stock a 134 entrées de ZEE datées et nommées — eaux espagnoles le 16 mai, portugaises le 18, marocaines le 21, italiennes le 24, françaises le 25… — ; 44 ports longés jamais dits : Camariñas, Muxía, Cascais, Tanger, Algeciras, Ceuta, Almería, Mahón, Calvi ; aucun cap).
 Objectif : le film nomme, dans l'ordre et à la date de l'horloge, les eaux traversées, les côtes, détroits, îles et ports longés, et le cap au départ — en français parlé (« le 16 mai, les eaux espagnoles ; le bateau longe la Galice, Camariñas puis Muxía »), jamais « zone économique exclusive » ni un nom brut de source.
@@ -1756,9 +1759,9 @@ Branche fix/lot-rg2-nommer-la-route depuis la base indiquée. PR vers main, gaba
 Interdits : un nom de lieu qui ne vient pas du stock (ZEE, ports, WPI) ; un comptage à la place des noms ; un titre de source brut ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG3" title="AMP réelles et projets Blue Intelligence à proximité du bateau" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG2" -->
+<!-- LOT id="RG3" title="AMP réelles et projets Blue Intelligence à proximité du bateau" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG2" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D4, D5) et le « RG3 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D4, D5) et le « RG3 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG3 — AMP réelles et projets Blue Intelligence (revue du 28 sept., défauts A3, B3, B4, D1 : la seule « AMP » dite est « Pertuis Charentais - Pétoncles - Center Pertuis Breton deposit », une zone de dépôt de pétoncles ; la couche des projets Blue Intelligence existe dans le moteur « ici » mais 0 perle du voyage sur 770 la porte — le porteur veut entendre « les projets desquels le bateau passe à proximité »).
 Objectif : la voix nomme les aires marines protégées réelles et les projets Blue Intelligence à proximité du bateau, quand il y est, avec leur nom parlé et la distance ; jamais une zone de réglementation de pêche ni un titre de jeu de données.
@@ -1771,9 +1774,9 @@ Branche fix/lot-rg3-amp-projets depuis la base indiquée. PR vers main, gabarit 
 Interdits : une AMP ou un projet qui ne vient pas des couches BI / WDPA du sac ; un titre de jeu de données à la voix ; toucher au backend BI ou à sa base ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG4" title="La climatologie racontée : changements notables, honnêteté climatologie / mesuré" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG1" -->
+<!-- LOT id="RG4" title="La climatologie racontée : changements notables, honnêteté climatologie / mesuré" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG1" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D6) et le « RG4 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D6) et le « RG4 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG4 — La climatologie racontée (revue du 28 sept., défauts B5, D5 : le stock a le régime, le vent en nœuds et la direction par sommet de l'horloge, la voix n'en dit rien — le porteur veut entendre « les changements de climatologie notables » : où commencent les alizés, où sont les calmes, quand le vent tourne).
 Objectif : le film dit, daté et positionné, chaque changement notable du vent attendu ou mesuré sur la route (« le 14 juin, au sud du Cap-Vert, les alizés de nord-est s'installent : quinze nœuds de saison »), en disant sa nature — « de saison » pour la climatologie, « mesuré » pour l'hindcast — et sans jamais inventer un chiffre quand la source est le repli de zone.
@@ -1786,9 +1789,9 @@ Branche fix/lot-rg4-climatologie-racontee depuis la base indiquée. PR vers main
 Interdits : un chiffre de vent inventé ou venu du repli de zone ; dire « mesuré » pour de la climatologie ; retirer le repli climatologie ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG5" title="Stations qualifiées : flotteur, campagne, bouée — jamais un titre de jeu de données" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG2" -->
+<!-- LOT id="RG5" title="Stations qualifiées : flotteur, campagne, bouée — jamais un titre de jeu de données" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG2" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 2-3, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0 et le « RG5 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 2-3, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0 et le « RG5 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG5 — Stations qualifiées (revue du 28 sept., défauts A4, D2 : « À partir du 15 mai, 9 stations scientifiques croisées » dit à quai ; les 381 « stations » du stock sont des titres de jeux de données EMODnet / Sextant — « Bacteria in Rias of Galicia », « PELGAS2025 », « Argo 6904216 » — imprononçables tels quels).
 Objectif : une station n'est dite que qualifiée (« un flotteur Argo », « la campagne PELGAS », « une bouée », « une station côtière », « un observatoire ») depuis les métadonnées du sac (source, type, titre), une par étape au plus, la plus proche ; les titres de jeux de données sont interdits à la voix ; plus de comptage.
@@ -1801,9 +1804,9 @@ Branche fix/lot-rg5-stations-qualifiees depuis la base indiquée. PR vers main, 
 Interdits : un titre de jeu de données à la voix ; un type inventé ; un comptage ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG6" title="Gabarit narratif par étape : ouverture, route dans l'ordre, escale nommée" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG2,RG3,RG4" -->
+<!-- LOT id="RG6" title="Gabarit narratif par étape : ouverture, route dans l'ordre, escale nommée" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG2,RG3,RG4" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier (le gabarit § 4 est validé par le porteur : c'est la cible), puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG6 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier (le gabarit § 4 est validé par le porteur : c'est la cible), puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG6 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG6 — Gabarit narratif par étape (revue du 28 sept., défauts C1 → C6, B7, B8 : un seul gabarit répété dix fois — « départ vers » / « approche de » / « Arrivée à … 3 jours à quai » ; une date par phrase ; jargon « jambe », « Couloirs : », « À surveiller. », « à portée de » ; « de de Fineveke » ; titres anglais ; distance et durée absentes 9 fois sur 11 ; la marina d'arrivée jamais nommée).
 Objectif : chaque étape se lit comme le gabarit § 4 — ouverture (date, port, cap, destination, milles, jours de mer, vitesse moyenne — tous du plan-review et de l'horloge) → la route dans l'ordre (eaux, côtes, AMP, projets, climatologie, station : RG2 → RG5) → l'escale (arrivée datée, marina ou port d'arrivée nommé, durée dite une fois, autrement que « 3 jours à quai » à chaque fois) ; une date toutes les deux phrases au plus ; zéro mot de la liste interdite ; connecteurs liés au contenu ; l'annexe « À surveiller. Couloirs : … La jambe compte … » disparaît, son contenu est fondu dans la route.
@@ -1816,9 +1819,9 @@ Branche fix/lot-rg6-gabarit-etape depuis la base indiquée. PR vers main, gabari
 Interdits : une phrase de remplissage ; un chiffre qui ne vient pas du plan-review / de l'horloge ; garder l'annexe ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG7" title="Ouverture et fin du film : l'expédition, aujourd'hui, les escales à venir" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG6" -->
+<!-- LOT id="RG7" title="Ouverture et fin du film : l'expédition, aujourd'hui, les escales à venir" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG6" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (B9) et § 4, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0 et le « RG7 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (B9) et § 4, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0 et le « RG7 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG7 — Ouverture et fin du film (revue du 28 sept., défaut B9 : pas d'ouverture — qui, d'où, combien d'escales, combien de milles — ni de fin — ETA de la prochaine escale, escales à venir ; le film finit sur « à 232 milles nautiques de Nouméa »).
 Objectif : le film s'ouvre sur l'expédition (nom, départ de Saint-Maur le 15 mai 2026 par la route jusqu'à La Rochelle, nombre d'escales et milles totaux du plan-review, destination finale) et se ferme sur aujourd'hui (position, prochaine escale et sa fourchette d'arrivée depuis le stock eta, les escales à venir nommées : Nouméa, Dzaoudzi, Europa, Tromelin, La Réunion…).
@@ -1831,9 +1834,9 @@ Branche fix/lot-rg7-ouverture-fin depuis la base indiquée. PR vers main, gabari
 Interdits : un chiffre qui ne vient pas du plan-review / du stock eta ; une ETA inventée ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG8" title="Budgets réels : 2:30, 3:00 et intégral produisent des textes différents" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG6" -->
+<!-- LOT id="RG8" title="Budgets réels : 2:30, 3:00 et intégral produisent des textes différents" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG6" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (E1), puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D7) et le « RG8 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (E1), puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D7) et le « RG8 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG8 — Budgets réels (revue du 28 sept., défaut E1 : les variantes 2:30 et 3:00 servies sont identiques — 2 913 caractères toutes deux — les pilules ne changent rien ; le débit de voix est constant depuis le 27 sept., la durée réelle est donc celle du texte).
 Objectif : 2:30, 3:00 et « intégral » produisent trois textes de longueurs strictement croissantes par sélection de priorité (2:30 = ouverture, eaux principales, une AMP ou un projet, escales ; 3:00 = + côtes et climatologie ; intégral = tout) ; la durée estimée (caractères ÷ débit mesuré ou 15 car./s) s'affiche à côté des pilules ; le débit constant est conservé (aucun recalibrage de la voix).
@@ -1846,9 +1849,9 @@ Branche fix/lot-rg8-budgets-reels depuis la base indiquée. PR vers main, gabari
 Interdits : recalibrer le débit de la voix ; couper une phrase ; retirer les pilules ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG9" title="Client robuste : sans voix, onglet caché, sous-titre = la phrase en cours" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="" -->
+<!-- LOT id="RG9" title="Client robuste : sans voix, onglet caché, sous-titre = la phrase en cours" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (E2, E3, E4) et § 5.2-7, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0 et le « RG9 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (E2, E3, E4) et § 5.2-7, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0 et le « RG9 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG9 — Client robuste (revue du 28 sept., défauts E2, E3, E4 ; KO du bot sur #386 : « film ended=true à ~53 s alors que chapterIdx=0/6, elapsed figé ~23 s, charIdx=0 » dans un navigateur sans moteur vocal ; onglet caché → requestAnimationFrame s'arrête, la voix continue, le bateau saute au retour ; le sous-titre montre le chapitre entier).
 Objectif : sans moteur vocal (ou sans frontière de mot après 2 s), le film roule à l'horloge murale dès le départ et ne finit qu'à la dernière phrase ; au retour d'un onglet caché, le bateau rattrape en douceur (≤ 2 s) au lieu de sauter ; le sous-titre montre la phrase en cours, le nom du lieu mis en avant quand il est dit.
@@ -1861,9 +1864,9 @@ Branche fix/lot-rg9-client-robuste depuis la base indiquée. PR vers main, gabar
 Interdits : recalibrer la voix ; couper une phrase ; retirer le sous-titre ou la barre ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG10" title="Recette automatique du discours : le test lit le film et refuse le jargon" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG6" -->
+<!-- LOT id="RG10" title="Recette automatique du discours : le test lit le film et refuse le jargon" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG6" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (C, D) et § 4, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D10) et le « RG10 » (texte intégral). Tu travailles dans naviguide-simulator/ et infra/agents/PARCOURS_DE_REFERENCE.md (documentation).
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (C, D) et § 4, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D10) et le « RG10 » (texte intégral). Tu travailles dans naviguide-simulator/ et infra/agents/PARCOURS_DE_REFERENCE.md (documentation).
 
 Lot RG10 — Recette automatique du discours (revue du 28 sept. : les défauts de forme C1 → C6 et D1 → D4 ont tous été vus par le porteur à l'oreille ; il faut qu'un test les voie avant lui).
 Objectif : un test serveur lit le film produit et échoue sur : mots interdits (« jambe », « zone économique exclusive », « Couloirs », « À surveiller », « à portée de »), « de de », titres anglais (motifs : deposit, licence, Center, fishing, ban…), comptages sans nom (« N stations », « N zones »), dates en rafale (> 1 date par 2 phrases), phrases > 30 mots, ordre chronologique des ancres, structure par chapitre (ouverture / route / escale) ; le même test, marqué poste, lit le stock du poste (ignoré en CI).
@@ -1876,9 +1879,9 @@ Branche fix/lot-rg10-recette-discours depuis la base indiquée. PR vers main, ga
 Interdits : affaiblir une règle pour faire passer le test (la phrase se corrige, pas la règle) ; un test qui appelle un fournisseur externe ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG17" title="Fourchette d'arrivée : présente sous la prochaine escale, ou expliquée" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="" -->
+<!-- LOT id="RG17" title="Fourchette d'arrivée : présente sous la prochaine escale, ou expliquée" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 1 (« Fourchette d'arrivée absente ») et le « RG17 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 1 (« Fourchette d'arrivée absente ») et le « RG17 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG17 — Fourchette d'arrivée présente ou expliquée (parcours de référence de Grok Bot sur #386, 28 sept. — seul KO : « la fourchette “arriver entre le…” n'apparaît toujours pas sous la prochaine escale » ; sur le poste, GET /voyage/official/eta?stop=Nouméa… répond status preparing, members 0, reason « en préparation » depuis des heures).
 Objectif : sous la prochaine escale, on voit TOUJOURS soit la fourchette « arriver entre le … et le … », soit une ligne honnête qui dit pourquoi elle manque et quand elle reviendra (« fourchette indisponible — quota Open-Meteo atteint, nouvel essai le 29 sept. ») ; la famille eta du stock n'est plus jamais « en préparation » sans fin ; le remplisseur ne martèle plus l'API ensemble en quota épuisé.
@@ -1891,9 +1894,9 @@ Branche fix/lot-rg17-fourchette-expliquee depuis la base indiquée. PR vers main
 Interdits : une fourchette inventée ou calculée sans membres ; un statut ready sans données ; retirer la légende ou la fourchette ; appeler un fournisseur externe dans le chemin d'une requête ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG12" title="Vitesse continue du bateau : plus de paliers ni de dent de scie, gouverneur de rythme" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG1" -->
+<!-- LOT id="RG12" title="Vitesse continue du bateau : plus de paliers ni de dent de scie, gouverneur de rythme" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG1" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 5 en entier (mesures, causes, motion design validé), puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D2, D3) et le « RG12 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 5 en entier (mesures, causes, motion design validé), puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D2, D3) et le « RG12 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG12 — Vitesse continue du bateau (revue du 28 sept., § 5.1-5.2 : la vitesse du temps-film passe de 0 à 154 heures de voyage par seconde d'une phrase à l'autre ; menée par la voix, l'avance est en dent de scie à chaque mot — rapport 6,8 entre l'avance max et min dans un mot, simulation avec le code réel ; 39 % de frames sans avance).
 Objectif : le bateau ne s'arrête et ne repart jamais brutalement — vitesse écran bornée (v_min, v_max en px/s à la frame, réglables), pente continue entre les ancres, plus de bond à chaque mot ; quand une phrase porte plus de route que v_max ne permet, la voix attend EN FIN DE PHRASE (silence, jamais coupée au milieu) pendant que le bateau avance à v_max ; quand le bateau est à quai, le temps-film saute l'escale après la phrase qui la dit — l'écran ne reste jamais figé plus de ~2 s.
@@ -1906,9 +1909,9 @@ Branche fix/lot-rg12-vitesse-continue depuis la base indiquée. PR vers main, ga
 Interdits : recalibrer le débit de la voix ; couper une phrase ; laisser la voix en avance sur le bateau (le bateau suit la voix, jamais l'inverse) ; toucher au serveur ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG13" title="Caméra et rendu à 60 Hz : plus de setView par frame, cap lissé, sillage à la frame" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG12" -->
+<!-- LOT id="RG13" title="Caméra et rendu à 60 Hz : plus de setView par frame, cap lissé, sillage à la frame" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG12" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 5 en entier, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG13 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 5 en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG13 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG13 — Caméra et rendu à 60 Hz (revue du 28 sept., § 5.1-5.2 : 44 fps avec 8,3 % de frames > 34 ms ; bateau immobile à l'écran deux frames sur trois puis bonds de 12 à 29 px ; caméra à sa butée de 2 % de l'écran ; cadrage sur le cap instantané ; sillage à 8 Hz ; bond de 243 px au changement de chapitre).
 Objectif : pendant le film, tout est rendu à la frame et la frame tient en 16 ms : la carte se déplace par translation (pas de recalcul complet de la vue à chaque frame), les couches lourdes ne se redessinent qu'à l'arrêt, la caméra est le cadre du bateau (cap lissé de la jambe, bateau dans les 40 % centraux, butée liée à sa vitesse), le sillage et les acteurs bougent avec lui, un seul mouvement au changement d'étape sans trou.
@@ -1921,9 +1924,9 @@ Branche fix/lot-rg13-camera-60hz depuis la base indiquée. PR vers main, gabarit
 Interdits : retirer une couche ou une surface visible ; un damier gris ; sauter d'île en île aux Caraïbes ; toucher au serveur ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG15" title="La carte au dézoom : drapeaux, bateaux et monde restent à leur place" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="" -->
+<!-- LOT id="RG15" title="La carte au dézoom : drapeaux, bateaux et monde restent à leur place" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 1 et le « RG15 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 1 et le « RG15 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG15 — La carte au dézoom (revue du porteur du 27 sept. : « au dézoomage les drapeaux — Wallis-et-Futuna, Nouvelle-Calédonie — et les bateaux se baladent horizontalement dans le monde », « on ne doit pas voir plusieurs fois le monde d'affilée » ; #386 a posé un plancher de dézoom en Suivre et gelé les marqueurs pendant l'animation de zoom — le reste est à reproduire et corriger).
 Objectif : quels que soient le mode (Suivre, Simulation, Tracer, film), le geste (molette, pincement, boutons ±) et le zoom, aucun drapeau ni bateau ne bouge par rapport à sa position géographique, pendant l'animation comme après ; le monde n'apparaît jamais deux fois d'affilée ; Tracer garde la vue monde entière (une fois).
@@ -1936,9 +1939,9 @@ Branche fix/lot-rg15-carte-dezoom depuis la base indiquée. PR vers main, gabari
 Interdits : retirer les drapeaux, les copies monde ou la navigation gauche/droite ; bloquer le zoom au-delà du plancher ; toucher au serveur ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG14" title="Ancres au bon mot : le bateau est au lieu quand son nom est prononcé" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG6,RG12" -->
+<!-- LOT id="RG14" title="Ancres au bon mot : le bateau est au lieu quand son nom est prononcé" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG6,RG12" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 5.3 et § 5.4, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D1) et le « RG14 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 5.3 et § 5.4, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D1) et le « RG14 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG14 — Ancres au bon mot (revue du 28 sept., § 5.3 : l'ancre est posée au début de la phrase, donc le bateau quitte le lieu pendant qu'on en parle — « Le 21 mai, le détroit de Gibraltar » : à Gibraltar au premier mot, bien au-delà au dernier ; les phrases de groupe s'étirent sur toute la traversée ; l'avance de 12 caractères du client n'est pas compensée).
 Objectif : quand la voix prononce le nom d'un lieu, le bateau y est (≤ N milles : escale 5, marina 15, AMP / projet 30, ZEE : à l'intérieur) ; une phrase de durée (escale) garde le bateau à quai du premier au dernier mot ; un départ s'ancre au premier mot, une arrivée au dernier ; un test le vérifie sur les moments d'exemple et, marqué poste, sur le stock.
@@ -1951,9 +1954,9 @@ Branche fix/lot-rg14-ancres-au-mot depuis la base indiquée. PR vers main, gabar
 Interdits : déplacer une phrase pour coller à l'horloge (c'est l'ancre qui bouge, pas le texte) ; une ancre non croissante ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RH1" title="Le chat du journal répond depuis les faits quand aucun modèle ne répond" plan="docs/PLAN_CORRECTIONS_2026-09-27-s5.md" size="S" deps="" -->
+<!-- LOT id="RH1" title="Le chat du journal répond depuis les faits quand aucun modèle ne répond" plan="docs/archives/PLAN_CORRECTIONS_2026-09-27-s5.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-27-s5.md § 0 et le « RH1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-27-s5.md § 0 et le « RH1 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RH1 — Le chat du journal répond depuis les faits (revue du 27 sept. session 5, KO bot #334 et #384 : « Quel vent au bateau ? » → « aucun modèle n'a répondu », persistant sur deux cycles — la condition du plan s4 § 3 « si l'échec persiste, ouvrir un lot au prochain cycle » est remplie).
 Objectif : quand la cascade de modèles échoue (clés absentes ou épuisées, quota, réseau), le chat répond quand même par un gabarit construit depuis les faits du contexte (source « rules ») ; le message « Le journal n'a pas pu répondre (aucun modèle n'a répondu) » ne reste que pour un vrai échec sans aucun fait.
@@ -1966,9 +1969,9 @@ Branche fix/lot-rh1-chat-repli-faits depuis la base indiquée. PR vers main, gab
 Interdits : un chiffre rédigé par un LLM ou absent du contexte (filter_numbers reste juge) ; un libellé nouveau à l'écran ; retirer le message d'échec (il reste pour le vrai failed) ; toucher à la cascade elle-même (story_cascade.py est en lecture) ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RH2" title="Console : plus de net::ERR_ABORTED au parcours nominal" plan="docs/PLAN_CORRECTIONS_2026-09-27-s5.md" size="S" deps="" -->
+<!-- LOT id="RH2" title="Console : plus de net::ERR_ABORTED au parcours nominal" plan="docs/archives/PLAN_CORRECTIONS_2026-09-27-s5.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-27-s5.md § 0 et le « RH2 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-27-s5.md § 0 et le « RH2 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RH2 — Plus de net::ERR_ABORTED en console (revue du 27 sept. session 5, KO bot #381 : net::ERR_ABORTED sur /ici/warm/status en Simulation et sur /voyage/official/eta?stop=… au chargement — priorité 1 du porteur : chaque ligne rouge a une cause et un lot).
 Objectif : au parcours nominal (Suivre → Simulation → Tracer → Suivre, 2 minutes), la console ne montre plus aucune ligne rouge net::ERR_ABORTED ; rien ne change à l'écran.
@@ -1986,15 +1989,15 @@ Interdits : retirer une donnée affichée (fourchette, source du récit) ; ajout
 
 ### Deux modes — Suivre et Tracer (décision du porteur du 29 septembre : DM1, DM2, puis DM3 à part)
 
-Décision, constats de code (fichier:ligne sur `main` @ `2489eb9`), cible et plancher : `docs/PLAN_DEUX_MODES_2026-09-29.md`.
+Décision, constats de code (fichier:ligne sur `main` @ `2489eb9`), cible et plancher : `docs/archives/PLAN_DEUX_MODES_2026-09-29.md`.
 Le mode Simulation était l'intermédiaire qui a permis de fabriquer Suivre ; l'application repose sur **Suivre** (leur voyage,
 tel qu'il est) et **Tracer** (mon voyage, tel qu'il pourrait être — route Berry-Mappemonde ou la mienne). Le moteur de
 Simulation ne bouge pas : seule la porte d'entrée change. Ces lots sont codés par **Claude Fable** (attribut `model` de la
 balise, CLI local) ; DM3 se lance seul, après merge de DM1-DM2.
 
-<!-- LOT id="DM1" title="Deux modes : la pilule Tracer remplace Simulation ; la carte route propose toujours Berry-Mappemonde" plan="docs/PLAN_DEUX_MODES_2026-09-29.md" size="M" deps="" model="claude-fable-5-thinking-xhigh" -->
+<!-- LOT id="DM1" title="Deux modes : la pilule Tracer remplace Simulation ; la carte route propose toujours Berry-Mappemonde" plan="docs/archives/PLAN_DEUX_MODES_2026-09-29.md" size="M" deps="" model="claude-fable-5-thinking-xhigh" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_DEUX_MODES_2026-09-29.md en entier (c'est le plan de ce lot : décision du porteur, constats fichier:ligne, cible, plancher). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_DEUX_MODES_2026-09-29.md en entier (c'est le plan de ce lot : décision du porteur, constats fichier:ligne, cible, plancher). Tu travailles dans naviguide-simulator/.
 
 Lot DM1 — Fermer la porte Simulation (décision explicite du porteur du 29 sept. : « l'application repose sur deux modes, Suivre et Tracer » — retirer le mot et le bouton Simulation est DEMANDÉ ; la règle .cursor/rules/anti-regression-visuelle-simulateur.mdc qui listait « Suivre / Simulation » est mise à jour par ce lot, voir étape 5).
 Objectif : à l'écran, deux pilules — Suivre | Tracer. Cliquer Tracer fait exactement ce que faisait Simulation sur la route Berry-Mappemonde (le « et si » sur le plan officiel : date de départ, Play, vitesses, escale auto, Recalculer, Demander conseil, ordres skipper) ET montre la carte route avec les pilules Berry-Mappemonde | <ma route> toujours visibles, le bouton « Tracer votre propre route » et Importer. Le mode interne (VIEW_SIMULATION, isSimulation, mode "simulation" envoyé au serveur) NE CHANGE PAS dans ce lot : c'est DM3 qui renomme. Aucun moteur touché.
@@ -2010,12 +2013,12 @@ Fichiers à ouvrir (seulement) : src/components/SimulationFilmBar.jsx PAR EXTRAI
 Tests : cd naviguide-simulator && npm test && npx vite build && PW_WITH_API=1 PW_PORT=5199 npx playwright test e2e/lots/dm1-deux-modes.spec.js e2e/smoke.spec.js e2e/lots/re2-escales.spec.js e2e/lots/rf8-barre-epuree.spec.js e2e/lots/parcours-nominal.spec.js (la CI joue les six tranches : elle doit être verte).
 Recette (visuelle) : ouvre l'application → deux pilules Suivre | Tracer, plus aucun « Simulation » à l'écran ; Tracer → le bateau et la barre de Simulation d'hier (date de départ, Play, vitesses, escale auto), le panneau droit avec Recalculer / Demander conseil / Ordres skipper, et à gauche la carte route : pilule Berry-Mappemonde active, « Tracer votre propre route », Importer ; trace une route → Terminer → elle se joue, pilules Berry | <ma route> ; Berry → retour à la route officielle jouée ; Suivre → LIVE. Captures docs/recette/lot-dm1/01-deux-pilules.webp, 02-tracer-berry.webp, 03-tracer-ma-route.webp (URL complète sur ta branche).
 Branche fix/lot-dm1-deux-modes depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
-Interdits : renommer VIEW_SIMULATION / isSimulation / un composant / un fichier (DM3) ; toucher au moteur (useVirtualVessel, playback, useReplay, film) ; retirer une surface de main autre que le MOT « Simulation » (le plancher est docs/PLAN_DEUX_MODES_2026-09-29.md § 4) ; supprimer une clé i18n ; un test affaibli ou une spec supprimée (remplacer view-simulation par view-tracer n'est pas affaiblir) ; changer le protocole serveur ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs (specs modifiées, CI six tranches), captures, reste à faire.
+Interdits : renommer VIEW_SIMULATION / isSimulation / un composant / un fichier (DM3) ; toucher au moteur (useVirtualVessel, playback, useReplay, film) ; retirer une surface de main autre que le MOT « Simulation » (le plancher est docs/archives/PLAN_DEUX_MODES_2026-09-29.md § 4) ; supprimer une clé i18n ; un test affaibli ou une spec supprimée (remplacer view-simulation par view-tracer n'est pas affaiblir) ; changer le protocole serveur ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs (specs modifiées, CI six tranches), captures, reste à faire.
 ```
 
-<!-- LOT id="DM2" title="Deux modes : les mots — libellés, accueil, parcours de référence, documentation" plan="docs/PLAN_DEUX_MODES_2026-09-29.md" size="S" deps="DM1" model="claude-fable-5-thinking-xhigh" -->
+<!-- LOT id="DM2" title="Deux modes : les mots — libellés, accueil, parcours de référence, documentation" plan="docs/archives/PLAN_DEUX_MODES_2026-09-29.md" size="S" deps="DM1" model="claude-fable-5-thinking-xhigh" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_DEUX_MODES_2026-09-29.md en entier. Tu travailles dans naviguide-simulator/ et dans infra/agents/ (un seul fichier, étape 3).
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_DEUX_MODES_2026-09-29.md en entier. Tu travailles dans naviguide-simulator/ et dans infra/agents/ (un seul fichier, étape 3).
 
 Lot DM2 — Les mots de deux modes (après DM1 : la pilule s'appelle Tracer, le mot « Simulation » ne doit plus apparaître à l'écran ni dans les textes que lisent le porteur, Grok Bot et le réviseur).
 Objectif : chaque texte visible ou lu dit Suivre / Tracer ; rien ne change dans le comportement.
@@ -2037,11 +2040,11 @@ Interdits : toucher au code hors i18n et textes (aucun .jsx sauf pour lire une c
 
 ### Batch 2 — position vraie, deux modes qui se parlent, film juste, puis AMP, plume, chat, specs, ménage (revue du porteur du 14 octobre)
 
-Plan : `docs/PLAN_BATCH_2026-10-14.md` ; revue : `docs/REVUE_PORTEUR_2026-10-14.md`. Ordre : **HC1** (la position du bateau devient vraie et stable : tout le reste se mesure dessus) → **DM4, DM5, DM6, DM7** (accueil centré, Suivre sur ma route, Tracer par défaut en dessin, Tracer simule depuis aujourd'hui) → **DM9** (panneaux de Tracer) → **UI1** (barre de mentions) → **RC30** (film : ordre et phrases entières) → **RC31** (l'épisode Saint-Pierre-et-Miquelon : vols, second bateau) → **RC32** (toponymes FR/EN, Saint-Martin / Sint Maarten) → **DM8** (Revoir et récit sur ma route) → **RC27** (le 2:30 tient, pour la vidéo) → **RG11** (Rédigé par Nemotron 3 Super) → **AM1A → AM1B** (AMP, découpé : sac → événements / film par polygone) → **RG18**, **RG19** (plume unique, chat à trois paliers) → **RG20** (specs vérité) → **DM3** (ménage, en dernier). Lancement : GO PR avec `LOTS: HC1 DM4 DM5 DM6 DM7 DM9 UI1 RC30 RC31 RC32 DM8 RC27 RG11 AM1 RG18 RG19 RG20 DM3` (décisions du porteur du 14 oct. : RC27, RG11, DM8 et DM9 entrent dans le batch).
+Plan : `docs/archives/PLAN_BATCH_2026-10-14.md` ; revue : `docs/REVUE_PORTEUR_2026-10-14.md`. Ordre : **HC1** (la position du bateau devient vraie et stable : tout le reste se mesure dessus) → **DM4, DM5, DM6, DM7** (accueil centré, Suivre sur ma route, Tracer par défaut en dessin, Tracer simule depuis aujourd'hui) → **DM9** (panneaux de Tracer) → **UI1** (barre de mentions) → **RC30** (film : ordre et phrases entières) → **RC31** (l'épisode Saint-Pierre-et-Miquelon : vols, second bateau) → **RC32** (toponymes FR/EN, Saint-Martin / Sint Maarten) → **DM8** (Revoir et récit sur ma route) → **RC27** (le 2:30 tient, pour la vidéo) → **RG11** (Rédigé par Nemotron 3 Super) → **AM1A → AM1B** (AMP, découpé : sac → événements / film par polygone) → **RG18**, **RG19** (plume unique, chat à trois paliers) → **RG20** (specs vérité) → **DM3** (ménage, en dernier). Lancement : GO PR avec `LOTS: HC1 DM4 DM5 DM6 DM7 DM9 UI1 RC30 RC31 RC32 DM8 RC27 RG11 AM1 RG18 RG19 RG20 DM3` (décisions du porteur du 14 oct. : RC27, RG11, DM8 et DM9 entrent dans le batch).
 
-<!-- LOT id="HC1" title="Position vraie : le passé du bateau vient de la météo réelle (ERA5, téléchargée une fois), l'horloge est déterministe" plan="docs/PLAN_BATCH_2026-10-14.md" size="L" deps="" model="claude-fable-5-thinking-xhigh" -->
+<!-- LOT id="HC1" title="Position vraie : le passé du bateau vient de la météo réelle (ERA5, téléchargée une fois), l'horloge est déterministe" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="L" deps="" model="claude-fable-5-thinking-xhigh" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_BATCH_2026-10-14.md § 1 (HC1) et docs/REVUE_PORTEUR_2026-10-14.md § 3. Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_BATCH_2026-10-14.md § 1 (HC1) et docs/REVUE_PORTEUR_2026-10-14.md § 3. Tu travailles dans naviguide-simulator/.
 
 Lot HC1 — La position du bateau devient vraie et stable (porteur, 29 sept. et 14 oct. : « la meilleure serait avec la météo réelle passée d'Open-Meteo… pourquoi payer des appels récurrents alors que l'historique n'est pas censé changer »).
 Objectif : la position « aujourd'hui » du bateau ne dépend plus d'un aléa réseau. Le PASSÉ (du 15 mai au dernier jour publié par ERA5, ~5 jours de retard) est intégré avec la météo réellement rencontrée et FIGÉ — on n'y ajoute que les nouveaux jours ; l'AVENIR part de la dernière position réelle avec la climatologie, recalculé seulement quand l'atlas est complet, sinon on garde l'horloge de la veille. L'archive ERA5 est téléchargée UNE fois par cellule et réutilisée pour toujours. Statut honnête à l'écran (route parcourue turquoise = réel, violet = climatologie ; `hindcastStatus` ready / partial n/total / empty + raison).
@@ -2066,9 +2069,9 @@ Branche fix/lot-hc1-position-vraie depuis la base indiquée. PR vers main, gabar
 Interdits : un appel Open-Meteo pour un jour déjà en cache ; dépasser le budget journalier ; relancer le calcul de l'avenir avec un atlas partiel ; inventer un vent (pas de donnée → climatologie étiquetée, jamais « hindcast ») ; toucher au client au-delà du libellé « réel jusqu'au » ; sync-from-atlas.sh ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs (appels, couverture, positions sur deux recalculs), captures, reste à faire.
 ```
 
-<!-- LOT id="DM4" title="Accueil et retour en Suivre : le bateau au milieu de la carte, monde entièrement dézoomé" plan="docs/PLAN_BATCH_2026-10-14.md" size="S" deps="" -->
+<!-- LOT id="DM4" title="Accueil et retour en Suivre : le bateau au milieu de la carte, monde entièrement dézoomé" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.A et docs/PLAN_BATCH_2026-10-14.md. Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.A et docs/archives/PLAN_BATCH_2026-10-14.md. Tu travailles dans naviguide-simulator/.
 
 Lot DM4 — Le bateau au centre, le monde autour (revue du porteur, 14 oct., A1 et A2).
 Objectif : à l'ouverture de l'application (Suivre) et à chaque entrée en Suivre (clic sur la pilule, retour depuis Tracer), la carte est centrée sur le BATEAU, entièrement dézoomée (vue monde) — plus jamais centrée sur le départ en France, plus jamais zoomée sur le bateau.
@@ -2082,9 +2085,9 @@ Branche fix/lot-dm4-bateau-au-centre depuis la base indiquée. PR vers main, gab
 Interdits : montrer le monde deux fois (plancher de RG15) ; recadrer pendant le film ; recadrer contre un geste de l'utilisateur ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="DM5" title="Suivre suit la route que je viens de tracer : une seule route à l'écran, pilules Berry-Mappemonde | ma route" plan="docs/PLAN_BATCH_2026-10-14.md" size="L" deps="DM4" model="claude-fable-5-thinking-xhigh" -->
+<!-- LOT id="DM5" title="Suivre suit la route que je viens de tracer : une seule route à l'écran, pilules Berry-Mappemonde | ma route" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="L" deps="DM4" model="claude-fable-5-thinking-xhigh" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.B, § 3 et docs/PLAN_BATCH_2026-10-14.md. Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.B, § 3 et docs/archives/PLAN_BATCH_2026-10-14.md. Tu travailles dans naviguide-simulator/.
 
 Lot DM5 — Suivre sur ma route (revue du porteur, 14 oct., B1-B4 : « j'appuie sur Suivre l'expédition, je voudrais que ce soit la route que je viens de tracer qui apparaisse, et seulement elle »).
 Objectif : Suivre a une SOURCE de route — Berry-Mappemonde (horloge officielle, journal, Revoir : inchangé) ou MA route (tracée ou importée). Après Terminer un tracé, cliquer Suivre ouvre Suivre sur ma route : le bateau part à la date de départ choisie (par défaut aujourd'hui), avance à la polaire et à la climatologie comme un voyage de Simulation (serveur POST /voyage, clock), on peut changer la date de départ et relancer la lecture ; les pilules Berry-Mappemonde | <ma route> de l'encadré gauche basculent la source dans les deux modes ; UNE seule route dessinée à la fois ; la route à venir est toujours tracée.
@@ -2103,9 +2106,9 @@ Branche fix/lot-dm5-suivre-ma-route depuis la base indiquée. PR vers main, gaba
 Interdits : changer quoi que ce soit à Suivre × Berry (horloge officielle, journal, film) ; appeler /voyage/official pour une route perso ; dessiner deux routes ; retirer une surface ; renommer VIEW_SIMULATION (DM3) ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="DM6" title="Tracer : on arrive sur le dessin ; la pilule Berry-Mappemonde affiche la route Berry sans jeter le brouillon" plan="docs/PLAN_BATCH_2026-10-14.md" size="M" deps="DM5" -->
+<!-- LOT id="DM6" title="Tracer : on arrive sur le dessin ; la pilule Berry-Mappemonde affiche la route Berry sans jeter le brouillon" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="M" deps="DM5" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.C (C1-C3) et docs/PLAN_BATCH_2026-10-14.md. Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.C (C1-C3) et docs/archives/PLAN_BATCH_2026-10-14.md. Tu travailles dans naviguide-simulator/.
 
 Lot DM6 — Tracer, c'est d'abord tracer (revue du porteur, 14 oct.).
 Objectif : en entrant en Tracer, on est par DÉFAUT en « Tracer votre propre route » (le dessin est ouvert : « Choisissez votre point de départ ») ; la pilule Berry-Mappemonde affiche la route Berry (vitrine) sans Annuler et SANS perdre le brouillon ; « Tracer votre propre route » ramène au brouillon tel qu'on l'a laissé ; Annuler reste le seul abandon explicite du brouillon ; Importer reste.
@@ -2119,7 +2122,7 @@ Branche fix/lot-dm6-tracer-par-defaut depuis la base indiquée. PR vers main, ga
 Interdits : perdre un brouillon autrement que par Annuler ; toucher à Suivre ; retirer Importer ou Annuler ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="DM7" title="Tracer : la lecture part d'aujourd'hui, l'encadré suit le bateau du tracé (plus de fiche Papeete à Saint-Maur)" plan="docs/PLAN_BATCH_2026-10-14.md" size="S" deps="DM6" -->
+<!-- LOT id="DM7" title="Tracer : la lecture part d'aujourd'hui, l'encadré suit le bateau du tracé (plus de fiche Papeete à Saint-Maur)" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="S" deps="DM6" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.C (C4, C5) et § 4.1-4.2 (réflexions : NE DÉCIDE RIEN de ce qui y est ouvert). Tu travailles dans naviguide-simulator/.
 
@@ -2135,7 +2138,7 @@ Branche fix/lot-dm7-tracer-aujourdhui depuis la base indiquée. PR vers main, ga
 Interdits : décider quoi que ce soit du § 4.1 / 4.2 (onglets de l'encadré, autres éléments du panneau droit) ; retirer le champ Date de départ de Suivre ; toucher au film ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="DM9" title="Tracer : l'encadré gauche et le panneau droit du traceur (décisions du 14 oct. : option A, Polaires et Paramètres repliés)" plan="docs/PLAN_BATCH_2026-10-14.md" size="S" deps="DM7" -->
+<!-- LOT id="DM9" title="Tracer : l'encadré gauche et le panneau droit du traceur (décisions du 14 oct. : option A, Polaires et Paramètres repliés)" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="S" deps="DM7" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 4.1 et § 4.2 (décisions du porteur du 14 oct. : « Encadré OK, Panneau droit OK » = option A et recommandation du panneau droit). Tu travailles dans naviguide-simulator/.
 
@@ -2151,7 +2154,7 @@ Branche fix/lot-dm9-panneaux-tracer depuis la base indiquée. PR vers main, gaba
 Interdits : retirer une surface de Suivre ; supprimer un composant (masquer en Tracer ≠ supprimer) ; toucher au film ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="UI1" title="Barre de mentions légales : posée au-dessus de la barre film, même hauteur que les boutons de zoom" plan="docs/PLAN_BATCH_2026-10-14.md" size="S" deps="" -->
+<!-- LOT id="UI1" title="Barre de mentions légales : posée au-dessus de la barre film, même hauteur que les boutons de zoom" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="S" deps="" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.D. Tu travailles dans naviguide-simulator/.
 
@@ -2167,7 +2170,7 @@ Branche fix/lot-ui1-attribution depuis la base indiquée. PR vers main, gabarit 
 Interdits : retirer un lien d'attribution (obligation Esri / OSM) ; changer les boutons de zoom au-delà de leur hauteur ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RC30" title="Film : chronologie stricte des eaux et de la climatologie, phrases jamais coupées, clôture entière" plan="docs/PLAN_BATCH_2026-10-14.md" size="M" deps="" model="claude-fable-5-thinking-xhigh" -->
+<!-- LOT id="RC30" title="Film : chronologie stricte des eaux et de la climatologie, phrases jamais coupées, clôture entière" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="M" deps="" model="claude-fable-5-thinking-xhigh" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.E et § 6 (la transcription du porteur), docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4. Tu travailles dans naviguide-simulator/.
 
@@ -2183,7 +2186,7 @@ Branche fix/lot-rc30-ordre-et-phrases-entieres depuis la base indiquée. PR vers
 Interdits : un nombre, un nom, une date absents du stock ; toucher au budget 2:30 (RC27 est parqué) ; retirer une surface ; recalibrer la vitesse de la voix ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs (phrases hors ordre avant/après, coupures), captures, reste à faire.
 ```
 
-<!-- LOT id="RC31" title="Film : l'aller-retour Halifax ↔ Saint-Pierre-et-Miquelon — deux vols, un second bateau, le catamaran qui attend à Cayenne" plan="docs/PLAN_BATCH_2026-10-14.md" size="M" deps="RC30" -->
+<!-- LOT id="RC31" title="Film : l'aller-retour Halifax ↔ Saint-Pierre-et-Miquelon — deux vols, un second bateau, le catamaran qui attend à Cayenne" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="M" deps="RC30" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.E (E4) et docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4. Tu travailles dans naviguide-simulator/.
 
@@ -2199,7 +2202,7 @@ Branche fix/lot-rc31-episode-spm depuis la base indiquée. PR vers main, gabarit
 Interdits : un nom de bateau, une date ou un lieu inventés ; toucher aux jambes hors épisode ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RC32" title="Toponymes : pays et territoires dans la langue du récit (exonymes FR/EN), ports et aires dans leur langue, homonymes distingués (Saint-Martin / Sint Maarten)" plan="docs/PLAN_BATCH_2026-10-14.md" size="S" deps="RC30" -->
+<!-- LOT id="RC32" title="Toponymes : pays et territoires dans la langue du récit (exonymes FR/EN), ports et aires dans leur langue, homonymes distingués (Saint-Martin / Sint Maarten)" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="S" deps="RC30" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.E (E5). Tu travailles dans naviguide-simulator/.
 
@@ -2215,7 +2218,7 @@ Branche fix/lot-rc32-toponymes depuis la base indiquée. PR vers main, gabarit R
 Interdits : traduire un nom de port, d'aire ou de projet ; un exonyme sans source ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="DM8A" title="Suivre sur ma route (1/3) — serveur : les moments de MA route (GET /voyage/{id}/moments), à la demande, bornés, en cache" plan="docs/PLAN_BATCH_2026-10-14.md" size="M" deps="RC30" -->
+<!-- LOT id="DM8A" title="Suivre sur ma route (1/3) — serveur : les moments de MA route (GET /voyage/{id}/moments), à la demande, bornés, en cache" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="M" deps="RC30" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 3 et docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4. Tu travailles dans naviguide-simulator/. Ce lot est le premier tiers de DM8 (« et d'obtenir un récit de la route qu'on vient de tracer », porteur, 14 oct.) — découpé le 15 oct. en trois lots serveur → serveur → client ; tu ne fais QUE la partie décrite ici, DM8B et DM8C s'appuieront sur ton contrat.
 
@@ -2238,7 +2241,7 @@ Branche fix/lot-dm8a-moments-ma-route depuis la base indiquée. PR vers main, ga
 Interdits : un appel LLM ; toucher au stock du voyage officiel ou à ses clés ; un calcul sans borne ni verrou ; modifier le client (DM8C s'en charge) ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, reste à faire.
 ```
 
-<!-- LOT id="DM8B" title="Suivre sur ma route (2/3) — serveur : le film de MA route (GET /voyage/{id}/film), même forme que le film officiel" plan="docs/PLAN_BATCH_2026-10-14.md" size="M" deps="DM8A" -->
+<!-- LOT id="DM8B" title="Suivre sur ma route (2/3) — serveur : le film de MA route (GET /voyage/{id}/film), même forme que le film officiel" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="M" deps="DM8A" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4 et la PR de DM8A (contrat de GET /voyage/{id}/moments et de server/custom_story.py). Tu travailles dans naviguide-simulator/. Deuxième tiers de DM8 : tu ne fais que le film serveur ; DM8C fera le client.
 
@@ -2255,7 +2258,7 @@ Branche fix/lot-dm8b-film-ma-route depuis la base indiquée. PR vers main, gabar
 Interdits : un appel LLM ; toucher au stock officiel ; changer la forme de réponse du film officiel ; modifier le client ; une phrase qui nomme un lieu absent des moments ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, reste à faire.
 ```
 
-<!-- LOT id="DM8C" title="Suivre sur ma route (3/3) — client : Revoir joue le film de MA route, l'encadré montre sa Revue du plan et son Journal" plan="docs/PLAN_BATCH_2026-10-14.md" size="M" deps="DM8B" -->
+<!-- LOT id="DM8C" title="Suivre sur ma route (3/3) — client : Revoir joue le film de MA route, l'encadré montre sa Revue du plan et son Journal" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="M" deps="DM8B" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 3 et § 4 (encadré : option A), et les PR de DM8A / DM8B (contrats de GET /voyage/{id}/moments et /film). Tu travailles dans naviguide-simulator/. Dernier tiers de DM8 : le client.
 
@@ -2271,9 +2274,9 @@ Branche fix/lot-dm8c-revoir-ma-route depuis la base indiquée. PR vers main, gab
 Interdits : servir le brut local comme un film serveur ; toucher au serveur (DM8A / DM8B) autrement que pour un champ manquant noté en PR ; retirer une surface de Suivre × Berry ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RC27" title="2:30 tient vraiment à 150 s sur le stock réel" plan="docs/PLAN_BATCH_2026-10-14.md" size="S" deps="RC30" -->
+<!-- LOT id="RC27" title="2:30 tient vraiment à 150 s sur le stock réel" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="S" deps="RC30" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md et le prompt du lot RG8 (docs/LOTS_ORDRE_ET_PROMPTS.md). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md et le prompt du lot RG8 (docs/LOTS_ORDRE_ET_PROMPTS.md). Tu travailles dans naviguide-simulator/.
 
 Lot RC27 — Le 2:30 dure autour de 2:30 (porteur, 14 oct. : « ce qui serait bien c'est que la vidéo du 30 octobre soit faite à partir de la vidéo de 2:30 » — c'est la source de la vidéo Devpost : le 2:30 doit tenir, sans sacrifier ce qui fait le récit).
 Objectif : un film lancé sur 2:30 tient dans 150 s ± 10 % à 15 car./s (chars ÷ 15 ≤ 165) ; tu y lis encore au moins une AMP au nom réel et au moins « le projet … » ; jamais Pétoncles / deposit / Chaluts.
@@ -2287,9 +2290,9 @@ Branche fix/lot-rc27-plafond-230 depuis la base indiquée. PR vers main, gabarit
 Interdits : toucher au gabarit de l'intégral et du 3:00 ; retirer une surface visible ; retirer les pilules ; inventer une AMP ou un projet dans le stock ; recalibrer la voix ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG11A" title="« Rédigé » (1/2) — serveur : Nemotron 3 Super réécrit depuis les faits, vérifié phrase par phrase, servi par le stock" plan="docs/PLAN_BATCH_2026-10-14.md" size="M" deps="RC27" -->
+<!-- LOT id="RG11A" title="« Rédigé » (1/2) — serveur : Nemotron 3 Super réécrit depuis les faits, vérifié phrase par phrase, servi par le stock" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="M" deps="RC27" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D8) et le « RG11 » (texte intégral). Tu travailles dans naviguide-simulator/. Décision du porteur du 14 oct. : « on le fait bien évidemment, c'est l'objet du hackathon » — les règles Devpost exigent un appel Nebius Token Factory à l'exécution, visible par les juges. RG11 a été découpé le 15 oct. : ce lot est le serveur (tout ce qui doit être irréprochable) ; RG11B fera le client, le parcours de référence et la mesure du coût.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D8) et le « RG11 » (texte intégral). Tu travailles dans naviguide-simulator/. Décision du porteur du 14 oct. : « on le fait bien évidemment, c'est l'objet du hackathon » — les règles Devpost exigent un appel Nebius Token Factory à l'exécution, visible par les juges. RG11 a été découpé le 15 oct. : ce lot est le serveur (tout ce qui doit être irréprochable) ; RG11B fera le client, le parcours de référence et la mesure du coût.
 
 Lot RG11A — Le texte « Rédigé », produit depuis les faits et vérifié.
 Objectif : le texte « Rédigé » d'un chapitre est produit par Nemotron 3 Super (story_cascade.cascade_text(tier="write") = Token Factory) depuis les FAITS STRUCTURÉS de l'étape (JSON : dates, lieux, eaux, AMP, projets, stations, climatologie, distances, cap) avec une consigne de zéro invention ; chaque nombre (filter_numbers) et chaque nom propre du texte produit est vérifié contre les faits — une phrase qui échoue est remplacée par la phrase du brut ; les ancres sont recalculées sur le texte rédigé ; le stock sert le rédigé quand il existe, le brut sinon, jamais une attente.
@@ -2304,7 +2307,7 @@ Branche fix/lot-rg11a-redige-serveur depuis la base indiquée. PR vers main, gab
 Interdits : un fait absent du JSON dans le texte rédigé ; un appel LLM depuis le chemin HTTP ou sans plafond ; un status d'attente parce que le rédigé manque ; toucher au client (RG11B) ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs (phrases réécrites / repliées), les deux transcriptions, reste à faire.
 ```
 
-<!-- LOT id="RG11B" title="« Rédigé » (2/2) — client, parcours de référence et coût : la pilule revit, l'étiquette dit Nemotron 3 Super · Token Factory" plan="docs/PLAN_BATCH_2026-10-14.md" size="S" deps="RG11A" -->
+<!-- LOT id="RG11B" title="« Rédigé » (2/2) — client, parcours de référence et coût : la pilule revit, l'étiquette dit Nemotron 3 Super · Token Factory" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="S" deps="RG11A" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis la PR de RG11A (contrat de GET /voyage/official/film?style=written : hasWritten, source, writtenAt). Tu travailles dans naviguide-simulator/. Seconde moitié de RG11 : le client, le point du parcours de référence et la mesure du coût.
 
@@ -2320,9 +2323,9 @@ Branche fix/lot-rg11b-redige-client depuis la base indiquée. PR vers main, gaba
 Interdits : retirer la pilule Brut ; afficher « Rédigé » ou l'étiquette Nemotron quand c'est le brut ; un appel LLM depuis le navigateur ; toucher au serveur autrement que pour un champ manquant noté en PR ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, coût, reste à faire.
 ```
 
-<!-- LOT id="AM1A" title="AMP par polygone (1/2) — le sac : dedans / distance à la limite depuis GET /amp?bbox, repli export, cache invalidé, script de mesure" plan="docs/PLAN_BATCH_SUIVANT_2026-09-29.md" size="M" deps="" -->
+<!-- LOT id="AM1A" title="AMP par polygone (1/2) — le sac : dedans / distance à la limite depuis GET /amp?bbox, repli export, cache invalidé, script de mesure" plan="docs/archives/PLAN_BATCH_SUIVANT_2026-09-29.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_BATCH_SUIVANT_2026-09-29.md § 1-2. Tu travailles dans naviguide-simulator/ (le backend BI, backend/, est en LECTURE seulement). AM1 a été découpé le 15 oct. : ce lot est la géométrie et le cache (le sac /ici) ; AM1B fera les événements, le film et l'encadré.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_BATCH_SUIVANT_2026-09-29.md § 1-2. Tu travailles dans naviguide-simulator/ (le backend BI, backend/, est en LECTURE seulement). AM1 a été découpé le 15 oct. : ce lot est la géométrie et le cache (le sac /ici) ; AM1B fera les événements, le film et l'encadré.
 
 Lot AM1A — Les AMP du sac, par polygone (question du porteur, 29 sept. : « il n'y a que 8 AMP traversées ou passées à portée ??? »).
 Objectif : pour un point, le sac /ici connaît les aires marines protégées dont le point est DEDANS et celles qu'il longe par la distance à la LIMITE (pas au centre), à partir des polygones servis par le backend BI ; le cache mince des perles se ré-échantillonne quand la couche AMP change ; un script mesure, pour toute la route officielle, les AMP traversées et longées — c'est la preuve avant / après.
@@ -2337,7 +2340,7 @@ Branche fix/lot-am1a-amp-polygones-sac depuis la base indiquée. PR vers main, g
 Interdits : écrire dans le backend BI ou sa base ; un appel ProtectedSeas direct (toujours via GET /amp du backend) ; casser le repli sans réseau (GET /amp absent → export → sinon vide, jamais rouge) ; toucher aux événements, au film ou à l'encadré (AM1B) ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs (AMP traversées / longées par jambe avant / après), reste à faire.
 ```
 
-<!-- LOT id="AM1B" title="AMP par polygone (2/2) — entrées, sorties et proximité dans le Journal, le film et l'encadré Ici" plan="docs/PLAN_BATCH_SUIVANT_2026-09-29.md" size="M" deps="AM1A" -->
+<!-- LOT id="AM1B" title="AMP par polygone (2/2) — entrées, sorties et proximité dans le Journal, le film et l'encadré Ici" plan="docs/archives/PLAN_BATCH_SUIVANT_2026-09-29.md" size="M" deps="AM1A" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4 (gabarit d'étape) et la PR de AM1A (contrat du sac amp : inside, nm à la limite, siteId, source). Tu travailles dans naviguide-simulator/. Seconde moitié de AM1 : ce que le voyage en dit.
 
@@ -2353,9 +2356,9 @@ Branche fix/lot-am1b-amp-evenements-film depuis la base indiquée. PR vers main,
 Interdits : une AMP inventée ou un nom absent du sac ; toucher à la sélection de RC26 / RC30 ; toucher à la géométrie ou au cache (AM1A) autrement que pour un champ manquant noté en PR ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs (entrées / proximités par jambe), captures, reste à faire.
 ```
 
-<!-- LOT id="RG18" title="Une seule plume : les fiches « ici » parlent comme le film, le modèle n'écrit que sur demande" plan="docs/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG6" -->
+<!-- LOT id="RG18" title="Une seule plume : les fiches « ici » parlent comme le film, le modèle n'écrit que sur demande" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG6" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0 et le « RG6 » (texte intégral, pour le vocabulaire des phrases). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0 et le « RG6 » (texte intégral, pour le vocabulaire des phrases). Tu travailles dans naviguide-simulator/.
 
 Lot RG18 — Une seule plume (audit coûts du 29 sept. : le porteur veut que Nemotron ne tourne « QUE quand je le dis ou quand c'est utile » ; facture Nebius 6,58 $ en une semaine pour des textes que personne n'a demandés).
 Objectif : les mêmes faits donnent la même phrase partout — la fiche « ici » d'un événement (Suivre) dit ce que le film dit du même moment, écrit par les règles (server/film_script.py) ; le modèle (Nemotron Super, palier write) n'écrit un récit d'événement que sur un geste du porteur, jamais automatiquement ; plus aucune pré-génération de récits en tâche de fond.
@@ -2376,9 +2379,9 @@ Branche fix/lot-rg18-une-seule-plume depuis la base indiquée. PR vers main, gab
 Interdits : retirer la fiche « ici », la pastille storiesPending ou l'interrupteur Brut/Rédigé (main est le plancher de l'UI) ; un appel LLM sans geste du porteur ; un nombre rédigé absent des faits (filter_numbers reste juge) ; toucher à story_cascade.py autrement qu'en lecture ; une route nouvelle ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs (dont llm_budget avant/après la recette), captures, reste à faire.
 ```
 
-<!-- LOT id="RG19" title="Chat à trois paliers : Lightning comprend, les règles répondent, Ultra raisonne sur le paquet de faits complet" plan="docs/PLAN_CORRECTIONS_2026-09-27-s5.md" size="M" deps="RH1" -->
+<!-- LOT id="RG19" title="Chat à trois paliers : Lightning comprend, les règles répondent, Ultra raisonne sur le paquet de faits complet" plan="docs/archives/PLAN_CORRECTIONS_2026-09-27-s5.md" size="M" deps="RH1" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-27-s5.md § 0 et le « RH1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-27-s5.md § 0 et le « RH1 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG19 — Chat à trois paliers (audit coûts du 29 sept. ; question du porteur : « le chat est censé connaître toutes les données de l'application — réglages, polaires, calculs, couches — c'est beaucoup pour Lightning »).
 Objectif : « connaître toutes les données » est un problème de RECHERCHE (le serveur assemble les faits), pas de taille de modèle. Le chat devient trois paliers : (1) Nemotron Lightning (palier fast) ne rédige plus — il ne fait que comprendre la question (intention + entités : quelle grandeur, quelle escale, quelle date, quelle couche) ; (2) les règles répondent aux questions de fait depuis un paquet de faits COMPLET assemblé par le serveur, chaque nombre copié tel quel ; (3) Nemotron Ultra (palier judge, aujourd'hui plafonné à 0) n'est appelé que pour une question de raisonnement (conseil, comparaison, pourquoi, que faire si) et sur demande explicite, avec le paquet complet en contexte, sous plafond.
@@ -2396,9 +2399,9 @@ Branche fix/lot-rg19-chat-trois-paliers depuis la base indiquée. PR vers main, 
 Interdits : un nombre rédigé par un modèle et absent du paquet (filter_numbers reste juge, avant et après) ; un appel Ultra sans geste explicite ou au-dessus du plafond ; laisser le palier write rédiger une réponse de fait ; retirer le chat, sa source affichée ou le message d'échec de RH1 ; toucher à story_cascade.py autrement qu'en lecture ; envoyer une clé ou une valeur de simulator.env dans la PR ; vidéo. Décide seul et note-le. Fin : PR, compteurs (llm_budget avant/après la recette, nombre d'appels Ultra), captures, reste à faire.
 ```
 
-<!-- LOT id="RG20" title="Specs e2e : 23 verts avec réserve → assertions dures, stock figé enrichi, types poste" plan="docs/SPECS_E2E_TRIAGE_2026-09-29.md" size="M" deps="RG17" -->
+<!-- LOT id="RG20" title="Specs e2e : 23 verts avec réserve → assertions dures, stock figé enrichi, types poste" plan="docs/archives/SPECS_E2E_TRIAGE_2026-09-29.md" size="M" deps="RG17" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/SPECS_E2E_TRIAGE_2026-09-29.md en entier (c'est le plan de ce lot, spec par spec). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/SPECS_E2E_TRIAGE_2026-09-29.md en entier (c'est le plan de ce lot, spec par spec). Tu travailles dans naviguide-simulator/.
 
 Lot RG20 — Les specs Playwright disent la vérité (triage du 29 sept. : 100 specs, 101/101 verts en CI mais 23 « verts avec réserve », 27 chemins à vide pris sur le stock figé).
 Objectif : après ce lot, une réserve en CI n'est plus qu'un chemin « poste » attendu (atlas, hindcast, isochrone, LLM) ; tout le reste est une assertion dure. Aucun changement d'application : ce lot ne touche que e2e/, scripts/e2e-summary.mjs et la fixture server/tests/fixtures/official_store.tar.gz.
@@ -2414,9 +2417,9 @@ Branche fix/lot-rg20-specs-verite depuis la base indiquée. PR vers main, gabari
 Interdits : modifier src/ ou server/*.py (hors fixture) — si une assertion dure révèle un vrai défaut d'application, note-le dans la PR (« reste à faire ») au lieu de la ramollir ; supprimer une spec ou un test entier ; ré-ajouter continue-on-error ; une fixture > 5 Mo ou contenant une clé ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs (réserves avant/après par tranche), reste à faire.
 ```
 
-<!-- LOT id="DM3" title="Deux modes : le ménage — VIEW_TRACER, isTracer, branches mortes, ViewModeSwitch, helpers e2e" plan="docs/PLAN_DEUX_MODES_2026-09-29.md" size="M" deps="DM2" -->
+<!-- LOT id="DM3" title="Deux modes : le ménage — VIEW_TRACER, isTracer, branches mortes, ViewModeSwitch, helpers e2e" plan="docs/archives/PLAN_DEUX_MODES_2026-09-29.md" size="M" deps="DM2" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_DEUX_MODES_2026-09-29.md en entier (§ 0 liste ce qui est propre au mode et ce qui est moteur). Tu travailles dans naviguide-simulator/. Ce lot se lance SEUL, DM1 et DM2 mergés : ta base est main.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_DEUX_MODES_2026-09-29.md en entier (§ 0 liste ce qui est propre au mode et ce qui est moteur). Tu travailles dans naviguide-simulator/. Ce lot se lance SEUL, DM1 et DM2 mergés : ta base est main.
 
 Lot DM3 — Le ménage de Simulation dans le code (le porteur sait que ce lot est le plus risqué : App.jsx a 40 conditions isSimulation ; ~35 gardent le moteur et ne font que changer de nom).
 Objectif : plus aucun identifiant « simulation » dans le client hors protocole serveur ; les branches devenues mortes disparaissent ; comportement strictement identique à main (la suite Playwright complète en est la preuve).
@@ -2597,6 +2600,37 @@ Recette : drapeau fermé, Suivre, aucune recherche Tavily dans la console. Avec 
 Branche fix/lot-tv1-tavily-deux-tours depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
 Interdits : inventer la liste de questions ; un troisième tour ; coller la phrase dans le 2:30 par défaut ; moissonner des ports d'entrée ; allumer le fond pour la CI ; vidéo ; secret. Décide seul et note-le. Fin : PR, nombre de recherches max par escale, reste à faire.
 ```
+
+<!-- LOT id="RJ1" title="Suivre × ma route : le Journal montre ce que la route croise" plan="docs/archives/PLAN_CORRECTIONS_2026-10-16-s7.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-10-16-s7.md § 0 et le lot RJ1 (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RJ1 — Suivre × ma route : le Journal montre ce que la route croise.
+Objectif : en Suivre sur la route que je viens de tracer, l'onglet Journal liste ce que la transat croise (eaux, côtes, arrivée) — plus seulement deux lignes des premières heures du jour — et ce n'est pas le journal Berry.
+Cause racine : src/hooks/useMomentJournal.js l. 209-211 — pollOfficialMoments s'arrête dès la première liste non vide, or server/custom_story.py l. 339-350 (MAX_CHUNK_S=12, l. 41) rend d'abord status preparing avec un morceau ; et l. 299 visibleJournalEntries coupe à until (App.jsx l. 626 momentIso) alors que DM7 part aujourd'hui.
+Fichiers à ouvrir (seulement) : src/hooks/useMomentJournal.js, src/hooks/useMomentJournal.test.js, server/custom_story.py PAR EXTRAIT (rg -n "status|preparing|done|_public"), src/App.jsx PAR EXTRAIT (rg -n "until:|momentJournal|suivreCustom"), src/components/IciMaintenant.jsx PAR EXTRAIT (JournalList — lecture), e2e/lots/dm8-recit-ma-route.spec.js.
+Étapes : 1) le poll des moments perso continue tant que status !== ready (et coverageNm < totalNm) ; on affiche les lignes déjà là ; officiel ready = un seul GET ; 2) en Suivre × ma route, ne plus couper la liste à l'horloge live ; Berry garde until ; nowMoment reste ≤ maintenant ; 3) tests : preparing puis ready → liste longue ; suivreCustom ignore until ; Berry + until inchangé ; 4) spec dm8 : Journal contient une mer ou une arrivée, pas seulement l'heure de départ. Aucun libellé nouveau.
+Tests : cd naviguide-simulator && npm test && npx vite build && PW_PORT=5199 npx playwright test e2e/lots/dm8-recit-ma-route.spec.js.
+Recette (visuelle, par écran) : Tracer, deux clics (près de La Rochelle, puis les Antilles), Terminer, Suivre → Journal : plus d'une poignée de lignes du matin, au moins une mer / une côte / l'arrivée, pas le journal Berry ; pilule Berry-Mappemonde → Journal du 15 mai à aujourd'hui, inchangé. Captures docs/recette/lot-rj1/01-journal-ma-route.jpg, 02-journal-berry.jpg (URL complète sur ta branche).
+Branche fix/lot-rj1-journal-ma-route depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : couper le journal Berry à un autre horizon ; remettre ma route sur localStorage (R9b) ; retirer une surface visible ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RJ2" title="Fiche Ici : l'ouverture est la phrase du film" plan="docs/archives/PLAN_CORRECTIONS_2026-10-16-s7.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-10-16-s7.md § 0 et le lot RJ2 (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RJ2 — Fiche Ici : l'ouverture dit la phrase du film.
+Objectif : en Suivre, onglet Maintenant, la fiche Ici ouvre comme le Récit / le film (« les eaux de Nouvelle-Calédonie ») — plus « Le bateau navigue dans Zone économique exclusive… ».
+Cause racine : src/engine/iciBriefing.js zeeSentence l. 189-191 écrit la phrase longue ; narrateIci l. 838 la place en tête, avant eventSentence. RG18 a branché pickFilmPhrase (l. 506-532) seulement sur les événements (src/hooks/useIciDossier.js l. 441) — le sac porte déjà filmPhrases.zee-enter.
+Fichiers à ouvrir (seulement) : src/engine/iciBriefing.js (zeeSentence, poeSentence, narrateIci, pickFilmPhrase), src/engine/iciBriefing.test.js, src/hooks/useIciDossier.js PAR EXTRAIT (lecture), e2e/lots/rg18-une-seule-plume.spec.js.
+Étapes : 1) zeeSentence préfère filmPhrases zee-enter / zee-ahead / zee-exit ; formalités une seule fois si absentes de la phrase film ; sans filmPhrases = phrase actuelle ; 2) poeSentence idem avec poe-ahead (plus de redite « Aucun port d'entrée officiel… » ×2) ; 3) narrateIci ne recolle pas eventSentence du même type ; 4) tests : sac NC + filmPhrases.zee-enter → narrateIci commence par la phrase film, plus « Le bateau navigue dans Zone économique exclusive » ; sans filmPhrases = repli actuel ; FR et EN.
+Tests : cd naviguide-simulator && npm test && npx vite build && PW_PORT=5199 npx playwright test e2e/lots/rg18-une-seule-plume.spec.js.
+Recette (visuelle, par écran) : Suivre, Maintenant, position du jour (Nouvelle-Calédonie) → Ici ouvre comme le Récit (« les eaux de Nouvelle-Calédonie »), plus « Le bateau navigue dans Zone économique exclusive… » ; Brut enfoncé = phrases de règles ; Tracer inchangé. Captures docs/recette/lot-rj2/01-ici-phrase-film.jpg, 02-recit-meme-phrase.jpg (URL complète sur ta branche).
+Branche fix/lot-rj2-ici-phrase-film depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : retirer la fiche Ici, Brut / Rédigé ou les onglets ; inventer une phrase absente du sac ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
 
 ## 3. Enchaîner les lots la nuit (`infra/agents/run_lots.py`)
 

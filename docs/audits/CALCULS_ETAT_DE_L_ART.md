@@ -1,6 +1,6 @@
 # Les calculs du simulateur face à l'état de l'art — vérification calcul par calcul
 
-Version **1.0** — 20 septembre 2026. Complète `docs/PLAN_AUDIT_CALCULS.md`
+Version **1.0** — 20 septembre 2026. Complète `docs/archives/PLAN_AUDIT_CALCULS.md`
 (§ 1, 25 lignes). Pour chaque calcul : ce que fait le code, ce que fait
 l'état de l'art (logiciels de routage : qtVlm, LuckGrib, PredictWind,
 TIMEZERO ; littérature ; conventions WMO / Copernicus), le verdict, et

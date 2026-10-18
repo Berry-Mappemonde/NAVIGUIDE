@@ -84,140 +84,13 @@ Do not publish a `recall` run as if it were `strict`. The profile is part of the
 
 The values below are the **defaults**. The detail (principle, interval, file) is in the JSON.
 
-### 3.1 Projects — `docs/CAHIER_DES_CHARGES_PROJETS.md`
+### 3.1 à 3.6 — catalogue Blue Intelligence
 
-| Id | Default | Family | Phenomenon / anchor |
-|----|---------|--------|---------------------|
-| `projects.max_inland_km` | 15 km | geometry | Hinterland of a harbour-town. Beyond → headquarters (Paris, Washington). Spec §7.3. |
-| `projects.min_marine_score` | 0.5 | score | Cut of the S_ocean bundle. Recalibrate on Gold (phase D). |
-| `projects.gatekeeper_accept` | 0.85 | score | Historical v1 upper bound. Target: ROC on Gold. |
-| `projects.gatekeeper_reject` | 0.12 | score | Historical v1 lower bound. Same. |
-| `projects.max_partner_orgs` | 5 | budget | Follow the Money ceiling, no longer hard-coded (spec §18). |
-| `projects.test_max_urls_per_seed` | 6 | budget | Test run. |
-| `projects.full_max_urls_per_seed` | 20 | budget | Full run: a listing, not a site. |
-| `projects.saturation_limit` | 50 | budget | N empties in a row = listing exhausted. |
-| `projects.rescan_after_days` | 7 | budget | Aligned with the Formalities retry. |
-| `projects.allow_tinyfish_agent` | true | budget | Agent = scalpel. |
-| `projects.extract_concurrency` | 6 | budget | Bounded by Nominatim 1 req/s. |
-| `projects.max_coast_km` | 50 | **legacy** geometry | Remnant of the snap. The specification refused a bounded snap. To be removed. |
-| `projects.no_hq_as_site` | true | **law** | A headquarters is not a site. |
-| `shared.dedup_dist_km` | 500 m | geometry | Same quay. Spec §17. |
-
-Already in Mongo `settings`: inland, scores, partners, URLs, saturation, Agent. The catalogue adds the **why** and the **interval**.
-
-### 3.2 Formalities — `docs/CAHIER_DES_CHARGES_POE.md`
-
-| Id | Default | Family | Phenomenon / anchor |
-|----|---------|--------|---------------------|
-| `formalities.eez_sliver_km` | 2.2 km | geometry | 0.02° × 111 km/°. Cassis 2.3 km / Geelong 3.4 km = near-successes. Spec §7.3. |
-| `formalities.coastal_land_km` | 15 km | geometry | Same hinterland as Projects. |
-| `formalities.inland_river_max_km` | 400 km | geometry | Duisburg ~250 km, Rouen ~120 km, margin. |
-| `formalities.geocode_agree_km` | 2 km | geometry | Same port complex. Spec §8.2. |
-| `formalities.marina_control_m` | 800 m | geometry | ~10 min walk customs→marina. Spec §22. |
-| `formalities.wpi_proximity_km` | 1 km | geometry | Same WPI terminal. Spec §23. |
-| `formalities.osm_validate_radius_m` | 3 km | geometry | Harbour + adjacent customs. |
-| `formalities.catalog_min_coords` | 3 | geometry | 1 = mention, 2 = comparison, 3+ = list. Spec §6.3. |
-| `formalities.catalog_looks_like_min_coords` | 1 | geometry | Catalogue already recognised + 1 GPS. |
-| `formalities.catalog_lat_hits` | 8 | geometry | SCT-like table (`latitud:`). |
-| `formalities.max_ports_per_zone` | 150 | budget | Anti-hallucination LLM, not a business cap. |
-| `formalities.inland_far_km` | 30 km | geometry | GPS audit beyond the hinterland. |
-| `formalities.other_water_far_km` | 8 km | geometry | Sea outside the sliver, other EEZ. |
-| `formalities.group_outlier_km` | 300 km | geometry | Coastal cluster of a country listing. |
-| `formalities.group_outlier_in_eez_km` | 1,500 km | geometry | Other façade (Astoria). |
-| `formalities.listing_sim_high` / `_low` | 0.90 / 0.60 | score | Listing matching. Recalibrate. |
-| `formalities.listing_auto_threshold` | 0.86 | score | Slug→mrgid join. |
-| `formalities.listing_role_sim` | 0.72 | score | Between low and high. |
-| `formalities.listing_coverage_publish` | **0.90** | score | The specification said “overwhelming majority” **without a number**. 9/10 of listing PoE. Interval 0.80–0.95. |
-| `formalities.osm_confidence_hi` | 0.5 | score | Midpoint 0–1; 678/1171 v1 ≥ 0.5. Recalibrate. |
-| `formalities.confidence_*_max` | 30 / 25 / 25 / 20 | score | Bundle policy, not a physics. |
-| `formalities.zone_timeout_s` | 900 | budget | 3× a normal v2 run. |
-| `formalities.stale_days` | 180 | budget | “Not reviewed” badge = a semester. |
-| `formalities.refresh_after_days` | 30 | budget | Monthly re-fetch. Spec §21. |
-| `formalities.error_retry_days` | 7 | budget | Transient anti-bot. |
-| `formalities.cycle_every_h` | 12 | budget | 2 cycles / day. |
-| `formalities.max_per_cycle` | 60 | budget | 285 EEZ ≈ 2.5 days. |
-| `formalities.geocode_ttl_*` | 180 d / 14 d | budget | Hit = a semester; miss = 2 weeks. |
-| `formalities.enrich_limit` | 200 | budget | Bottom-Up batch. |
-| `formalities.whitelist_domain_cap` | 15 | budget | TinyFish net. |
-| `formalities.max_parallel_runs` | 4 | budget | v1+v2+tinyfish + 1. |
-| `formalities.official_sources_only` | true | **law** | |
-| `formalities.noonsite_blacklist` | true | **law** | |
-| `formalities.wpi_first_port_ignored` | true | **law** | |
-
-### 3.3 Marinas (world dump — corridor = anchorages only)
-
-The Marinas mode loads the world OSM catalogue (`leisure=marina`), identity
-`osm_id`, upsert without purge. We display **all** marinas; a larger point
-signals a Google `/maps/place/` URL already found (OSM tag or TinyFish
-Search, or TinyFish Fetch of the Maps search link once the JS is rendered).
-We do not invent a `/place/` URL and we do not filter the layer. The `corridor_*` / `waypoint_*` /
-`priority_escale_*` rules remain for **anchorages** (and history).
-
-| Id | Default | Family | Phenomenon / anchor |
-|----|---------|--------|---------------------|
-| `marinas.overpass_throttle_s` | 3 s | budget | Overpass AUP, one tile at a time. |
-| `marinas.corridor_radius_nm` | 25 NM | geometry | 4–5 h at 5–6 knots = coastal hop. Band ±25 = 50 NM. **Anchorages.** |
-| `marinas.corridor_step_nm` | 25 NM | geometry | Step ≤ 2× radius for disk overlap. |
-| `marinas.waypoint_radius_nm` | 10 NM | geometry | ~2 h approach to a stopover. Settings `marina_search_radius_nm`. |
-| `marinas.priority_escale_nm` | 15 NM | geometry | “Near this stopover” (prio 1/2). |
-| `marinas.max_bbox_span_nm` | 500 NM | budget | Overpass time-out. |
-| `marinas.enrich_stale_days` | 365 | budget | VHF / berths: the year. |
-| `marinas.batch_concurrency` | 2 | budget | LLM guardrail. |
-| `marinas.openrouter_min_credits_usd` | 0.50 | budget | Stop before a dry batch. |
-| `marinas.tinyfish_enrich_budget_s` | 150 s | budget | One JS site, not a crawl. |
-
-A marinas / anchorages build now writes a `marina_runs` document with the same `params.rules`.
-
-### 3.4 Shared
-
-| Id | Default | Family |
-|----|---------|--------|
-| `shared.no_snap` / `no_ocean_fallback` / `no_purge` / `no_invented_names` | true | **law** |
-| `shared.dedup_dist_km` | 0.5 km | geometry |
-| `shared.dedup_sim_low` / `_high` | 0.60 / 0.90 | score |
-| `shared.claude_stop_ratio` | 0.90 | budget (10% margin) |
-| `shared.claude_budget_usd` | 0 | budget |
-| `shared.nominatim_interval_s` | 1.1 s | budget **not adjustable downward** (ToS) |
-| `shared.tinyfish_search_rpm` / `fetch_rpm` | 30 / 150 | budget **capped by the provider** |
-
-### 3.5 Science — catalogues + Argo + CSR
-
-No Review / Gold. Harvest of structured APIs; the numbers are volume **budgets**, not opinions.
-
-| Id | Default | Family | Phenomenon / anchor |
-|----|---------|--------|---------------------|
-| `science.catalog_max_records` | 2000 | budget | GeoNetwork / ES cap (hard ceiling 10000). |
-| `science.argo_window_days` | 30 | budget | Last “active” profile. |
-| `science.csr_max_records` | 500 | budget | Most recent CSR tracks. |
-
-### 3.6 Climatology — monthly atlas (`kind: climatology`)
-
-`docs/archives/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` §14. **Not** a forecast. An LLM is not allowed to produce a wind, an Hs, or a cyclone count.
-
-| Id | Default | Family | Phenomenon / anchor |
-|----|---------|--------|---------------------|
-| `climatology.kind_is_climatology` | true | **law** | `kind` climatology ≠ forecast. getWind / getWave / getCurrent remain NRT / ANFC. |
-| `climatology.no_llm_for_numbers` | true | **law** | No wind / Hs / crossings invented by a language model. |
-| `climatology.wind_calm_kn` | 3 kn | geometry | Beaufort 0–1 calm (OpenCPN). |
-| `climatology.wind_gale_kn` | 34 kn | geometry | Beaufort 8 gale. |
-| `climatology.wind_sectors` | 8 | **law** | 45° rose. |
-| `climatology.wind_min_sector_pct` | 2.5% | geometry | Sector noise. |
-| `climatology.wind_grid_deg` | 0.5° | budget | Stored atlas mesh. |
-| `climatology.wave_nogo_m` | 2.5 m | geometry | `overWave` / isochrone no-go threshold. |
-| `climatology.wave_stat` | P90 = no-go | **law** | Forbidden to label a mean as P90. |
-| `climatology.wave_period` | `1993-2019` | **law** | WAVERYS window written on screen. |
-| `climatology.current_min_kn` | 0.15 kn | geometry | Below: vector 0 **and** `below_threshold`. |
-| `climatology.current_depth_m` | 0.5 m | **law** | First GLORYS level. |
-| `climatology.current_period` | `1993-2016` | **law** | PUM climatology dataset. |
-| `climatology.cyclone_first_year` | 1980 | **law** | IBTrACS since1980 file. |
-| `climatology.cyclone_dayrange` | 21 d | geometry | Window around the route day. |
-| `climatology.cyclone_radius_nm` | 120 NM | geometry | Counter “near the leg”. |
-| `climatology.cyclone_min_kn` | 34 kn | geometry | Display at least tropical storm. |
-| `climatology.avoid_cyclone_tracks` | true | **law** | Isochrone constraint. |
+Ces sections vivent dans le dépôt Blue Intelligence, fichier `backend/data/run_rules.json` (et `docs/REGLES_PARAMETRES.md` de ce dépôt). On ne les recopie pas ici.
 
 ### 3.7 Horloge à trois régimes — hindcast / prévision / climatologie (lot C2)
 
-`docs/PLAN_AUDIT_CALCULS.md` lot C2, `docs/audits/CALCULS_ETAT_DE_L_ART.md`. Décision du porteur : **toutes** les sources (Open-Meteo + Copernicus) sont lues ensemble, fusionnées par **médiane**. Un champ sans source reste vide (jamais inventé). Identifiants `COPERNICUS_USERNAME` / `COPERNICUS_PASSWORD` déjà lus par `server/main.py`.
+`docs/archives/PLAN_AUDIT_CALCULS.md` lot C2, `docs/audits/CALCULS_ETAT_DE_L_ART.md`. Décision du porteur : **toutes** les sources (Open-Meteo + Copernicus) sont lues ensemble, fusionnées par **médiane**. Un champ sans source reste vide (jamais inventé). Identifiants `COPERNICUS_USERNAME` / `COPERNICUS_PASSWORD` déjà lus par `server/main.py`.
 
 | Id | Default | Family | Phenomenon / anchor |
 |----|---------|--------|---------------------|
@@ -242,7 +115,7 @@ No Review / Gold. Harvest of structured APIs; the numbers are volume **budgets**
 
 ### 3.8 Mer, polaire et isochrones — lot C4
 
-`docs/PLAN_AUDIT_CALCULS.md` lot C4, `docs/audits/CALCULS_ETAT_DE_L_ART.md` lignes 4, 7, 8, 10, 21. Aucun chiffre n'est produit par un LLM.
+`docs/archives/PLAN_AUDIT_CALCULS.md` lot C4, `docs/audits/CALCULS_ETAT_DE_L_ART.md` lignes 4, 7, 8, 10, 21. Aucun chiffre n'est produit par un LLM.
 
 | Id | Default | Family | Phenomenon / anchor |
 |----|---------|--------|---------------------|
@@ -266,7 +139,7 @@ No Review / Gold. Harvest of structured APIs; the numbers are volume **budgets**
 
 ### 3.9 Conventions horloge et repli — lot C7
 
-`docs/PLAN_AUDIT_CALCULS.md` lot C7, `docs/audits/CALCULS_ETAT_DE_L_ART.md` lignes 5, 15, 16, 18. Aucune valeur n'est changée : la table reprend les constantes déjà dans le code. Source écrite : **programme Berry-Mappemonde 2026** (`server/data/port_days.json`).
+`docs/archives/PLAN_AUDIT_CALCULS.md` lot C7, `docs/audits/CALCULS_ETAT_DE_L_ART.md` lignes 5, 15, 16, 18. Aucune valeur n'est changée : la table reprend les constantes déjà dans le code. Source écrite : **programme Berry-Mappemonde 2026** (`server/data/port_days.json`).
 
 | Id | Default | Family | Phenomenon / anchor |
 |----|---------|--------|---------------------|
@@ -286,7 +159,7 @@ No Review / Gold. Harvest of structured APIs; the numbers are volume **budgets**
 
 ### 3.10 ETA probabiliste — ensembles Open-Meteo (lot C6)
 
-`docs/PLAN_AUDIT_CALCULS.md` lot C6, `docs/audits/CALCULS_ETAT_DE_L_ART.md` ligne 9 et complément « Ensembles ». Au-delà de 7 jours, l'arrivée n'est pas une date unique : p10 / p50 / p90 des membres. Sans ensemble, rien n'est affiché (jamais inventé).
+`docs/archives/PLAN_AUDIT_CALCULS.md` lot C6, `docs/audits/CALCULS_ETAT_DE_L_ART.md` ligne 9 et complément « Ensembles ». Au-delà de 7 jours, l'arrivée n'est pas une date unique : p10 / p50 / p90 des membres. Sans ensemble, rien n'est affiché (jamais inventé).
 
 | Id | Default | Family | Phenomenon / anchor |
 |----|---------|--------|---------------------|

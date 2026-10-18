@@ -2,7 +2,7 @@
 
 Source : la revue orale du porteur du 14 octobre (`docs/REVUE_PORTEUR_2026-10-14.md`) et les constats du chat de
 pilotage des 29-30 septembre (position du bateau non déterministe, cache ERA5 orphelin, incident du voyage officiel).
-Ce plan remplace `docs/PLAN_BATCH_SUIVANT_2026-09-29.md` (dont il reprend AM1, RG18, RG19, RG20, DM3).
+Ce plan remplace `docs/archives/PLAN_BATCH_SUIVANT_2026-09-29.md` (dont il reprend AM1, RG18, RG19, RG20, DM3).
 Les prompts complets sont dans `docs/LOTS_ORDRE_ET_PROMPTS.md`, section « Batch 2 ».
 
 ## 1. L'ordre et pourquoi

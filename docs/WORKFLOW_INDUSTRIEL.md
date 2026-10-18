@@ -212,31 +212,20 @@ Posées le 21 sept. : `NEBIUS_API_KEY`, `TAVILY_API_KEY` (VPS et Mac).
 Comment lire les clés déjà posées sur le VPS (Mac, Terminal — on affiche les noms, pas les valeurs) :
 `ssh ubuntu@135.125.226.16 'sed -nE "s/^([A-Z_]+)=.*/\1/p" ~/.config/naviguide/simulator.env'`.
 Poser une clé : `ssh ubuntu@135.125.226.16 'echo "NEBIUS_API_KEY=xxx" >> ~/.config/naviguide/simulator.env && sudo systemctl restart naviguide-simulator'`.
-Vérifier qu'elle sert : `https://simulator.naviguide.fr/ici/warm/status` → `llm.lastSource` n'est plus `rules`, `llm.tavily.calls` monte.
+Vérifier qu'elle sert : `https://naviguide.fr/ici/warm/status` → `llm.lastSource` n'est plus `rules`, `llm.tavily.calls` monte.
 
 ## 4. Calendrier
 
+
 | Date | Objectif | Ce qui doit être vrai |
 |---|---|---|
-| **21 sept. (matin)** | revue de la nuit 1 (P2 → L6), merges dans l'ordre, clés posées, hotfix #221 déployé | prod : récit signé « Nemotron 3 Super · Token Factory », film 2:30 qui se lance, bag qui se remplit |
-| 21 sept. | **fait** : pile P2 → L6 mergée ; clés posées ; W0 ; batch R1 → R13 (#239–248) recetté et mergé ; batch RA1 → RA8 lancé ; boucle W1–W4 construite (PR à merger) | `RECETTE_DU_BATCH.md` régénéré à chaque lot ; PR à cases à cocher |
-| 22 sept. | matin : recette RA (cocher, merger #tête), test de la boucle (`plan_corrections.py` → GO) ; nuit : **R8a–c, R9a–c** (encadré sans titre, journal → récit préchauffé) + lots RB du GO | le film raconte le journal, sans pop-up sur la carte |
-| 23 sept. | matin : recette, merge, GO ; nuit : **N1–N4** (ancien NAVIGUIDE : import/export GeoJSON + KML, anti-trafic, piraterie) + corrections | Tracer ma route importe/exporte ; score anti-trafic visible |
-| 24 sept. | matin : recette, merge, GO ; nuit : **R10a–d** (expert en circumnavigation) + corrections | « Ce que je changerais » conseille ; « Demander conseil » borné |
-| 25 sept. | matin : recette, merge, GO ; nuit : **D0** (README, manuel, rangement docs) + **G0–G2** (globe) si tout est vert, sinon corrections | docs à jour ; première vidéo du film enregistrée |
-| 26–27 sept. | gel : pas de lot risqué ; **H1** séparation des dépôts (public = simulateur seul), recette prod, Security Agents, vidéo finale | `simulator.naviguide.fr` stable 48 h |
-| **28 sept.** | **première soumission Devpost** avant minuit (brouillon → Submit) ; tout ce que `HACKATHON_DEVPOST_SOUMISSION.md` § 0 coche ; crédits Token Factory +25 $ ×2 demandés | vidéo YouTube publique, dépôt public MIT, README EN, liens |
-| 29 sept. – 8 oct. | Toronto ; nuits légères (G0–G2 globe, C-lots restants) uniquement si crédits ; sinon pause | rien ne casse `main` |
-| **9 oct.** | renouvellement Cursor : reprise des nuits complètes | plan des 3 semaines : globe (G3–G7), L4–L6 si non faits, corrections de revue |
-| 16, 23 oct. | mises à jour hebdomadaires de la soumission (vendredi) : changelog, captures, vidéo si le film a changé | chaque vendredi une version soumise |
-| **30 oct. 10:00 PT** | soumission finale | tout ce qui est en prod est décrit, rien de plus |
+| à dater par le propriétaire | | |
 
 Chaque mise à jour de la soumission suit la chaîne du 29 sept. (issue #432) : Grok Bot **relève** le formulaire, les
 règles et les critères (📋, routine `infra/agents/GROK_BOT_DEVPOST.md`) → `infra/agents/devpost_answers.py` lance
 un agent **Fable** qui propose les réponses, vérifie la conformité aux règles (preuves) et analyse les critères
 (✍️ + PR `docs/DEVPOST_REPONSES_<date>.md`) → Grok Bot **recopie** dans le brouillon, sans jamais soumettre (📝,
 captures) → le porteur vérifie et clique Submit.
-| 1–15 déc. | jugement : l'app doit répondre, crédits Token Factory valides | clés et crédits vérifiés le 30 nov. |
 
 ## 5. Les lots « workflow » à ajouter à `LOTS_ORDRE_ET_PROMPTS.md`
 

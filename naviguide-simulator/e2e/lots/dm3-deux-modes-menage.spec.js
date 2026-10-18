@@ -1,5 +1,5 @@
 // Lot DM3 — ménage des identifiants « simulation » dans le client
-// (docs/PLAN_DEUX_MODES_2026-09-29.md). Aucun changement visible : le parcours
+// (docs/archives/PLAN_DEUX_MODES_2026-09-29.md). Aucun changement visible : le parcours
 // Suivre → Tracer → Tracer votre propre route → Terminer → Suivre est celui
 // de la veille. VIEW_TRACER / isTracer / mode-tracer ; le protocole serveur
 // reste "simulation". Sans API : le dessin (stub /route) et les pilules

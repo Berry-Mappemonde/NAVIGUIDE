@@ -209,7 +209,7 @@ Liste de contrôle, à cocher dans la PR :
 4. Supprimer la branche distante après merge ; en local :
    `git checkout main && git pull --ff-only && git branch -d <branche>`.
 5. Le déploiement est automatique sur `main` (CI → VPS). Vérifier la prod
-   dans les 10 minutes : `https://simulator.naviguide.fr` charge, la barre
+   dans les 10 minutes : `https://naviguide.fr` charge, la barre
    film et les trois modes répondent.
 6. En cas de régression en prod : `git revert` du merge, PR, merge — pas de
    correction à chaud.

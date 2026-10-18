@@ -3,14 +3,14 @@
 # Does NOT restart blue-intelligence, naviguide-api, polar, orchestrator.
 # Does NOT touch /etc/nginx/sites-available/naviguide.
 #
-# Prerequisites: code in ~/blue-intelligence-map/naviguide-simulator
+# Prerequisites: code in /home/naviguide/naviguide/naviguide-simulator
 # (rsync from the Mac — see publish-simulator-from-mac.sh).
-# DNS A simulator → 135.125.226.16 already in place.
+# DNS A naviguide.fr, www, simulator → 13.140.164.185 (Contabo) already in place.
 # Run on the VPS, outside a Blue Intelligence Full run if dist/ is missing
 # (npm would then run here).
 set -euo pipefail
 
-APP="$HOME/blue-intelligence-map"
+APP="/home/naviguide/naviguide"
 SIM="$APP/naviguide-simulator"
 CONF_DIR="$HOME/.config/naviguide"
 UV="$HOME/.local/bin/uv"

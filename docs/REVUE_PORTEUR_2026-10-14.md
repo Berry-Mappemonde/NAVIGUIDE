@@ -2,7 +2,7 @@
 
 Revue orale du porteur, réorganisée par le chat de pilotage. Jugement global : « c'est vraiment pas mal » ;
 le film de Revoir est « beaucoup plus fluide, enrichi, intéressant ». Ce document sépare ce qui est **décidé**
-(→ lots du batch 2, `docs/PLAN_BATCH_2026-10-14.md`), ce qui est **demandé en réflexion** (§ 4 : pas de
+(→ lots du batch 2, `docs/archives/PLAN_BATCH_2026-10-14.md`), ce qui est **demandé en réflexion** (§ 4 : pas de
 décision, des options) et ce qui est **à trancher** (§ 5 : RC27, RG11).
 
 ## 1. Constats — décidés, à corriger
@@ -73,7 +73,7 @@ décision, des options) et ce qui est **à trancher** (§ 5 : RC27, RG11).
 ## 1 bis. Objectif du week-end (17-18 oct.) : publier la première soumission Devpost
 Le batch 2 doit avoir livré au moins HC1 (position stable), RC27 (le 2:30 tient : source de la vidéo) et RG11 (l'appel
 Nebius visible) ; la pile mergée et **déployée en production** (`simulator.naviguide.fr`) avant la chaîne Devpost
-(issue #432 : relève → réponses Fable → brouillon rempli → le porteur soumet). Détail : `docs/PLAN_BATCH_2026-10-14.md` § 4.
+(issue #432 : relève → réponses Fable → brouillon rempli → le porteur soumet). Détail : `docs/archives/PLAN_BATCH_2026-10-14.md` § 4.
 
 ## 2. Ce que la revue valide
 - Deux pilules Suivre | Tracer ; Tracer sur la route Berry montre l'expédition complète depuis Saint-Maur (« ça

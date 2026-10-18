@@ -7,7 +7,7 @@ consigne ci-dessous.
 
 **Il faut un tunnel nommé sur ton domaine** (21 sept.) : sur un tunnel rapide
 `trycloudflare.com`, Cloudflare bloque le navigateur automatisé du bot (403 « Your
-request was blocked ») alors que le HTTP simple passe. Sur `recette.blueintelligence.online`
+request was blocked ») alors que le HTTP simple passe. Sur `recette.naviguide.fr`
 (`naviguide.fr` est chez OVH, hors Cloudflare : seule la zone `blueintelligence.online`
 peut porter le tunnel), le bot est traité comme sur un site normal. Mise en place, **une fois**,
 dans le Terminal du Mac (la 1ʳᵉ commande ouvre le navigateur : choisir la zone
@@ -16,21 +16,21 @@ dans le Terminal du Mac (la 1ʳᵉ commande ouvre le navigateur : choisir la zon
 ```bash
 cloudflared tunnel login
 cloudflared tunnel create recette
-cloudflared tunnel route dns recette recette.blueintelligence.online
-printf 'BIM_TUNNEL_NAME=recette\nBIM_TUNNEL_HOST=recette.blueintelligence.online\n' >> ~/.config/naviguide/simulator.env
+cloudflared tunnel route dns recette recette.naviguide.fr
+printf 'BIM_TUNNEL_NAME=recette\nBIM_TUNNEL_HOST=recette.naviguide.fr\n' >> ~/.config/naviguide/simulator.env
 python3 infra/agents/run_lots.py --stop-tunnel && python3 infra/agents/run_lots.py --recette
 ```
 
-Le dernier appel rebâtit le poste (preview autorise `recette.blueintelligence.online`), ouvre
+Le dernier appel rebâtit le poste (preview autorise `recette.naviguide.fr`), ouvre
 le tunnel nommé et re-poste le lien 🔗 dans chaque PR. Si le bot voit encore un
 403 : dans Cloudflare → Sécurité → WAF → règle personnalisée « hôte =
-recette.blueintelligence.online → Ignorer (Skip) : Bot Fight Mode, niveau de sécurité ».
+recette.naviguide.fr → Ignorer (Skip) : Bot Fight Mode, niveau de sécurité ».
 
 **Protocole du tunnel** (29 sept.) : `run_lots.py` lance `cloudflared` en **HTTP/2** (`BIM_TUNNEL_PROTOCOL=http2`,
 défaut ; `quic` ou `auto` pour revenir en arrière). À Toronto, en QUIC (UDP), le tunnel ne passait plus que
 ~2 ko/s alors que le Mac téléversait à 500 ko/s : l'horloge officielle (3,9 Mo, 335 ko gzippés) n'arrivait
 jamais et le bot voyait le bateau au jour 0. Si le poste paraît « lent » chez le bot : mesurer
-`curl -o /dev/null -w '%{speed_download}\n' https://recette.blueintelligence.online/voyage/official/clock`
+`curl -o /dev/null -w '%{speed_download}\n' https://recette.naviguide.fr/voyage/official/clock`
 (attendu : > 50 000 o/s) ; sinon `python3 infra/agents/run_lots.py --stop-tunnel` puis `--recette` relance le tunnel.
 
 **Film « preparing » avec `Extra data`, `/voyage/official` en 500** (29 sept. 20:07) : le fichier

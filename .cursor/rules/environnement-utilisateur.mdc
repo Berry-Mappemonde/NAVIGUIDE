@@ -13,3 +13,4 @@ alwaysApply: true
 - Production server: **OVH Ubuntu VPS** `vps-52ba6d62.vps.ovh.net`
   (135.125.226.16), 4 vCores / 8 GB RAM / 75 GB — nginx in front, domain
   `blueintelligence.online` behind Cloudflare.
+- Le simulateur est sur Contabo (`naviguide@13.140.164.185`). Blue Intelligence reste sur l'OVH.

@@ -180,7 +180,7 @@ Le brief à coller est `REGLES_WORKFLOW_AGENT.md` § 8 ; en remplaçant `<PLAN>`
 par ce fichier et `<X>` par le lot :
 
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le lot <X> (texte intégral).
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/archives/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le lot <X> (texte intégral).
 Fichiers : ouvre SEULEMENT ceux listés dans le lot ; App.jsx et MapSceneController.js par `rg -n` + Read avec offset/limit.
 Branche : <type>/lot-<x>-<slug> depuis main à jour. Une PR sur main, corps = gabarit REGLES § 3. Ne merge pas.
 Tests : cd naviguide-simulator && npm test && .venv/bin/python -m pytest -q && npx vite build ; npm run e2e -- e2e/lots/<lot>.spec.js si l'UI change.

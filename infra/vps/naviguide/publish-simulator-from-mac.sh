@@ -8,13 +8,13 @@
 #
 # Prerequisites: you already connect over SSH (same key as usual).
 # Optional variables:
-#   NAVIGUIDE_VPS=ubuntu@135.125.226.16
+#   NAVIGUIDE_VPS=naviguide@13.140.164.185 (obligatoire, pas de défaut)
 #   NAVIGUIDE_SSH_IDENTITY=/chemin/vers/cle_privee
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-VPS="${NAVIGUIDE_VPS:-ubuntu@135.125.226.16}"
-REMOTE_APP="/home/ubuntu/blue-intelligence-map"
+VPS="${NAVIGUIDE_VPS:?NAVIGUIDE_VPS manquant (ex. naviguide@13.140.164.185)}"
+REMOTE_APP="/home/naviguide/naviguide"
 SIM="$ROOT/naviguide-simulator"
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=15)
 if [ -n "${NAVIGUIDE_SSH_IDENTITY:-}" ]; then

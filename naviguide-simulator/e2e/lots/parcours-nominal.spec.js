@@ -1,4 +1,4 @@
-// Parcours nominal — remplace r8a, r8b, r10a et r10b (29 sept., triage docs/SPECS_E2E_TRIAGE_2026-09-29.md § 4) :
+// Parcours nominal — remplace r8a, r8b, r10a et r10b (29 sept., triage docs/archives/SPECS_E2E_TRIAGE_2026-09-29.md § 4) :
 // ces quatre specs rejouaient le même parcours Suivre → Simulation → Tracer pour des lots serveur
 // « sans changement visible ». Une seule spec garde tout ce qu'elles vérifiaient :
 //  - R8b : l'encadré « Ici » seul (/lot-r8b.html, mode clair) — onglets, sections, pastilles, sources ;

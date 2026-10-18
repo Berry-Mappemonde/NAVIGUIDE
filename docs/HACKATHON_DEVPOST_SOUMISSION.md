@@ -70,7 +70,7 @@ Two live products, one job: turn messy maritime data into something a human can 
 
 **[Blue Intelligence](https://blueintelligence.online)** is the memory: a world map of marinas, harbour masters, official ports of entry (verified against government pages — we call them *Gold*), marine protected areas, ocean-science layers and conservation projects, collected and refreshed by agents.
 
-**[NAVIGUIDE simulator](https://simulator.naviguide.fr)** is the briefing. Press play: the boat glides along the real route. Every ~30 nautical miles the app builds a small *bag* of what lies within 60 nm — borders, Gold ports of entry, protected areas, wind and sea state, research stations, the coming harbour — and **rules** (not a model) decide what interrupts you (*NOW*: safety and decisions) and what waits for a quiet moment (*FREE*: science, projects, seabed).
+**[NAVIGUIDE simulator](https://naviguide.fr)** is the briefing. Press play: the boat glides along the real route. Every ~30 nautical miles the app builds a small *bag* of what lies within 60 nm — borders, Gold ports of entry, protected areas, wind and sea state, research stations, the coming harbour — and **rules** (not a model) decide what interrupts you (*NOW*: safety and decisions) and what waits for a quiet moment (*FREE*: science, projects, seabed).
 
 Then the story is told. **NVIDIA Nemotron 3 on Nebius Token Factory** writes the briefing, the harbour sheet, the answers in the logbook chat and the narrated replay of the whole expedition — from structured facts only. Every number on screen comes from a source or a calculation; a filter rejects any figure the model did not receive. When the boat enters a new country's waters, **Tavily** re-reads the official port-of-entry page and Nemotron 3 Ultra strikes out whatever is no longer supported.
 
@@ -112,7 +112,7 @@ Hindcast of the real weather the boat met since 15 May 2026 (the position as the
 - `naviguide-simulator/server/story_cascade.py` — Token Factory first (Nemotron 3 Super / 3.5 Lightning / 3 Ultra by tier), fallbacks, daily token budget, source labels.
 - `server/story_cache.py`, `logbook_chat.py`, `escale_api.py`, `film_script.py` — briefing, chat, harbour sheet, replay script.
 - `server/truth_judge.py`, `server/tavily_client.py` — Tavily extract + Nemotron 3 Ultra verdicts on Gold ports of entry.
-- Live: https://simulator.naviguide.fr — the source label under each generated paragraph reads "Nemotron 3 Super · Token Factory".
+- Live: https://naviguide.fr — the source label under each generated paragraph reads "Nemotron 3 Super · Token Factory".
 ```
 
 **Built with** (tags, ≤ 25) : `python`, `fastapi`, `react`, `vite`, `leaflet`,
@@ -123,7 +123,7 @@ Hindcast of the real weather the boat met since 15 May 2026 (the position as the
 Retirer de la liste actuelle ce qui n'est pas dans la soumission (ex.
 `langsmith`) et ajouter `nemotron`, `nebius-token-factory`, `tavily`.
 
-**Try it out links** : `https://simulator.naviguide.fr` et
+**Try it out links** : `https://naviguide.fr` et
 `https://blueintelligence.online` (déjà saisis) ; ajouter le dépôt
 `https://github.com/Berry-Mappemonde/NAVIGUIDE`.
 
@@ -155,7 +155,7 @@ enregistrement d'écran par l'agent : c'est le porteur qui filme) :
 | New or existing prior to August 26, 2026? | **Existing** |
 | If existing, how significantly updated with Nebius tools | voir texte ci-dessous |
 | Public code repository | `https://github.com/Berry-Mappemonde/NAVIGUIDE` (MIT, README, section Nemotron/Token Factory) |
-| Working demo URL | `https://simulator.naviguide.fr` |
+| Working demo URL | `https://naviguide.fr` |
 | Which model(s), why that size | voir ci-dessous |
 | Nemotron output quality (1–10) | **à noter après L1–L3** ; ne pas inventer une note. Proposition de texte ci-dessous, chiffre à compléter. |
 | Fine-tune / prompt-engineer / out of the box | voir ci-dessous |

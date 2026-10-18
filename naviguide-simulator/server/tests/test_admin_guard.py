@@ -224,6 +224,7 @@ def test_purge_removes_old_simulation_voyages_only(client, tmp_path):
 def test_cors_origins_default_and_env(monkeypatch):
     monkeypatch.delenv("NAVIGUIDE_CORS_ORIGINS", raising=False)
     assert "https://simulator.naviguide.fr" in cors_origins()
+    assert cors_origins()[0] == "https://naviguide.fr"
     assert "*" not in cors_origins()
     monkeypatch.setenv("NAVIGUIDE_CORS_ORIGINS", "https://a.example, https://b.example")
     assert cors_origins() == ["https://a.example", "https://b.example"]

@@ -1049,7 +1049,7 @@ def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
 
 RECETTE_MD = STATE_DIR / "RECETTE_DU_BATCH.md"
 ENV_FILE = Path(os.environ.get("NAVIGUIDE_ENV_FILE", str(Path.home() / ".config" / "naviguide" / "simulator.env")))
-PROD_URL = "https://simulator.naviguide.fr"
+PROD_URL = "https://naviguide.fr"
 
 # Écrans de l'application, dans l'ordre où le porteur les regarde. Une étape de
 # recette est rangée sous le premier écran dont un mot-clé apparaît dans son texte.
@@ -1198,13 +1198,13 @@ def start_tunnel(port: int = 5174, wait_s: int = 40) -> str | None:
     """Démarre un tunnel Cloudflare détaché vers :5174 et renvoie son URL.
 
     Deux formes :
-    - **tunnel nommé** sur le domaine du porteur (BIM_TUNNEL_NAME=recette, BIM_TUNNEL_HOST=recette.blueintelligence.online,
-      posés une fois : `cloudflared tunnel login` → `tunnel create recette` → `tunnel route dns recette recette.blueintelligence.online`) :
+    - **tunnel nommé** sur le domaine du porteur (BIM_TUNNEL_NAME=recette, BIM_TUNNEL_HOST=recette.naviguide.fr,
+      posés une fois : `cloudflared tunnel login` → `tunnel create recette` → `tunnel route dns recette recette.naviguide.fr`) :
       URL stable, mêmes règles Cloudflare que le site — c'est ce que le navigateur de Grok Bot sait ouvrir ;
     - sinon **tunnel rapide** `https://….trycloudflare.com` : pratique pour un humain, mais Cloudflare y bloque les
       navigateurs automatisés (403 « Your request was blocked », 21 sept.).
     Dans les deux cas le tunnel présente `Host: localhost` à Vite (`--http-host-header`) : `vite preview` refuse
-    les hôtes qu'il ne connaît pas (403 « Blocked request » sur recette.blueintelligence.online toute la nuit
+    les hôtes qu'il ne connaît pas (403 « Blocked request » sur recette.naviguide.fr toute la nuit
     du 22 sept.), et `localhost` est toujours accepté, quelle que soit la config du worktree servi.
     Le tunnel survit à run_lots (le bot travaille aussi après la fin du batch) : `--stop-tunnel` l'arrête."""
     existing = tunnel_url()

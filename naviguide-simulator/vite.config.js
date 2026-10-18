@@ -51,6 +51,7 @@ const proxy = {
 const allowedHosts = [
   ".trycloudflare.com",
   ".blueintelligence.online",
+  ".naviguide.fr",
   "localhost",
   "127.0.0.1",
   ...(process.env.NAVIGUIDE_PREVIEW_HOST ? [process.env.NAVIGUIDE_PREVIEW_HOST] : []),

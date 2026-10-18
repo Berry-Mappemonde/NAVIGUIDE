@@ -67,7 +67,7 @@ CHARS_PER_TOKEN = 3.2          # français + code : prudent (surestime un peu)
 TOKENS_PER_DIFF_LINE = 14      # une ligne de diff lue par l'agent
 TOKENS_PER_IMAGE = 1500
 OVERHEAD = 1.5                 # sorties d'outils, raisonnement, relectures : ce que l'agent ajoute lui-même
-FIXED_DOCS = ("docs/REGLES_WORKFLOW_AGENT.md", "docs/LOTS_ORDRE_ET_PROMPTS.md", "docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md")
+FIXED_DOCS = ("docs/REGLES_WORKFLOW_AGENT.md", "docs/LOTS_ORDRE_ET_PROMPTS.md", "docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md")
 COUTS_MD = rl.STATE_DIR / "COUTS.md"
 EXIT_BUDGET = 3
 
@@ -208,7 +208,7 @@ def build_prompt(review: dict, wt: Path, date: str, prefix: str, model: str, nig
         "- docs/LOTS_ORDRE_ET_PROMPTS.md : le PROGRAMME COMPLET, y compris les lots à venir (R8…, N…, G…). Règle d'or : quand une correction relève d'un lot à venir, "
         "tu FONDS la correction dans ce lot (tu complètes son prompt : « Constat de la revue du <date> : … » + l'étape ajoutée) au lieu d'ouvrir un lot ; tu n'ouvres un lot "
         f"{prefix}<n> que pour ce qu'aucun lot à venir ne couvre.",
-        "- docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md : le modèle de plan (structure, niveau de détail, anchors fichier:ligne, recette visuelle par écran).",
+        "- docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md : le modèle de plan (structure, niveau de détail, anchors fichier:ligne, recette visuelle par écran).",
         "- Le plan de chaque lot recetté (colonne `plan` de sa balise LOT).",
         "",
         "## La revue du porteur",
