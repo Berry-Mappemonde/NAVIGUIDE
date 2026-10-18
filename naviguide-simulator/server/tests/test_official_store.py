@@ -425,7 +425,7 @@ def test_film_key_includes_script_rev(tmp_path):
     voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
     film_key = store.family_key("film", voy, NOW)
     base = store.current_key(voy, NOW)
-    assert FILM_SCRIPT_REV == "vs1-rg10"
+    assert FILM_SCRIPT_REV == "vs1-ed2"
     assert film_key == f"{base}:{FILM_SCRIPT_REV}"
     assert store.family_key("moments", voy, NOW) == f"{base}:{MOMENTS_REV}"
     assert store.family_key("ici", voy, NOW) == f"{base}:{ICI_REV}"
@@ -1428,6 +1428,66 @@ def _rg11a_voy():
         "t0": T0, "clock": {"t0": T0, "vertices": [{"lat": 1, "lon": 2, "iso": T0}]}, "marks": [],
         "points": [{"lat": 1, "lon": 2}],
     }
+
+
+def test_ed2_reservice_keeps_source_reviewed_by_and_model(tmp_path, monkeypatch):
+    store = OfficialStore(DiskBackend(tmp_path / "disk-ed2"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    plan = _rg11a_raw_plan()
+    written = {
+        **plan,
+        "hasWritten": True,
+        "source": "nemotron-super",
+        "reviewedBy": "nemotron-ultra",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "generated_at": "2026-10-17T10:00:00Z",
+    }
+    payload = _rg11a_payload()
+    payload["written"] = {"fr": {"150": written}}
+    store.put("film", payload, store.family_key("film", voy, NOW))
+    out = official_store.serve_film("fr", 150, style="written")
+    assert out["status"] == READY
+    assert out["hasWritten"] is True
+    assert out["source"] == "nemotron-super"
+    assert out["reviewedBy"] == "nemotron-ultra"
+    assert out["model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert out["generated_at"] == "2026-10-17T10:00:00Z"
+    again = official_store.serve_film("fr", 150, style="written")
+    assert again["source"] == out["source"]
+    assert again["reviewedBy"] == out["reviewedBy"]
+    assert again["model"] == out["model"]
+    assert again["generated_at"] == out["generated_at"]
+
+    fallback = {
+        **plan,
+        "hasWritten": True,
+        "source": "nvidia-gpt-oss-20b",
+        "model": "openai/gpt-oss-20b",
+    }
+    payload["written"] = {"fr": {"150": fallback}}
+    store.put("film", payload, store.family_key("film", voy, NOW))
+    nim = official_store.serve_film("fr", 150, style="written")
+    assert nim["source"] == "nvidia-gpt-oss-20b"
+    assert "Token Factory" not in nim["source"]
+    assert not nim.get("reviewedBy")
+    assert nim["model"] == "openai/gpt-oss-20b"
+
+    legacy = {
+        **plan,
+        "hasWritten": True,
+        "source": "nemotron-super-reviewed-ultra",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "generated_at": "2026-10-17T10:00:00Z",
+    }
+    payload["written"] = {"fr": {"150": legacy}}
+    store.put("film", payload, store.family_key("film", voy, NOW))
+    old = official_store.serve_film("fr", 150, style="written")
+    assert old["source"] == "nemotron-super"
+    assert old["reviewedBy"] == "nemotron-ultra"
+    assert old["model"] == legacy["model"]
+    assert old["generated_at"] == legacy["generated_at"]
 
 
 def test_rg11a_serve_written_when_present(tmp_path, monkeypatch):

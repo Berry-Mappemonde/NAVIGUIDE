@@ -625,4 +625,8 @@ export default {
   layerFicheKindCoastline: "Coastline",
   layerFicheKindGlider: "Underwater glider",
   layerFicheClose: "Close the card",
+
+  // ED2
+  ed2WritingNemotron: "Writing with Nemotron 3 Super on Nebius Token Factory…",
+  ed2BrandLine: "NVIDIA · Nebius",
 };

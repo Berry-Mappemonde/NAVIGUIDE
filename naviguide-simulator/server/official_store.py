@@ -32,6 +32,7 @@ PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
 # Clé film : VS1 (choix VL/Lightning ou repli, budget 2:30 / 3:00) invalide ed1.
+# vs1-ed2 : le rédigé resservi garde source, reviewedBy et model.
 # Le remplisseur recalcule la famille film, pas les perles. Pas un WARM monde.
 # Pas de kind de moment nouveau : moments reste rg4.
 # ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
@@ -39,9 +40,10 @@ UNAVAILABLE = "unavailable"
 # (Mata-Utu / Nouméa plus sur le retour atlantique). Pas de repli sur rc44.
 # clock (famille climo) : départ après la jambe terrestre, séjour des ports.
 # moments suit cette horloge. Le remplisseur recalcule ; pas un parcours complet.
-FILM_SCRIPT_REV = "vs1-rg10"
-WRITTEN_SOURCE = "nemotron-super-token-factory"
+FILM_SCRIPT_REV = "vs1-ed2"
+WRITTEN_SOURCE = "nemotron-super"
 REVIEWED_SOURCE = "nemotron-super-reviewed-ultra"
+REVIEWED_BY_ULTRA = "nemotron-ultra"
 MOMENTS_REV = "rg4-depart"
 CLOCK_REV = "depart-land"
 ICI_REV = "am1a"
@@ -2368,7 +2370,18 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
                 out["estimates"] = lang_est
             out["status"] = READY
             out["hasWritten"] = True
-            out["source"] = wplan.get("source") or WRITTEN_SOURCE
+            from film_script import public_written_source  # noqa: PLC0415
+            raw_source = wplan.get("source")
+            out["source"] = public_written_source(raw_source) or WRITTEN_SOURCE
+            reviewed = wplan.get("reviewedBy")
+            if not reviewed and str(raw_source or "") == REVIEWED_SOURCE:
+                reviewed = REVIEWED_BY_ULTRA
+            if reviewed:
+                out["reviewedBy"] = reviewed
+            if wplan.get("model"):
+                out["model"] = wplan["model"]
+            if wplan.get("generated_at"):
+                out["generated_at"] = wplan["generated_at"]
             out["writtenAt"] = wplan.get("writtenAt")
             out["style"] = "written"
             out.update(_stamp(hit))

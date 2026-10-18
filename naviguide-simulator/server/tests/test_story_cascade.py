@@ -392,6 +392,42 @@ def test_write_story_tokenfactory_first_without_page(monkeypatch):
     assert not any("openrouter" in u or "anthropic" in u or "nvidia.com" in u for u in seen)
 
 
+def test_write_story_cache_returns_origin_and_cache_hit(monkeypatch):
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json=_chat_ok("Le bateau entre dans la ZEE 5677."))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.delenv("NAVIGUIDE_LLM_CACHE_TTL_S", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    body = {
+        "event": "zee-enter",
+        "eventId": "zee-enter:ed2-cache",
+        "lang": "fr",
+        "needPage": False,
+        "payload": {"zee": {"mrgid": 5677, "name": "ED2"}},
+    }
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            first = await write_story(body, client=client)
+            second = await write_story(dict(body), client=client)
+            return first, second
+
+    first, second = asyncio.run(run())
+    assert first["status"] == "ready" and first["source"] == "nemotron-super"
+    assert first["cache_hit"] is False
+    assert second["status"] == "ready"
+    assert second["source"] == "nemotron-super"
+    assert second["source"] != "cache"
+    assert second["cache_hit"] is True
+    assert len(seen) == 1
+
+
 def test_write_story_need_page_still_reaches_openrouter_online(monkeypatch):
     seen = []
 
@@ -538,9 +574,12 @@ def test_translate_cache_is_per_lang(monkeypatch):
             fr = await translate(FR_STORY, "fr", client)
             return a, b, fr
 
-    (t1, s1), (t2, s2), (t3, s3) = asyncio.run(run())
+    a, b, fr = asyncio.run(run())
+    (t1, s1), (t2, s2), (t3, s3) = a, b, fr
     assert t1 == t2 == EN_STORY.strip()
     assert {s1, s2} <= {"nemotron-lightning", "cache"}
+    assert s1 == "nemotron-lightning" and s2 == "nemotron-lightning"
+    assert getattr(b, "cache_hit", False) is True
     assert len(seen) == 1
     assert t3 == FR_STORY and s3 == "rules"
 
@@ -681,9 +720,13 @@ def test_llm_cache_healthy_entry_is_served_unchanged(monkeypatch):
     key = "rb3-healthy"
     text = "Pointe-à-Pitre has a marina at Bas-du-Fort."
     pearl_store.kv_put(CACHE_NS, key, {"text": text, "source": "nemotron-super"})
-    assert _cache_get(key) == (text, "cache")
+    hit = _cache_get(key)
+    assert hit == (text, "nemotron-super")
+    assert getattr(hit, "cache_hit", False) is True
+    assert hit[1] != "cache"
     stored = (pearl_store.kv_get(CACHE_NS, key) or {}).get("value") or {}
     assert stored.get("text") == text
+    assert stored.get("source") == "nemotron-super"
 
 
 def test_cascade_think_block_keeps_final_sentence(monkeypatch):

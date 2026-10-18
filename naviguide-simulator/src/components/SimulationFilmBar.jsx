@@ -387,9 +387,21 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             />
             {replay && !replay.unavailable ? (
               <>
-                <div data-testid="film-source" hidden={(replay.style || "raw") !== "written" || !replay.hasWritten} className="min-w-0 max-w-full whitespace-normal break-words text-xs leading-snug text-white/90">
-                  <LlmSourceBadge source={replay.source} label={filmSourceLabel(replay.source, t)} testId="film-source-badge" className="[&_span]:text-xs [&_span]:text-white/90" />
-                </div>
+                {replay.writing ? (
+                  <div data-testid="film-source" className="min-w-0 max-w-full whitespace-normal break-words text-xs leading-snug text-white/90">
+                    {t("ed2WritingNemotron")}
+                  </div>
+                ) : (
+                  <LlmSourceBadge
+                    source={replay.source}
+                    reviewedBy={replay.reviewedBy}
+                    label={filmSourceLabel(replay.source, replay.reviewedBy, t)}
+                    testId="film-source"
+                    textOnly
+                    hidden={(replay.style || "raw") !== "written" || !replay.hasWritten}
+                    className="min-w-0 max-w-full whitespace-normal break-words [&_span]:text-xs [&_span]:text-white/90"
+                  />
+                )}
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
                   {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => {
                     const filmReady = replay.remoteStatus === "ready" || replay.remoteStatus === "stale";
@@ -617,8 +629,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   );
 });
 
-function filmSourceLabel(source, t) {
-  return t(filmSourceKey(source));
+function filmSourceLabel(source, reviewedBy, t) {
+  return t(filmSourceKey(source, reviewedBy));
 }
 
 /** Jambe terrestre (Saint-Maur → La Rochelle) : km par la route, pas de nm. */

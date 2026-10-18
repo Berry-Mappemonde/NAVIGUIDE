@@ -471,7 +471,7 @@ async def translate(
     if not _is_en(lang):
         return src, "rules"
     user = f"French text:\n{src}"
-    out, source = await cascade_text(
+    hop = await cascade_text(
         TRANSLATE_SYSTEM,
         user,
         client,
@@ -480,9 +480,12 @@ async def translate(
         facts=facts if facts is not None else src,
         max_tokens=_translate_max_tokens(src, max_tokens),
     )
+    out, source = hop
     cleaned = _clean_text(out)
     if not cleaned:
         return (_clean_text(src) or ""), "rules"
+    if getattr(hop, "cache_hit", False):
+        return _OriginHit(cleaned, source)
     return cleaned, source
 
 
@@ -736,6 +739,26 @@ async def _call_claude(
     return text, "claude"
 
 
+class _OriginHit(tuple):
+    """`(text, source)` served from the prompt cache.
+
+    `source` is the provider that wrote the text. The status flag is
+    `cache_hit`, never the label `"cache"`.
+    """
+
+    cache_hit = True
+
+    def __new__(cls, text: str, source: str):
+        return super().__new__(cls, (text, source))
+
+
+def _stored_origin(raw: Any) -> str:
+    src = str(raw or "").strip()
+    if not src or src == "cache":
+        return ""
+    return src
+
+
 def _cache_get(key: str) -> tuple[str, str] | None:
     import pearl_store  # noqa: PLC0415
 
@@ -753,17 +776,21 @@ def _cache_get(key: str) -> tuple[str, str] | None:
     if not cleaned:
         pearl_store.kv_delete(CACHE_NS, key)
         return None
+    origin = _stored_origin(val.get("source"))
+    if not origin:
+        return None
     if cleaned != text:
-        pearl_store.kv_put(CACHE_NS, key, {"text": cleaned, "source": val.get("source") or "cache"})
-    return cleaned, "cache"
+        pearl_store.kv_put(CACHE_NS, key, {"text": cleaned, "source": origin})
+    return _OriginHit(cleaned, origin)
 
 
 def _cache_put(key: str, text: str, source: str) -> None:
     import pearl_store  # noqa: PLC0415
 
-    if not text or source in {"budget", "rules"}:
+    origin = _stored_origin(source)
+    if not text or not origin or source in {"budget", "rules"}:
         return
-    pearl_store.kv_put(CACHE_NS, key, {"text": text, "source": source})
+    pearl_store.kv_put(CACHE_NS, key, {"text": text, "source": origin})
 
 
 async def _cascade_once(
@@ -780,7 +807,7 @@ async def _cascade_once(
     cache_key = prompt_cache_key(system, user, tier, online=online, max_tokens=max_tokens)
     hit = _cache_get(cache_key)
     if hit:
-        return hit[0], "cache"
+        return hit
     if not llm_budget.allow(tier):
         text = _apply_filter(fallback or "", facts if facts is not None else user, keep_if_empty=True)
         return text, "budget"
@@ -945,11 +972,13 @@ async def write_story(
     system, user = build_prompt(event if not page else {**event, "pageUrl": page_url}, page_url)
     fallback = (body or {}).get("phrase") if isinstance((body or {}).get("phrase"), str) else None
     try:
-        text, source = await cascade_text(
+        hop = await cascade_text(
             system, user, client, online=page, tier=story_tier(body),
             fallback=fallback if fallback is not None else "",
             facts=event,
         )
+        text, source = hop
+        cache_hit = bool(getattr(hop, "cache_hit", False))
     except Exception as exc:
         return {
             "status": "failed",
@@ -960,6 +989,7 @@ async def write_story(
             "text": None,
             "source": "rules",
             "engine": None,
+            "cache_hit": False,
         }
     tidy = tidy_story(text, fallback)
     if not tidy:
@@ -972,10 +1002,13 @@ async def write_story(
             "text": None,
             "source": source,
             "engine": source,
+            "cache_hit": cache_hit,
         }
     used_local = tidy == (fallback or "").strip() and tidy != _clean_text(text).strip()
     if want_en and tidy and not used_local:
-        tidy, source = await translate(tidy, "en", client, facts=tidy)
+        hop_tr = await translate(tidy, "en", client, facts=tidy)
+        tidy, source = hop_tr
+        cache_hit = bool(getattr(hop_tr, "cache_hit", False))
         if not tidy:
             return {
                 "status": "failed",
@@ -986,6 +1019,7 @@ async def write_story(
                 "text": None,
                 "source": source,
                 "engine": source,
+                "cache_hit": cache_hit,
             }
     engine = source
     if used_local:
@@ -998,4 +1032,5 @@ async def write_story(
         "cascade": "tokenfactory-openrouter-claude",
         "tavily": None,
         "nvidia": source if source.startswith("nemotron-") else engine,
+        "cache_hit": cache_hit,
     }

@@ -8,6 +8,8 @@ import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, canStartOffic
 import { VOICE_LEAD_MS, VOICE_MS_PER_CHAR } from "../utils/speak.js";
 import { shouldStopSpeakingOnChapterChange } from "./useReplayVoice.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
+import en from "../i18n/en.js";
+import fr from "../i18n/fr.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hook = readFileSync(join(here, "useReplay.js"), "utf8");
@@ -1126,6 +1128,27 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.equal(writtenPillEnabled({ hasWritten: false, customFilm: true }), false);
     assert.equal(filmSourceKey(off.source), "storySourceRules");
     assert.equal(filmSourceKey("nemotron-super-reviewed-ultra"), "storySourceSuperReviewed");
+    assert.equal(filmSourceKey("nemotron-super", "nemotron-ultra"), "storySourceSuperReviewed");
+    assert.equal(filmSourceKey("nemotron-super"), "storySourceSuper");
+    assert.equal(filmSourceKey("openrouter"), "storySourceOpenrouter");
+    assert.equal(filmSourceKey("nvidia-gpt-oss-20b"), "storySourceNim");
+    assert.match(en.storySourceSuper, /Nemotron 3 Super/);
+    assert.match(en.storySourceSuper, /Token Factory/);
+    assert.doesNotMatch(en.storySourceNim, /Token Factory/);
+    assert.doesNotMatch(en.storySourceOpenrouter, /Token Factory/);
+    assert.doesNotMatch(fr.storySourceNim, /Token Factory/);
+    assert.doesNotMatch(fr.storySourceOpenrouter, /Token Factory/);
+    assert.match(en.ed2WritingNemotron, /Writing with Nemotron 3 Super on Nebius Token Factory/);
+    assert.match(fr.ed2WritingNemotron, /Token Factory/);
+    const served = resolveServedFilm({
+      hasWritten: true,
+      source: "nemotron-super",
+      reviewedBy: "nemotron-ultra",
+      model: "nvidia/nemotron-3-super-120b-a12b",
+    }, "written");
+    assert.equal(served.source, "nemotron-super");
+    assert.equal(served.reviewedBy, "nemotron-ultra");
+    assert.equal(served.model, "nvidia/nemotron-3-super-120b-a12b");
 
     const raw = resolveServedFilm({ hasWritten: false, source: "rules" }, "raw");
     assert.equal(raw.updateHasWritten, false);
@@ -1150,11 +1173,14 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(bar, /nemotron-super-token-factory|filmSourceKey/);
     assert.match(bar, /LlmSourceBadge/);
     assert.match(bar, /data-testid="film-source"/);
+    assert.match(bar, /testId="film-source"/);
+    assert.match(bar, /textOnly/);
+    assert.match(bar, /ed2WritingNemotron/);
     assert.match(bar, /filmStoryWrittenSoon/);
     assert.match(bar, /replay\.hasWritten/);
     assert.match(bar, /film-style-\$\{id\}/);
     assert.match(bar, /\["raw", "filmStoryRaw"\], \["written", "filmStoryWritten"\]/);
-    assert.match(bar, /data-testid="film-source" hidden/);
+    assert.match(bar, /hidden=\{\(replay\.style \|\| "raw"\) !== "written" \|\| !replay\.hasWritten\}/);
   });
 });
 

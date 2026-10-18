@@ -11,6 +11,7 @@ describe("AI transparency — source helpers", () => {
     assert.match(src, /export function isAiGeneratedSource/);
     assert.match(src, /export function isLlmWrittenSource/);
     assert.match(src, /storySourceSuperReviewed/);
+    assert.match(src, /reviewedBy/);
     assert.match(src, /nemotron-super-token-factory/);
     assert.match(src, /s === "rules" \|\| s === "budget"/);
     assert.match(src, /\+local/);

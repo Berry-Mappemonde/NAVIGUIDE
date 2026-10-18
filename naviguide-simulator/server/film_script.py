@@ -425,8 +425,16 @@ MONTHS = {
 EV_TAG = re.compile(r"\[\[ev:([^\]]+)\]\]")
 TAG_STRIP = re.compile(r"\[\[(?:ev|ch):[^\]]+\]\]\s*")
 WRITE_MAX_TOKENS = 1200
-WRITTEN_SOURCE = "nemotron-super-token-factory"
+WRITTEN_SOURCE = "nemotron-super"
+REVIEWED_BY_ULTRA = "nemotron-ultra"
+# Ancien id encore reconnu à la lecture. La source servie reste nemotron-super.
 REVIEWED_SOURCE = "nemotron-super-reviewed-ultra"
+_SUPER_ORIGINS = frozenset({
+    WRITTEN_SOURCE,
+    "nemotron",
+    "nemotron-super-token-factory",
+    REVIEWED_SOURCE,
+})
 
 
 def _en(lang: str) -> bool:
@@ -8723,11 +8731,24 @@ def written_names_subset(written: str, facts: Any) -> bool:
     return _name_tokens(written) <= _name_tokens(blob)
 
 
-def written_source_label(src: str) -> str:
-    s = str(src or "")
-    if s.startswith("nemotron") or s == "cache":
+def public_written_source(src: str | None) -> str:
+    """Source servie : Super reste nemotron-super. Un repli garde son id."""
+    raw = str(src or "").strip()
+    low = raw.lower()
+    if low in _SUPER_ORIGINS or low.startswith("nemotron-super"):
         return WRITTEN_SOURCE
-    return s
+    return raw
+
+
+def _write_model() -> str:
+    import llm_budget  # noqa: PLC0415
+
+    return llm_budget.model_for("write")
+
+
+def written_source_label(src: str) -> str:
+    public = public_written_source(src)
+    return public or str(src or "")
 
 
 def _sentence_starts(text: str, sents: list[str]) -> list[int]:
@@ -9310,15 +9331,31 @@ def _parse_judge_ok(text: str) -> Optional[bool]:
     return None
 
 
-def _stamp_written_plan(plan: dict, source: str, seconds: Any) -> dict:
+def _stamp_written_plan(
+    plan: dict,
+    source: str,
+    seconds: Any,
+    *,
+    reviewed_by: str | None = None,
+    model: str | None = None,
+) -> dict:
     chapters = [c for c in (plan.get("chapters") or []) if isinstance(c, dict)]
     n = script_chars(chapters)
     out = dict(plan)
     out["chapters"] = chapters
-    out["source"] = source
+    public = public_written_source(source) or str(source or "")
+    out["source"] = public
     out["chars"] = n
     out["targetSeconds"] = _film_seconds(seconds if seconds is not None else plan.get("targetSeconds"))
     out["hasWritten"] = True
+    if reviewed_by:
+        out["reviewedBy"] = reviewed_by
+    else:
+        out.pop("reviewedBy", None)
+    if public == WRITTEN_SOURCE:
+        out["model"] = model or out.get("model") or _write_model()
+    elif model:
+        out["model"] = model
     return out
 
 
@@ -9424,7 +9461,13 @@ async def translate_written_plan(
         out.append({**raw_ch, "text": guarded, "anchors": anchors})
     if not any_ok:
         return None
-    stamped = _stamp_written_plan({**fr_plan, "chapters": out}, fr_plan.get("source") or WRITTEN_SOURCE, fr_plan.get("targetSeconds"))
+    stamped = _stamp_written_plan(
+        {**fr_plan, "chapters": out},
+        fr_plan.get("source") or WRITTEN_SOURCE,
+        fr_plan.get("targetSeconds"),
+        reviewed_by=fr_plan.get("reviewedBy"),
+        model=fr_plan.get("model"),
+    )
     return stamped
 
 
@@ -9445,8 +9488,13 @@ async def write_film_chain(
     if super_plan is None or int((super_stats or {}).get("rewritten") or 0) <= 0:
         return None, None, stats
     stats["super"] = 1
-    stats["source"] = WRITTEN_SOURCE
-    accepted = _stamp_written_plan(super_plan, WRITTEN_SOURCE, seconds)
+    origin = public_written_source(super_plan.get("source") or (super_stats or {}).get("source"))
+    if origin == WRITTEN_SOURCE:
+        stats["source"] = WRITTEN_SOURCE
+        accepted = _stamp_written_plan(super_plan, WRITTEN_SOURCE, seconds, model=_write_model())
+    else:
+        stats["source"] = origin or "rules"
+        accepted = _stamp_written_plan(super_plan, origin or "rules", seconds, model=origin or None)
 
     if film_ultra_open():
         edited = await edit_written_once(accepted, raw, cascade=cascade)
@@ -9454,14 +9502,24 @@ async def write_film_chain(
         if edited:
             ok = await judge_written_once(edited, cascade=cascade)
             stats["ultra_judge"] = 1
-            if ok:
-                accepted = _stamp_written_plan(edited, REVIEWED_SOURCE, seconds)
+            if ok and accepted.get("source") == WRITTEN_SOURCE:
+                accepted = _stamp_written_plan(
+                    edited, WRITTEN_SOURCE, seconds,
+                    reviewed_by=REVIEWED_BY_ULTRA,
+                    model=accepted.get("model") or _write_model(),
+                )
                 stats["reviewed"] = True
-                stats["source"] = REVIEWED_SOURCE
+                stats["source"] = WRITTEN_SOURCE
 
     en_plan = await translate_written_plan(accepted, raw, cascade=cascade)
     if en_plan:
-        en_plan = _stamp_written_plan(en_plan, accepted.get("source") or WRITTEN_SOURCE, seconds)
+        en_plan = _stamp_written_plan(
+            en_plan,
+            accepted.get("source") or WRITTEN_SOURCE,
+            seconds,
+            reviewed_by=accepted.get("reviewedBy"),
+            model=accepted.get("model"),
+        )
         stats["lightning"] = 1
     return accepted, en_plan, stats
 

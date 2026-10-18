@@ -21,26 +21,28 @@ export function isAiGeneratedSource(source) {
   return isLlmWrittenSource(source);
 }
 
-/** Map cascade `source` to i18n key. */
-export function llmSourceI18nKey(source) {
+/** Map cascade `source` to i18n key. `reviewedBy` names Ultra when it edited. */
+export function llmSourceI18nKey(source, reviewedBy) {
   const s = String(source || "");
   const lower = s.toLowerCase();
-  if (lower.includes("reviewed") && lower.includes("ultra")) return "storySourceSuperReviewed";
-  if (s === "openrouter") return "storySourceOpenrouter";
-  if (s === "claude") return "storySourceClaude";
+  const reviewed = String(reviewedBy || "").toLowerCase();
+  const ultraReviewed = reviewed.includes("ultra") && (lower.includes("nemotron") || lower.includes("super") || isLlmWrittenSource(s));
+  if ((lower.includes("reviewed") && lower.includes("ultra")) || ultraReviewed) return "storySourceSuperReviewed";
+  if (s === "openrouter" || lower.startsWith("openrouter")) return "storySourceOpenrouter";
+  if (s === "claude" || lower.startsWith("claude")) return "storySourceClaude";
   if (s === "rules") return "storySourceRules";
   if (s === "budget") return "storySourceBudget";
   if (s === "cache") return "storySourceCache";
+  if (/gpt-oss|nvidia-gpt|\bnim\b/i.test(s) || lower.startsWith("nvidia-")) return "storySourceNim";
   if (s.endsWith("-lightning")) return "storySourceLightning";
   if (s.endsWith("-super")) return "storySourceSuper";
   if (s.endsWith("-ultra")) return "storySourceUltra";
-  if (/gpt-oss|nvidia-gpt|\bnim\b/i.test(s)) return "storySourceNim";
   if (isLlmWrittenSource(s)) return "storySourceSuper";
   return "storySourceRules";
 }
 
-export function llmSourceLabel(source, t) {
-  return t(llmSourceI18nKey(source));
+export function llmSourceLabel(source, t, reviewedBy) {
+  return t(llmSourceI18nKey(source, reviewedBy));
 }
 
 /** Nemotron on Token Factory — show Built with + official marks (hackathon / Devpost). */

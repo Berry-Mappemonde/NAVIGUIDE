@@ -90,7 +90,6 @@ from film_script import (
     station_spoken_label,
     speak_film_text,
     written_is_valid,
-    REVIEWED_SOURCE,
     write_stored_plan,
     WRITTEN_SOURCE,
     apply_written_guard,
@@ -4885,6 +4884,7 @@ def test_ed1_judge_closed_serves_super_without_ultra(monkeypatch):
     assert stats["ultra_judge"] == 0
     assert stats["source"] == WRITTEN_SOURCE
     assert fr["source"] == WRITTEN_SOURCE
+    assert fr["model"]
     assert "laisse" in (fr["chapters"][0]["text"] or "")
     assert all(tier != "judge" for tier, _sys in hops)
 
@@ -4924,7 +4924,10 @@ def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
     assert stats["ultra_edit"] == 1
     assert stats["ultra_judge"] == 1
     assert stats["reviewed"] is True
-    assert fr["source"] == REVIEWED_SOURCE
+    assert stats["source"] == WRITTEN_SOURCE
+    assert fr["source"] == WRITTEN_SOURCE
+    assert fr["reviewedBy"] == "nemotron-ultra"
+    assert fr["model"]
     assert hops.count("You judge an already") == 1
     assert hops.count("You edit an already-") == 1
 
@@ -4949,6 +4952,7 @@ def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
     assert stats2["ultra_judge"] == 1
     assert stats2["reviewed"] is False
     assert fr2["source"] == WRITTEN_SOURCE
+    assert not fr2.get("reviewedBy")
     assert "laisse" in (fr2["chapters"][0]["text"] or "")
 
 

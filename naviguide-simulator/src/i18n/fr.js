@@ -625,4 +625,8 @@ export default {
   layerFicheKindCoastline: "Trait de côte",
   layerFicheKindGlider: "Planeur sous-marin",
   layerFicheClose: "Fermer la fiche",
+
+  // ED2
+  ed2WritingNemotron: "Rédaction avec Nemotron 3 Super sur Nebius Token Factory…",
+  ed2BrandLine: "NVIDIA · Nebius",
 };
