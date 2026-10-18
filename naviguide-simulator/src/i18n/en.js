@@ -577,6 +577,12 @@ export default {
   skipperExpertIciRadius:      "ici() bag radius",
   skipperExpertAlongAmp:       "MPA along the track",
   skipperExpertAmpAhead:       "MPA ahead, at least",
+
+  // AI transparency
+  aiActGeneratedLabel: "AI-generated content (model: {model})",
+  aiActChatNotice: "You are interacting with artificial intelligence. Replies are generated automatically and may contain errors.",
+  aiActChatNoticeDismiss: "Got it",
+
   // Moment cards: fallback title and the stored entry alert
   momentFallbackTitle: "Boat position",
   momentKindGrib: "Weather forecast (GRIB)",

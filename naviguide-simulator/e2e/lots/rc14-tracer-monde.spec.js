@@ -9,7 +9,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { mapFollowCadrage } from "../helpers.js";
+import { dismissNotForNav, mapFollowCadrage } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc14");
 mkdirSync(recetteDir, { recursive: true });
@@ -20,15 +20,6 @@ const shot = (page, name) => page.screenshot({
   quality: 85,
   fullPage: false,
 });
-
-async function dismissNotForNav(page) {
-  const modal = page.getByTestId("not-for-nav-modal");
-  if (!(await modal.isVisible({ timeout: 1500 }).catch(() => false))) return;
-  const ack = page.getByTestId("not-for-nav-ack");
-  if (await ack.isVisible().catch(() => false)) await ack.check();
-  const ok = page.getByTestId("not-for-nav-accept");
-  if (await ok.isVisible().catch(() => false)) await ok.click();
-}
 
 function cinemaButton(page) {
   return page.getByRole("button", { name: /^(cinéma|cinema)$/i });

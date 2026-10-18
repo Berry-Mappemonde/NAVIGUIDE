@@ -4,6 +4,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => join(here, "../../../docs/recette/lot-n1", name);
@@ -14,15 +15,6 @@ const shot = (page, name) => page.screenshot({
   quality: 85,
   fullPage: false,
 });
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function showToolsPanel(page) {
   const box = page.getByTestId("export-box");

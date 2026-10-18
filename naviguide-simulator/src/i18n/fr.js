@@ -577,6 +577,12 @@ export default {
   skipperExpertIciRadius:      "Rayon du sac ici()",
   skipperExpertAlongAmp:       "AMP sur le trait",
   skipperExpertAmpAhead:       "AMP devant, au moins",
+
+  // AI transparency
+  aiActGeneratedLabel: "Contenu généré par IA (modèle : {model})",
+  aiActChatNotice: "Vous échangez avec une intelligence artificielle. Les réponses sont générées automatiquement et peuvent contenir des erreurs.",
+  aiActChatNoticeDismiss: "Compris",
+
   // Moment cards: fallback title and the stored entry alert
   momentFallbackTitle: "Position du bateau",
   momentKindGrib: "Prévision météo (GRIB)",

@@ -4,6 +4,7 @@
 // + saut des seules assertions qui en dépendent — jamais l'absence de
 // wind.geojson ni la forme des URLs tuiles.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-rd8/${name}.webp`,
@@ -13,15 +14,6 @@ const shot = (page, name) => page.screenshot({
 });
 
 const TILE_RE = /\/climatology\/wind\/tiles\/\d+\/\d+\/\d+\.json/;
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function leaveCinema(page) {
   const cinema = page.getByRole("button", { name: /^(cinéma|cinema)$/i });

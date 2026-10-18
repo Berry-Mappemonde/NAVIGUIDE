@@ -1,5 +1,6 @@
 // Panneau gauche stable : le chat ne saute pas pendant une lecture.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-n/${name}.webp`,
@@ -7,15 +8,6 @@ const shot = (page, name) => page.screenshot({
   quality: 85,
   fullPage: false,
 });
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function showLeftPanel(page) {
   const chat = page.getByTestId("logbook-chat");

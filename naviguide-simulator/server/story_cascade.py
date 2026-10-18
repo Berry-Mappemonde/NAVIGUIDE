@@ -20,6 +20,7 @@ import httpx
 from dotenv import load_dotenv
 
 import llm_budget
+from ai_transparency import with_ai_transparency
 
 log = logging.getLogger("naviguide-simulator.story-cascade")
 
@@ -926,6 +927,7 @@ def story_tier(body: dict[str, Any] | None) -> str:
     return "write"
 
 
+@with_ai_transparency
 async def write_story(
     body: dict[str, Any] | None,
     client: httpx.AsyncClient | None = None,

@@ -4,6 +4,8 @@ import { useLang } from "../i18n/LangContext.jsx";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
 import { cardSpeech, formatTruthDate, strikeParts } from "../engine/momentCard.js";
 import { ListenButton } from "./ListenButton.jsx";
+import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
+import { isAiGeneratedSource } from "../utils/llmSourceLabel.js";
 
 function useWindowCard(card, key, eventName) {
   const [fixture, setFixture] = useState(null);
@@ -163,6 +165,9 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
         pending={shown.storyStatus === "pending"}
         className={`mt-1 leading-snug text-slate-100 break-words [overflow-wrap:anywhere] ${inline ? "text-[11px]" : "text-[12px]"}`}
       />
+      {shown.storySource && isAiGeneratedSource(shown.storySource) ? (
+        <LlmSourceBadge source={shown.storySource} testId="moment-story-source" className="mt-0.5" />
+      ) : null}
       <TruthBadge truth={shown.truth} />
       <CardLinks entity={shown.entity} onFocus={onFocus} t={t} />
     </div>
@@ -213,6 +218,9 @@ export const FreeMomentBlock = memo(function FreeMomentBlock({ card, left = 0, o
         unsupported={shown.truth?.unsupported}
         className="mt-0.5 text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
       />
+      {shown.storySource && isAiGeneratedSource(shown.storySource) ? (
+        <LlmSourceBadge source={shown.storySource} testId="moment-story-source" className="mt-0.5" />
+      ) : null}
       <TruthBadge truth={shown.truth} />
       <CardLinks entity={shown.entity} onFocus={onFocus} t={t} showLabels={false} />
     </div>
