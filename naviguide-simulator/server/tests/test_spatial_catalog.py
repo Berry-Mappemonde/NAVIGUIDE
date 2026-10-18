@@ -52,6 +52,35 @@ def test_cluster_does_not_carry_one_point_contact():
             assert key not in feature["properties"], key
 
 
+def test_cluster_point_only_props_match_the_client():
+    import pathlib
+    import re
+
+    import spatial_catalog
+
+    source = (pathlib.Path(spatial_catalog.__file__).parent.parent / "src" / "layers" / "spatialFeatures.js").read_text(encoding="utf-8")
+    block = re.search(r"const POINT_ONLY_PROPS = \[(.*?)\];", source, re.S)
+    assert block, "POINT_ONLY_PROPS not found in spatialFeatures.js"
+    client = set(re.findall(r'"([^"]+)"', block.group(1)))
+    assert "name" in spatial_catalog.CLUSTER_POINT_ONLY_PROPS
+    assert set(spatial_catalog.CLUSTER_POINT_ONLY_PROPS) == client
+
+
+def test_cluster_is_named_by_its_count_not_by_one_point():
+    index = SpatialCatalogIndex("marinas", [
+        {**point(-4 + (position % 40) / 10, 45 + (position // 40) / 10, name=f"Port {position}"),
+         "properties": {"name": f"Port {position}"}}
+        for position in range(1_000)
+    ])
+    result = index.query(Bbox(-5, 44, 1, 48), zoom=2, limit=420)
+    clusters = [f for f in result["features"] if f["properties"].get("clusterCount", 1) > 1]
+    assert clusters
+    for feature in clusters:
+        props = feature["properties"]
+        assert not str(props.get("name", "")).startswith("Port "), props.get("name")
+        assert props["name"] == f"{props['clusterCount']} points regroupés"
+
+
 def test_index_simplifies_long_trace_at_low_zoom_and_keeps_ends():
     coordinates = [[-5 + position / 100, 45 + position / 1_000] for position in range(300)]
     index = SpatialCatalogIndex("science", [{

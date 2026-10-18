@@ -38,7 +38,7 @@ class IndexedFeature:
 
 # Fields that describe one point only; a grouped cell must not carry them.
 CLUSTER_POINT_ONLY_PROPS = frozenset({
-    "title", "description", "website", "telephone", "url", "canal_vhf",
+    "name", "title", "description", "website", "telephone", "url", "canal_vhf",
     "source_urls", "manager_url", "visit_url", "country", "region", "funder",
     "wmo", "ship", "email",
 })
