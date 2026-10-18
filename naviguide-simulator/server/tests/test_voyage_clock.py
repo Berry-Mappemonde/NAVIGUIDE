@@ -127,6 +127,51 @@ def test_antimeridian_monotone():
     assert hours == sorted(hours)
 
 
+def test_la_rochelle_departure_is_t0_plus_land_and_cayenne_stays_three_days():
+    """Départ de La Rochelle = t0 + jambe terrestre ; Cayenne reste 3 jours."""
+
+    def wind_fn(lat, lon, t):
+        return {"speedKnots": 10.0, "dirFromDeg": 90.0, "kind": "climatology"}
+
+    t0 = "2026-05-15T08:00:00Z"
+    t0d = datetime(2026, 5, 15, 8, tzinfo=timezone.utc)
+    points = [
+        {"lat": 46.8, "lon": 1.63, "cumNm": 0, "filmCum": 0, "jump": False, "nonMaritime": True},
+        {"lat": 46.15, "lon": -1.16, "cumNm": 200, "filmCum": 200, "jump": False, "nonMaritime": True},
+        {"lat": 14.6, "lon": -61.0, "cumNm": 3400, "filmCum": 3400, "jump": False},
+        {"lat": 4.93, "lon": -52.35, "cumNm": 4000, "filmCum": 4000, "jump": False},
+        {"lat": 44.65, "lon": -63.57, "cumNm": 4000, "filmCum": 4080, "jump": True},
+        {"lat": 46.78, "lon": -56.16, "cumNm": 4400, "filmCum": 4480, "jump": False},
+        {"lat": 44.65, "lon": -63.57, "cumNm": 4800, "filmCum": 4880, "jump": False},
+        {"lat": 4.93, "lon": -52.35, "cumNm": 4800, "filmCum": 4960, "jump": True},
+        {"lat": -17.54, "lon": -149.57, "cumNm": 8000, "filmCum": 8200, "jump": False},
+    ]
+    marks = [
+        {"name": "La Rochelle", "nm": 200, "filmNm": 200, "index": 1},
+        {"name": "Cayenne (Guyane)", "nm": 4000, "filmNm": 4000, "lat": 4.93, "lon": -52.35, "index": 3},
+        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "nm": 4400, "filmNm": 4480,
+         "lat": 10.0, "lon": 10.0, "index": 5},
+        {"name": "Papeete (Polynésie française)", "nm": 8000, "filmNm": 8200, "index": 8},
+    ]
+    c = build_voyage_clock(points, marks, t0, start_at="saint-maur", wind_fn=wind_fn)
+    lr = next(m for m in c["marks"] if m["name"] == "La Rochelle")
+    depart = datetime.fromisoformat(lr["iso"].replace("Z", "+00:00"))
+    assert lr["holdHours"] == 0
+    assert abs((depart - t0d).total_seconds() - LAND_CALENDAR_HOURS * 3600) < 1
+
+    cayennes = [m for m in c["marks"] if "Cayenne" in (m.get("name") or "")]
+    assert len(cayennes) == 1
+    assert cayennes[0]["holdHours"] == port_days_for("Cayenne (Guyane)") * 24 == 72
+
+    spm = next(m for m in c["marks"] if "Saint-Pierre" in (m.get("name") or ""))
+    assert abs(spm["lat"] - 46.7761) < 1e-3
+    assert abs(spm["lon"] - (-56.1628)) < 1e-3
+
+    by_lr = build_voyage_clock(points, marks, t0, start_at="la-rochelle", wind_fn=wind_fn)
+    at_lr = next(v for v in by_lr["vertices"] if abs(v["sailNm"] - 200) < 1e-6 and v["vehicle"] != "quay")
+    assert at_lr["tHours"] == LAND_CALENDAR_HOURS
+
+
 def test_start_saint_maur_land_dt():
     points = [
         {"lat": 46.8, "lon": 1.63, "cumNm": 0, "filmCum": 0, "jump": False, "nonMaritime": True},
@@ -661,3 +706,25 @@ def test_future_clock_keeps_mark_order_after_seam():
         assert -180.0 <= m["lon"] <= 180.0
     for v in fut["vertices"]:
         assert -180.0 <= v["lon"] <= 180.0
+
+
+def test_official_clock_keeps_one_cayenne_and_saint_pierre_port():
+    from voyage_clock import _dedupe_cayenne_marks, _stop_latlon
+
+    marks = [
+        {"name": "Fort-de-France (Martinique)"},
+        {"name": "Cayenne (Guyane)", "holdHours": 72},
+        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)"},
+        {"name": "Cayenne (Guyane)", "holdHours": 0},
+    ]
+    out = _dedupe_cayenne_marks(marks)
+    assert [m["name"] for m in out].count("Cayenne (Guyane)") == 1
+    assert out[1]["holdHours"] == 72
+    assert len(out) == 3
+
+    lat, lon = _stop_latlon("Saint-Pierre (Saint-Pierre-et-Miquelon)", {"lat": 10.0, "lon": 10.0}, {})
+    assert (lat, lon) == (46.7761, -56.1628)
+    lat, lon = _stop_latlon("Papeete (Polynésie française)", {"lat": -17.5, "lon": -149.6}, {"lat": 0, "lon": 0})
+    assert (lat, lon) == (-17.5, -149.6)
+    lat, lon = _stop_latlon("Papeete (Polynésie française)", {}, {"lat": -17.0, "lon": -149.0})
+    assert (lat, lon) == (-17.0, -149.0)

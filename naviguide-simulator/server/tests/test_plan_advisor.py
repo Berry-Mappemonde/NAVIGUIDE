@@ -461,6 +461,32 @@ def test_la_rochelle_ajaccio_wind30_at_most_1650():
         assert via_advise["best"]["routeNm"] <= 1650
 
 
+def test_no_proposed_date_before_now():
+    """Aucun conseil dont la date est passée, ni sur une jambe déjà commencée."""
+    from plan_advisor import departure_after_now, prepare_plan
+
+    plan = _noumea_chain()
+    now = datetime(2026, 9, 22, 12, tzinfo=timezone.utc)
+    prepared = prepare_plan(plan, now=now)
+    assert prepared.get("_adviceClosed") in (None, [])
+    out = advise(plan, 0, now=NOW)
+    for cand in [out["best"], *out["alternatives"]]:
+        shift = int(cand["shiftDays"])
+        depart = datetime(2026, 10, 1, 8, tzinfo=timezone.utc) + timedelta(days=shift)
+        assert depart > now, (shift, depart)
+        assert departure_after_now({"departIso": depart.strftime("%Y-%m-%dT%H:%M:%SZ")}, now)
+
+    started = "2026-10-05T12:00:00Z"
+    src, mapped, reason = resolve_advice_leg(plan, 0, now=started)
+    assert reason == "past"
+    assert mapped is None
+    assert 0 in (src.get("_adviceClosed") or [])
+    blocked = request_advice(plan, 0, now=started)
+    assert blocked["status"] == "unavailable"
+    assert blocked["reason"] == "past"
+    assert "best" not in blocked
+
+
 def test_short_leg_rejects_north_south_over_cap():
     """Jambe courte (Nouméa) : un décalage de 150 nm dépasse +20 % → seuls les dates."""
     plan = _noumea_chain()
