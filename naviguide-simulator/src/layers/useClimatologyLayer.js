@@ -17,6 +17,7 @@ import {
   waveColor,
 } from "./climatologyPaint.js";
 import { climoPointLngs, cycloneLatLngCopies, groupCycloneFeatures } from "./climatologyWorld.js";
+import { drawCapForZoom, LAYER_DRAW_CAPS } from "../engine/layerWarm.js";
 import {
   VIEW_DEBOUNCE_MS,
   climoViewKey,
@@ -75,6 +76,14 @@ function mergeTileFeatures(collections, paintProps) {
 const EMPTY_LAYERS = { wind: null, waveP50: null, waveP90: null, waveMean: null, current: null, cyclones: null };
 
 /** Survit au remontage React / StrictMode : le spec RF9 exige created=0 à vue égale. */
+const CLIMO_DRAW_CAPS = {
+  wind: LAYER_DRAW_CAPS.wind,
+  waveP50: LAYER_DRAW_CAPS.wave,
+  waveP90: LAYER_DRAW_CAPS.wave,
+  waveMean: LAYER_DRAW_CAPS.wave,
+  current: LAYER_DRAW_CAPS.current,
+};
+
 const SHARED = {
   pools: emptyClimoPools(),
   cache: new Map(),
@@ -208,6 +217,7 @@ export function useClimatologyLayer({
         bounds,
         makeLayer,
         copiesFor: (lon) => visibleClimoLngs(climoPointLngs(lon), bounds),
+        maxCount: drawCapForZoom(map.getZoom(), CLIMO_DRAW_CAPS[layerKey] || LAYER_DRAW_CAPS.point),
       });
       if (layerKey === "wind") {
         SHARED.windSyncs += 1;
