@@ -92,7 +92,13 @@ elif [ ! -f "$SIM/dist/index.html" ]; then
 fi
 
 sudo mkdir -p "$WWW_ROOT"
-sudo rsync -a --delete "$SIM/dist/" "$WWW_ROOT/"
+# robots.txt, sitemap.xml et la clé IndexNow viennent de public/ (versionnés) ;
+# le filtre P les protège en plus de --delete si un bundle les omettait.
+sudo rsync -a --delete \
+  --filter='P /robots.txt' \
+  --filter='P /sitemap.xml' \
+  --filter='P /27424ae0389d9d7fb74e3ad6db0e9780.txt' \
+  "$SIM/dist/" "$WWW_ROOT/"
 sudo chown -R ubuntu:ubuntu "$WWW_ROOT"
 sudo chmod -R a+rX "$WWW_ROOT"
 
