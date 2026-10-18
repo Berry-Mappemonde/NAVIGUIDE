@@ -20,6 +20,7 @@ import { useOfficialExpedition } from "./hooks/useOfficialExpedition.js";
 import { useOfficialJournal } from "./hooks/useOfficialJournal.js";
 import { legAtClockNow } from "./hooks/useLegContext.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
+import { useFilmZee } from "./hooks/useFilmZee.js";
 import { useIciAlong } from "./hooks/useIciAlong.js";
 import { useMomentCards } from "./hooks/useMomentCards.js";
 import { useMoment } from "./hooks/useMoment.js";
@@ -72,7 +73,7 @@ import {
   shouldKeepSceneVisible,
 } from "./utils/sceneGate.js";
 import { routeStats, featuresToSegments, legsDistanceNm } from "./utils/geo.js";
-import { highSeasRuledOut, nearestStopNm } from "./engine/iciBriefing.js";
+import { highSeasRuledOut, nearestStopNm, replayHereFrame } from "./engine/iciBriefing.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
 import { normalizeExpeditionPlan } from "./utils/expeditionPlan.js";
@@ -501,17 +502,24 @@ export default function App() {
     clockSample,
     follow: isSuivre,
   });
+  // Playback cast stays on the opening leg for the whole film (the scene
+  // clock is paused). The step the bar and the Here sheet show is the
+  // chapter at the replayed boat, not that frozen cast.
+  const replayBoatNm = replay.active && replay.live
+    ? Number(replay.live.sailNm ?? replay.live.filmNm)
+    : NaN;
   const legContext = useMemo(() => {
-    if (!cast) return null;
+    const onFilm = Number.isFinite(replayBoatNm);
+    if (!cast && !onFilm) return null;
     return filmLegContext({
       marks: escaleMarks,
-      nm: cast.sailNm,
-      sample,
+      nm: onFilm ? replayBoatNm : cast.sailNm,
+      sample: onFilm ? replay.live : sample,
       totalNm: playback.sailTotalNm || flatRoute.totalNm,
       boatKnots: expeditionSpeed.knots,
-      cast,
+      cast: onFilm ? null : cast,
     });
-  }, [cast, sample, escaleMarks, playback.sailTotalNm, flatRoute.totalNm, expeditionSpeed.knots]);
+  }, [cast, sample, escaleMarks, playback.sailTotalNm, flatRoute.totalNm, expeditionSpeed.knots, replayBoatNm, replay.live]);
 
   const clockEtaHours = useMemo(() => {
     if (!officialClock || !legContext || legContext.finished || (legContext.nmRemainingToStop ?? 0) < 0.5) {
@@ -829,6 +837,27 @@ export default function App() {
     fromStop: jambe?.fromStop,
     toStop: jambe?.toStop,
   });
+  const replayPos = replay.active && replay.live
+    && Number.isFinite(Number(replay.live.lat)) && Number.isFinite(Number(replay.live.lon))
+    ? replay.live
+    : null;
+  const filmZee = useFilmZee({
+    enabled: Boolean(replayPos),
+    lat: replayPos?.lat,
+    lon: replayPos?.lon,
+  });
+  const replayFrame = useMemo(() => {
+    if (!replayPos) return null;
+    return replayHereFrame({
+      lat: Number(replayPos.lat),
+      lon: Number(replayPos.lon),
+      marks: legendMarks,
+      zee: filmZee,
+      logLeg: hudLeg?.fromStop ? { from: hudLeg.fromStop, to: hudLeg.toStop } : null,
+      lang,
+    });
+  }, [replayPos, legendMarks, filmZee, hudLeg?.fromStop, hudLeg?.toStop, lang]);
+  const iciPos = replayPos || (suivreBerry ? sourceLive : null);
   const iciPack = useIciDossier({
     highSeasRuledOut: highSeasRuled,
     enabled: Boolean(cast),
@@ -836,8 +865,8 @@ export default function App() {
     stories: !replay.active && replay.filmStyle === "written",
     cast,
     snappedPosition: legContext?.snappedPosition,
-    at: (suivreBerry && Number.isFinite(Number(sourceLive?.lat)) && Number.isFinite(Number(sourceLive?.lon)))
-      ? { lat: Number(sourceLive.lat), lon: Number(sourceLive.lon) }
+    at: Number.isFinite(Number(iciPos?.lat)) && Number.isFinite(Number(iciPos?.lon))
+      ? { lat: Number(iciPos.lat), lon: Number(iciPos.lon) }
       : null,
     polarMeta: polarData,
     jambe,
@@ -1885,7 +1914,13 @@ export default function App() {
         skipperNotice={skipper.notice}
         view={view}
         legContext={sidebarHudLeg}
-        nowLeg={nowLeg}
+        nowLeg={replay.active && hudLeg?.fromStop ? {
+          fromStop: hudLeg.fromStop,
+          toStop: hudLeg.toStop,
+          speedKnots: hudLeg.speedKnots,
+          remainingNm: hudLeg.nmRemainingToStop ?? hudLeg.remainingNm,
+        } : nowLeg}
+        replayFrame={replayFrame}
         clockSample={sidebarClockSample}
         atQuay={atQuay}
         quayDays={quayDays}
