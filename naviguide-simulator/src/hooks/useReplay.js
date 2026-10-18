@@ -398,7 +398,7 @@ export function filmChapterPlayheadCapped({ t, chapter, clock = null } = {}) {
 }
 
 /**
- * Instant du bateau pour un charIdx de phrase.
+ * RC52 : instant du bateau pour un charIdx de phrase.
  * Tant que la phrase n'est pas finie : `timeAt(charIdx)`, jamais tB
  * (ancre de fin de chapitre) ni un t déjà à l'arrivée / « aujourd'hui ».
  */
@@ -534,7 +534,7 @@ export const FILM_CHARS_PER_SECOND = 16;
 export const FILM_ESTIMATE_CPS = 15;
 
 /**
- * Index écrit du sous-titre. Si la voix mène, le texte avance à
+ * RC41 : index écrit du sous-titre. Si la voix mène, le texte avance à
  * FILM_ESTIMATE_CPS dès la première phrase — jamais un sprint au budget
  * (linearChar) puis un calage. Sans voix : la même constante, un seul régime.
  */
@@ -990,7 +990,7 @@ export function useReplay({
   const [active, setActive] = useState(false);
   const [tMs, setTMs] = useState(null);
   const [card, setCard] = useState(null);
-  // Voice is piloted by the film-bar Écouter button (no replay-voice).
+  // The voice is piloted by the film-bar Écouter button (no replay-voice).
   const [voice, setVoice] = useState(true);
   const [targetSeconds, setTargetSeconds] = useState(0);
   const [chapterIdx, setChapterIdx] = useState(0);
@@ -1817,7 +1817,7 @@ export function useReplay({
           ingestHeld(Number.isFinite(pinT) ? pinT : ch.tA, ch, { hold: false });
         } else {
           if (ch && linear.chapterIdx > ch.idx) {
-            // Elapsed a fini le chapitre, la phrase pas — pas tB.
+            // RC52 : elapsed a fini le chapitre, la phrase pas — pas tB.
             const keep = Math.max(0, Number(voiceCharRef.current) || 0);
             const sentHold = sentenceSpan(ch, keep);
             const atLast = keep + 1e-6 >= (ch.chars || 1) - 1e-6
@@ -1905,7 +1905,7 @@ export function useReplay({
           linearChar: linear.charIdx,
         });
       }
-      // Le bateau publié suit charIdx, pas elapsed / tB.
+      // RC52 : le bateau publié suit charIdx, pas elapsed / tB.
       const sentPub = chapter ? sentenceSpan(chapter, charIdx) : null;
       const phraseDone = Boolean(
         phraseEndedRef.current

@@ -155,7 +155,7 @@ export function useReplayVoice({
       for (let i = 0; i < list.length; i += 1) {
         if (cancelled) return;
         const s = list[i];
-        // Le débit écrit (charIdx) part de cet instant — pas un sprint au budget.
+        // RC41 : le débit écrit (charIdx) part de cet instant — pas un sprint au budget.
         onSentenceStartRef.current?.(s.start);
         let failed = false;
         await speakSentence(s.text, lang, {

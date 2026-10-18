@@ -548,7 +548,7 @@ export function stepFilmTime({
     desired = sent.endT;
   }
 
-  // Tant que la phrase n'est pas finie, ne pas rester / viser tB.
+  // RC52 : tant que la phrase n'est pas finie, ne pas rester / viser tB.
   let fromT = Number(t);
   if (!phraseEnded) {
     const phraseT = plan?.timeAt ? plan.timeAt(chapterIdx, charIdx) : sent.startT;
@@ -578,7 +578,7 @@ export function stepFilmTime({
     lat: phi,
     atQuay: atQuay && !phraseEnded,
     // Voice-led: never let v_min pull the boat past what is being said.
-    // Même mené par la voix, pas au-delà de la phrase en cours.
+    // RC52 : même mené par la voix, pas au-delà de la phrase en cours.
     tCap: phraseEnded && voiceLed ? desired : sent.endT,
   });
   const wait = voiceShouldWait({
