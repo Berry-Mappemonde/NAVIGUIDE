@@ -339,19 +339,18 @@ jobs:
       PYTHONDONTWRITEBYTECODE: "1"
       TOKENIZERS_PARALLELISM: "false"
     steps:
-      - name: Shards et run CI valides
-        if: always()
+      - name: Run annulé
+        if: cancelled()
         working-directory: ${{ github.workspace }}
         run: |
-          if [ "${{ cancelled() }}" = "true" ]; then
-            echo "Run GitHub Actions annulé : le check requis « API Blue Intelligence — pytest » doit échouer." >&2
-            exit 1
-          fi
-          shard_result="${{ needs.backend-pytest-shard.result }}"
-          if [ "$shard_result" != "success" ]; then
-            echo "Résultat des shards: $shard_result (échec, annulation ou shard ignoré)" >&2
-            exit 1
-          fi
+          echo "Run GitHub Actions annulé : le check requis « API Blue Intelligence — pytest » doit échouer." >&2
+          exit 1
+      - name: Tous les shards doivent réussir
+        if: needs.backend-pytest-shard.result != 'success'
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo "Résultat des shards: ${{ needs.backend-pytest-shard.result }} (échec, annulation ou shard ignoré)" >&2
+          exit 1
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
