@@ -5346,3 +5346,37 @@ def test_vb1_lightning_can_drop_the_route_id(monkeypatch):
     assert ids == film_script._trim_ids_to_budget(kept, bag, 150)
     out = apply_chosen_subjects(_vb1_plan(), ids, bag, 150)
     assert out["chars"] <= film_char_budget(150)
+
+
+def test_vb1_suffix_does_not_rerun_vl_select(monkeypatch):
+    """Le suffixe du cache de route change trim_key, pas vl_key."""
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    import film_script
+    import vl_route
+
+    bag = _vs1_full_bag()
+    tour = {"legs": [{"name": "vb1-fp", "iso": "2026-06-01T00:00:00Z"}]}
+    calls = {"select": 0, "trim": 0}
+
+    async def fake(system, user, **_kw):
+        if "remove" in system.lower() or "Do not add" in system:
+            calls["trim"] += 1
+            return json.dumps({"ids": ["dc:buoy"]}), "nemotron-lightning"
+        calls["select"] += 1
+        return json.dumps({"ids": ["dc:buoy", "dc:poe"]}), "nemotron-lightning"
+
+    asyncio.run(choose_film_ids(bag, tour, 150, cascade=fake, allow_llm=True))
+    assert calls == {"select": 1, "trim": 1}
+
+    vl_route.save({
+        "rev": vl_route.REV,
+        "route": vl_route.route_stamp(),
+        "job": vl_route.JOB,
+        "ids": ["dc:amp"],
+        "points": [],
+    })
+    assert film_script._vb1_extra_ids(bag) == ["dc:amp"]
+    _ids, src = asyncio.run(choose_film_ids(bag, tour, 150, cascade=fake, allow_llm=True))
+    assert calls["select"] == 1
+    assert calls["trim"] == 2
+    assert src != "cache"
