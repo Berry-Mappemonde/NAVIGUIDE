@@ -851,6 +851,158 @@ def rows_from_voyage(voyage_id: str, voy: dict) -> list[dict]:
     return _build_rows(voyage_id, voy)
 
 
+def _merge_change_lists(existing: list, rebuilt: list) -> list:
+    """Fusionne les jalons : met à jour tMs/lat/lon sans retirer de lignes."""
+    if not rebuilt:
+        return list(existing or [])
+    out = []
+    rebuilt_by = {}
+    for c in rebuilt or []:
+        if not isinstance(c, dict):
+            continue
+        cid = str(c.get("id") or "")
+        rebuilt_by[cid or f"{c.get('kind')}:{c.get('title')}"] = c
+    seen: set[str] = set()
+    for c in existing or []:
+        if not isinstance(c, dict):
+            continue
+        cid = str(c.get("id") or "")
+        key = cid or f"{c.get('kind')}:{c.get('title')}"
+        seen.add(key)
+        patch = rebuilt_by.get(key)
+        if patch:
+            merged = {**c}
+            for field in ("tMs", "t", "lat", "lon", "fact", "title"):
+                if patch.get(field) is not None:
+                    merged[field] = patch[field]
+            out.append(merged)
+        else:
+            out.append(c)
+    for key, c in rebuilt_by.items():
+        if key not in seen:
+            out.append(c)
+    return out
+
+
+def merge_preserve_moment_rows(existing: list[dict], rebuilt: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Garde toutes les lignes existantes ; fusionne les champs du recalcul par seq."""
+    by_seq: dict[int, dict] = {}
+    for row in existing or []:
+        if not isinstance(row, dict):
+            continue
+        by_seq[int(row.get("seq") or 0)] = dict(row)
+    rebuilt_by = {int(r.get("seq") or 0): r for r in rebuilt or [] if isinstance(r, dict)}
+    kept_only: list[dict] = []
+    for seq, row in list(by_seq.items()):
+        if seq not in rebuilt_by:
+            kept_only.append(row)
+            continue
+        patch = rebuilt_by[seq]
+        merged = {**row}
+        if patch.get("t"):
+            merged["t"] = patch["t"]
+        pos = patch.get("pos") if isinstance(patch.get("pos"), dict) else {}
+        if pos.get("lat") is not None:
+            merged["pos"] = {**(merged.get("pos") or {}), **pos}
+        merged["changes"] = _merge_change_lists(row.get("changes") or [], patch.get("changes") or [])
+        by_seq[seq] = merged
+    for seq, row in rebuilt_by.items():
+        if seq not in by_seq:
+            by_seq[seq] = dict(row)
+    merged = sorted(by_seq.values(), key=lambda r: int(r.get("seq") or 0))
+    return merged, kept_only
+
+
+def plan_moment_reanchor(voyage_id: str | None = None, voy: dict | None = None) -> dict[str, Any]:
+    """Estime la fusion sqlite sans écrire."""
+    import pearl_store  # noqa: PLC0415
+    from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
+    from voyage_store import load_voyage  # noqa: PLC0415
+
+    vid = voyage_id or OFFICIAL_VOYAGE_ID
+    voy = voy if voy is not None else load_voyage(vid)
+    existing = pearl_store.list_moments(vid)
+    if not existing:
+        return {
+            "merged_count": 0,
+            "kept_count": 0,
+            "kept_seqs": [],
+        }
+    voy = _with_clock(voy) if voy else None
+    rebuilt = _build_rows(vid, voy) if voy else []
+    clock = (voy or {}).get("clock")
+    try:
+        from film_script import anchor_moment_changes  # noqa: PLC0415
+
+        if clock:
+            anchor_moment_changes(rebuilt, clock)
+            anchor_moment_changes(existing, clock)
+    except Exception:
+        pass
+    merged, kept = merge_preserve_moment_rows(existing, rebuilt)
+    return {
+        "merged_count": len(merged),
+        "kept_count": len(kept),
+        "kept_seqs": [int(r.get("seq") or 0) for r in kept],
+    }
+
+
+def apply_moment_reanchor(voyage_id: str | None = None, voy: dict | None = None, *, dry_run: bool = False) -> dict[str, Any]:
+    """Réancre tMs des jalons dans sqlite sans supprimer de lignes."""
+    import pearl_store  # noqa: PLC0415
+    from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
+    from voyage_store import load_voyage  # noqa: PLC0415
+
+    vid = voyage_id or OFFICIAL_VOYAGE_ID
+    voy = voy if voy is not None else load_voyage(vid)
+    before = pearl_store.count_moments(vid)
+    existing = pearl_store.list_moments(vid)
+    if not existing:
+        print("  moments sqlite : vide (rien à réancrer)", flush=True)
+        return {"before": before, "after": before, "kept": 0}
+    voy = _with_clock(voy) if voy else None
+    try:
+        from film_script import anchor_moment_changes  # noqa: PLC0415
+
+        anchor_moment_changes(existing, (voy or {}).get("clock"))
+    except Exception:
+        pass
+    rebuilt = _build_rows(vid, voy) if voy else []
+    if rebuilt:
+        try:
+            from film_script import anchor_moment_changes  # noqa: PLC0415
+
+            anchor_moment_changes(rebuilt, voy.get("clock"))
+        except Exception:
+            pass
+    merged, kept = merge_preserve_moment_rows(existing, rebuilt)
+    if len(merged) < len(existing):
+        raise RuntimeError(f"fusion moments : {len(existing)} → {len(merged)} (perte interdite)")
+    if dry_run:
+        print(
+            f"  moments sqlite : {before} → {len(merged)} (préservées={len(kept)})",
+            flush=True,
+        )
+        return {"before": before, "after": len(merged), "kept": len(kept)}
+    import json as _json
+
+    from reanchor_official import _require_backup_before_write  # noqa: PLC0415
+
+    _require_backup_before_write()
+    if _json.dumps(merged, sort_keys=True, default=str) != _json.dumps(
+        existing, sort_keys=True, default=str,
+    ):
+        pearl_store.replace_moments(vid, merged)
+    after = pearl_store.count_moments(vid)
+    if after < before:
+        raise RuntimeError(f"moments sqlite perdus : {before} → {after}")
+    print(f"  moments sqlite : {before} → {after} (lignes préservées={len(kept)})", flush=True)
+    if kept:
+        seqs = [int(r.get("seq") or 0) for r in kept]
+        print(f"    seq conservées (hors recalcul) : {seqs[:16]}", flush=True)
+    return {"before": before, "after": after, "kept": len(kept)}
+
+
 def warm_moments(voyage_id: str, voy: dict | None = None) -> dict[str, Any]:
     """Parcourt les perles, n'écrit que les changements de signature. Idempotent.
     `voy` : le voyage déjà chargé (avec son horloge) ; sinon relu du disque, horloge du stock si besoin."""
@@ -863,6 +1015,12 @@ def warm_moments(voyage_id: str, voy: dict | None = None) -> dict[str, Any]:
     voy = _with_clock(voy)
     try:
         rows = _build_rows(voyage_id, voy)
+        try:
+            from film_script import anchor_moment_changes  # noqa: PLC0415
+
+            anchor_moment_changes(rows, voy.get("clock"))
+        except Exception:
+            pass
         if rows and not any(r.get("t") for r in rows):
             # Des moments sans date ne servent ni au Journal ni au film : mieux vaut le dire que les ranger.
             log.warning("warm_moments(%s) : %d moments sans date (horloge absente ?) — rien n'est écrit", voyage_id, len(rows))
