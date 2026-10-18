@@ -9,13 +9,15 @@ Jeton : GITHUB_TOKEN ou trousseau git. Ne ferme, ne merge, ne modifie rien d'aut
 """
 from __future__ import annotations
 
+import repo_paths
+
 import json
 import os
 import subprocess
 import sys
 import urllib.request
 
-REPO = os.environ.get("BIM_REPO", "Berry-Mappemonde/NAVIGUIDE")
+REPO = os.environ.get("BIM_REPO", repo_paths.BIM_REPO)
 
 
 def token() -> str:

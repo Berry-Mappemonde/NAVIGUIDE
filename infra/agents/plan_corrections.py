@@ -7,10 +7,10 @@ captures jointes). Ce script :
      plus les commentaires du réviseur de nuit et les lots RC déjà exécutés ;
   2. lance un agent fort (Claude Fable, CLI Cursor local) dans un worktree propre sur
      `main`, avec pour base : la revue, le programme complet des lots
-     (docs/LOTS_ORDRE_ET_PROMPTS.md — pré-rédigé pour qu'il puisse FONDRE une correction
+     (repo_paths.PROMPTS_MD — pré-rédigé pour qu'il puisse FONDRE une correction
      dans un lot à venir plutôt qu'en ouvrir un nouveau), les plans, les règles ;
   3. l'agent écrit docs/PLAN_CORRECTIONS_<date>.md et ajoute les prompts <!-- LOT id="RB…" -->
-     à docs/LOTS_ORDRE_ET_PROMPTS.md, pousse la branche docs/plan-corrections-<date> et
+     à repo_paths.PROMPTS_MD, pousse la branche docs/plan-corrections-<date> et
      ouvre la PR (FR puis EN) dont le corps se termine par `LOTS: RB1 RB4`.
 Le merge de cette PR par le porteur est le GO ; loop.py le guette et lance le batch suivant.
 Ne merge jamais. Ne touche pas au code applicatif.
@@ -29,6 +29,8 @@ Usage :
     python3 infra/agents/plan_corrections.py --dry-run             # affiche le prompt et l'estimation, ne lance rien
 """
 from __future__ import annotations
+
+import repo_paths
 
 import argparse
 import calendar
@@ -67,7 +69,7 @@ CHARS_PER_TOKEN = 3.2          # français + code : prudent (surestime un peu)
 TOKENS_PER_DIFF_LINE = 14      # une ligne de diff lue par l'agent
 TOKENS_PER_IMAGE = 1500
 OVERHEAD = 1.5                 # sorties d'outils, raisonnement, relectures : ce que l'agent ajoute lui-même
-FIXED_DOCS = ("docs/REGLES_WORKFLOW_AGENT.md", "docs/LOTS_ORDRE_ET_PROMPTS.md", "docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md")
+FIXED_DOCS = repo_paths.FIXED_DOCS
 COUTS_MD = rl.STATE_DIR / "COUTS.md"
 EXIT_BUDGET = 3
 
@@ -190,7 +192,7 @@ def build_prompt(review: dict, wt: Path, date: str, prefix: str, model: str, nig
     total = sum(len(p.get("items") or []) for p in review["prs"])
     prev = previous_plans(wt, date)
     parts = [
-        "Tu es le correcteur du matin de la pile de PR du simulateur NAVIGUIDE (Berry-Mappemonde/NAVIGUIDE). Le porteur a recetté dans Chrome : "
+        "Tu es le correcteur du matin de la pile de PR du simulateur NAVIGUIDE (" + repo_paths.BIM_REPO + "). Le porteur a recetté dans Chrome : "
         f"il a coché {ticked} items sur {total} et écrit {kos} commentaire(s) KO" + (f", dont {new_kos} nouveaux depuis la session précédente ({since})" if since else "") + ". "
         "Ta mission : transformer sa revue en un plan de corrections et en lots prêts à être enchaînés par infra/agents/run_lots.py, sur une branche docs, en PR. "
         "Tu ne touches PAS au code applicatif, tu ne merges rien.",
@@ -204,8 +206,8 @@ def build_prompt(review: dict, wt: Path, date: str, prefix: str, model: str, nig
            "arrivés depuis la session précédente : c'est d'abord eux que tu traites, plus toute case décochée ou tout point de la revue globale qu'aucun plan ne couvre encore.",
            *[f"- `{p}`" for p in prev], ""] if (since or prev) else []),
         "## Lis d'abord, en entier",
-        "- docs/REGLES_WORKFLOW_AGENT.md (§ 1 rien de superflu à l'écran ; § 3 gabarit de PR bilingue ; § 4 recette visuelle).",
-        "- docs/LOTS_ORDRE_ET_PROMPTS.md : le PROGRAMME COMPLET, y compris les lots à venir (R8…, N…, G…). Règle d'or : quand une correction relève d'un lot à venir, "
+        "- " + repo_paths.REGLES_MD + " (§ 1 rien de superflu à l'écran ; § 3 gabarit de PR bilingue ; § 4 recette visuelle).",
+        "- " + repo_paths.PROMPTS_MD + " : le PROGRAMME COMPLET, y compris les lots à venir (R8…, N…, G…). Règle d'or : quand une correction relève d'un lot à venir, "
         "tu FONDS la correction dans ce lot (tu complètes son prompt : « Constat de la revue du <date> : … » + l'étape ajoutée) au lieu d'ouvrir un lot ; tu n'ouvres un lot "
         f"{prefix}<n> que pour ce qu'aucun lot à venir ne couvre.",
         "- docs/archives/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md : le modèle de plan (structure, niveau de détail, anchors fichier:ligne, recette visuelle par écran).",
@@ -232,7 +234,7 @@ def build_prompt(review: dict, wt: Path, date: str, prefix: str, model: str, nig
         f"1. `docs/PLAN_CORRECTIONS_{tag}.md` : § 0 rappels ; § 1 revue par PR (OK / KO du porteur, verdict du réviseur de nuit) ; § 2 revue générale ; "
         "§ 3 ce qui est reporté et pourquoi (fondu dans quel lot à venir) ; § 4 les lots correctifs, chacun avec : cause racine (fichier:ligne — lis le code sur main, "
         "ne devine pas), fichiers à ouvrir (≤ 6, App.jsx / MapSceneController.js par rg -n), étapes, tests, recette VISUELLE par écran ; § 5 ordre et pile. Français.",
-        f"2. `docs/LOTS_ORDRE_ET_PROMPTS.md` : (a) une ligne de tableau par lot {prefix}<n> après la dernière ligne ; (b) les balises `<!-- LOT id=\"{prefix}<n>\" title=\"…\" plan=\"docs/PLAN_CORRECTIONS_{tag}.md\" size=\"S|M\" deps=\"…\" -->` "
+        f"2. `{repo_paths.PROMPTS_MD}` : (a) une ligne de tableau par lot {prefix}<n> après la dernière ligne ; (b) les balises `<!-- LOT id=\"{prefix}<n>\" title=\"…\" plan=\"docs/PLAN_CORRECTIONS_{tag}.md\" size=\"S|M\" deps=\"…\" -->` "
         "suivies du bloc ```text``` au format exact des lots existants (lis-en deux avant d'écrire), AVANT la section « ## 3. Enchaîner » ; (c) les compléments fondus dans les lots à venir "
         "(une ligne « Constat de la revue du <date> : … » + l'étape, dans le prompt du lot concerné, sans changer son id ni sa balise).",
         f"3. Vérifie : `python3 infra/agents/run_lots.py --dry-run --from {prefix}1 --until {prefix}<dernier>` liste tes lots.",
@@ -269,11 +271,11 @@ def build_amend_prompt(go_pr: dict, comments: list[dict], wt: Path, model: str) 
     branch = (go_pr.get("head") or {}).get("ref")
     return "\n".join([
         f"Tu es le correcteur du GO. Un premier agent a écrit la PR #{go_pr['number']} ({go_pr['html_url']}) sur la branche `{branch}` : "
-        "docs/PLAN_CORRECTIONS_<date>.md + des lots `<!-- LOT -->` dans docs/LOTS_ORDRE_ET_PROMPTS.md. Le porteur l'a lue et demande des changements. "
+        "docs/PLAN_CORRECTIONS_<date>.md + des lots `<!-- LOT -->` dans " + repo_paths.PROMPTS_MD + ". Le porteur l'a lue et demande des changements. "
         "Ta mission : AMENDER cette PR selon ses commentaires — pas la refaire, pas ouvrir une autre PR, pas toucher au code applicatif, pas merger.",
         "",
         f"Environnement : worktree `{wt}`, déjà sur la branche `{branch}` (à jour d'origin). Lis d'abord le plan et les lots que tu dois amender, "
-        "puis docs/REGLES_WORKFLOW_AGENT.md § 1, § 3, § 4 et le programme complet (docs/LOTS_ORDRE_ET_PROMPTS.md).",
+        "puis " + repo_paths.REGLES_MD + " § 1, § 3, § 4 et le programme complet (" + repo_paths.PROMPTS_MD + ").",
         "",
         "## Les commentaires du porteur (à traiter tous, dans l'ordre)",
         *[f"- ({c['author']}) {c['text']}" for c in comments],

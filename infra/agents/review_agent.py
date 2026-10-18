@@ -31,6 +31,8 @@ Usage :
 """
 from __future__ import annotations
 
+import repo_paths
+
 import argparse
 import json
 import os
@@ -118,7 +120,7 @@ def parcours_section(state: rl.State, ids: list[str], http: rl.Http | None) -> l
 def build_prompt(state: rl.State, ids: list[str], wt: Path, review_dir: Path, model: str, http: rl.Http | None) -> str:
     texts = lot_texts(ids)
     parts = [
-        "Tu es le réviseur de nuit de la pile de PR du simulateur NAVIGUIDE (dépôt Berry-Mappemonde/NAVIGUIDE). "
+        "Tu es le réviseur de nuit de la pile de PR du simulateur NAVIGUIDE (dépôt " + repo_paths.BIM_REPO + "). "
         "Le porteur dort : tu relis les PR ci-dessous avec le regard qu'il aura demain (visuel, produit, règles), tu commentes chaque PR sur GitHub, "
         "et tu mets en file les corrections que des agents Grok exécuteront cette nuit. Tu ne commites ni ne pousses AUCUN code, tu ne merges rien, tu ne touches pas à docs/.",
         "",
@@ -126,8 +128,8 @@ def build_prompt(state: rl.State, ids: list[str], wt: Path, review_dir: Path, mo
         "(une correction déjà faite par un lot suivant n'est pas à refaire). `node_modules` et `.venv` sont des liens : ne réinstalle rien. Tu peux lancer `npm test`, `pytest`, `npx vite build` "
         "et `bash naviguide-simulator/ensure-dev.sh --prod` pour voir l'app sur http://localhost:5174 si nécessaire (Playwright : `PW_PORT=5199`).",
         "",
-        "Lis d'abord en entier : docs/REGLES_WORKFLOW_AGENT.md (surtout § 1 « rien de superflu à l'écran », § 3 gabarit, § 4 recette visuelle) et docs/WORKFLOW_INDUSTRIEL.md § 1.3. "
-        "Le programme complet des lots (à venir compris) est dans docs/LOTS_ORDRE_ET_PROMPTS.md : quand une correction relève d'un lot à venir (ex. R8 déplace la fiche d'escale, R9 refait le texte du film), "
+        "Lis d'abord en entier : " + repo_paths.REGLES_MD + " (surtout § 1 « rien de superflu à l'écran », § 3 gabarit, § 4 recette visuelle) et docs/WORKFLOW_INDUSTRIEL.md § 1.3. "
+        "Le programme complet des lots (à venir compris) est dans " + repo_paths.PROMPTS_MD + " : quand une correction relève d'un lot à venir (ex. R8 déplace la fiche d'escale, R9 refait le texte du film), "
         "ne la refais pas — écris-le dans le verdict et, si un petit lot est quand même utile, donne-lui `deps` sur ce lot.",
         "",
         "Vérifie EN PREMIER, pour chaque PR, la triche sur les données (26 sept. : la PR #338 semait un stock de données inventées en dur, servies « prêtes », "
@@ -200,7 +202,7 @@ def build_prompt(state: rl.State, ids: list[str], wt: Path, review_dir: Path, mo
         "```",
         '<!-- LOT id="RC<n>" title="<titre court>" plan="<plan du lot corrigé>" size="S" deps="<id du lot corrigé>" -->',
         "```text",
-        "Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis <plan> et le prompt du lot <id> (docs/LOTS_ORDRE_ET_PROMPTS.md). Tu travailles dans naviguide-simulator/.",
+        "Lis " + repo_paths.REGLES_MD + " en entier, puis <plan> et le prompt du lot <id> (" + repo_paths.PROMPTS_MD + "). Tu travailles dans naviguide-simulator/.",
         "",
         "Lot RC<n> — <titre>.",
         "Objectif : <ce que le porteur verra ou ne verra plus>.",

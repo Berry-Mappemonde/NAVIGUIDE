@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enchaîne les lots de docs/LOTS_ORDRE_ET_PROMPTS.md, un agent Cursor par lot, la nuit.
+"""Enchaîne les lots de repo_paths.PROMPTS_MD, un agent Cursor par lot, la nuit.
 
 Deux façons de faire tourner l'agent :
 
@@ -27,7 +27,7 @@ porteur dans les PR (open_pr.py transforme la Recette en cases à cocher) et ses
 commentaires « KO : … ». `--no-recette-each` pour ne le faire qu'en fin de batch.
 La boucle complète (revue → correcteur → GO → batch suivant) : loop.py.
 
-Usage (voir docs/LOTS_ORDRE_ET_PROMPTS.md § 3) :
+Usage (voir repo_paths.PROMPTS_MD § 3) :
     python3 infra/agents/run_lots.py --check                       # vérifie l'environnement, ne lance rien
     python3 infra/agents/run_lots.py --only C1                     # un lot, en local
     caffeinate -i python3 infra/agents/run_lots.py --from P2 --until L6
@@ -38,6 +38,8 @@ Usage (voir docs/LOTS_ORDRE_ET_PROMPTS.md § 3) :
     python3 infra/agents/run_lots.py --recette --branch main       # poste de recette sur main (après les merges)
 """
 from __future__ import annotations
+
+import repo_paths
 
 import argparse
 import base64
@@ -57,7 +59,7 @@ from pathlib import Path
 from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[2]
-PROMPTS_MD = ROOT / "docs" / "LOTS_ORDRE_ET_PROMPTS.md"
+PROMPTS_MD = ROOT / repo_paths.PROMPTS_MD
 HERE = Path(__file__).resolve().parent
 # BIM_STATE_DIR : dossier de state.json et du journal (tests : ne pas toucher à ceux d'une nuit en cours).
 STATE_DIR = Path(os.environ.get("BIM_STATE_DIR", str(HERE)))
@@ -67,7 +69,7 @@ WORKTREES = Path(os.environ.get("BIM_LOTS_DIR", str(Path.home() / "bim-lots")))
 
 CURSOR_API = "https://api.cursor.com"
 GITHUB_API = "https://api.github.com"
-DEFAULT_REPO = "https://github.com/Berry-Mappemonde/NAVIGUIDE"
+DEFAULT_REPO = repo_paths.DEFAULT_REPO
 DEFAULT_MODEL = "cursor-grok-4.6-xhigh-fast"
 TERMINAL = {"FINISHED", "ERROR", "CANCELLED", "EXPIRED"}
 AGENT_BIN = os.environ.get("BIM_AGENT_BIN") or shutil.which("agent") or str(Path.home() / ".local" / "bin" / "agent")
@@ -641,8 +643,8 @@ def local_prefix(path: Path, ref: str, pw_port: int) -> str:
     return (f"Environnement : tu travailles dans le worktree git {path} (dépôt principal : {ROOT}). "
             f"node_modules et .venv sont des liens vers le dépôt principal : ne lance ni npm install ni pip install sauf nécessité absolue. "
             f"Le worktree est sur un HEAD détaché à `{ref}` : commence par `git checkout -b <ta-branche>`. "
-            f"DOCUMENTS À JOUR : ta branche part d'une pile plus ancienne que `main` — le plan (docs/PLAN_*.md), docs/LOTS_ORDRE_ET_PROMPTS.md et "
-            f"docs/REGLES_WORKFLOW_AGENT.md que ton prompt te demande de lire sont ceux du dépôt principal : lis-les dans {ROOT}/docs/ (pas dans ton worktree, "
+            f"DOCUMENTS À JOUR : ta branche part d'une pile plus ancienne que `main` — le plan (docs/PLAN_*.md), {repo_paths.PROMPTS_MD} et "
+            f"{repo_paths.REGLES_MD} que ton prompt te demande de lire sont ceux du dépôt principal : lis-les dans {ROOT}/docs/ (pas dans ton worktree, "
             f"où ils peuvent manquer ou être périmés) ; n'y écris rien. "
             f"{ports}"
             f"RÈGLE CI : la CI n'a PAS d'API. Ton spec Playwright (e2e/lots/<lot>.spec.js) doit passer sans API : sonde `await page.request.get('/voyage/official')` "
@@ -1049,7 +1051,7 @@ def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
 
 RECETTE_MD = STATE_DIR / "RECETTE_DU_BATCH.md"
 ENV_FILE = Path(os.environ.get("NAVIGUIDE_ENV_FILE", str(Path.home() / ".config" / "naviguide" / "simulator.env")))
-PROD_URL = "https://naviguide.fr"
+PROD_URL = repo_paths.PROD_URL
 
 # Écrans de l'application, dans l'ordre où le porteur les regarde. Une étape de
 # recette est rangée sous le premier écran dont un mot-clé apparaît dans son texte.
@@ -1264,9 +1266,9 @@ def stop_tunnel() -> None:
 BOT_COMMENT_MARK = "🔗 Poste de recette"
 BOT_PREREVIEW_RE = re.compile(r"^\s*#{1,3}\s*🤖\s*Pr[ée]-?revue", re.I | re.M)   # titre « ## 🤖 Pré-revue » en début de ligne (pas le 🔗 qui cite la consigne)
 BOT_PARCOURS_RE = re.compile(r"^\s*#{1,3}\s*🤖\s*Parcours de r[ée]f[ée]rence", re.I | re.M)   # verdict du parcours complet (tête de pile)
-PARCOURS_MD = HERE / "PARCOURS_DE_REFERENCE.md"   # tout tester, une fois par batch, sur la tête de pile (Grok Bot)
+PARCOURS_MD = HERE / repo_paths.PARCOURS_NAME   # tout tester, une fois par batch, sur la tête de pile (Grok Bot)
 PARCOURS_MARK = "🧭 Parcours de référence"
-RECETTE_BRANCH = "recette"   # option --publish-tip : le site publié suit la tête de pile (simulateur seul)
+RECETTE_BRANCH = repo_paths.RECETTE_BRANCH   # option --publish-tip : le site publié suit la tête de pile (simulateur seul)
 
 
 def bot_prereview_seen(http: Http, repo: str, num: int) -> bool:
@@ -1958,8 +1960,8 @@ def _http_code(url: str, timeout: int = 25) -> int:
         return 0
 
 
-NPM_PROJECTS = ("naviguide-simulator", "frontend")   # chacun : package-lock.json + node_modules (liés dans les worktrees)
-PIP_PROJECT = ("naviguide-simulator", "server/requirements.txt", ".venv/bin/python")
+NPM_PROJECTS = repo_paths.NPM_PROJECTS   # chacun : package-lock.json + node_modules (liés dans les worktrees)
+PIP_PROJECT = repo_paths.PIP_PROJECT
 
 
 def _norm_pkg(name: str) -> str:

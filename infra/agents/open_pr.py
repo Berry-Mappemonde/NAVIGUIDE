@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ouvre une PR sur Berry-Mappemonde/NAVIGUIDE sans `gh`.
+"""Ouvre une PR sur repo_paths.BIM_REPO sans `gh`.
 
 Usage :
     python3 infra/agents/open_pr.py <branche> <base> "<titre>" <fichier-corps.md>
@@ -16,6 +16,8 @@ je voulais ». `review_collect.py` lit ces cases et ces commentaires.
 """
 from __future__ import annotations
 
+import repo_paths
+
 import json
 import os
 import re
@@ -24,7 +26,7 @@ import sys
 import urllib.error
 import urllib.request
 
-REPO = os.environ.get("BIM_REPO", "Berry-Mappemonde/NAVIGUIDE")
+REPO = os.environ.get("BIM_REPO", repo_paths.BIM_REPO)
 
 HEADING_RE = re.compile(r"^\s{0,3}(#{2,4})\s+(.+?)\s*$")
 BULLET_RE = re.compile(r"^(\s*)(?:[-*•]|\d+[.)])\s+(.+?)\s*$")

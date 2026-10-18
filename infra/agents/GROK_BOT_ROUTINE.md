@@ -1,3 +1,5 @@
+Les chemins exécutables sont dans `infra/agents/repo_paths.py`.
+
 # Routine Grok Bot — pré-revue visuelle de nuit (à coller dans Grok Bot)
 
 Grok Bot tourne sur un ordinateur cloud avec un navigateur : il ne voit pas

@@ -16,13 +16,15 @@ Usage en ligne de commande : python3 infra/agents/gh_token.py   (diagnostic, val
 """
 from __future__ import annotations
 
+import repo_paths
+
 import os
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 
-REPO = os.environ.get("BIM_REPO", "Berry-Mappemonde/NAVIGUIDE")
+REPO = os.environ.get("BIM_REPO", repo_paths.BIM_REPO)
 _CACHE: dict[str, str | None] = {}
 
 

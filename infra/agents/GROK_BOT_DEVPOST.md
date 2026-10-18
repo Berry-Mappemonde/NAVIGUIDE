@@ -1,3 +1,5 @@
+Les chemins exécutables sont dans `infra/agents/repo_paths.py`.
+
 # Routine Grok Bot — Devpost : relever, remplir, filmer (à coller dans Grok Bot)
 
 Complément de `GROK_BOT_ROUTINE.md` (pré-revue de nuit). Même bot, même connecteur GitHub.
