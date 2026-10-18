@@ -2,7 +2,7 @@
 
 Complément de `GROK_BOT_ROUTINE.md` (pré-revue de nuit). Même bot, même connecteur GitHub.
 Point d'échange : l'issue
-**https://github.com/Berry-Mappemonde/Blue-Intelligence/issues/432**. Le bot ne clique **jamais** sur
+**https://github.com/Berry-Mappemonde/NAVIGUIDE/issues/432**. Le bot ne clique **jamais** sur
 Submit : il relève, il recopie dans le brouillon, il filme, il montre. Le porteur soumet.
 
 Textes à coller : `docs/HACKATHON_DEVPOST_SOUMISSION.md`. Chaîne Mac : `infra/agents/devpost_answers.py`.

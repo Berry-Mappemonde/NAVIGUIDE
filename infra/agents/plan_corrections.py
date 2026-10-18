@@ -190,7 +190,7 @@ def build_prompt(review: dict, wt: Path, date: str, prefix: str, model: str, nig
     total = sum(len(p.get("items") or []) for p in review["prs"])
     prev = previous_plans(wt, date)
     parts = [
-        "Tu es le correcteur du matin de la pile de PR du simulateur NAVIGUIDE (Berry-Mappemonde/Blue-Intelligence). Le porteur a recetté dans Chrome : "
+        "Tu es le correcteur du matin de la pile de PR du simulateur NAVIGUIDE (Berry-Mappemonde/NAVIGUIDE). Le porteur a recetté dans Chrome : "
         f"il a coché {ticked} items sur {total} et écrit {kos} commentaire(s) KO" + (f", dont {new_kos} nouveaux depuis la session précédente ({since})" if since else "") + ". "
         "Ta mission : transformer sa revue en un plan de corrections et en lots prêts à être enchaînés par infra/agents/run_lots.py, sur une branche docs, en PR. "
         "Tu ne touches PAS au code applicatif, tu ne merges rien.",

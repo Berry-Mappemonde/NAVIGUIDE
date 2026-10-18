@@ -109,7 +109,7 @@ def build_prompt(form_comment: dict, date_tag: str, share: dict | None = None) -
     n_fields = len((data or {}).get("fields") or [])
     share = share or {}
     share_txt = share.get("sentenceEn") or "(mesure indisponible : lance python3 infra/agents/devpost_code_share.py et recopie la phrase)"
-    return f"""Tu es l'agent Fable de la soumission Devpost de NAVIGUIDE (dépôt Berry-Mappemonde/Blue-Intelligence, hackathon Nebius × NVIDIA Global AI Hackathon). Tu travailles dans ce worktree (main à jour). Tu ne touches à AUCUN code : tu écris un document et un commentaire.
+    return f"""Tu es l'agent Fable de la soumission Devpost de NAVIGUIDE (dépôt Berry-Mappemonde/NAVIGUIDE, hackathon Nebius × NVIDIA Global AI Hackathon). Tu travailles dans ce worktree (main à jour). Tu ne touches à AUCUN code : tu écris un document et un commentaire.
 
 Lis d'abord, en entier : {SUBMISSION_DOC} (la soumission v1.0 du 20 sept. : textes déjà écrits, réponses déjà tranchées, liste de contrôle § 0, critères § 5), README.md, docs/ESPRIT_DE_L_APPLICATION.md, docs/PLAN_DEUX_MODES_2026-09-29.md (l'application a maintenant deux modes : Suivre et Tracer — le mot « Simulation » ne doit plus apparaître), infra/vps/README.md § politique LLM (on-demand ; juge Ultra coupé ; veille Tavily rallumée le 15 oct. : une recherche par escale).
 

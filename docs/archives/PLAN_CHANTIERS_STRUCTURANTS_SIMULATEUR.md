@@ -8,7 +8,7 @@
 
 ## Fait : pipeline météo asynchrone partagé
 
-`server/weather_pipeline.py` ([PR #177](https://github.com/Berry-Mappemonde/Blue-Intelligence/pull/177)) : tâche de rafraîchissement dédupliquée, état durable `pending / ready / error`, cache par cellule 0,25° + cycle GFS, pour tous les fournisseurs (Copernicus, Open-Meteo/RTOFS, GRIB, cube).
+`server/weather_pipeline.py` ([PR #177](https://github.com/Berry-Mappemonde/Blue-Intelligence-Map/pull/177)) : tâche de rafraîchissement dédupliquée, état durable `pending / ready / error`, cache par cellule 0,25° + cycle GFS, pour tous les fournisseurs (Copernicus, Open-Meteo/RTOFS, GRIB, cube).
 
 ## Ordre restant
 

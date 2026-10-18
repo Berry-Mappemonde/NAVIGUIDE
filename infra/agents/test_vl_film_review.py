@@ -34,7 +34,7 @@ def test_parcours_section_ne_prend_pas_ce_ko():
         def github(self, path, method="GET", body=None):
             return comments
 
-    state = rl.State(done={"VR1": {"pr": "https://github.com/Berry-Mappemonde/Blue-Intelligence/pull/1"}})
+    state = rl.State(done={"VR1": {"pr": "https://github.com/Berry-Mappemonde/NAVIGUIDE/pull/1"}})
     text = "\n".join(ra.parcours_section(state, ["VR1"], _Http()))
     assert KO_CAMERA not in text
     assert "Absent" in text or "aucun KO" in text
@@ -148,7 +148,7 @@ def test_build_prompt_ajoute_ko_mouvement_au_reviseur(tmp_path, monkeypatch):
     state = rl.State(
         done={"VR1": {
             "status": "FINISHED",
-            "pr": "https://github.com/Berry-Mappemonde/Blue-Intelligence/pull/999",
+            "pr": "https://github.com/Berry-Mappemonde/NAVIGUIDE/pull/999",
             "branch": "fix/lot-vr1-vl-revue-film",
         }},
         last_branch="fix/lot-vr1-vl-revue-film",

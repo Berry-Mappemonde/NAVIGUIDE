@@ -3,7 +3,7 @@
 # Plan — ordres du skipper virtuel
 
 > **Statut (18 sept. 2026)** — S1 → S5 **mergés** dans `main`
-> ([PR #177](https://github.com/Berry-Mappemonde/Blue-Intelligence/pull/177)).
+> ([PR #177](https://github.com/Berry-Mappemonde/Blue-Intelligence-Map/pull/177)).
 > S6 (Confort + horizon) et S7 (trappe Expert « Chiffres ») : en cours,
 > même panneau, même clé `localStorage`.
 

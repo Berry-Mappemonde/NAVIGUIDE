@@ -93,7 +93,7 @@ passage à vide, et le minuteur faisait doublon avec le réveil par PR) :
 ```text
 Tu es réveillé par un webhook. Son message JSON dit ce qu'on attend de toi : `"event"`
 (`ping`, `prereview` ou `parcours`), `"pr"` (numéro de la pull request) et `"url"` (le poste
-de recette). Pré-revue visuelle des PR du dépôt Berry-Mappemonde/Blue-Intelligence — UNE PR
+de recette). Pré-revue visuelle des PR du dépôt Berry-Mappemonde/NAVIGUIDE — UNE PR
 À LA FOIS :
 
 0. `"event": "ping"` : c'est un test de branchement — arrête-toi sans rien faire ni poster.

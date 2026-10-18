@@ -20,7 +20,7 @@ idéalement L2–L3, `PLAN_NEMOTRON_NEBIUS_TAVILY.md`) soit **en production** su
       les +25 $ (formulaire Devpost) et +25 $ (Builders Program) maintenant ;
       vérifier l'expiration de l'essai (13 sept. + 29 j ≈ 12 oct.).
 - [ ] Dépôt public, licence **MIT** visible dans « About » (déjà le cas :
-      `Berry-Mappemonde/Blue-Intelligence`, MIT), `README` avec installation et
+      `Berry-Mappemonde/NAVIGUIDE`, MIT), `README` avec installation et
       lancement du simulateur **en anglais**, section « How we use Nemotron on
       Token Factory / Tavily ».
 - [ ] Vidéo YouTube publique **< 3 min** (cible 2:30), sans musique protégée,
@@ -125,7 +125,7 @@ Retirer de la liste actuelle ce qui n'est pas dans la soumission (ex.
 
 **Try it out links** : `https://simulator.naviguide.fr` et
 `https://blueintelligence.online` (déjà saisis) ; ajouter le dépôt
-`https://github.com/Berry-Mappemonde/Blue-Intelligence`.
+`https://github.com/Berry-Mappemonde/NAVIGUIDE`.
 
 **Image gallery** (5 captures 3:2, prises par le spec Playwright du film,
 app en anglais) : 1) Follow mode à la position du jour avec une carte NOW ;
@@ -154,7 +154,7 @@ enregistrement d'écran par l'agent : c'est le porteur qui filme) :
 | Track | **Best apps and agents** |
 | New or existing prior to August 26, 2026? | **Existing** |
 | If existing, how significantly updated with Nebius tools | voir texte ci-dessous |
-| Public code repository | `https://github.com/Berry-Mappemonde/Blue-Intelligence` (MIT, README, section Nemotron/Token Factory) |
+| Public code repository | `https://github.com/Berry-Mappemonde/NAVIGUIDE` (MIT, README, section Nemotron/Token Factory) |
 | Working demo URL | `https://simulator.naviguide.fr` |
 | Which model(s), why that size | voir ci-dessous |
 | Nemotron output quality (1–10) | **à noter après L1–L3** ; ne pas inventer une note. Proposition de texte ci-dessous, chiffre à compléter. |

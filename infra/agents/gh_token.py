@@ -22,7 +22,7 @@ import sys
 import urllib.error
 import urllib.request
 
-REPO = os.environ.get("BIM_REPO", "Berry-Mappemonde/Blue-Intelligence")
+REPO = os.environ.get("BIM_REPO", "Berry-Mappemonde/NAVIGUIDE")
 _CACHE: dict[str, str | None] = {}
 
 

@@ -36,7 +36,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 STATE_DIR = Path(os.environ.get("BIM_STATE_DIR", str(HERE)))
 STATE_JSON = STATE_DIR / "state.json"
-REPO = os.environ.get("BIM_REPO", "Berry-Mappemonde/Blue-Intelligence")
+REPO = os.environ.get("BIM_REPO", "Berry-Mappemonde/NAVIGUIDE")
 GITHUB_API = "https://api.github.com"
 
 HEADING_RE = re.compile(r"^\s{0,3}#{2,4}\s+(.+?)\s*$")

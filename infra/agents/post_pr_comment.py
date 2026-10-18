@@ -15,7 +15,7 @@ import subprocess
 import sys
 import urllib.request
 
-REPO = os.environ.get("BIM_REPO", "Berry-Mappemonde/Blue-Intelligence")
+REPO = os.environ.get("BIM_REPO", "Berry-Mappemonde/NAVIGUIDE")
 
 
 def token() -> str:

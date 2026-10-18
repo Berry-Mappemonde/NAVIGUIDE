@@ -67,7 +67,7 @@ WORKTREES = Path(os.environ.get("BIM_LOTS_DIR", str(Path.home() / "bim-lots")))
 
 CURSOR_API = "https://api.cursor.com"
 GITHUB_API = "https://api.github.com"
-DEFAULT_REPO = "https://github.com/Berry-Mappemonde/Blue-Intelligence"
+DEFAULT_REPO = "https://github.com/Berry-Mappemonde/NAVIGUIDE"
 DEFAULT_MODEL = "cursor-grok-4.6-xhigh-fast"
 TERMINAL = {"FINISHED", "ERROR", "CANCELLED", "EXPIRED"}
 AGENT_BIN = os.environ.get("BIM_AGENT_BIN") or shutil.which("agent") or str(Path.home() / ".local" / "bin" / "agent")

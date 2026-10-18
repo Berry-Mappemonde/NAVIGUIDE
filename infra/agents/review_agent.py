@@ -118,7 +118,7 @@ def parcours_section(state: rl.State, ids: list[str], http: rl.Http | None) -> l
 def build_prompt(state: rl.State, ids: list[str], wt: Path, review_dir: Path, model: str, http: rl.Http | None) -> str:
     texts = lot_texts(ids)
     parts = [
-        "Tu es le réviseur de nuit de la pile de PR du simulateur NAVIGUIDE (dépôt Berry-Mappemonde/Blue-Intelligence). "
+        "Tu es le réviseur de nuit de la pile de PR du simulateur NAVIGUIDE (dépôt Berry-Mappemonde/NAVIGUIDE). "
         "Le porteur dort : tu relis les PR ci-dessous avec le regard qu'il aura demain (visuel, produit, règles), tu commentes chaque PR sur GitHub, "
         "et tu mets en file les corrections que des agents Grok exécuteront cette nuit. Tu ne commites ni ne pousses AUCUN code, tu ne merges rien, tu ne touches pas à docs/.",
         "",
