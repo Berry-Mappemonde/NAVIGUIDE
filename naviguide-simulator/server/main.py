@@ -577,16 +577,24 @@ async def post_ici_story(body: dict):
     return await story_through_cache(body, writer=write_story)
 
 
+# Longitude dépliée tolérée (un tour et demi) ; au-delà, l'appel est absurde.
+ROUTE_LON_LIMIT = 540.0
+
+
 @app.get("/route")
 def get_route(
     start_lat: float = Query(..., ge=-90, le=90),
-    start_lon: float = Query(..., ge=-180, le=180),
+    start_lon: float = Query(..., ge=-ROUTE_LON_LIMIT, le=ROUTE_LON_LIMIT),
     end_lat: float = Query(..., ge=-90, le=90),
-    end_lon: float = Query(..., ge=-180, le=180),
+    end_lon: float = Query(..., ge=-ROUTE_LON_LIMIT, le=ROUTE_LON_LIMIT),
     check_wind: bool = Query(False),
 ):
-    # Searoute attend [−180, 180]. Le client replie avant l'appel (utils/geo.js) ;
-    # on replie encore, on calcule, on redéplie relativement au départ demandé.
+    # Searoute attend [−180, 180]. Une longitude dépliée (236,84° = SF vue depuis
+    # l'Australie) est acceptée jusqu'à ±540° et repliée ici ; au-delà, ou non
+    # finie, c'est une erreur d'appel (422). On redéplie relativement au départ.
+    for value in (start_lat, start_lon, end_lat, end_lon):
+        if not math.isfinite(value):
+            raise HTTPException(status_code=422, detail="non_finite_coordinate")
     orig_start_lon = start_lon
     start = (wrap_lon(start_lon), start_lat)
     end = (wrap_lon(end_lon), end_lat)

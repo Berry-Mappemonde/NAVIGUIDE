@@ -6,10 +6,10 @@ import { refuseRhumbFallback, ROUTE_IMPORT_MAX_POINTS } from "../utils/routeImpo
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
 export const DRAW_MAX_POINTS = ROUTE_IMPORT_MAX_POINTS;
 
-function loadedLandMask() {
-  if (typeof window === "undefined") return null;
-  const mask = window.__naviguideLandMask;
-  return typeof mask === "function" ? mask : null;
+// Legs are stored by slot (leg i joins point i to point i + 1). What leaves the
+// hook is always dense: a leg still loading, or refused, is simply absent.
+function denseSegments(segments) {
+  return (segments || []).filter(Boolean);
 }
 
 function lengthNm(data, coords) {
@@ -40,7 +40,6 @@ async function loadLeg(from, to) {
     end_lat: String(to.lat),
     end_lon: String(wrapLon(to.lon)),
   });
-  const isLand = loadedLandMask();
   try {
     const res = await fetch(`${API_URL}/route?${params}`);
     let data = null;
@@ -50,7 +49,7 @@ async function loadLeg(from, to) {
     if (res.status === 422 && detail === "crosses_land") return { reject: "crosses_land" };
     let coords = coordsFromRoutePayload(data);
     if (!res.ok || !coords.length) {
-      if (refuseRhumbFallback(from, to, { serverDetail: detail, isLand })) {
+      if (refuseRhumbFallback(from, to, { serverDetail: detail })) {
         return { reject: "crosses_land" };
       }
       const line = rhumbCoords(from, to);
@@ -59,7 +58,6 @@ async function loadLeg(from, to) {
     coords = unwrapPath(coords, from.lon);
     return { coords, failed: false, nm: lengthNm(data, coords) };
   } catch {
-    if (refuseRhumbFallback(from, to, { isLand })) return { reject: "crosses_land" };
     const line = rhumbCoords(from, to);
     return { coords: line, failed: true, nm: lengthNm(null, line) };
   }
@@ -78,10 +76,11 @@ export async function importPointsSequential(addPoint, reset, points) {
 
 function publishDrawn(points, segments) {
   if (typeof window === "undefined") return;
+  const legs = denseSegments(segments);
   window.__naviguideDrawn = {
     points,
-    segments,
-    coords: (segments || []).flatMap((s) => s.coords || []),
+    segments: legs,
+    coords: legs.flatMap((s) => s.coords || []),
   };
 }
 
@@ -142,7 +141,8 @@ export function useRouteDrawing() {
 
   const loadSegment = useCallback(async (from, to) => {
     const slot = pointsRef.current.indexOf(from);
-    if (slot < 0) return;
+    // The leg was undone (or replaced) before its turn came: nothing to fetch.
+    if (slot < 0 || pointsRef.current[slot + 1] !== to) return;
     const seen = epochRef.current;
     const gen = slotGenRef.current[slot] || 0;
     pendingRef.current += 1;
@@ -150,8 +150,9 @@ export function useRouteDrawing() {
     try {
       const result = await loadLeg(from, to);
       if (epochRef.current !== seen) return;
+      // A late answer for a leg that was undone meanwhile is dropped.
       if ((slotGenRef.current[slot] || 0) !== gen) return;
-      if (pointsRef.current[slot] !== from) return;
+      if (pointsRef.current[slot] !== from || pointsRef.current[slot + 1] !== to) return;
       if (result?.reject) {
         if (pointsRef.current.length === slot + 2) {
           pointsRef.current = pointsRef.current.slice(0, slot + 1);
@@ -170,7 +171,7 @@ export function useRouteDrawing() {
         to,
       };
       segmentsRef.current = next.slice(0, Math.max(0, pointsRef.current.length - 1));
-      setDrawnSegments([...segmentsRef.current]);
+      setDrawnSegments(denseSegments(segmentsRef.current));
       publishDrawn(pointsRef.current, segmentsRef.current);
     } finally {
       pendingRef.current = Math.max(0, pendingRef.current - 1);
@@ -187,6 +188,8 @@ export function useRouteDrawing() {
     const seen = epochRef.current;
     const probe = await loadLeg(point, point);
     if (epochRef.current !== seen || probe?.reject !== "on_land") return;
+    // Undone while the probe was out: the point is gone, say nothing.
+    if (!pointsRef.current.includes(point)) return;
     if (pointsRef.current.length === 1 && pointsRef.current[0] === point) {
       pointsRef.current = [];
       segmentsRef.current = [];
@@ -201,11 +204,6 @@ export function useRouteDrawing() {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return Promise.resolve();
     if (pointsRef.current.length >= DRAW_MAX_POINTS) {
       notify("limit");
-      return Promise.resolve();
-    }
-    const mask = loadedLandMask();
-    if (mask?.(lat, lon)) {
-      notify("on_land");
       return Promise.resolve();
     }
     const newPoint = { lat, lon };
@@ -230,20 +228,19 @@ export function useRouteDrawing() {
     [addPoint, reset],
   );
 
+  // ↶ removes the last point and its leg only. Legs still loading for earlier
+  // points carry on; the removed leg's late answer is ignored (slot generation).
   const undo = useCallback(() => {
     if (!pointsRef.current.length) return;
-    epochRef.current += 1;
     fetchIdRef.current += 1;
     const slot = pointsRef.current.length - 2;
     if (slot >= 0) slotGenRef.current[slot] = (slotGenRef.current[slot] || 0) + 1;
     undonePointsRef.current = [...undonePointsRef.current, pointsRef.current.at(-1)];
+    undoneSegmentsRef.current = [...undoneSegmentsRef.current, slot >= 0 ? segmentsRef.current[slot] || null : null];
     pointsRef.current = pointsRef.current.slice(0, -1);
-    if (segmentsRef.current.length) {
-      undoneSegmentsRef.current = [...undoneSegmentsRef.current, segmentsRef.current.at(-1)];
-      segmentsRef.current = segmentsRef.current.slice(0, -1);
-    }
+    segmentsRef.current = segmentsRef.current.slice(0, Math.max(0, pointsRef.current.length - 1));
     setDrawnPoints([...pointsRef.current]);
-    setDrawnSegments([...segmentsRef.current]);
+    setDrawnSegments(denseSegments(segmentsRef.current));
     publishDrawn(pointsRef.current, segmentsRef.current);
     setDrawingLoading(false);
     setCanRedo(true);
@@ -252,17 +249,26 @@ export function useRouteDrawing() {
   const redo = useCallback(() => {
     if (!undonePointsRef.current.length) return;
     const restoredPoint = undonePointsRef.current.at(-1);
+    const restoredSegment = undoneSegmentsRef.current.at(-1) || null;
     undonePointsRef.current = undonePointsRef.current.slice(0, -1);
+    undoneSegmentsRef.current = undoneSegmentsRef.current.slice(0, -1);
     pointsRef.current = [...pointsRef.current, restoredPoint];
-    if (undoneSegmentsRef.current.length) {
-      segmentsRef.current = [...segmentsRef.current, undoneSegmentsRef.current.at(-1)];
-      undoneSegmentsRef.current = undoneSegmentsRef.current.slice(0, -1);
+    const slot = pointsRef.current.length - 2;
+    const from = slot >= 0 ? pointsRef.current[slot] : null;
+    if (from && restoredSegment && restoredSegment.from === from) {
+      const next = segmentsRef.current.slice(0, slot);
+      next[slot] = restoredSegment;
+      segmentsRef.current = next;
     }
     setDrawnPoints([...pointsRef.current]);
-    setDrawnSegments([...segmentsRef.current]);
+    setDrawnSegments(denseSegments(segmentsRef.current));
     publishDrawn(pointsRef.current, segmentsRef.current);
     setCanRedo(undonePointsRef.current.length > 0);
-  }, []);
+    // The leg was still loading when it was undone: fetch it again.
+    if (from && !(restoredSegment && restoredSegment.from === from)) {
+      fetchSegment(from, restoredPoint).catch(() => {});
+    }
+  }, [fetchSegment]);
 
   /** Rename / flag a placed point (satellite popup « point info »). */
   const updatePoint = useCallback((index, patch) => {
@@ -276,8 +282,10 @@ export function useRouteDrawing() {
 
   /** The drawn route as the GeoJSON the plan endpoint expects. */
   const toGeoJson = useCallback(() => {
-    const lineFeatures = segmentsRef.current.filter((s) => s.coords?.length > 0).map((s) => ({
-      type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: s.coords },
+    const lineFeatures = denseSegments(segmentsRef.current).filter((s) => s.coords?.length > 0).map((s) => ({
+      type: "Feature",
+      properties: Number.isFinite(s.nm) ? { nm: s.nm } : {},
+      geometry: { type: "LineString", coordinates: s.coords },
     }));
     const pointFeatures = pointsRef.current.map((p, i) => ({
       type: "Feature",

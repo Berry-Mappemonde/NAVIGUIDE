@@ -70,7 +70,7 @@ import {
   shouldFocusTracerJump,
   shouldKeepSceneVisible,
 } from "./utils/sceneGate.js";
-import { summarizeRoute, featuresToSegments, haversineNm } from "./utils/geo.js";
+import { summarizeRoute, featuresToSegments, legsDistanceNm } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
 import { normalizeExpeditionPlan } from "./utils/expeditionPlan.js";
@@ -93,7 +93,7 @@ import { weatherLine as buildWeatherLine } from "./utils/weatherLine.js";
 import { mapInsetVars, measureFilmBarOccupiedPx } from "./utils/filmBarLayout.js";
 import { productHasData } from "./hooks/weatherSnapshot.js";
 import { useSatellitePopup } from "./hooks/useSatellitePopup.js";
-import { useRouteDrawing } from "./hooks/useRouteDrawing.js";
+import { DRAW_MAX_POINTS, useRouteDrawing } from "./hooks/useRouteDrawing.js";
 import { parseRouteFile } from "./utils/routeImport.js";
 import { viewExportMode } from "./utils/routeExport.js";
 import { attachClockIso, legendNowAndLive, officialNowMs, usePlanReview } from "./hooks/usePlanReview.js";
@@ -1376,7 +1376,7 @@ export default function App() {
     }
     if (drawnPoints.length && !window.confirm(t("importRouteReplace"))) return;
     await handleImportPoints(parsed.points);
-    if (parsed.truncated) setDrawNotice({ kind: "notice", text: t("importRouteTruncated") });
+    if (parsed.truncated) setDrawNotice({ kind: "notice", text: t("importRouteTruncated", { max: DRAW_MAX_POINTS }) });
     else setDrawNotice(null);
     const map = sceneApiRef.current?.getMap?.();
     if (!map || !parsed.points.length) return;
@@ -1544,17 +1544,8 @@ export default function App() {
   // What the drawn route is so far — the boxes describe it, not the official route.
   const drawing = useMemo(() => {
     if (!drawingMode) return null;
-    let nm = 0;
-    let failed = 0;
-    for (const seg of drawnSegments) {
-      if (seg?.failed) failed += 1;
-      if (Number.isFinite(seg?.nm)) {
-        nm += seg.nm;
-        continue;
-      }
-      const c = seg?.coords || [];
-      for (let i = 1; i < c.length; i++) nm += haversineNm(c[i - 1][1], c[i - 1][0], c[i][1], c[i][0]);
-    }
+    const nm = legsDistanceNm(drawnSegments);
+    const failed = drawnSegments.filter((seg) => seg?.failed).length;
     return {
       points: drawnPoints.map((p, i) => ({ name: p.name || `${t("drawPointLabel")} ${i + 1}`, lat: p.lat, lon: p.lon })),
       distanceNm: Math.round(nm),
@@ -1572,7 +1563,7 @@ export default function App() {
       : drawingNotice.code === "limit"
         ? "drawPointLimit"
         : "rhumbCrossesLand";
-    setDrawNotice({ kind: drawingNotice.code === "limit" ? "notice" : "error", text: t(key) });
+    setDrawNotice({ kind: drawingNotice.code === "limit" ? "notice" : "error", text: t(key, { max: DRAW_MAX_POINTS }) });
   }, [drawingNotice, t]);
   const statsSegs = useMemo(
     () => (routeForView ? featuresToSegments(routeForView) : segments),
@@ -1924,7 +1915,7 @@ export default function App() {
             <div className="flex items-center gap-2 bg-slate-900/95 border border-green-500/50 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-2xl">
               <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
               <span>{drawingMessage}</span>
-              <span data-testid="draw-point-limit" className="text-[11px] font-medium text-white/70">{t("drawPointLimit")}</span>
+              <span data-testid="draw-point-limit" className="text-[11px] font-medium text-white/70">{t("drawPointLimit", { max: DRAW_MAX_POINTS })}</span>
               {drawingLoading && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
               <div className="flex gap-1 ml-1 pointer-events-auto">
                 <button type="button" onClick={handleDrawUndo} disabled={!drawnPoints.length} className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 disabled:opacity-30" title={t("undoLastPoint")}><Undo2 size={13} /></button>
@@ -1932,7 +1923,7 @@ export default function App() {
                 <button type="button" onClick={handleDrawCancel} className="h-7 px-2 rounded-full bg-white/10 text-[11px] font-semibold" title={t("cancel")}>{t("cancel")}</button>
               </div>
             </div>
-            {drawnSegments.some((s) => s.failed) && (
+            {drawnSegments.some((s) => s?.failed) && (
               <div className="bg-orange-950/90 border border-orange-400/50 text-orange-100 text-[11px] font-medium px-3 py-1 rounded-full">
                 {t("searouteDrawFailed")}
               </div>

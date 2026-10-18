@@ -247,6 +247,25 @@ export function worldCopyParts(parts) {
  * Distance nautique + nombre de segments d'une liste de polylignes
  * `segments` : [{ coords: [[lon, lat], ...] }]
  */
+/**
+ * Distance of a drawn route, leg by leg: the length the server gave for the
+ * leg when there is one, otherwise the great-circle sum of its vertices.
+ * The drawing box and the local briefing both use it, so they agree.
+ */
+export function legsDistanceNm(legs) {
+  let nm = 0;
+  for (const leg of legs || []) {
+    if (!leg) continue;
+    if (Number.isFinite(leg.nm)) {
+      nm += leg.nm;
+      continue;
+    }
+    const c = leg.coords || [];
+    for (let i = 1; i < c.length; i++) nm += haversineNm(c[i - 1][1], c[i - 1][0], c[i][1], c[i][0]);
+  }
+  return nm;
+}
+
 export function summarizeRoute(segments) {
   let nm = 0;
   let count = 0;
@@ -371,5 +390,6 @@ export function featuresToSegments(fc) {
       from: { name: f.properties?.from || f.properties?.name || "" },
       to: { name: f.properties?.to || "" },
       nonMaritime: false,
+      ...(Number.isFinite(f.properties?.nm) ? { nm: f.properties.nm } : {}),
     }));
 }

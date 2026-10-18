@@ -84,3 +84,43 @@ describe("brouillon DM6 — reset seulement à l'abandon", () => {
     assert.doesNotMatch(app.slice(berryAt, berryAt + 700), /_resetDrawState\(\)/);
   });
 });
+
+describe("↶ pendant le calcul d'une jambe", () => {
+  const undoAt = hook.indexOf("const undo = useCallback(");
+  const redoAt = hook.indexOf("const redo = useCallback(");
+  const undoBody = hook.slice(undoAt, redoAt);
+
+  it("n'invalide que la jambe retirée, pas celles encore en calcul", () => {
+    assert.ok(undoAt > 0 && redoAt > undoAt);
+    assert.doesNotMatch(undoBody, /epochRef\.current \+= 1/);
+    assert.match(undoBody, /slotGenRef\.current\[slot\]/);
+    assert.match(hook, /pointsRef\.current\[slot \+ 1\] !== to/);
+  });
+
+  it("n'expose jamais de trou dans les jambes", () => {
+    assert.doesNotMatch(hook, /setDrawnSegments\(\[\.\.\.segmentsRef\.current\]\)/);
+    assert.match(hook, /setDrawnSegments\(denseSegments\(segmentsRef\.current\)\)/);
+    const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
+    assert.doesNotMatch(app, /drawnSegments\.some\(\(s\) => s\.failed\)/);
+  });
+
+  it("le masque de terre mort a disparu", () => {
+    assert.doesNotMatch(hook, /loadedLandMask|__naviguideLandMask/);
+  });
+});
+
+describe("plafond de points", () => {
+  it("le texte FR et EN suit DRAW_MAX_POINTS", async () => {
+    const { DRAW_MAX_POINTS } = await import("./useRouteDrawing.js");
+    const { ROUTE_IMPORT_MAX_POINTS } = await import("../utils/routeImport.js");
+    assert.equal(DRAW_MAX_POINTS, ROUTE_IMPORT_MAX_POINTS);
+    for (const lang of ["fr", "en"]) {
+      const src = readFileSync(join(here, "..", "i18n", `${lang}.js`), "utf8");
+      assert.match(src, /drawPointLimit:\s*"\{max\} points maximum"/);
+      assert.match(src, /importRouteTruncated:\s*"\{max\} points maximum"/);
+    }
+    const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
+    assert.match(app, /t\("drawPointLimit", \{ max: DRAW_MAX_POINTS \}\)/);
+    assert.match(app, /t\("importRouteTruncated", \{ max: DRAW_MAX_POINTS \}\)/);
+  });
+});

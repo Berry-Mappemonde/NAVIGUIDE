@@ -1,4 +1,4 @@
-import { featuresToSegments, summarizeRoute } from "./geo.js";
+import { featuresToSegments, legsDistanceNm } from "./geo.js";
 import { waypointsFromCollection } from "./waypointsFromCollection.js";
 
 /** Côte lisible pour un point tracé — pas le voyage Berry. */
@@ -28,7 +28,10 @@ function coastAlongTrack(points, language = "fr") {
  */
 export function buildLocalCustomBriefing(geojson, language = "fr") {
   const wps = waypointsFromCollection(geojson);
-  const { nm, segments: segs } = summarizeRoute(featuresToSegments(geojson));
+  const legs = featuresToSegments(geojson);
+  // One segment per leg (N points → N − 1), not one per polyline vertex.
+  const segs = wps.length >= 2 ? wps.length - 1 : legs.length;
+  const nm = legsDistanceNm(legs);
   if (wps.length < 2 && segs < 1) return null;
   const coast = coastAlongTrack(wps, language);
   const dist = Math.round(nm);

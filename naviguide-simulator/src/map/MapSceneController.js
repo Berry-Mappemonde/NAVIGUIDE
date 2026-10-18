@@ -670,7 +670,7 @@ export class MapSceneController {
     const plan = routeDrawPlan(input);
     if (!plan.visible) return;
     if (plan.kind === "drawing") {
-      (input.drawnSegments || []).forEach((segment) => {
+      (input.drawnSegments || []).filter(Boolean).forEach((segment) => {
         addRouteLine(group, segment.coords, {
           color: segment.failed ? "#f97316" : "#22c55e",
           weight: 3,

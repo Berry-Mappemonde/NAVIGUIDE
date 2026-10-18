@@ -88,7 +88,7 @@ export default {
   importRoute:        "Importer",
   importRouteReplace: "Remplacer la route en cours ?",
   importRouteError:   "Fichier illisible",
-  importRouteTruncated: "60 points maximum",
+  importRouteTruncated: "{max} points maximum",
   drawOwnRoute:       "Tracer votre propre route",
   backToBerry:        "Revenir à la route Berry-Mappemonde", // pragma: allowlist secret
   berry:              "Berry",
@@ -578,5 +578,5 @@ export default {
 
   pointOnLand:        "Point sur terre",
   rhumbCrossesLand:   "La ligne droite traverse la terre",
-  drawPointLimit:     "60 points maximum",
+  drawPointLimit:     "{max} points maximum",
 };

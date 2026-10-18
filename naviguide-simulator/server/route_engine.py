@@ -562,58 +562,26 @@ def segment_crosses_land(lon1: float, lat1: float, lon2: float, lat2: float) -> 
     return _segment_crosses_land(lon1, lat1, lon2, lat2)
 
 
-# L'appelant coupait vers 6 s (golfe de Gascogne). On laisse le graphe finir,
-# puis un seul nouvel essai avec les points légèrement au large.
-SEAROUTE_TIMEOUT_S = 18.0
+# Un seul essai, borné à ~8 s. Searoute tourne dans un process enfant, tué à
+# l'échéance (searoute_worker) : aucun calcul ne continue après le délai.
+SEAROUTE_TIMEOUT_S = 8.0
+SEAROUTE_TARGET = "searoute:searoute"
 
 
 def _invoke_searoute(start, end, timeout_s: float | None = None):
-    import concurrent.futures
+    from searoute_worker import RUNNER, TIMED_OUT
 
     if timeout_s is None:
         timeout_s = SEAROUTE_TIMEOUT_S
-
-    def _call():
-        try:
-            return sr.searoute(start, end)
-        except Exception as exc:
-            print(f"⚠️ Erreur searoute: {exc}")
-            return None
-
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     try:
-        fut = pool.submit(_call)
-        try:
-            return fut.result(timeout=float(timeout_s))
-        except concurrent.futures.TimeoutError:
-            print("⚠️ searoute timeout")
-            return None
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
-
-
-def _nudge_offshore(lon: float, lat: float):
-    """Décale légèrement un point vers l'eau (repli d'un échec searoute)."""
-    x = float(wrap_lon(lon))
-    y = float(lat)
-    geod = Geodesic.WGS84
-    for dist_m in (4_000.0, 12_000.0, 30_000.0):
-        for bearing in (270, 315, 225, 0, 180, 90, 45, 135):
-            try:
-                pos = geod.Direct(y, x, bearing, dist_m)
-            except Exception:
-                continue
-            nlat = pos["lat2"]
-            nlon = wrap_lon(pos["lon2"])
-            if not _is_land_hires(nlat, nlon):
-                return nlon, nlat
-    fine = _snap_to_ocean_fine(y, x, radius_deg=0.35, grid=0.05)
-    if fine:
-        return fine[0], fine[1]
-    snapped = _snap_to_ocean(y, x, max_radius_deg=0.5)
-    if snapped:
-        return snapped[0], snapped[1]
-    return x, y
+        route = RUNNER.run(SEAROUTE_TARGET, (list(start), list(end)), timeout_s)
+    except Exception as exc:
+        print(f"⚠️ Erreur searoute: {exc}")
+        return None
+    if route is TIMED_OUT:
+        print("⚠️ searoute timeout")
+        return None
+    return route
 
 
 def searoute_with_exact_end(start, end):
@@ -645,11 +613,6 @@ def searoute_with_exact_end(start, end):
         return attach_anti_shipping(route)
 
     route = _invoke_searoute(start, end)
-    if not route or "geometry" not in route:
-        nudged_start = _nudge_offshore(start[0], start[1])
-        nudged_end = _nudge_offshore(end[0], end[1])
-        if nudged_start != start or nudged_end != end:
-            route = _invoke_searoute(nudged_start, nudged_end)
 
     if not route or "geometry" not in route:
         return None
