@@ -122,6 +122,23 @@ def _climo_point(monkeypatch, flag):
     return payload, seen[0]
 
 
+WIND_COPERNICUS = {
+    "latitude": 46.15,
+    "longitude": -1.16,
+    "wind_speed_knots": 12.0,
+    "wind_direction": 280.0,
+    "source": "copernicus-marine",
+}
+
+
+def test_copernicus_wind_parity(monkeypatch):
+    off = _serve(monkeypatch, "0", "wind", WIND_COPERNICUS)
+    on = _serve(monkeypatch, "1", "wind", WIND_COPERNICUS)
+    assert off == on == WIND_COPERNICUS
+    assert off["wind_speed_knots"] == 12.0
+    assert get_async_weather_queue().cached_status("wind", 46.15, -1.16) == "ready"
+
+
 def test_climatology_point_parity_keeps_public_bi_api(monkeypatch):
     assert "https://blueintelligence.online/api" in inspect.getsource(climatology_atlas.bi_base)
     off, url_off = _climo_point(monkeypatch, "0")

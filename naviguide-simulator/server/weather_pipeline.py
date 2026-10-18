@@ -496,6 +496,7 @@ ASYNC_PROVIDERS = {
     "current",
     "noaa-rtofs",
     "bi-climatology",
+    "wind",
 }
 
 
