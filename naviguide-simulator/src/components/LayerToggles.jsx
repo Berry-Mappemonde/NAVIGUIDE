@@ -12,6 +12,7 @@ export const LayerToggles = memo(function LayerToggles({ maritimeLayers }) {
   const { t } = useLang();
   const atlas = useAtlasNotice();
   if (!maritimeLayers) return null;
+  const climoMeta = [atlas.source, atlas.period].filter(Boolean).join(" · ");
   return (
     <div className="flex flex-wrap gap-1" data-testid="layer-toggles">
       {atlas.unavailable ? (
@@ -23,7 +24,9 @@ export const LayerToggles = memo(function LayerToggles({ maritimeLayers }) {
         const active = maritimeLayers[showKey];
         const loading = maritimeLayers[loadingKey];
         const error = maritimeLayers[errorKey];
-        const title = error ? `${t(titleKey)} : ${error}` : t(titleKey);
+        const climo = key.startsWith("climo-");
+        const titleBase = error ? `${t(titleKey)} : ${error}` : t(titleKey);
+        const title = climo && climoMeta ? `${titleBase} · ${climoMeta}` : titleBase;
         return (
           <button
             key={key}
@@ -43,6 +46,9 @@ export const LayerToggles = memo(function LayerToggles({ maritimeLayers }) {
               ? <div className="w-1.5 h-1.5 rounded-full border border-white/30 border-t-white animate-spin flex-shrink-0" />
               : <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: active ? color : "transparent", border: `1.5px solid ${error ? "#ef4444" : color}` }} />}
             {t(labelKey)}
+            {key === "climo-cyclones" && climoMeta ? (
+              <span data-testid="climatology-atlas-meta">{climoMeta}</span>
+            ) : null}
           </button>
         );
       })}

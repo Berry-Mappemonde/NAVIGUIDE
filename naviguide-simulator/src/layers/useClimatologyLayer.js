@@ -292,7 +292,7 @@ export function useClimatologyLayer({
       setCounts({ ...countsRef });
       const used = Object.values(sourcesRef).filter(Boolean);
       setSource(used.includes("global") ? "global" : (used.length ? "tiles" : null));
-      const painted = Object.values(countsRef).some(Boolean);
+      const painted = Object.values(countsRef).some((n) => Number(n) > 0);
       if (!painted) setError("atlas_empty");
       else setError(null);
     };
@@ -336,8 +336,9 @@ export function useClimatologyLayer({
     const loadCyclones = async () => {
       const data = await fetchJson(atlasLayerUrl("cyclones", m), ctrl.signal);
       if (cancelled) return 0;
+      const storms = groupCycloneFeatures(data.features || []);
       const group = L.layerGroup();
-      groupCycloneFeatures(data.features || []).forEach((storm) => {
+      storms.forEach((storm) => {
         const copies = cycloneLatLngCopies(storm.coords);
         const p = storm.properties || {};
         copies.forEach((latlngs) => {
@@ -354,7 +355,8 @@ export function useClimatologyLayer({
         });
       });
       replaceGroup("cyclones", group);
-      return (data.features || []).length;
+      // Tempêtes distinctes (sid), pas les sommets ni les copies ±360°.
+      return storms.length;
     };
 
     setLoading(true);
@@ -364,7 +366,11 @@ export function useClimatologyLayer({
       first.push(loadSafe("cyclones", loadCyclones).then((n) => { countsRef.cyclones = n || 0; }));
     }
     Promise.all(first).finally(() => {
-      if (!cancelled) setLoading(false);
+      if (cancelled) return;
+      // Les cyclones arrivent après les vecteurs : republier pour ne pas
+      // laisser atlas_empty alors que des traces sont peintes.
+      publishCounts();
+      setLoading(false);
     });
 
     let debounceTimer = 0;

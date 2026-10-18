@@ -120,6 +120,69 @@ def rose_speed_percentiles(rose: Optional[dict]) -> Optional[list[float]]:
     ]
 
 
+def _as_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value)
+
+
+def _track_sid(item: Any) -> Optional[str]:
+    if not isinstance(item, dict):
+        return None
+    props = item.get("properties") if isinstance(item.get("properties"), dict) else {}
+    sid = props.get("sid") or item.get("sid") or item.get("id")
+    if sid:
+        return str(sid)
+    geom = item.get("geometry") if isinstance(item.get("geometry"), dict) else {}
+    coords = item.get("coordinates") or geom.get("coordinates")
+    if isinstance(coords, list) and len(coords) >= 2:
+        # Une ligne = une tempête. On ne compte pas ses sommets.
+        return f"line:{len(coords)}:{coords[0]}"
+    return None
+
+
+def ibtracs_track_count(payload: Optional[dict]) -> int:
+    """Nombre de tempêtes, pas de sommets ni de copies monde.
+
+    Les traces portant un ``sid`` (ou une ligne) priment sur le recensement
+    ``tracks_in_month``, qui sert quand la liste n'est pas là. Les franchissements
+    d'une jambe et le champ ``nearby`` ne sont pas un effectif de tempêtes.
+    """
+    if not isinstance(payload, dict):
+        return 0
+    cyclone = payload.get("cyclone") if isinstance(payload.get("cyclone"), dict) else {}
+    tracks = None
+    for key in ("tracks", "features"):
+        if isinstance(cyclone.get(key), list):
+            tracks = cyclone[key]
+            break
+    if tracks is None and isinstance(payload.get("features"), list):
+        tracks = payload["features"]
+    sids: list[str] = []
+    for item in tracks or []:
+        sid = _track_sid(item)
+        if sid:
+            sids.append(sid)
+    if sids:
+        return len(set(sids))
+    census = _as_int(cyclone.get("tracks_in_month"))
+    if census is not None and census > 0:
+        return census
+    return 0
+
+
+def atlas_period(payload: Optional[dict]) -> Optional[str]:
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("period"):
+        return str(payload["period"])
+    periods = payload.get("periods") if isinstance(payload.get("periods"), dict) else {}
+    for key in ("cyclone", "ibtracs", "wind"):
+        if periods.get(key):
+            return str(periods[key])
+    return None
+
+
 def wind_from_point(payload: Optional[dict]) -> Optional[Dict[str, Any]]:
     if not payload or payload.get("kind") != KIND:
         return None
@@ -362,34 +425,43 @@ def climatology_block(
     if dest_lat is not None and dest_lon is not None:
         crossings = fetch_atlas_crossings(lat, lon, dest_lat, dest_lon, month, client=client)
     wind = wind_from_point(point)
-    if wind:
+    traces = ibtracs_track_count(point if isinstance(point, dict) else None)
+    period = atlas_period(point if isinstance(point, dict) else None)
+    if wind or traces:
         if crossings and isinstance(point, dict):
             cyc = dict(point.get("cyclone") or {})
             cyc["crossings_if_leg"] = crossings
             point = {**point, "cyclone": cyc, "crossings": crossings}
+            traces = ibtracs_track_count(point)
+        source = "atlas" if wind else "ibtracs"
         return {
             "kind": KIND,
-            "source": "atlas",
+            "status": "ready",
+            "source": source,
             "month": month,
-            "period": point.get("period") if point else None,
-            "doi": point.get("doi") if point else None,
-            "periods": point.get("periods") if point else None,
-            "provenance": point.get("provenance") if point else None,
+            "period": period,
+            "ibtracsCount": traces,
+            "doi": point.get("doi") if isinstance(point, dict) else None,
+            "periods": point.get("periods") if isinstance(point, dict) else None,
+            "provenance": point.get("provenance") if isinstance(point, dict) else None,
             "point": point,
-            "crossings": crossings or (point.get("cyclone") or {}).get("crossings_if_leg"),
+            "crossings": crossings or ((point.get("cyclone") or {}).get("crossings_if_leg") if isinstance(point, dict) else None),
             "wind": {
                 "speedKnots": wind["speedKnots"],
                 "dirFromDeg": wind["dirFromDeg"],
                 "kind": KIND,
                 "source": "atlas",
-            },
+            } if wind else _zone(lat, lon, month),
         }
     zone = _zone(lat, lon, month)
+    empty = point is not None
     return {
         "kind": KIND,
-        "source": "zone_fallback" if point is None else "empty",
+        "status": "atlas_empty" if empty else "zone_fallback",
+        "source": "empty" if empty else "zone_fallback",
         "month": month,
         "period": None,
+        "ibtracsCount": 0,
         "doi": None,
         "point": point,
         "crossings": crossings,
