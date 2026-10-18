@@ -103,7 +103,7 @@ test("3 points, 2 jambes mer, distance des /route, suite et GeoJSON", async ({ p
 
   page.on("dialog", (dialog) => dialog.accept());
   await showLeftPanel(page);
-  await page.locator(".naviguide-sidebar-panel.left-0").getByRole("button", { name: /annuler|cancel/i }).click();
+  await page.locator(".naviguide-sidebar-panel.left-0").getByRole("button", { name: /^(annuler|cancel)$/i }).click();
   await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) === 0);
   await page.getByTestId("route-import-file").setInputFiles({
     name: "roundtrip.geojson",
