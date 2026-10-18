@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Redo2, Undo2, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar.jsx";
-import { CarnetDeBord, isCarnetSearch, mapPageHref } from "./components/CarnetDeBord.jsx";
+import { CarnetDeBord, mapPageHref, useCarnetPage } from "./components/CarnetDeBord.jsx";
 import { ToolsSidebar } from "./components/ToolsSidebar.jsx";
 import { LayerFichePopup } from "./components/LayerFichePopup.jsx";
 import { EscalePopupHost } from "./components/EscalePopup.jsx";
@@ -273,6 +273,7 @@ export default function App() {
       drawPointIndex: index,
     });
   }, []);
+  const carnetOpen = useCarnetPage();
   const [notForNavOk, setNotForNavOk] = useState(() => readNotForNavAccepted());
   const [notForNavOpen, setNotForNavOpen] = useState(false);
   const pendingLayerRef = useRef(null);
@@ -2119,7 +2120,7 @@ export default function App() {
         </div>
       )}
 
-      {notForNavOk && isCarnetSearch(typeof window !== "undefined" ? window.location.search : "") ? (
+      {carnetOpen ? (
         <CarnetDeBord
           title={t("carnetTitle")}
           storyLabel={t("carnetStory")}

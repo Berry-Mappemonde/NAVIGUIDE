@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
-import { carnetPageHref } from "./CarnetDeBord.jsx";
+import { carnetPageHref, followCarnetLink } from "./CarnetDeBord.jsx";
 import { EscaleSheet } from "./EscaleSheet.jsx";
 import { PlanReview } from "./PlanReview.jsx";
 import { sortJournalEntries } from "../hooks/useMomentJournal.js";
@@ -334,6 +334,7 @@ export function IciMaintenant({
       >
         <a
           href={carnetPageHref(typeof window !== "undefined" ? window.location.search : "")}
+          onClick={(e) => followCarnetLink(e, carnetPageHref(window.location.search))}
           data-testid="carnet-open"
           className="inline-block text-[11px] leading-snug text-sky-300 hover:text-sky-100 no-underline mb-1"
         >

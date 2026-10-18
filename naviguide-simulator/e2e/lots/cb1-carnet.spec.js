@@ -1,7 +1,7 @@
 // Page carnet : récit puis journal daté, mêmes textes que le panneau.
 // L'onglet Journal reste à sa place.
 import { expect, test } from "@playwright/test";
-import { dismissNotForNav, openJournalTab, showLeftPanel } from "../helpers.js";
+import { dismissNotForNav, openJournalTab, probeOfficial, showLeftPanel } from "../helpers.js";
 
 const CLOCK = {
   t0: "2026-05-15T08:00:00.000Z",
@@ -109,4 +109,58 @@ test("le carnet s'ouvre, récit puis journal, onglet Journal inchangé", async (
   await expect(page.getByTestId("ici-journal-list")).toBeVisible();
   await expect(page.getByTestId("ici-journal-entry").filter({ hasText: /Iroise/ }).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("carnet-de-bord")).toHaveCount(0);
+});
+
+// Ma route : deux points nommés tracés, Suivre, puis le carnet depuis le Journal.
+const MY_START = { lat: 46.15, lon: -1.16, name: "La Rochelle" };
+const MY_END = { lat: 45.90, lon: -1.55, name: "Pertuis" };
+
+async function stubSeaRoute(page) {
+  await page.route("**/route?*", async (route) => {
+    const url = new URL(route.request().url());
+    const coords = [
+      [Number(url.searchParams.get("start_lon")), Number(url.searchParams.get("start_lat"))],
+      [Number(url.searchParams.get("end_lon")), Number(url.searchParams.get("end_lat"))],
+    ];
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} }),
+    });
+  });
+}
+
+test("ma route : le carnet reprend le récit et le journal de ma route", async ({ page }) => {
+  test.setTimeout(180_000);
+  await stubSeaRoute(page);
+  await page.goto("/");
+  await dismissNotForNav(page);
+  await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
+  const apiUp = Boolean(await probeOfficial(page));
+  test.skip(!apiUp, "sans API : film et journal de ma route indisponibles");
+
+  await page.getByTestId("view-tracer").click();
+  await page.getByTestId("route-switch-draw").click();
+  await page.waitForFunction(() => typeof window.__naviguideAddDrawnPoint === "function", { timeout: 10_000 });
+  for (const [i, pt] of [MY_START, MY_END].entries()) {
+    await page.evaluate(({ lat, lon, name }) => window.__naviguideAddDrawnPoint(lat, lon, { name }), pt);
+    await page.waitForFunction((n) => (window.__naviguideDrawn?.points?.length || 0) >= n, i + 1, { timeout: 10_000 });
+  }
+  const finish = page.getByRole("button", { name: /terminer|finish/i });
+  await expect(finish).toBeEnabled({ timeout: 20_000 });
+  await finish.click();
+  await page.getByTestId("view-suivre").click();
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
+
+  await showLeftPanel(page);
+  await expect(page.getByTestId("route-switch-custom")).toBeVisible({ timeout: 10_000 });
+  await openJournalTab(page);
+  await expect(page.getByTestId("carnet-open")).toHaveCount(1);
+
+  await page.getByTestId("carnet-open").click();
+  await expect(page).toHaveURL(/[?&]page=carnet(?:&|$)/);
+  await expect(page.getByTestId("carnet-de-bord")).toBeVisible();
+  await expect(page.getByTestId("carnet-chapter").filter({ hasText: /La Rochelle|Pertuis/ }).first())
+    .toBeVisible({ timeout: 120_000 });
+  await expect(page.getByTestId("carnet-entry").first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("carnet-chapter").filter({ hasText: /Saint-Maur/ })).toHaveCount(0);
 });

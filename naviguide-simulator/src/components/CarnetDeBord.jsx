@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { sortJournalEntries } from "../hooks/useMomentJournal.js";
 import { formatJournalLine } from "./iciMaintenant.js";
 
@@ -22,6 +23,35 @@ export function mapPageHref(search = "") {
   return s ? `?${s}` : "/";
 }
 
+const CARNET_EVENT = "naviguide:carnet";
+
+function currentSearch() {
+  return typeof window !== "undefined" ? window.location.search : "";
+}
+
+/** Ouvre ou ferme le carnet sans recharger la page : le mode (Berry ou ma route) reste en mémoire. */
+export function followCarnetLink(event, href) {
+  if (typeof window === "undefined" || !window.history?.pushState) return;
+  if (event && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) return;
+  if (event) event.preventDefault();
+  window.history.pushState(window.history.state, "", href);
+  window.dispatchEvent(new Event(CARNET_EVENT));
+}
+
+export function useCarnetPage() {
+  const [open, setOpen] = useState(() => isCarnetSearch(currentSearch()));
+  useEffect(() => {
+    const sync = () => setOpen(isCarnetSearch(currentSearch()));
+    window.addEventListener("popstate", sync);
+    window.addEventListener(CARNET_EVENT, sync);
+    return () => {
+      window.removeEventListener("popstate", sync);
+      window.removeEventListener(CARNET_EVENT, sync);
+    };
+  }, []);
+  return open;
+}
+
 export function CarnetDeBord({
   title,
   storyLabel,
@@ -42,6 +72,7 @@ export function CarnetDeBord({
       <div className="max-w-2xl mx-auto px-6 py-8">
         <a
           href={backHref}
+          onClick={(e) => followCarnetLink(e, backHref)}
           data-testid="carnet-back"
           className="text-sm text-sky-300 hover:text-sky-100 no-underline"
         >
