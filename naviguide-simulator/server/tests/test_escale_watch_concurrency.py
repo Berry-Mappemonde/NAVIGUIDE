@@ -170,3 +170,46 @@ def test_failed_get_watch_task_is_logged_and_released(monkeypatch, caplog):
         escale_api._INFLIGHT.clear()
     assert any("tavily en panne" in r.getMessage() for r in caplog.records)
     assert not any("never retrieved" in r.getMessage() for r in caplog.records)
+
+
+def test_timeouts_on_repeated_gets_stay_under_daily_search_cap(monkeypatch, caplog):
+    """Tavily qui répond toujours par un timeout : chaque échec libère le slug,
+    mais le plafond de recherches du jour borne aussi les tentatives."""
+    _keys(monkeypatch)
+    monkeypatch.setenv("NAVIGUIDE_WATCH_DAILY_SEARCHES", "6")
+    monkeypatch.setenv("NAVIGUIDE_TAVILY_DAILY_CREDITS", "1000")
+    _official_window(monkeypatch, datetime.now(timezone.utc) + timedelta(days=3))
+    seen: list = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url).endswith("/search"):
+            seen.append(request.read().decode())
+            await asyncio.sleep(0)
+            raise httpx.ReadTimeout("lecture trop longue", request=request)
+        return httpx.Response(404, json={"detail": str(request.url)})
+
+    def client(*args, **kwargs):
+        kwargs.pop("transport", None)
+        return _RealAsyncClient(*args, transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(tavily_client, "httpx", SimpleNamespace(AsyncClient=client))
+    caplog.set_level(logging.WARNING, logger="naviguide-simulator.escale")
+
+    async def run():
+        for _ in range(30):
+            escale_api._schedule_escale_watch("Nouméa", -22.27, 166.44)
+            await _drain()
+            await asyncio.sleep(0)
+
+    escale_api._INFLIGHT.clear()
+    try:
+        asyncio.run(run())
+    finally:
+        escale_api._INFLIGHT.clear()
+
+    assert 1 <= len(seen) <= 6
+    assert escale_watch._watch_search_count() <= 6
+    assert escale_watch._watch_search_count() == len(seen)
+    # Requête partie puis timeout : Tavily l'a sans doute facturée.
+    assert llm_budget.tavily_usage()["credits"] == len(seen)
+    assert not escale_watch.watch_done("Nouméa")

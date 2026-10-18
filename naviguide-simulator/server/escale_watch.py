@@ -518,6 +518,9 @@ async def search_watch(
         return {**empty, "reason": "budget"}
     if _watch_search_count(_day(when)) >= watch_daily_search_cap():
         return {**empty, "reason": "cap"}
+    # Compté avant l'appel : une recherche qui lève (timeout Tavily) reste dans
+    # le plafond du jour, sinon chaque GET relance une tentative sans fin.
+    _watch_search_inc(_day(when))
     data = await tavily_client.search(
         query,
         topic="news",
@@ -528,7 +531,6 @@ async def search_watch(
     )
     if data.get("credits"):
         llm_budget.remember_tavily_port(port)
-    _watch_search_inc(_day(when))
     stored = {
         "results": data.get("results") or [],
         "credits": data.get("credits") or 0,
