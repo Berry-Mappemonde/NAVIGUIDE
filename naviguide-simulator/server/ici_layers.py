@@ -23,6 +23,32 @@ from longitude import delta_lon, wrap_lon, wrap_lon_into
 
 USER_AGENT = "NAVIGUIDE-simulator/0.2 (Berry-Mappemonde expedition)"
 
+_EXC_TOKEN = re.compile(
+    r"HTTPStatusError|Traceback|<class\b|\b(?:Exception|Error|Timeout\w*)\b"
+)
+_KNOWN_LAYER_DETAIL = {
+    "rtofs_no_cycle", "rtofs_no_prog", "h5py_missing", "not_ingested",
+    "no_data", "unavailable", "error", "no_scene_in_bbox",
+}
+
+
+def layer_code(prefix: str, detail: Any = None) -> str:
+    """Stable layer reason. Exception class names become ``unavailable``; HTTP statuses stay."""
+    if isinstance(detail, bool) or detail is None:
+        text = ""
+    else:
+        text = str(detail).strip()
+    text = re.sub(r"Traceback \(most recent call last\):[\s\S]*", "", text)
+    text = re.sub(r"<class '[^']+'>", "", text).strip(" :")
+    if re.fullmatch(r"\d{3}", text):
+        return f"{prefix}:{text}" if prefix else text
+    if text in _KNOWN_LAYER_DETAIL:
+        return f"{prefix}:{text}" if prefix else text
+    if not text or _EXC_TOKEN.search(text):
+        suffix = "unavailable"
+        return f"{prefix}:{suffix}" if prefix else suffix
+    return f"{prefix}:{text}" if prefix else text
+
 STAC_SEARCH = "https://stac.dataspace.copernicus.eu/v1/search"
 STAC_COLLECTION = "sentinel-2-l2a"
 CDSE_TOKEN_URL = (
@@ -307,7 +333,7 @@ async def fetch_satellite_scene(
             last_err = f"HTTP {bag['http_status']}"
             continue
         except Exception as exc:
-            last_err = type(exc).__name__
+            last_err = layer_code("", type(exc).__name__)
             continue
         features = payload.get("features") if isinstance(payload, dict) else []
         scenes = []
@@ -333,7 +359,7 @@ async def fetch_satellite_scene(
     elif bag.get("http_status"):
         bag["reason"] = f"cdse_stac_unavailable:{bag['http_status']}"
     else:
-        bag["reason"] = f"cdse_stac_unavailable:{last_err or 'error'}"
+        bag["reason"] = layer_code("cdse_stac_unavailable", last_err or "error")
     return bag
 
 
@@ -656,16 +682,16 @@ async def fetch_rtofs_current(
         url, issued, name = await _rtofs_latest_url(client)
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code if exc.response is not None else None
-        return None, f"rtofs_unavailable:{status or type(exc).__name__}"
+        return None, layer_code("rtofs_unavailable", status if status else type(exc).__name__)
     except Exception as exc:
         detail = str(exc) if str(exc) in {"rtofs_no_cycle", "rtofs_no_prog", "h5py_missing"} else type(exc).__name__
-        return None, f"rtofs_unavailable:{detail}"
+        return None, layer_code("rtofs_unavailable", detail)
     try:
         uv = await asyncio.to_thread(_rtofs_lookup_sync, url, lat, lon)
     except RuntimeError as exc:
-        return None, f"rtofs_unavailable:{exc}"
+        return None, layer_code("rtofs_unavailable", str(exc))
     except Exception as exc:
-        return None, f"rtofs_unavailable:{type(exc).__name__}"
+        return None, layer_code("rtofs_unavailable", type(exc).__name__)
     if uv is None:
         return None, "off_grid"
     bag = rtofs_from_uv(uv[0], uv[1], issued=issued)
@@ -708,11 +734,11 @@ def load_openmeteo_gfs(lat: float, lon: float) -> dict:
             r.raise_for_status()
             cur = (r.json() or {}).get("current") or {}
         except httpx.HTTPStatusError:
-            raise WeatherFetchError("openmeteo_unavailable:HTTPStatusError") from None
+            raise WeatherFetchError(layer_code("openmeteo_unavailable", "HTTPStatusError")) from None
         except WeatherFetchError:
             raise
         except Exception as exc:
-            raise WeatherFetchError(f"openmeteo_unavailable:{type(exc).__name__}") from exc
+            raise WeatherFetchError(layer_code("openmeteo_unavailable", type(exc).__name__)) from exc
     if cur.get("wind_speed_10m") is None:
         raise WeatherFetchError("openmeteo_empty")
     return {
@@ -977,7 +1003,7 @@ async def fetch_emodnet_point(
             bathy = {
                 "value": None,
                 "source": "emodnet-bathymetry",
-                "reason": f"depth_sample_unavailable:{type(exc).__name__}",
+                "reason": layer_code("depth_sample_unavailable", type(exc).__name__),
             }
     if bathy is None:
         bathy = {
@@ -1010,7 +1036,7 @@ async def fetch_emodnet_point(
         seabed = {
             "value": None,
             "source": "emodnet-geology",
-            "reason": f"wms_unavailable:{type(exc).__name__}",
+                "reason": layer_code("wms_unavailable", type(exc).__name__),
         }
     cables = None
     try:
@@ -1037,7 +1063,7 @@ async def fetch_emodnet_point(
         cables = {
             "value": None,
             "source": "emodnet-human-activities",
-            "reason": f"wms_unavailable:{type(exc).__name__}",
+                "reason": layer_code("wms_unavailable", type(exc).__name__),
         }
     bag.update({
         "bathy": bathy,
@@ -1169,9 +1195,9 @@ async def _overpass_elements(
             elements = data.get("elements") if isinstance(data, dict) else []
             return list(elements or []), None
         except Exception as exc:
-            last_err = type(exc).__name__
+            last_err = layer_code("", type(exc).__name__)
             continue
-    return [], f"overpass_unavailable:{last_err or 'error'}"
+    return [], layer_code("overpass_unavailable", last_err or "error")
 
 
 def is_harbour_master(tags: dict | None) -> bool:
@@ -1423,7 +1449,7 @@ async def fetch_review(
                 }
                 got = True
         except Exception as exc:
-            bag["reason"] = f"review_unavailable:{type(exc).__name__}"
+            bag["reason"] = layer_code("review_unavailable", type(exc).__name__)
             return bag
     site_id = (nearest_amp or {}).get("site_id") or (nearest_amp or {}).get("id")
     if site_id:

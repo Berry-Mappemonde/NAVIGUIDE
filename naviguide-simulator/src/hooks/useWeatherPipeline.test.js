@@ -1,0 +1,39 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { gribWindLayerState, weatherPipelineEnabled } from "./useWeatherPipeline.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const read = (name) => readFileSync(join(here, name), "utf8");
+
+describe("useWeatherPipeline", () => {
+  it("stays off unless the flag is explicitly on", () => {
+    assert.equal(weatherPipelineEnabled({}), false);
+    assert.equal(weatherPipelineEnabled({ VITE_NAVIGUIDE_WEATHER_PIPELINE: "" }), false);
+    assert.equal(weatherPipelineEnabled({ NAVIGUIDE_WEATHER_PIPELINE: "off" }), false);
+    assert.equal(weatherPipelineEnabled({ VITE_NAVIGUIDE_WEATHER_PIPELINE: "1" }), true);
+    assert.equal(weatherPipelineEnabled({ NAVIGUIDE_WEATHER_PIPELINE: "on" }), true);
+  });
+
+  it("exposes per-layer state and the map does not wait", () => {
+    assert.equal(gribWindLayerState(null, false), null);
+    assert.equal(gribWindLayerState({ status: "ready" }, false), null);
+    assert.equal(gribWindLayerState(null, true), "pending");
+    assert.equal(gribWindLayerState({ status: "ready" }, true), "ready");
+    assert.equal(gribWindLayerState({ status: "pending", refreshing: true }, true), "pending");
+    assert.equal(gribWindLayerState({ status: "absent" }, true), "unavailable");
+    assert.equal(
+      gribWindLayerState({ status: "pending", layers: { gribWind: { status: "unavailable" } } }, true),
+      "unavailable",
+    );
+    const hook = read("useWeatherPipeline.js");
+    const scene = read("../map/MapScene.jsx");
+    assert.match(hook, /blocksMap: false/);
+    assert.match(scene, /useWeatherPipeline\(/);
+    assert.match(scene, /setMapReady\(1\)/);
+    assert.match(scene, /maritimeLayers\.showGrib && scene\.isSuivre/);
+    assert.doesNotMatch(scene, /await /);
+  });
+});

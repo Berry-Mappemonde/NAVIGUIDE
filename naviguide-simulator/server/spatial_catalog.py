@@ -35,6 +35,14 @@ class IndexedFeature:
     source: str
 
 
+
+# Fields that describe one point only; a grouped cell must not carry them.
+CLUSTER_POINT_ONLY_PROPS = frozenset({
+    "name", "title", "description", "website", "telephone", "url", "canal_vhf",
+    "source_urls", "manager_url", "visit_url", "country", "region", "funder",
+    "wmo", "ship", "email",
+})
+
 def parse_bbox(raw: str | None) -> Bbox | None:
     """Parse une bbox Leaflet, y compris une fenêtre qui traverse ±180°."""
     if not raw:
@@ -221,7 +229,12 @@ def _cluster_points(points: list[dict], bbox: Bbox, budget: int, zoom: float, ca
         coords = [(member["geometry"]["coordinates"][0], member["geometry"]["coordinates"][1]) for member in members]
         lon = sum(float(item[0]) for item in coords) / len(coords)
         lat = sum(float(item[1]) for item in coords) / len(coords)
-        props = deepcopy((members[0].get("properties") or {}))
+        # Nothing of one point (site, phone, link) on the group's card.
+        props = {
+            key: deepcopy(value)
+            for key, value in (members[0].get("properties") or {}).items()
+            if key not in CLUSTER_POINT_ONLY_PROPS
+        }
         props.update({
             "name": f"{len(members)} points regroupés",
             "clusterCount": len(members),

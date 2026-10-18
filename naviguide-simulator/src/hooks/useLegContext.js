@@ -24,7 +24,9 @@
  */
 
 import { useMemo } from "react";
-import { nextEscaleStop } from "../utils/escales";
+import { chapterAtNm } from "../engine/routePlayhead.js";
+import { sampleClockAtTime } from "../engine/voyageClock.js";
+import { nextEscaleStop } from "../utils/escales.js";
 
 // Default catamaran speed (knots)
 const DEFAULT_SPEED_KNOTS = 7;
@@ -108,6 +110,66 @@ function buildMonotonicStopIndices(stops, polyline) {
   }
 
   return result;
+}
+
+/**
+ * Leg at the official clock instant `now`.
+ * The playback cursor and the clock start (t0) are ignored: only the sample
+ * at `now` chooses the chapter.
+ */
+export function legAtClockNow({
+  clock,
+  now = Date.now(),
+  marks = null,
+  cursor = null,
+  t0 = null,
+  speedKnots = null,
+} = {}) {
+  void cursor;
+  void t0;
+  const sample = sampleClockAtTime(clock, now);
+  if (!sample) return null;
+  const chapterMarks = (marks && marks.length) ? marks : (clock?.marks || []);
+  const sailNm = Number(sample.sailNm);
+  if (!chapterMarks.length || !Number.isFinite(sailNm)) return null;
+  const chapter = chapterAtNm(chapterMarks, sailNm);
+  const destNm = Number(chapter.to?.nm);
+  const remaining = chapter.finished
+    ? 0
+    : (Number.isFinite(destNm) ? Math.max(0, destNm - sailNm) : null);
+  const asked = Number(speedKnots);
+  const sampled = Number(sample.speedKnots);
+  const knots = Number.isFinite(asked) && asked > 0
+    ? asked
+    : (Number.isFinite(sampled) && sampled > 0 ? sampled : null);
+  const sea = Number(sample.seaHours);
+  const day = Number.isFinite(sea) && sea > 0 ? Math.floor(sea / 24) + 1 : null;
+  const fromStop = chapter.from?.name || null;
+  const toStop = chapter.finished
+    ? (chapter.from?.name || null)
+    : (chapter.to?.name || null);
+  return {
+    fromStop,
+    toStop,
+    fromStopIndex: chapter.fromIdx,
+    toStopIndex: chapter.toIdx,
+    nmCovered: Math.round(Math.max(0, sailNm)),
+    nmRemainingToStop: remaining == null ? null : Math.round(remaining),
+    remainingNm: remaining,
+    etaHours: knots && remaining != null ? remaining / knots : null,
+    bearing: Number.isFinite(Number(sample.bearing)) ? Math.round(Number(sample.bearing)) : null,
+    snappedPosition: Number.isFinite(Number(sample.lon)) && Number.isFinite(Number(sample.lat))
+      ? [Number(sample.lon), Number(sample.lat)]
+      : null,
+    speedKnots: knots == null ? null : Math.round(knots * 10) / 10,
+    finished: Boolean(chapter.finished),
+    chapter,
+    day,
+    lat: sample.lat,
+    lon: sample.lon,
+    iso: sample.iso,
+    sailNm,
+  };
 }
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
