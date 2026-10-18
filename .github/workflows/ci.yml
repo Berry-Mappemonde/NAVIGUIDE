@@ -290,6 +290,8 @@ jobs:
       - name: Syntaxe bash des scripts VPS
         run: |
           bash -n infra/vps/deploy-app.sh
+          bash -n infra/vps/bi-healthcheck.sh
+          bash -n infra/vps/install-memory-guards.sh
           bash -n infra/vps/sync-public-nginx.sh
           bash -n infra/vps/naviguide/deploy-naviguide.sh
           bash -n infra/vps/naviguide/deploy-simulator.sh
