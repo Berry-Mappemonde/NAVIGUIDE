@@ -36,6 +36,11 @@ jobs:
       - working-directory: naviguide-simulator
         run: npm run build
       - run: test -f naviguide-simulator/dist/index.html
+      - name: Fichiers SEO présents dans le bundle
+        run: |
+          for f in robots.txt sitemap.xml 27424ae0389d9d7fb74e3ad6db0e9780.txt; do
+            test -s "naviguide-simulator/dist/$f" || { echo "manquant : dist/$f" >&2; exit 1; }
+          done
       - name: SSH
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
