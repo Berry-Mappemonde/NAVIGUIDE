@@ -676,12 +676,15 @@ def test_http_film_route_en(monkeypatch):
     blob = _script_blob(data)
     if "Saint-Maur" in text:
         assert ("left" in text.lower() or "departed" in text.lower() or "leaves" in text.lower())
-    deps = list(re.finditer(r"departure for (.+?)(?:\s*:|\.|$)", blob, re.I))
-    arrs = list(re.finditer(r"Arrival at ([^.,]+?) on \d", blob, re.I))
+    # Chapitre 0 seul : le blob intégral mélange d'autres escales (La Rochelle, etc.).
+    deps = list(re.finditer(r"departure for (.+?)(?:\s*:|\.|$)", text, re.I))
+    arrs = list(re.finditer(r"Arrival at (.+?) on ", text))
     if len(deps) >= 2:
-        _assert_departure_arrival_pairs(blob, "en")
+        _assert_departure_arrival_pairs(text, "en")
     elif deps and arrs:
         assert norm_stop(deps[0].group(1)) == norm_stop(arrs[0].group(1))
+    if len(list(re.finditer(r"departure for ", blob, re.I))) >= 2:
+        _assert_departure_arrival_pairs(blob, "en")
 
 
 MOMENTS = {
@@ -2819,7 +2822,7 @@ def test_rc27_compact_150_vs_full_integral():
     assert "longue traversée vers" not in blob150
     assert "nœuds de moyenne" not in blob150
     assert not re.search(r"escale de |d['’]escale", blob150)
-    assert re.search(r"Arrivée (?:à .+ )?le \d+", blob150)
+    assert re.search(r"Arrivée à .+ le \d+", blob150)
     assert "Berry-Mappemonde quitte" in blob0
     assert "nœuds de moyenne" in blob0
     assert "Arrivée à" in blob0
@@ -2839,10 +2842,10 @@ def test_rc27_compact_150_vs_full_integral():
         lang="en", seconds=150, now_ms=NOW_MS, review=review,
     )
     blob_en = _script_blob(en)
-    assert re.search(r"(?:heading|departure) for Fort-de-France", blob_en)
+    assert "departure for Fort-de-France" in blob_en
     assert "long crossing to" not in blob_en
     assert "knots on average" not in blob_en
-    assert re.search(r"Arrival (?:at .+ )?on ", blob_en)
+    assert re.search(r"Arrival at .+ on ", blob_en)
     assert en["chars"] / 15 <= 150 * 1.1
 
 
