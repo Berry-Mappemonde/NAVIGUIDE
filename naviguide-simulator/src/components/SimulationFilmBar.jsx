@@ -387,7 +387,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             />
             {replay && !replay.unavailable ? (
               <>
-                <div data-testid="film-source" hidden={(replay.style || "raw") !== "written" || !replay.hasWritten} className="text-xs leading-snug text-white/90 whitespace-nowrap">
+                <div data-testid="film-source" hidden={(replay.style || "raw") !== "written" || !replay.hasWritten} className="min-w-0 max-w-full whitespace-normal break-words text-xs leading-snug text-white/90">
                   <LlmSourceBadge source={replay.source} label={filmSourceLabel(replay.source, t)} testId="film-source-badge" className="[&_span]:text-xs [&_span]:text-white/90" />
                 </div>
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">

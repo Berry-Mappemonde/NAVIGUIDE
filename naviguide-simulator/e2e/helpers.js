@@ -24,9 +24,13 @@ export async function dismissNotForNav(page, { timeout = 0 } = {}) {
   if (await modalOk.isVisible().catch(() => false)) await modalOk.click();
 }
 
-export async function dismissAiChatNotice(page) {
+// Same contract as dismissNotForNav: one check by default, a real wait with `timeout` (ms).
+export async function dismissAiChatNotice(page, { timeout = 0 } = {}) {
   const notice = page.getByTestId("logbook-chat-ai-notice");
-  if (!(await notice.isVisible({ timeout: 500 }).catch(() => false))) return;
+  const visible = timeout > 0
+    ? await notice.waitFor({ state: "visible", timeout }).then(() => true).catch(() => false)
+    : await notice.isVisible().catch(() => false);
+  if (!visible) return;
   const btn = notice.getByTestId("logbook-chat-ai-notice-dismiss");
   if (await btn.isVisible().catch(() => false)) await btn.click();
 }

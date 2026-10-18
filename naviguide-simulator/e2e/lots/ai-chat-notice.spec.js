@@ -1,7 +1,7 @@
 // Avis du journal : il apparaît au premier échange, se ferme, et ne revient pas.
 // Fermer « Ne convient pas à la navigation » ne doit pas le fermer.
 import { expect, test } from "@playwright/test";
-import { dismissAiChatNotice, dismissNotForNav, showLeftPanel } from "../helpers.js";
+import { dismissAiChatNotice, dismissNotForNav, showLeftPanel, showRightPanel } from "../helpers.js";
 
 async function openChat(page) {
   await page.goto("/");
@@ -11,6 +11,20 @@ async function openChat(page) {
   await expect(input).toBeVisible({ timeout: 15_000 });
   await input.focus();
   return page.getByTestId("logbook-chat-ai-notice");
+}
+
+// The disclaimer only opens on a gated layer: switch one on, so there is a
+// real modal to close while the logbook notice is showing.
+async function openNotForNavModal(page) {
+  await showRightPanel(page);
+  const drawer = page.getByTestId("layers-drawer");
+  if (!(await drawer.evaluate((el) => el.open))) await drawer.locator("summary").click();
+  const layer = page.getByTestId("layer-bathymetry");
+  await layer.scrollIntoViewIfNeeded();
+  await layer.click();
+  const modal = page.getByTestId("not-for-nav-modal");
+  await expect(modal).toBeVisible();
+  return modal;
 }
 
 async function assertReadable(locator) {
@@ -27,7 +41,10 @@ test("English: the AI notice appears at the first exchange and stays dismissed",
   const dismiss = notice.getByTestId("logbook-chat-ai-notice-dismiss");
   await expect(dismiss).toHaveText("Got it");
   await assertReadable(dismiss);
-  await dismissNotForNav(page);
+  const modal = await openNotForNavModal(page);
+  await expect(notice).toBeVisible();
+  await dismissNotForNav(page, { timeout: 3000 });
+  await expect(modal).toHaveCount(0);
   await expect(notice).toBeVisible();
   await dismissAiChatNotice(page);
   await expect(notice).toHaveCount(0);
@@ -47,7 +64,10 @@ test("Français : l’avis apparaît au premier échange et « Compris » du mod
   const dismiss = notice.getByTestId("logbook-chat-ai-notice-dismiss");
   await expect(dismiss).toHaveText("Compris");
   await assertReadable(dismiss);
-  await dismissNotForNav(page);
+  const modal = await openNotForNavModal(page);
+  await expect(notice).toBeVisible();
+  await dismissNotForNav(page, { timeout: 3000 });
+  await expect(modal).toHaveCount(0);
   await expect(notice).toBeVisible();
   await dismiss.click();
   await expect(notice).toHaveCount(0);
