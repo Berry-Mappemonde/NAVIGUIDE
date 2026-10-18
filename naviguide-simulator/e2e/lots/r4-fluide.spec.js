@@ -1,6 +1,7 @@
 // Film fluide : le bateau avance sans à-coups (mode linéaire).
 // Sans API : horloge locale + brut. Headless : pas de voix (webdriver).
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-r4/${name}.webp`,
@@ -8,15 +9,6 @@ const shot = (page, name) => page.screenshot({
   quality: 85,
   fullPage: false,
 });
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 test("10 positions distinctes et monotones en 2 s", async ({ page }) => {
   test.setTimeout(90_000);

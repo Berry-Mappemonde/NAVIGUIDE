@@ -411,6 +411,13 @@ describe("advanceMoments — file, expiration, moment libre", () => {
     s = advanceMoments(s, { events: [withStory], filmCum: 100, nowMs: 1, playing: false, legId: "A", written: true });
     assert.equal(s.now.text, "Le vent monte à 36 nœuds : on réduit la toile.");
     assert.equal(s.now.storyStatus, "ready");
+    assert.equal(s.now.storySource, null);
+    const withModel = { ...withStory, story: { ...withStory.story, source: "nemotron-super" } };
+    s = advanceMoments(s, { events: [withModel], filmCum: 100, nowMs: 2, playing: false, legId: "A", written: true });
+    assert.equal(s.now.storySource, "nemotron-super");
+    const local = { ...withStory, story: { ...withStory.story, source: "nemotron-super", engine: "nemotron-super+local" } };
+    s = advanceMoments(s, { events: [local], filmCum: 100, nowMs: 3, playing: false, legId: "A", written: true });
+    assert.equal(s.now.storySource, null);
   });
 
   it("pur : deux appels sur le même état précédent donnent le même résultat (StrictMode)", () => {

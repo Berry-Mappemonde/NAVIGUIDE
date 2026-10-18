@@ -2,6 +2,7 @@
 // Sans API : le récit sidebar se construit depuis l'horloge locale.
 // Le film serveur (GET /voyage/official/film) n'est vérifié que si l'API répond.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-ra2/${name}.webp`,
@@ -69,15 +70,6 @@ function assertChapterPairs(chapters, lang) {
     const prevTo = legs[i - 1].to.replace(/\s*\([^)]*\)\s*/g, " ").trim().toLowerCase();
     const curFrom = legs[i].from.replace(/\s*\([^)]*\)\s*/g, " ").trim().toLowerCase();
     expect(curFrom, `enchaînement ${legs[i - 1].to} → ${legs[i].from}`).toBe(prevTo);
-  }
-}
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
   }
 }
 
