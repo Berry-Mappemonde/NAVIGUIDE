@@ -1,4 +1,4 @@
-// Lot CH1 — chat : règles pour le simple, Ultra si le juge est ouvert, jamais Super.
+// Chat : règles pour le simple, Ultra si le juge est ouvert, jamais Super.
 // Sans API : le panneau chat tient seul. GET /voyage/official sondé ;
 // s'il manque, annotation + saut des questions — jamais le chat retiré.
 // Aucune donnée factice : on lit la réponse du poste, on n'écrit aucun vent.
@@ -44,7 +44,7 @@ async function waitReply(page, { sourcesBefore = 0 } = {}) {
   return list.innerText();
 }
 
-test("lot CH1 — chat règles / Ultra, sans case Raisonnement", async ({ page }) => {
+test("Chat règles / Ultra, sans case Raisonnement", async ({ page }) => {
   test.setTimeout(180_000);
   const official = await probeOfficial(page);
   const apiUp = Boolean(official);

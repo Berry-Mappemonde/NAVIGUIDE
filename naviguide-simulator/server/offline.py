@@ -1,4 +1,4 @@
-"""Mode hors ligne (lot RF11) : stock figé, aucun appel HTTP sortant.
+"""Mode hors ligne : stock figé, aucun appel HTTP sortant.
 
 Lu au démarrage (`NAVIGUIDE_OFFLINE=1`) : hindcast coupé, prévision
 synthétique, atlas / Tavily / LLM / Copernicus en repli, et toute tentative

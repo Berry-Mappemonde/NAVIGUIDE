@@ -63,8 +63,8 @@ def bi_base() -> str:
 
 
 def cache_dir() -> Path:
-    """Un cache par machine, pas par checkout : les worktrees des lots (poste de recette) repartaient
-    chacun d'un cache vide et refrappaient le VPS de zéro à chaque lot."""
+    """Un cache par machine, pas par checkout : les worktrees du poste de recette repartaient
+    chacun d'un cache vide et refrappaient le VPS de zéro à chaque relance."""
     raw = os.getenv("NAVIGUIDE_BI_CACHE_DIR")
     if raw:
         return Path(raw)

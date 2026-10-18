@@ -27,7 +27,7 @@ function waitWhile(held, cancelled, intervalMs = 40) {
 }
 
 /**
- * RC36 : ne pas couper une phrase en cours si le texte n'a fait qu'être
+ * Ne pas couper une phrase en cours si le texte n'a fait qu'être
  * retenu (chapterIdx a bougé côté horloge, mêmes mots). Un vrai nouveau
  * énoncé (texte différent) autorise stopSpeaking.
  */
@@ -65,7 +65,7 @@ function speakSentence(text, lang, { rate, win, onBoundary, onLeadFailed }) {
 }
 
 /**
- * Replay voice (lot F1 / R3 / RG12) : une phrase à la fois, après voiceschanged.
+ * Replay voice : une phrase à la fois, après voiceschanged.
  * `onboundary` pousse l'index de caractère ; en fin de phrase la voix attend
  * que le bateau ait rejoint l'ancre (silence, jamais coupée au milieu).
  * `onend` du chapitre seulement après la dernière phrase et l'attente.
@@ -128,7 +128,7 @@ export function useReplayVoice({
       spokenRef.current.idx === chapterIdxLiveRef.current
       && spokenRef.current.text === chapterText
     ) return undefined;
-    // RC36 : même énoncé retenu — chapterIdx a pu bouger, on ne coupe pas.
+    // Même énoncé retenu — chapterIdx a pu bouger, on ne coupe pas.
     if (!shouldStopSpeakingOnChapterChange({
       spokenText: spokenRef.current.text,
       chapterText,

@@ -66,7 +66,7 @@ jobs:
         env:
           # Aucun secret : Copernicus et les LLM restent en repli / mock.
           PYTHONDONTWRITEBYTECODE: "1"
-      # Sécurité P1 (lot H) : une dépendance avec une faille connue bloque la
+      # Sécurité P1 : une dépendance avec une faille connue bloque la
       # PR — critique côté npm (prod seulement), toute faille côté pip.
       - name: Audit npm (dépendances de prod, critique = bloquant)
         run: npm audit --omit=dev --audit-level=critical
@@ -75,8 +75,8 @@ jobs:
           pip install -q pip-audit
           python -m pip_audit -r server/requirements.txt --progress-spinner off
 
-  # Recette automatique des lots (RG16 / D11) : une invocation Playwright
-  # (fumée + lots) sur le build de prod, API hors ligne, stock figé.
+  # Recette automatique : une invocation Playwright
+  # (fumée + scénarios) sur le build de prod, API hors ligne, stock figé.
   # Un spec rouge bloque la PR. Specs `poste` (hindcast, LLM, réseau) ignorés en CI.
   simulator-e2e:
     # 28 sept. : la suite (101 specs, ~6 min en un job) est coupée en six tranches parallèles (--shard) :
@@ -120,7 +120,7 @@ jobs:
           restore-keys: |
             playwright-${{ runner.os }}-
       - run: npx playwright install --with-deps chromium
-      - name: Recette automatique (fumée + lots, stock figé) — tranche ${{ matrix.shard }}/6
+      - name: Recette automatique (fumée + scénarios, stock figé) — tranche ${{ matrix.shard }}/6
         env:
           PW_WITH_API: "1"
         run: npx playwright test e2e/smoke.spec.js e2e/lots --shard=${{ matrix.shard }}/6

@@ -5,13 +5,13 @@ import { nearestAlongside, parkedCatamaranSample, pickAutoEscaleStop } from "./e
 export { nearestAlongside, parkedCatamaranSample, pickAutoEscaleStop };
 
 /**
- * Which stop's sheet is open (lot C, moved out of App.jsx in lot J): opened
+ * Which stop's sheet is open (moved out of App.jsx): opened
  * from a flag click, and by itself when the boat is alongside (Suivre =
- * live officiel ; Tracer = playhead du tracé, lot DM7) — once per stop,
+ * live officiel ; Tracer = playhead du tracé) — once per stop,
  * the skipper may close it.
- * `clearToken` (RA5) : Suivre / Revoir vident la fiche et bloquent le
+ * `clearToken` : Suivre / Revoir vident la fiche et bloquent le
  * ré-auto-open immédiat. `filmActive` : pas de fiche pendant le film.
- * `userPickedRef` (RE2) : une fiche désignée n'est pas écrasée par l'auto-quai.
+ * `userPickedRef` : une fiche désignée n'est pas écrasée par l'auto-quai.
  */
 export function useEscaleSheetState({
   lang, isSuivre, atQuay, clockSample, marks, onOpen, filmActive = false, clearToken = 0,

@@ -1,4 +1,4 @@
-"""Chatbot journal de bord (lot D) : faits serveur, cascade, filtre des chiffres, consignation."""
+"""Chatbot journal de bord : faits serveur, cascade, filtre des chiffres, consignation."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 
@@ -168,7 +168,7 @@ def test_answer_strips_raw_json_field_names(monkeypatch):
 
 
 def test_answer_leaked_prompt_falls_back_honestly(monkeypatch):
-    """Lot RB3 : une réponse-prompt du modèle (ou du cache) → phrase honnête, jamais le prompt."""
+    """Une réponse-prompt du modèle (ou du cache) → phrase honnête, jamais le prompt."""
 
     async def fake_cascade(system, user, client=None, **kw):
         return (

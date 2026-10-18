@@ -88,7 +88,7 @@ def _weighted_percentile(samples: list[tuple[float, float]], q: float) -> float:
 
 
 def rose_speed_percentiles(rose: Optional[dict]) -> Optional[list[float]]:
-    """Trois tirages p25 / p50 / p75 de la rose (lot C4, A3). None si une seule valeur."""
+    """Trois tirages p25 / p50 / p75 de la rose. None si une seule valeur."""
     if not isinstance(rose, dict):
         return None
     for keys in (("p25", "p50", "p75"), ("speed_p25", "speed_p50", "speed_p75")):

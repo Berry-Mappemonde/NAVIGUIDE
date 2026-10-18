@@ -49,7 +49,7 @@ describe("MapScene boundary", () => {
     assert.doesNotMatch(mount, /Infinity/);
   });
 
-  it("lot DM4 : calage initial Suivre = bateau au centre, zoom plancher", () => {
+  it("Calage initial Suivre = bateau au centre, zoom plancher", () => {
     const src = read("./MapSceneController.js");
     const start = src.indexOf("  syncInitialCamera()");
     const end = src.indexOf("  liftBoundsForDrawing()");
@@ -63,7 +63,7 @@ describe("MapScene boundary", () => {
     assert.match(src, /applyFollowCadrage/);
   });
 
-  it("lot RF7 : en Tracer la caméra ne reprend pas le zoom bateau", () => {
+  it("En Tracer la caméra ne reprend pas le zoom bateau", () => {
     const src = read("./MapSceneController.js");
     assert.match(src, /if \(cfg\.filmActive \|\| cfg\.drawingMode\) return/);
     assert.match(src, /this\.config\.drawingMode \|\| !this\.map/);
@@ -71,7 +71,7 @@ describe("MapScene boundary", () => {
     assert.match(src, /setMaxBounds\?\.\(null\)/);
   });
 
-  it("lot RC14 : entrée Tracer pose drawingMode et lève maxBounds avant showWorld", () => {
+  it("Entrée Tracer pose drawingMode et lève maxBounds avant showWorld", () => {
     const app = read("../App.jsx");
     const src = read("./MapSceneController.js");
     assert.match(app, /beginDrawingWorld/);
@@ -96,7 +96,7 @@ describe("MapScene boundary", () => {
     assert.match(app, /endDrawingWorld/);
   });
 
-  it("désactive le zoom haut-gauche et le pose en bas à droite (lot RB2)", () => {
+  it("désactive le zoom haut-gauche et le pose en bas à droite", () => {
     const src = read("./MapSceneController.js");
     const start = src.indexOf("static mount");
     const end = src.indexOf("constructor(map");
@@ -110,7 +110,7 @@ describe("MapScene boundary", () => {
     assert.match(css, /\.leaflet-bottom\.leaflet-right \.leaflet-control/);
   });
 
-  it("après un grand glissement à droite, des points de route existent dans la fenêtre est (lot RB8)", () => {
+  it("après un grand glissement à droite, des points de route existent dans la fenêtre est", () => {
     const line = [];
     for (let lon = -360; lon <= 8; lon += 8) line.push([lon, 12]);
     const east = worldCopyCoords(line).flat().filter(([lon]) => (

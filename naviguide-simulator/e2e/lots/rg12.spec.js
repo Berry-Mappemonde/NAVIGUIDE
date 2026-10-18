@@ -1,4 +1,4 @@
-// Lot RG12 — vitesse continue du bateau (revue du 28 sept.).
+// Vitesse continue du bateau (revue du 28 sept.).
 // Sans API : Suivre, Revoir et la barre tiennent seuls. GET /voyage/official
 // sondé ; s'il manque, annotation + saut des assertions film — jamais la barre
 // ni Revoir retirés. Aucune donnée factice : on lit le poste tel quel.
@@ -28,7 +28,7 @@ async function probeOfficial(page) {
   return { apiUp: true };
 }
 
-test("lot RG12 — bateau glisse, barre et Revoir présents", async ({ page }) => {
+test("Bateau glisse, barre et Revoir présents", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

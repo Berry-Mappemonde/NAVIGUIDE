@@ -1,4 +1,4 @@
-"""Lot RG4 — changements de climatologie lus sur l'horloge."""
+"""Changements de climatologie lus sur l'horloge."""
 from __future__ import annotations
 
 import re
@@ -151,7 +151,7 @@ def test_sentence_hindcast_says_measured():
 
 
 def test_rc30_place_is_boat_position_galice_not_gibraltar():
-    """RC30 : le lieu d'une phrase climato est la position du bateau à cet
+    """Le lieu d'une phrase climato est la position du bateau à cet
     instant — au large de la Galice, le bateau n'est pas « au nord de
     Gibraltar » (445 nm) ; un jalon trop loin ne se dit pas."""
     from climo_events import _place_phrase

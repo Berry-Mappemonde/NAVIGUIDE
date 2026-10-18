@@ -6,7 +6,7 @@ Les handlers répondent tout de suite ; le client actualise à faible cadence.
 
 Le pipeline **transporte** les champs déjà convertis par les loaders
 (hindcast, Copernicus getWind / getWave / getCurrent, forecast_cube, saildocs).
-Il ne recalcule pas les vecteurs. Conventions (lot C5, cahier § 20) :
+Il ne recalcule pas les vecteurs. Conventions (cahier § 20) :
 
 - 1 m/s = 1,943844 kn (1 kn = 1 852 m/h)
 - vent et vagues : direction **« de »** (météorologique), atan2(-u, -v)

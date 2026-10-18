@@ -1,11 +1,11 @@
-"""Script du film 2:30 — brut (règles), sélection, version rédigée (lots F3 / R9c / ED1 / VS1).
+"""Script du film 2:30 — brut (règles), sélection, version rédigée.
 
 Le LLM ne produit jamais un nombre : `filter_numbers` + balises `[[ev:id]]`.
-Rédigé **au clic** Rédigé (lot ED1) : Super écrit le français ; Ultra édite
+Rédigé **au clic** Rédigé : Super écrit le français ; Ultra édite
 puis juge si le plafond juge est ouvert ; Lightning traduit. GET et
 `warm_film_story` ne lancent aucun modèle. Repli : le brut.
 
-Lot VS1 : au recalcul du stock, VL propose des ids du sac (DC1–DC3) ;
+Au recalcul du stock, VL propose des ids du sac ;
 Lightning ne peut qu'en retirer pour le budget. Modèles éteints : repli
 déterministe, redites remplacées, arrêt à `film_char_budget`. Ouvrir
 Suivre ne rappelle rien.
@@ -26,13 +26,13 @@ from voyage_clock import OFFICIAL_T0
 
 FILM_MAX_CHARS = 2400
 FILM_BUDGET_CHARS = 2400
-# ED1 : plus de fenêtre fixe 2160–2640. Conservés pour les pads de tests 2:30.
+# Plus de fenêtre fixe 2160–2640. Conservés pour les pads de tests 2:30.
 # `written_is_valid` utilise `film_write_window(seconds)`.
 FILM_WRITE_MIN = 2160
 FILM_WRITE_MAX = 2640
 FILM_CHAPTER_FLOOR = 120
 FILM_CHAPTER_MAX_CHANGES = 4   # arrivée + un fait de mer + la marina de l'escale + approche (27 sept. ; était 3)
-# Ancre au nom du lieu − 12 caractères (lot RG14). Le client ne rajoute plus
+# Ancre au nom du lieu − 12 caractères. Le client ne rajoute plus
 # ce décalage : sinon le bateau est ~2 s devant la voix.
 FILM_VOICE_LOOKAHEAD_CHARS = 12
 KIND_GROUP_FRAC = 0.10
@@ -47,12 +47,12 @@ ROUTE_NAMING_KINDS = frozenset({"zee-enter", "coast", "port"})
 SHORT_CROSSING_MS = 3 * 86_400_000
 AMP_NEAR_NM = 30.0
 PROJECT_NEAR_NM = 30.0
-STATION_NEAR_NM = 30.0  # RC26 : les flotteurs Argo du large (15-30 nm) se disent aussi
+STATION_NEAR_NM = 30.0  # Les flotteurs Argo du large (15-30 nm) se disent aussi
 LONG_AMP_PROJECT = 3
 CLUSTER_MS = 86_400_000
 SKIPPER_GALE_KT = 34.0
 HS_BUBBLE_M = 3.0
-# RG6 : plus de rotation « Puis / À la jambe suivante ». Formes liées au contenu
+# Plus de rotation « Puis / À la jambe suivante ». Formes liées au contenu
 # (première étape, traversée longue, saut d'île, dernière étape) — chapter_shape.
 CONNECTORS = {
     "fr": ["Le lendemain", "Puis", "D'île en île", "La longue traversée", "Pour la dernière étape"],
@@ -107,8 +107,8 @@ _LEAD_DATE_EN_RE = re.compile(
     r"August|September|October|November|December)(?: \d{4})?), ",
     re.I,
 )
-# RC26 : climatologie et projets avant les eaux (gabarit FILM_DISCOURS § 4).
-# AM1B : AMP devant les eaux, dans les mêmes fenêtres (on ne réécrit pas la sélection).
+# Climatologie et projets avant les eaux (gabarit FILM_DISCOURS § 4).
+# AMP devant les eaux, dans les mêmes fenêtres (on ne réécrit pas la sélection).
 CHANGE_PRIORITY = {
     "escale": 0, "approche": 1, "alert-on": 2, "climo": 3, "amp": 4, "station": 4,
     "project": 5, "zee-enter": 6, "coast": 6, "marina": 7, "cyclone": 8, "culture": 9,
@@ -146,21 +146,21 @@ COLOR_KINDS = frozenset({
     "station", "zee-enter", "coast", "amp", "project", "climo", "regime", "marina", "cyclone", "culture", "port",
 })
 FILM_CHAPTER_MAX_FREE = 10
-# RC26 : budget intégral proportionnel à la durée de la jambe — 1 item par
+# Budget intégral proportionnel à la durée de la jambe — 1 item par
 # 1,5 jour de mer, plancher 4 (une jambe d'un jour garde 3-4 items), plafond 16.
 FILM_FREE_ITEM_DAYS = 1.5
 FILM_FREE_ITEMS_MAX = 16
-# RC26 : le cap annoncé au départ est le relèvement des 30 premiers milles de la trace.
+# Le cap annoncé au départ est le relèvement des 30 premiers milles de la trace.
 FILM_INITIAL_HEADING_NM = 30.0
 FILM_FREE_MAX_WORDS = 800
 FILM_ESTIMATE_CPS = 15  # débit constant (27 sept.) : durée = caractères ÷ 15 ; pas de recalibrage
 FILM_TIER_SHORT = 2     # 2:30 — ouverture, eaux, une AMP et un projet, escales
 FILM_TIER_MEDIUM = 3    # 3:00 — + côtes et climatologie
 FILM_TIER_FULL = 4      # intégral — tout, sans plafond
-# DC2 : bouée, formalité de port d'entrée, mouillage. Sac VS1 ; intégral
+# Bouée, formalité de port d'entrée, mouillage. Sac VS1 ; intégral
 # seulement, une fois par famille sur une longue jambe. Pas le 2:30.
 DC2_KINDS = frozenset({"buoy", "poe", "anchorage"})
-# DC3 : balise, câble, profondeur, piraterie, satellite. Même verrou : sac
+# Balise, câble, profondeur, piraterie, satellite. Même verrou : sac
 # et intégral (une fois par famille / longue jambe). Pas le 2:30.
 # Satellite : légende déjà dans le stock, sinon silence — on n'invente pas
 # « image satellite au-dessus du bateau ».
@@ -168,7 +168,7 @@ DC3_KINDS = frozenset({"aton", "cable", "depth", "piracy", "satellite"})
 DC_DOSAGE_KINDS = DC2_KINDS | DC3_KINDS
 # Amp + DC2 + DC3 : le sac VS1. Une entrée par famille.
 DC_FAMILY_KINDS = frozenset({"amp"}) | DC_DOSAGE_KINDS
-# TV1 : id d'avis réservé. Le repli VS1 ne le prend pas.
+# Id d'avis réservé. Le repli VS1 ne le prend pas.
 TV1_WATCH_KIND = "watch"
 TV1_WATCH_ID = "dc:watch"
 FALLBACK_KIND_ORDER = (
@@ -284,7 +284,7 @@ LANE_LABELS = {
         "pacific": "Pacific",
     },
 }
-# RC32 : adjectifs / exonymes ZEE — table unique `toponyms` (JO / Marine Regions).
+# Adjectifs / exonymes ZEE — table unique `toponyms` (JO / Marine Regions).
 
 # Titres de source tels qu'ils apparaissent sur la route officielle (Marine Regions / stock).
 # Un test échoue si l'un d'eux n'a pas de nom parlé.
@@ -337,7 +337,7 @@ OFFICIAL_ROUTE_ZEE_SOURCES = (
     "Zone économique exclusive (Madagascan)",
 )
 
-# RC26 / RC32 : dans la phrase de groupe, le site entre parenthèses gagne
+# Dans la phrase de groupe, le site entre parenthèses gagne
 # sur la nationalité — « britannique (Montserrat) » se dit « de Montserrat ».
 
 _HEADING_8 = (
@@ -494,7 +494,7 @@ def same_stop(a: str, b: str) -> bool:
 
 
 def _moment_near_named_place(change: dict, clock: dict | None, marks: list | None) -> bool:
-    """Le bateau est au lieu nommé à l'instant du jalon (RG14)."""
+    """Le bateau est au lieu nommé à l'instant du jalon."""
     kind = str(change.get("kind") or "")
     if kind not in {"stop", "escale", "approche", "coast", "port", "marina"}:
         return True
@@ -577,15 +577,15 @@ def clean_spoken_label(raw: str, lang: str = "fr") -> str:
 
 
 def zee_waters_label(name: str, lang: str = "fr") -> str:
-    """Exonyme de la langue du récit (RC32) — table `toponyms`, jamais une traduction."""
+    """Exonyme de la langue du récit — table `toponyms`, jamais une traduction."""
     raw_in = str(name or "")
     raw = clean_spoken_label(name, lang) or raw_in
     return toponyms.waters_label(raw_in, lang) or toponyms.waters_label(raw, lang)
 
 
 def zee_group_waters(members: list, lang: str = "fr") -> str:
-    """« les eaux françaises, puis celles de Montserrat » (RC26) — Saint-Martin
-    et Sint Maarten restent deux eaux distinctes (RC32)."""
+    """« les eaux françaises, puis celles de Montserrat » — Saint-Martin
+    et Sint Maarten restent deux eaux distinctes."""
     return toponyms.group_waters(members, lang)
 
 
@@ -627,7 +627,7 @@ def _row_latlon(row: dict | None) -> Optional[tuple[float, float]]:
 
 
 def _zee_basin_from_lonlat(lat: float, lon: float) -> str:
-    """Bassin de la ZEE : Gascogne/Pertuis ≠ Corse/Sardaigne ≠ Pacifique (RC35)."""
+    """Bassin de la ZEE : Gascogne/Pertuis ≠ Corse/Sardaigne ≠ Pacifique."""
     if lon <= -80.0:
         return "pacific"
     if lon >= 5.0 and 36.0 <= lat <= 45.0:
@@ -661,7 +661,7 @@ _SPINE_WATERS_RE = re.compile(
 
 
 def prefer_journal_moments(primary: list | None, stored: list | None) -> list[dict]:
-    """RC48 : le journal avec zee-enter FR l'emporte sur une grille horloge."""
+    """Le journal avec zee-enter FR l'emporte sur une grille horloge."""
     a = [m for m in (primary or []) if isinstance(m, dict)]
     b = [m for m in (stored or []) if isinstance(m, dict)]
 
@@ -700,8 +700,8 @@ def _official_moments_for_film(voyage_id: str) -> list[dict]:
 
 def _is_spine_route_item(change: dict | None) -> bool:
     """Eaux de la route LR→Ajaccio : ne cèdent pas à un Argo ou une AMP de trop
-    (RC35). Titres FR du journal (« Zone économique exclusive espagnole »)
-    comme titres EN (RC48)."""
+. Titres FR du journal (« Zone économique exclusive espagnole »)
+    comme titres EN."""
     if not isinstance(change, dict):
         return False
     kind = str(change.get("kind") or "")
@@ -965,7 +965,7 @@ def dose_zee_changes(changes: list[dict], span_ms: int) -> list[dict]:
     for c in zee:
         prev = clusters[-1][-1] if clusters else None
         dt = (c.get("tMs") or 0) - (prev.get("tMs") or 0) if prev else CLUSTER_MS
-        # RC35 : Gascogne/Pertuis FR ≠ Corse FR (bassins) ; ES/PT/MA restent
+        # Gascogne/Pertuis FR ≠ Corse FR (bassins) ; ES/PT/MA restent
         # des phrases distinctes (Gascogne peut s'intercaler) — on ne colle
         # pas deux eaux de la route dans le même groupe.
         both_spine = bool(prev) and _is_spine_route_item(prev) and _is_spine_route_item(c)
@@ -1040,7 +1040,7 @@ def dose_coast_changes(changes: list[dict], span_ms: int) -> list[dict]:
     for c in merged:
         # Île (Sardaigne, Corse…) : un jalon par géographie, jamais écrasé
         # le même jour par un port d'eaux italiennes / françaises.
-        # RC26 : la même île sur deux jours ne se dit qu'une fois (ports réunis).
+        # La même île sur deux jours ne se dit qu'une fois (ports réunis).
         if (c.get("geo") or {}).get("kind") == "island":
             geo_key = str((c.get("geo") or {}).get("fr") or "").casefold()
             if geo_key and geo_key in island_at:
@@ -1086,7 +1086,7 @@ def _heading_deg_at(
         if not isinstance(row, dict):
             continue
         if _moment_is_air(row):
-            continue  # RC30 : le cap d'une jambe de MER — jamais celui du vol (Cayenne → « cap au nord »)
+            continue  # Le cap d'une jambe de MER — jamais celui du vol (Cayenne → « cap au nord »)
         t = _ms(row.get("t"))
         if t is None:
             continue
@@ -1106,7 +1106,7 @@ def _heading_deg_at(
         if not isinstance(v, dict):
             continue
         if v.get("vehicle") in {"plane", "land"}:
-            continue  # RC30 : un sommet d'avion (plein nord vers Halifax) n'est pas un cap de mer
+            continue  # Un sommet d'avion (plein nord vers Halifax) n'est pas un cap de mer
         t = _ms(v.get("iso"))
         if t is None:
             continue
@@ -1133,7 +1133,7 @@ def _bearing_deg(lat1: Any, lon1: Any, lat2: Any, lon2: Any) -> Optional[float]:
 def _initial_route_heading(
     clock: dict | None, depart_ms: Optional[int], nm: float = FILM_INITIAL_HEADING_NM,
 ) -> Optional[float]:
-    """RC26 : le cap annoncé au départ d'une jambe est le relèvement des ~30
+    """Le cap annoncé au départ d'une jambe est le relèvement des ~30
     premiers milles de la TRACE après l'appareillage — pas le bearing du premier
     segment (manœuvres de port), ni le relèvement global vers l'arrivée."""
     if depart_ms is None:
@@ -1178,7 +1178,7 @@ def _leg_heading_deg(
     depart_ms: Optional[int],
     clock: dict | None = None,
 ) -> Optional[float]:
-    """Cap d'ouverture : la trace d'abord (RC26), sinon l'ancien plus-proche moment."""
+    """Cap d'ouverture : la trace d'abord, sinon l'ancien plus-proche moment."""
     deg = _initial_route_heading(clock, depart_ms)
     if deg is not None:
         return deg
@@ -1287,7 +1287,7 @@ def _argo_identifier(item: dict) -> str:
 
 
 def station_spoken_label(change: dict, lang: str = "fr") -> str:
-    """Type parlé — jamais le titre de jeu de données (RG5). RC30 : un flotteur
+    """Type parlé — jamais le titre de jeu de données. RC30 : un flotteur
     Argo se dit avec son identifiant (« le flotteur Argo 6904216 ») ; un
     flotteur anonyme ne se dit pas."""
     from ici_engine import science_type_key, spoken_science_type  # noqa: PLC0415
@@ -2326,7 +2326,7 @@ def _dc_amp_changes_from_journal(journal: dict | None) -> list[dict]:
 
 
 def _dc_changes_from_journal(journal: dict | None) -> list[dict]:
-    """Faits DC du journal (DC1–DC3) et des sacs ici le long de la route."""
+    """Faits DC du journal et des sacs ici le long de la route."""
     rows = _dc_amp_changes_from_journal(journal)
     dc3_kinds = DC2_KINDS | DC3_KINDS
     for moment in _journal_moments(journal):
@@ -2479,7 +2479,7 @@ def dose_station_changes(
     changes: list[dict], span_ms: int = 0,
     t_a: Optional[int] = None, t_b: Optional[int] = None,
 ) -> list[dict]:
-    """Une station qualifiée par étape (RG5), la plus proche de la route ; pas de
+    """Une station qualifiée par étape, la plus proche de la route ; pas de
     comptage. RC26 : une longue traversée en dit jusqu'à trois, réparties dans le
     temps (une par tranche de la jambe) — le Pacifique ne reste pas muet quinze jours."""
     rows = [
@@ -2715,7 +2715,7 @@ def _is_side_window(w: dict | None) -> bool:
     )
 
 
-# RC55 : Saint-Pierre → Halifax est dans l'Atlantique nord (~45–47° N).
+# Saint-Pierre → Halifax est dans l'Atlantique nord (~45–47° N).
 # Cayenne / l'équateur / la Guyane (~5° N) n'y ont pas leur place — ces
 # phrases restent sur Marigot → Cayenne et Cayenne → Papeete.
 _GUYANA_EQUATOR_RE = re.compile(
@@ -2845,7 +2845,7 @@ def _window_depart_ms(w: dict) -> Optional[int]:
     leave = _clock_leave_ms(
         clock, frm.get("lat"), frm.get("lon"), t_a, w.get("tB"), mode=mode,
     )
-    # RC26 : quand l'horloge répond exactement « départ = tA » (aucune sortie de
+    # Quand l'horloge répond exactement « départ = tA » (aucune sortie de
     # port trouvée — Papeete, pas de sommet « quay »), l'escale des marks donne
     # l'appareillage (arrivée + holdHours) — les trois jours à quai ne comptent
     # plus comme de la mer dans les fenêtres. Une horloge qui a une vraie trace
@@ -2861,7 +2861,7 @@ def _window_depart_ms(w: dict) -> Optional[int]:
             arr = _ms(mark.get("iso"))
             hold = float(mark.get("holdHours") or 0)
             if arr is not None and t0 is not None and arr <= t0:
-                continue  # port de départ du voyage : t0 EST l'appareillage (RG1)
+                continue  # port de départ du voyage : t0 EST l'appareillage
             if arr is not None and hold > 0:
                 depart = arr + int(hold * 3_600_000)
                 if (
@@ -3715,7 +3715,7 @@ def _day_word(n: int, lang: str) -> str:
 
 
 def _film_seconds(seconds: Any) -> int:
-    """0 = pas de budget (lot RD7). Toute valeur invalide ou négative → 0."""
+    """0 = pas de budget. Toute valeur invalide ou négative → 0."""
     try:
         n = int(seconds)
     except (TypeError, ValueError):
@@ -4276,11 +4276,11 @@ def review_sentences(
 ) -> list[str]:
     """Faits de revue fondus dans la route : plus d'annexe « À surveiller / Couloirs ».
 
-    RC30 : `crossings` (couloir → instant du premier croisement dans le
+    `crossings` (couloir → instant du premier croisement dans le
     chapitre) filtre « La route passe par … » aux seuls bassins que la TRACE du
     chapitre traverse, dans l'ordre de la route — Papeete n'entend plus
     « Atlantique nord » hérité d'une autre portion de la jambe de revue.
-    RC35 : un nom déjà dit (Gibraltar) est retiré de la liste, les autres
+    Un nom déjà dit (Gibraltar) est retiré de la liste, les autres
     (Gascogne) restent ; le Pacifique n'est pas une boîte AIS (voir
     `_append_review_sentences`)."""
     if not isinstance(leg, dict):
@@ -4379,7 +4379,7 @@ def _append_review_sentences(
         if anchored is None:
             continue
         if lane_anchor is not None and re.search(r"passe par|goes through", sentence, re.I):
-            # RC30 : la phrase des bassins se dit QUAND la route les croise —
+            # La phrase des bassins se dit QUAND la route les croise —
             # jamais collée à l'arrivée (tri des phrases par ancre ensuite).
             anchored.append((sentence, lane_anchor, {"kind": "coast"}))
             continue
@@ -4506,7 +4506,7 @@ def _en_waters_canon() -> dict[str, str]:
 def fix_en_waters_casing(text: str) -> str:
     """« french waters » → « French waters ». La forme déjà capitale ne bouge pas.
 
-    Filet à la lecture (RC53) : `thin_chapter_dates` mettait en minuscule la
+    Filet à la lecture : `thin_chapter_dates` mettait en minuscule la
     tête de phrase après « Then, » — on rétablit le nom propre sans rebuild.
     """
     blob = text or ""
@@ -6210,9 +6210,9 @@ def _group_changes(changes: list[dict], span_ms: int, clock: dict | None = None)
             "climo", "station", "buoy", "poe", "anchorage",
             "aton", "cable", "depth", "piracy", "satellite",
         }:
-            # Pas de « 10 alertes », « N ZEE » ni « N stations » : une station qualifiée, jamais un comptage (RG5).
+            # Pas de « 10 alertes », « N ZEE » ni « N stations » : une station qualifiée, jamais un comptage.
             continue
-        # RG14 : dater au membre le plus proche du bateau ; sinon éclater (RG2 a déjà réduit).
+        # Dater au membre le plus proche du bateau ; sinon éclater (RG2 a déjà réduit).
         spoken_ms = group[0].get("tMs")
         member = _closest_member_to_boat(group, clock, spoken_ms)
         if member is None:
@@ -6248,7 +6248,7 @@ def _place_dedup_key(change: dict) -> str:
     kind = str(change.get("kind") or "")
     if kind == "zee-enter":
         # Identité + bassin : les eaux françaises de Gascogne/Pertuis ne sont
-        # pas celles de Corse/Sardaigne ni du Pacifique (RC35). Sans coordonnées,
+        # pas celles de Corse/Sardaigne ni du Pacifique. Sans coordonnées,
         # le titre brut reste le repli (RC26 : parenthèse = territoire).
         raw = re.sub(r"\s+", " ", str(change.get("title") or change.get("fact") or "")).strip()
         if not raw:
@@ -6257,13 +6257,13 @@ def _place_dedup_key(change: dict) -> str:
         basin = _zee_basin_from_change(change)
         return f"zee:{ident}:{basin}" if basin else f"zee:{ident}"
     # Un groupe côte / île porte sa géographie : « l'Andalousie — Cartagena »
-    # et « l'Andalousie — Almería » sont le même site (RC26).
+    # et « l'Andalousie — Almería » sont le même site.
     geo = change.get("geo") if isinstance(change.get("geo"), dict) else None
     geo_name = str((geo or {}).get("fr") or (geo or {}).get("en") or "").strip()
     name = norm_stop(geo_name) if geo_name else norm_stop(change_place_name(change))
     if not name:
         return ""
-    # RC26 : dédoublonnage par SITE — « Lilleau-des-Niges » et « Lilleau-des-Niges
+    # Dédoublonnage par SITE — « Lilleau-des-Niges » et « Lilleau-des-Niges
     # - Zone de Protection » partagent le préfixe significatif (avant « - », « — », « ( »).
     name = re.split(r"\s+[-—–]\s+|\s*\(", name, maxsplit=1)[0].strip() or name
     if kind in {"escale", "approche"}:
@@ -6283,7 +6283,7 @@ def _usable_changes(changes: list[dict]) -> list[dict]:
         if cid:
             seen_ids.add(cid)
         rows.append(change)
-    # Même site dit une fois : le nom le plus court gagne (RC26), à l'instant
+    # Même site dit une fois : le nom le plus court gagne, à l'instant
     # du premier croisement.
     best: dict[str, dict] = {}
     out: list[dict] = []
@@ -6320,7 +6320,7 @@ def _usable_changes(changes: list[dict]) -> list[dict]:
 
 
 def film_free_item_target(span_ms: int) -> int:
-    """RC26 : budget d'items du chapitre intégral, proportionnel à la durée —
+    """Budget d'items du chapitre intégral, proportionnel à la durée —
     1 item par 1,5 jour de mer, plancher 4, plafond 16."""
     days = max(0.0, float(span_ms or 0) / 86_400_000.0)
     return min(FILM_FREE_ITEMS_MAX, max(FILM_CHAPTER_MAX_CHANGES, math.ceil(days / FILM_FREE_ITEM_DAYS)))
@@ -6341,7 +6341,7 @@ def _diversity_kind(change: dict) -> str:
 
 def _diversity_bonus(change: dict) -> int:
     """Îles et détroits (Sardaigne, Gibraltar…) : jalons rares, jamais sacrifiés
-    en premier (RC19)."""
+    en premier."""
     geo = change.get("geo") if isinstance(change.get("geo"), dict) else {}
     return 1 if (geo.get("kind") in {"island", "strait"}) else 0
 
@@ -6361,7 +6361,7 @@ def _pick_diverse(cands: list[dict], picked: list[dict]) -> Optional[dict]:
         absent = 0 if k not in seen else 1
         rank = _DIVERSITY_ORDER.index(k) if (absent == 0 and k in _DIVERSITY_ORDER) else len(_DIVERSITY_ORDER)
         repeat = 1 if (k == last and has_other) else 0
-        # RC19 : une île / un détroit ne cède jamais sa place aux eaux du jour —
+        # Une île / un détroit ne cède jamais sa place aux eaux du jour —
         # le jalon rare passe AVANT la pénalité de répétition.
         return (
             0 if _is_spine_route_item(c) else 1,
@@ -6375,7 +6375,7 @@ def _pick_diverse(cands: list[dict], picked: list[dict]) -> Optional[dict]:
 
 
 def _pin_spine_waters(picked: list[dict], pool: list[dict]) -> list[dict]:
-    """RC35 : ES/PT/MA/FR/Gibraltar restent dans le chapitre — un Argo ou une
+    """ES/PT/MA/FR/Gibraltar restent dans le chapitre — un Argo ou une
     AMP de trop cède sa place, la première AMP (Lilleau) est gardée."""
     have = {k for k in (_place_dedup_key(c) for c in picked) if k}
     missing: list[dict] = []
@@ -6419,7 +6419,7 @@ def _spread_free_changes(
     cands: list[dict], t_a: int, t_b: int, *, depart_ms: Optional[int] = None,
     spare: Optional[list[dict]] = None,
 ) -> list[dict]:
-    """RC26 : sélection par fenêtres de temps, pas par type puis date.
+    """Sélection par fenêtres de temps, pas par type puis date.
 
     - la période à quai [tA, départ] ne garde qu'UN item de proximité
       (« à cinq milles ») en plus de l'ouverture ;
@@ -6518,14 +6518,14 @@ def _spread_free_changes(
         j = min(open_buckets, key=lambda k: (taken[k], k))
         choice = _pick_diverse(buckets[j], picked)
         if choice is None:
-            # RC30 : cette fenêtre n'a que des doublons de site — elle ne doit
+            # Cette fenêtre n'a que des doublons de site — elle ne doit
             # pas faire taire les fenêtres suivantes (la Seychelloise attend).
             buckets[j] = []
             continue
         buckets[j] = [c for c in buckets[j] if c is not choice]
         taken[j] += 1
         picked.append(choice)
-    # RC30 : la réserve complète jusqu'au plafond (même quota ≤ 2 par fenêtre) —
+    # La réserve complète jusqu'au plafond (même quota ≤ 2 par fenêtre) —
     # le flotteur Argo unique par jambe ne laisse plus la traversée muette.
     while len(picked) < FILM_FREE_ITEMS_MAX:
         open_spare = [j for j in range(n) if spare_buckets[j] and taken[j] < 2]
@@ -6552,7 +6552,7 @@ def _spread_free_changes(
             picked.append(c)
             if k:
                 keys.add(k)
-    # Dédoublonnage final par site (RC26) : les jalons quotidiens d'une même
+    # Dédoublonnage final par site : les jalons quotidiens d'une même
     # côte (l'Andalousie du 21, l'Andalousie du 22) ne se disent qu'une fois —
     # le nom le plus court gagne, au temps du premier croisement.
     by_site: dict[str, dict] = {}
@@ -6587,7 +6587,7 @@ def _spread_free_changes(
 
 def _would_speak(change: dict) -> bool:
     """Un item ne prend une fenêtre que s'il donnera vraiment une phrase
-    (RC26) : mêmes gardes que speak_change — escale d'avion, titre anglais,
+    Mêmes gardes que speak_change — escale d'avion, titre anglais,
     phrase vide ou interdite."""
     kind = str(change.get("kind") or "")
     place = change_place_name(change) or short_name(str(change.get("title") or ""))
@@ -6612,7 +6612,7 @@ def _is_argo_station(change: dict) -> bool:
 
 
 def _limit_argo_once(rows: list[dict]) -> list[dict]:
-    """RC30 : au plus UN flotteur Argo par chapitre — le premier croisé ;
+    """Au plus UN flotteur Argo par chapitre — le premier croisé ;
     jamais six « un flotteur Argo » anonymes (transcription du 14 oct.)."""
     out: list[dict] = []
     seen = False
@@ -6626,11 +6626,11 @@ def _limit_argo_once(rows: list[dict]) -> list[dict]:
 
 
 def _cap_argo_candidates(pool: list[dict], spare: list[dict]) -> tuple[list[dict], list[dict]]:
-    """RC30 : un seul flotteur Argo candidat AVANT la répartition par fenêtres.
+    """Un seul flotteur Argo candidat AVANT la répartition par fenêtres.
     On garde celui du passage le plus SILENCIEUX (le plus loin, dans le temps,
     de tout autre stock racontable) : c'est lui qui remplissait le trou de la
     traversée que les Argo surnuméraires comblaient avant — la jambe ne perd
-    pas sa densité (RC26)."""
+    pas sa densité."""
     argos = [c for c in pool if _is_argo_station(c)] + [c for c in spare if _is_argo_station(c)]
     if len(argos) <= 1:
         return pool, spare
@@ -6677,7 +6677,7 @@ def select_chapter_changes(
         and _tier_allows_kind(str(c.get("kind") or ""), tier)
     ]
     if not budget:
-        # RC26 : fenêtres de temps sur toute la jambe — plus de « type puis date ».
+        # Fenêtres de temps sur toute la jambe — plus de « type puis date ».
         pool_route = extras if tier is not None else zee + coast + amp + proj + climo + stations
         keep = [c for c in rest_src if str(c.get("kind") or "") in {"escale", "approche"}]
         marinas = [c for c in rest_src if str(c.get("kind") or "") == "marina"]
@@ -6692,7 +6692,7 @@ def select_chapter_changes(
             if _would_speak(c)
         ]
         in_pool = {id(c) for c in pool}
-        # Une 2e station au-delà de la dose (RG5) ne se justifie que sur une
+        # Une 2e station au-delà de la dose ne se justifie que sur une
         # longue jambe (le Pacifique muet) — jamais sur une traversée courte.
         spare_station_ok = span > 5 * 86_400_000
         spare = [
@@ -6882,7 +6882,7 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
     if kind == "zee-enter":
         members = change.get("members")
         if isinstance(members, list) and len(members) > 1:
-            # RC26 : « les eaux françaises, puis celles de Montserrat » — jamais
+            # « les eaux françaises, puis celles de Montserrat » — jamais
             # un adjectif orphelin ni une minuscule en tête de nom propre.
             body = zee_group_waters(members, lang)
             if not body:
@@ -7133,7 +7133,7 @@ _NAMED_PLACE_COORDS = {
 
 
 def _canonical_place_coords(name: str) -> Optional[tuple[float, float]]:
-    """Coordonnées géographiques (RG14), sans lat/lon d'horloge parfois décalés."""
+    """Coordonnées géographiques, sans lat/lon d'horloge parfois décalés."""
     raw = str(name or "").strip()
     if not raw:
         return None
@@ -7284,7 +7284,7 @@ _SPINE_SPOKEN_RE = (
 
 
 def _apply_spine_first_order(bits: list[str], order: list[int]) -> list[int]:
-    """RC48 : premières mentions FR, Gascogne, ES, PT, Gibraltar, MA dans cet ordre."""
+    """Premières mentions FR, Gascogne, ES, PT, Gibraltar, MA dans cet ordre."""
     seq = list(order)
 
     def first_pos(pat: re.Pattern) -> Optional[int]:
@@ -7322,7 +7322,7 @@ def _order_chapter_sentences(
     from_name: str = "",
     to_name: str = "",
 ) -> None:
-    """RC30 : les phrases d'un chapitre se disent dans l'ordre STRICT du temps
+    """Les phrases d'un chapitre se disent dans l'ordre STRICT du temps
     du voyage — tri stable par instant d'ancre, l'ouverture (role depart) reste
     en tête, l'arrivée (role arrive) en queue. Les connecteurs de date sont
     recalculés APRÈS, par thin_chapter_dates. Les charIdx des bulles (`placed`)
@@ -7472,7 +7472,7 @@ def _snap_change_anchor_ms(
     t_b: Optional[int],
     marks: list | None = None,
 ) -> Optional[int]:
-    """Instant du jalon sur la trace : le bateau est au lieu quand la phrase le nomme (RG14)."""
+    """Instant du jalon sur la trace : le bateau est au lieu quand la phrase le nomme."""
     kind = str(change.get("kind") or "")
     if kind in {"escale", "stop", "approche"}:
         named = change_place_name(change)
@@ -7512,7 +7512,7 @@ def _snap_change_anchor_ms(
 
 
 def anchor_moment_changes(rows: list[dict], clock: dict | None) -> None:
-    """Recolle tMs des jalons côte/port sur le passage horloge (stock officiel, lot RG14)."""
+    """Recolle tMs des jalons côte/port sur le passage horloge (stock officiel)."""
     if not rows or not clock:
         return
     marks = clock.get("marks") or []
@@ -7581,7 +7581,7 @@ def thin_chapter_dates(sentences: list[str], lang: str = "fr") -> list[str]:
     while i < len(out):
         if dated[i] and dated[i - 1]:
             if _is_arrival_sentence(out[i]):
-                # RC30 : la phrase i-1 perd SA date — « Le lendemain » se mesure
+                # La phrase i-1 perd SA date — « Le lendemain » se mesure
                 # contre la dernière date dite AVANT elle, pas contre l'arrivée.
                 prev_j = next((j for j in range(i - 2, -1, -1) if dated[j]), None)
                 prev_d = _parse_spoken_date(out[prev_j], lang) if prev_j is not None else None
@@ -7669,7 +7669,7 @@ _KEEP_SENT = re.compile(
     re.I,
 )
 
-# RC19 : Galice (Muxía, Camariñas) et Sardaigne ne cèdent pas la place aux eaux.
+# Galice (Muxía, Camariñas) et Sardaigne ne cèdent pas la place aux eaux.
 _RG2_LANDMARK_SENT = re.compile(
     r"Galice|Galicia|Mux[ií]a|Camari[nñ]as|Sardaigne|Sardinia|Porto Torres",
     re.I,
@@ -8100,7 +8100,7 @@ def _chapter_for_air_leg(chapters: list[dict], origin: str, dest: str) -> dict |
 
 
 def _chapter_for_air_fallback(chapters: list[dict]) -> dict | None:
-    """RF5 : pas de jambe vol (Halifax sans iso) — un seul chapitre Cayenne, jamais la reprise."""
+    """Pas de jambe vol (Halifax sans iso) — un seul chapitre Cayenne, jamais la reprise."""
     for ch in chapters:
         frm = _air_stop_key(ch.get("fromName") or "")
         to = _air_stop_key(ch.get("toName") or "")
@@ -8177,7 +8177,7 @@ def _air_bits_from_moments(
     display_t0: str | None,
     already: str,
 ) -> list[str]:
-    """RG1 : le vol est une fenêtre typée, plus un ajout en queue de chapitre."""
+    """Le vol est une fenêtre typée, plus un ajout en queue de chapitre."""
     return []
 
 
@@ -8229,7 +8229,7 @@ def build_raw_from_moments(
     compact = _film_compact_template(seconds)
     tier = film_priority_tier(seconds)
     if has_budget:
-        # RG8 : plafond = durée × 15 car./s (pas FILM_BUDGET_CHARS identique pour 150 et 180).
+        # Plafond = durée × 15 car./s (pas FILM_BUDGET_CHARS identique pour 150 et 180).
         target = film_char_budget(budget_s)
         days = [max(1.0, (w["tB"] - w["tA"]) / 86_400_000.0) for w in windows]
         budgets = allocate_chapter_budgets(days, target)
@@ -8249,7 +8249,7 @@ def build_raw_from_moments(
                 moments, w.get("fromName") or "", w.get("tA"),
             )
         depart_ms = _window_depart_ms(w) or 0
-        # RC26 : la vérité du terrain borne le plan — si un moment de la jambe
+        # La vérité du terrain borne le plan — si un moment de la jambe
         # existe avant l'appareillage déduit des marks, le bateau est déjà parti.
         first_leg = _first_leg_moment_ms(moments, w)
         if depart_ms and first_leg and (w.get("tA") or 0) < first_leg < depart_ms:
@@ -8267,7 +8267,7 @@ def build_raw_from_moments(
         for extra in _dest_culture_changes(dest):
             extra = {**extra, "t": (dest or {}).get("iso"), "tMs": w["tB"]}
             flat.append(extra)
-        # RC55 : le second bateau (Saint-Pierre → Halifax, ou Saint-Pierre →
+        # Le second bateau (Saint-Pierre → Halifax, ou Saint-Pierre →
         # Cayenne si le titre n'a pas encore Halifax) ne reprend pas les eaux
         # de Guyane ni l'équateur du catamaran resté à quai.
         if _is_saint_pierre_depart(w):
@@ -8276,7 +8276,7 @@ def build_raw_from_moments(
             flat, w["tA"], w["tB"], budget=has_budget, tier=tier if has_budget else None,
             clock=w.get("clock") or clock, depart_ms=depart_ms,
         )
-        # DC1 : une aire déjà dite, une fois. Le 2:30 n'en empile pas une seconde.
+        # Une aire déjà dite, une fois. Le 2:30 n'en empile pas une seconde.
         if compact and any(_is_amp_change(c) for c in selected_all):
             selected = [c for c in selected if not _is_amp_change(c)]
         bits: list[str] = []
@@ -8336,7 +8336,7 @@ def build_raw_from_moments(
                 w["tB"],
                 marks,
             )
-            # RC35 / RC48 : l'instant du jalon, pas le plus proche homonyme plus
+            # L'instant du jalon, pas le plus proche homonyme plus
             # loin sur l'horloge (Gibraltar recollé après le Maroc ; Mata-Utu /
             # Nouméa recollés en octobre au milieu d'août–septembre).
             anchored.append((sentence, t_ms, extra))
@@ -8424,7 +8424,7 @@ def build_raw_from_moments(
                 "fact": arrival, "score": 3,
                 "card": {"id": arr_id, "kind": "stop", "title": dest_title, "text": arrival, "at": dest.get("iso"), "score": 3},
             })
-        # RC30 : tri strict par instant d'ancre AVANT les connecteurs de date —
+        # Tri strict par instant d'ancre AVANT les connecteurs de date —
         # un item déplacé entre fenêtres ou une phrase de revue ancrée tôt ne
         # se dit plus hors de son ordre ; « le lendemain » est recalculé après.
         _order_chapter_sentences(
@@ -8463,7 +8463,7 @@ def build_raw_from_moments(
             "toLat": w.get("toLat"),
             "toLon": w.get("toLon"),
         })
-    # RG8 / RC22 / RC27 : après opens recollés, puis après l'avion recollé.
+    # Après opens recollés, puis après l'avion recollé.
     if has_budget and target > 0:
         _film_apply_char_budget(chapters, seconds)
     _ensure_air_sentences(chapters, marks=marks, moments=moments, lang=lang)
@@ -8611,7 +8611,7 @@ def _uniq_facts(rows: list[Any]) -> list[Any]:
 
 
 def chapter_structured_facts(chapter: dict, *, lang: str = "fr") -> dict[str, Any]:
-    """Faits JSON d'une étape (RG6 / RC26 / RC30) : dates, lieux, eaux, AMP, projets, stations, climo, distances, cap."""
+    """Faits JSON d'une étape : dates, lieux, eaux, AMP, projets, stations, climo, distances, cap."""
     text = chapter.get("text") or ""
     events = [e for e in (chapter.get("events") or []) if isinstance(e, dict)]
     dates: list[str] = []
@@ -9177,7 +9177,7 @@ def _chapter_next_summary(raw_chapters: list[dict], i: int, lang: str) -> str:
 
 
 def _pad_tagged(text: str, budget: int) -> str:
-    """Plus de remplissage : on coupe si trop long, on ne meuble jamais (lot RD7)."""
+    """Plus de remplissage : on coupe si trop long, on ne meuble jamais."""
     body = text or ""
     cap = int(budget or 0)
     if cap <= 0:
@@ -9530,7 +9530,7 @@ async def build_film_response(
     choose: bool = False,
 ) -> dict[str, Any]:
     """Assemble the API payload. `want_write` triggers Nemotron (tier write).
-    `choose` (lot VS1) : VL/Lightning ou repli, au remplissage du stock seulement."""
+    `choose` : VL/Lightning ou repli, au remplissage du stock seulement."""
     from story_cache import film_cache_key, get_film_cached, put_film_cached  # noqa: PLC0415
 
     shown = resolve_film_t0(display_t0)

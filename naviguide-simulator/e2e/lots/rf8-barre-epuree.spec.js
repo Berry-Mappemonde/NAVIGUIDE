@@ -1,4 +1,4 @@
-// Lot RF8 — liste des escales informative dans tous les modes ;
+// Liste des escales informative dans tous les modes ;
 // pilules 2:30 / 3:00 dans le cadre de la barre ; plus de « Récit : » ;
 // encadré date + heure à la taille du format.
 // Sans API : liste (repli), curseur, pilules, absence de « Récit : »,
@@ -151,7 +151,7 @@ async function assertDateBoxFitsFormat(page) {
   expect(metrics.box, "encadré plus étroit que le format").toBeGreaterThanOrEqual(metrics.text - 6);
 }
 
-test("lot RF8 — liste informative, barre dans le cadre, sans Récit", async ({ page, request }) => {
+test("Liste informative, barre dans le cadre, sans Récit", async ({ page, request }) => {
   test.setTimeout(90_000);
   const officialBody = await probeOfficial(request);
   const apiUp = Boolean(officialBody);

@@ -32,7 +32,7 @@ function makeSession() {
   return { points, segments, resets: () => resets, addPoint, reset };
 }
 
-describe("useRouteDrawing importPoints (lot N1)", () => {
+describe("useRouteDrawing importPoints", () => {
   it("expose importPoints qui rejoue importPointsSequential (reset + un addPoint par waypoint)", () => {
     assert.match(hook, /export async function importPointsSequential/);
     assert.match(hook, /const importPoints = useCallback/);

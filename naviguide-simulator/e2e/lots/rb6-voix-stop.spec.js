@@ -1,4 +1,4 @@
-// Lot RB6 — voix sans coupure, Stop total, caméra pas sur la Polynésie.
+// Voix sans coupure, Stop total, caméra pas sur la Polynésie.
 // Sans API : barre, Suivre, Revoir / Stop (horloge locale) tiennent seuls.
 // Position live / script serveur : seulement si GET /voyage/official répond.
 import { expect, test } from "@playwright/test";
@@ -51,7 +51,7 @@ async function filmPos(page) {
   });
 }
 
-test("lot RB6 — Stop coupe tout au premier clic ; pas de live sur incident", async ({ page }) => {
+test("Stop coupe tout au premier clic ; pas de live sur incident", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {

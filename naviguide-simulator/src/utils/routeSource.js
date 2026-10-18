@@ -1,5 +1,5 @@
 /**
- * Lot DM5 — la SOURCE de route affichée (Berry-Mappemonde ou ma route) est un
+ * La SOURCE de route affichée (Berry-Mappemonde ou ma route) est un
  * état indépendant du mode (Suivre | Tracer). Elle remplace l'implicite
  * `routeForView = isSuivre ? null : customRoute` qui forçait Berry en Suivre
  * (revue du porteur du 14 oct., B1-B4).

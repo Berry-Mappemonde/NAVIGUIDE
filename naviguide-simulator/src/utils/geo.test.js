@@ -132,7 +132,7 @@ describe("summarizeLegs", () => {
   });
 });
 
-describe("wrapLon / unwrapPath (lot S)", () => {
+describe("wrapLon / unwrapPath", () => {
   it("replie 236,84° (SF dépliée) dans [−180, 180]", () => {
     assert.equal(Number(wrapLon(236.84).toFixed(2)), -123.16);
     assert.ok(wrapLon(236.84) >= -180 && wrapLon(236.84) <= 180);
@@ -219,7 +219,7 @@ describe("antimeridian geo", () => {
   });
 });
 
-describe("copies monde stables (lot RG15)", () => {
+describe("copies monde stables", () => {
   it("clé de copie ancrée sur wrap(lon)", () => {
     assert.equal(worldCopyKey(-176.2036, -176.2036), 0);
     assert.equal(worldCopyKey(-176.2036, 183.7964), 1);
@@ -244,7 +244,7 @@ describe("copies monde stables (lot RG15)", () => {
   });
 });
 
-describe("lot C5 — orthodromie et cardinaux", () => {
+describe("Orthodromie et cardinaux", () => {
   it("Saint-Maur → La Rochelle ≈ 122 nm ± 5 (haversine ; le plan visait 190)", () => {
     const nm = haversineNm(SAINT_MAUR.lat, SAINT_MAUR.lon, LA_ROCHELLE.lat, LA_ROCHELLE.lon);
     assert.ok(Math.abs(nm - 122.3) <= 5, `orthodromie ${nm} nm`);

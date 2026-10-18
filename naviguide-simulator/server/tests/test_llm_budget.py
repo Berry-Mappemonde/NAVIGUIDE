@@ -1,4 +1,4 @@
-"""Plafonds journaliers Token Factory (lot L1)."""
+"""Plafonds journaliers Token Factory."""
 from datetime import datetime, timezone
 
 import llm_budget
@@ -189,7 +189,7 @@ def test_daily_usd_refuses_when_call_would_exceed(monkeypatch):
 
 
 def test_judge_cap_unchanged_without_token_env(monkeypatch):
-    """NB1 : le palier juge du dépôt ne bouge pas (tête = 60_000, pas 0)."""
+    """Le palier juge du dépôt ne bouge pas (tête = 60_000, pas 0)."""
     monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
     assert llm_budget.DEFAULT_CAPS["judge"] == 60_000
     assert llm_budget.daily_cap("judge") == 60_000

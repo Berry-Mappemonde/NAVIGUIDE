@@ -75,7 +75,7 @@ def decide(event_name: str, *, input_site: str | None = None,
            files: list[str] | None = None, ref_name: str | None = None) -> dict[str, str]:
     event = (event_name or "").strip()
     if event == "push" and (ref_name or "").strip() == RECETTE_BRANCH:
-        # La branche `recette` = tête de pile des lots de la nuit : on ne publie QUE le
+        # La branche `recette` = tête de pile des changements de la nuit : on ne publie QUE le
         # simulateur (jamais Blue Intelligence ni l'ancien NAVIGUIDE depuis une pile),
         # et sans regarder le diff (un force-push le rend illisible → il déploierait tout).
         out = dict(_FALSE)

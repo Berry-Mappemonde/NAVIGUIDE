@@ -1,5 +1,5 @@
 /**
- * Revue de plan par règles (lot K) — mise en mots côté client, pur, testé.
+ * Revue de plan par règles — mise en mots côté client, pur, testé.
  * Le serveur fournit les jambes (calendrier, ZEE, ports d'entrée, AMP,
  * perles inconnues) ; l'atlas déjà en cache fournit la saison du mois de la
  * jambe (rose des vents, cyclones IBTrACS). Aucun chiffre inventé : une

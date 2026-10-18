@@ -1,4 +1,4 @@
-// Lot RG1 — faits justes : départ horloge, vol typé, par la route.
+// Faits justes : départ horloge, vol typé, par la route.
 // Sans API : Suivre, Revoir et la barre tiennent seuls ; le script serveur
 // est sauté. GET /voyage/official sondé ; s'il manque, annotation + saut des
 // seules assertions film — jamais Revoir retiré, ni les pilules, ni la barre.
@@ -74,7 +74,7 @@ async function probeOfficial(page) {
   return { apiUp: true };
 }
 
-test("lot RG1 — départ horloge, vol, par la route", async ({ page }) => {
+test("Départ horloge, vol, par la route", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

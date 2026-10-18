@@ -1,4 +1,4 @@
-"""Lots DM8A / DM8B — moments et film d'un voyage perso."""
+"""Moments et film d'un voyage perso."""
 from __future__ import annotations
 
 import copy

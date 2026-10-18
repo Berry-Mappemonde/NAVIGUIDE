@@ -1,4 +1,4 @@
-// Lot R2 — barre film : une rangée, Masquer partout, Escale précédente.
+// Barre film : une rangée, Masquer partout, Escale précédente.
 // Sans API : hauteur, légende en info-bulle, Masquer, prev-stop grisé tiennent seuls.
 // Aller-retour d'escale : joue si « Prochaine escale » est actif (repli route interne).
 import { expect, test } from "@playwright/test";
@@ -30,7 +30,7 @@ async function leaveCinema(page) {
   await cinema.click();
 }
 
-test("lot R2 — une rangée, Masquer partout, Escale précédente", async ({ page }) => {
+test("Une rangée, Masquer partout, Escale précédente", async ({ page }) => {
   test.setTimeout(45_000);
   await page.goto("/");
   await dismissNotForNav(page);

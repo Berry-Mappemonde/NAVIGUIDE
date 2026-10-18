@@ -1,4 +1,4 @@
-// Lot CT1 — le contrat de la tête (specs + parcours) dit la même chose
+// Le contrat de la tête (specs + parcours) dit la même chose
 // que l'écran : pilules Suivre / Tracer, plus « Simulation » comme mode.
 // Sans API : les pilules tiennent seules. GET /voyage/official est sondé ;
 // s'il manque, annotation seulement — aucune assertion n'en dépend.
@@ -14,7 +14,7 @@ const shot = (page, name) => page.screenshot({
   path: join(recetteDir, `${name}.webp`), type: "webp", quality: 85, fullPage: false,
 });
 
-test("lot CT1 — pilules Suivre / Tracer, pas Simulation", async ({ page }) => {
+test("Pilules Suivre / Tracer, pas Simulation", async ({ page }) => {
   test.setTimeout(90_000);
   const errors = [];
   page.on("pageerror", (err) => errors.push(String(err)));

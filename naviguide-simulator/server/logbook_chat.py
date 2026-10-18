@@ -1,4 +1,4 @@
-"""Chatbot journal de bord — lot CH1 (faits par les règles, Ultra si le juge est ouvert).
+"""Chatbot journal de bord — CH1 (faits par les règles, Ultra si le juge est ouvert).
 
 Le skipper pose une question sur **toutes les données de l'application**.
 Le serveur assemble un paquet de faits ; le modèle ne les invente pas.
@@ -12,7 +12,7 @@ Le serveur assemble un paquet de faits ; le modèle ne les invente pas.
    du dépôt) → la même réponse de règles, zéro appel write.
 
 Un chiffre ne passe jamais par le LLM : `filter_numbers` reste juge.
-Lot RH1 : `failed` ne reste que si même le gabarit de faits est impossible.
+`failed` ne reste que si même le gabarit de faits est impossible.
 """
 from __future__ import annotations
 
@@ -323,7 +323,7 @@ async def build_context(
             measured = boat_in.get("speedKnots") if boat_in is not None else None
             measured = float(measured) if isinstance(measured, (int, float)) else None
             regime = sample.get("regime") or sample.get("kind") or "climatology"
-            # Lot C3 : en Suivre, une seule vitesse — celle de l'horloge (0 à quai).
+            # En Suivre, une seule vitesse — celle de l'horloge (0 à quai).
             if at_quay:
                 speed, basis = 0, "clock"
             elif view == "suivre":
@@ -842,7 +842,7 @@ def apply_climo_month(ctx: dict, month: int | None) -> None:
     ctx["climo"] = _climo_facts(lat, lon, int(month))
 
 
-# ── mémoire journal (lot L6 / U13) : mots-clés d'abord, embeddings option ──
+# ── mémoire journal : mots-clés d'abord, embeddings option ──
 
 def embeddings_enabled() -> bool:
     return (os.environ.get("NAVIGUIDE_EMBEDDINGS") or "").strip() == "1"
@@ -1643,7 +1643,7 @@ def rules_answer(
     if qty in templates:
         text = templates[qty]()
         return text or missing_info(lang)
-    # Sans grandeur : uniquement si la question la nomme (RH1). Pas un vent collé
+    # Sans grandeur : uniquement si la question la nomme. Pas un vent collé
     # sur « prix du gasoil ». Pour un raisonnement, le fait le plus proche ensuite.
     parts: list[str] = []
     if _WX_WORDS.search(q):

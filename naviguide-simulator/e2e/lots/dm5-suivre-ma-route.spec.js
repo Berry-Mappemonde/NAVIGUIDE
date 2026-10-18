@@ -1,4 +1,4 @@
-// Lot DM5 — Suivre sur ma route (revue du porteur du 14 oct., B1-B4) :
+// Suivre sur ma route (revue du porteur du 14 oct., B1-B4) :
 // Tracer → Terminer → Suivre ouvre Suivre sur la route que je viens de tracer,
 // et seulement elle ; les pilules Berry-Mappemonde | <ma route> basculent la
 // source dans les deux modes ; une seule route dessinée à la fois.
@@ -97,7 +97,7 @@ const isDrawnLine = (l) => l.n <= 4 && (
   || (nearEnd(l.ends[0], END) && nearEnd(l.ends[1], START))
 );
 
-test("lot DM5 — Tracer → Terminer → Suivre : ma route, seule ; pilules Berry | ma route", async ({ page }) => {
+test("Tracer → Terminer → Suivre : ma route, seule ; pilules Berry | ma route", async ({ page }) => {
   test.setTimeout(150_000);
   const errors = [];
   page.on("pageerror", (err) => errors.push(String(err)));
@@ -197,7 +197,7 @@ test("lot DM5 — Tracer → Terminer → Suivre : ma route, seule ; pilules Ber
   // Pas d'horloge officielle pour ma route : aucun appel /voyage/official de
   // plus ; le voyage perso est bien créé côté serveur (POST /voyage). Son
   // horloge affichée est celle du client (polaire + climatologie) : le
-  // serveur répond « en préparation » aux brouillons sans forecast (RC15).
+  // serveur répond « en préparation » aux brouillons sans forecast.
   if (apiUp) {
     await expect.poll(() => voyageCreates.length, {
       timeout: 30_000,

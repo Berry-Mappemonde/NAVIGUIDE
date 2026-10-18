@@ -1,4 +1,4 @@
-// Lot DM6 — Tracer, c'est d'abord tracer (revue du porteur, 14 oct. §1.C) :
+// Tracer, c'est d'abord tracer (revue du porteur, 14 oct. §1.C) :
 // entrée en Tracer = dessin ouvert ; la pilule Berry-Mappemonde affiche la
 // route Berry sans Annuler et sans jeter le brouillon ; « Tracer votre propre
 // route » le ramène ; Annuler reste le seul abandon. Importer reste.
@@ -39,7 +39,7 @@ async function stubRoute(page) {
   });
 }
 
-test("lot DM6 — Tracer ouvre le dessin ; Berry met le brouillon de côté", async ({ page }) => {
+test("Tracer ouvre le dessin ; Berry met le brouillon de côté", async ({ page }) => {
   test.setTimeout(120_000);
   const errors = [];
   page.on("pageerror", (err) => errors.push(String(err)));

@@ -67,7 +67,7 @@ function parseKml(xml) {
   };
 }
 
-describe("routeExport (lot N2)", () => {
+describe("routeExport", () => {
   it("viewExportMode : Suivre / Tracer / Simulation", () => {
     assert.equal(viewExportMode(true, false), "tracer");
     assert.equal(viewExportMode(true, true), "tracer");

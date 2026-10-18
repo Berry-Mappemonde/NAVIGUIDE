@@ -1,4 +1,4 @@
-"""Lot C6 — ETA p10/p50/p90, faux serveur HTTP Ensemble, cache 6 h."""
+"""ETA p10/p50/p90, faux serveur HTTP Ensemble, cache 6 h."""
 from __future__ import annotations
 
 import json
@@ -367,7 +367,7 @@ def test_next_official_stop_is_dzaoudzi_after_noumea():
 
 
 def test_preheat_official_noumea_dzaoudzi_members_no_network(monkeypatch):
-    """Lot RB7 : préchauffage sur fixture officielle, sans HTTP, fenêtre de quelques jours."""
+    """Préchauffage sur fixture officielle, sans HTTP, fenêtre de quelques jours."""
     voy = _official_noumea_dzaoudzi()
     members = _fixture_members()
 

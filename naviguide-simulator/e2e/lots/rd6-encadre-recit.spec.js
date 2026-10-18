@@ -1,4 +1,4 @@
-// Lot RD6 — l'encadré gauche tient parole : Récit jamais vide, journal
+// L'encadré gauche tient parole : Récit jamais vide, journal
 // qui nomme, sans trou sous les onglets.
 // Sans API : Simulation / Tracer sans onglet Récit, et le Journal local
 // nommé (fixture AMP Iroise) tiennent seuls.
@@ -60,7 +60,7 @@ async function showLeftPanel(page) {
   await expect(box).toBeVisible({ timeout: 15_000 });
 }
 
-test("lot RD6 — Récit hors Suivre absent, journal nommé, pas de trou", async ({ page }) => {
+test("Récit hors Suivre absent, journal nommé, pas de trou", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

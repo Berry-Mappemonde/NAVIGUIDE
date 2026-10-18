@@ -1,5 +1,5 @@
 /**
- * Replay narré de l'expédition (lot E, commentaire 5 du porteur) : rejouer la
+ * Replay narré de l'expédition (commentaire 5 du porteur) : rejouer la
  * route **de Saint-Maur à la position d'aujourd'hui** sur l'horloge officielle,
  * en racontant. Pur, testé : le temps rejoué avance à `secondsPerDay`, la
  * position vient de l'horloge, le vent des GRIB déjà journalisés, les cartes
@@ -24,7 +24,7 @@ export const FILM_CALIBRATE_SLACK_S = 8;
 export const FILM_ZOOM_MIN = 3;
 export const FILM_ZOOM_MAX = 7;
 export const FILM_FLY_SECONDS = 1.2;
-/** Recalcul Leaflet au plus toutes les N frames pendant le film (RG13). */
+/** Recalcul Leaflet au plus toutes les N frames pendant le film. */
 export const FILM_RESET_EVERY = 36;
 /** Le bateau reste dans les 40 % centraux de l'écran. */
 export const FILM_BOAT_KEEP_FRAC = 0.4;
@@ -233,7 +233,7 @@ export function predictVoiceChar({
 }
 
 /**
- * Pas mené par la voix (RG12) : entre deux frontières, la cible avance au
+ * Pas mené par la voix : entre deux frontières, la cible avance au
  * débit mesuré ; une frontière ne fait qu'une correction ≤ 300 ms. Plus de
  * fraction dt/horizon d'un écart figé (dent de scie, rapport 6,8).
  */
@@ -720,7 +720,7 @@ function marksWithIso(marks, clock) {
 }
 
 /**
- * Chapitres = jambes entre escales du récit existant (lot F1 ; F3 apportera
+ * Chapitres = jambes entre escales du récit existant (F3 apportera
  * le script rédigé). Chaque chapitre porte [tA, tB] et le texte de la jambe.
  */
 export function filmChaptersFromStory({
@@ -871,7 +871,7 @@ export function filmPlan({ chapters, targetSeconds = FILM_TARGET_SECONDS } = {})
 
 /**
  * Ancres phrase → instant (serveur : `anchors: [{charIdx, t}]`).
- * RG14 : le charIdx est déjà compensé (nom du lieu − FILM_VOICE_LOOKAHEAD_CHARS).
+ * Le charIdx est déjà compensé (nom du lieu − FILM_VOICE_LOOKAHEAD_CHARS).
  * Bornées au chapitre, triées, croissantes, encadrées par (0, tA) et (chars, tB).
  */
 export function chapterAnchors(ch) {

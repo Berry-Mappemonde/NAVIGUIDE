@@ -1,4 +1,4 @@
-// Lot RC51 — après Ajaccio → Fort-de-France, la jambe Caraïbes : la carte
+// Après Ajaccio → Fort-de-France, la jambe Caraïbes : la carte
 // glisse avec le bateau. Sans API : GET /voyage/official sondé ; s'il manque,
 // annotation + saut des assertions caméra — barre et Revoir gardés.
 import { mkdirSync } from "node:fs";
@@ -42,7 +42,7 @@ function degJump(a, b) {
   return Math.hypot(b.lat - a.lat, dLon);
 }
 
-test("lot RC51 — Fort-de-France → Pointe-à-Pitre : la carte glisse avec le bateau", async ({ page }) => {
+test("Fort-de-France → Pointe-à-Pitre : la carte glisse avec le bateau", async ({ page }) => {
   test.setTimeout(120_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

@@ -1,4 +1,4 @@
-"""Base embarquée (SQLite) des perles — lot P."""
+"""Base embarquée (SQLite) des perles."""
 import json
 import time
 

@@ -111,7 +111,7 @@ _OFFICIAL_BODY_CACHE: Optional[VoyageCreate] = None
 class RecomputeBody(BaseModel):
     to_name: Optional[str] = None
     t: Optional[str] = None
-    # Lot G — les ordres du skipper comme contraintes du routage (conseil de route).
+    # Les ordres du skipper comme contraintes du routage (conseil de route).
     wind_max_kt: Optional[float] = None
     hs_max_m: Optional[float] = None
 
@@ -254,7 +254,7 @@ def _fill_hindcast_then_forecast(voyage_id: str) -> None:
 
 
 def _fill_forecast(voyage_id: str) -> None:
-    """Alias lot C2 : hindcast puis prévision."""
+    """Alias C2 : hindcast puis prévision."""
     _fill_hindcast_then_forecast(voyage_id)
 
 
@@ -363,7 +363,7 @@ def _official_route_fp() -> Optional[str]:
 
 
 def _matches_official_request(body: VoyageCreate) -> bool:
-    """official:true, ou même t0 officiel + même empreinte de route (lot RC12)."""
+    """official:true, ou même t0 officiel + même empreinte de route."""
     if body.official:
         return True
     if not _same_t0(body.t0, OFFICIAL_T0):
@@ -442,7 +442,7 @@ def _splice_points(points: List[dict], from_nm: float, to_nm: float,
     return _recompute_cum(before + mid + after)
 
 
-# Lot L5 / U8 — écart officiel vs recalcul (règles) puis phrase tier fast.
+# Écart officiel vs recalcul (règles) puis phrase tier fast.
 AVOID_NM = 10.0
 ADVICE_SYSTEM = (
     "Tu expliques un recalcul de route en UNE phrase. "
@@ -598,7 +598,7 @@ def create_voyage(body: VoyageCreate, background: BackgroundTasks):
         log.warning("purge voyages: %s", exc)
     if _matches_official_request(body):
         # Route+t0 officiels (empreinte / t0, ou official:true) : stock RF2,
-        # jamais _climo_clock dans ce handler (lot RC12).
+        # jamais _climo_clock dans ce handler.
         voy = _build_official(body, compute_clock=False)
         official_store.kick_worker()
         clock = _official_clock_from_store(voy)
@@ -832,7 +832,7 @@ def official_itinerary_body() -> Optional[VoyageCreate]:
 
 
 def _auto_seed_official_enabled() -> bool:
-    """Pytest : pas de semis au boot (fixtures PUT à 3 points). force = tests du lot."""
+    """Pytest : pas de semis au boot (fixtures PUT à 3 points). force = tests ciblés."""
     raw = (os.getenv("NAVIGUIDE_SEED_OFFICIAL") or "1").strip().lower()
     if raw in ("0", "false", "no"):
         return False
@@ -866,7 +866,7 @@ def _wait_official_kick(provider: str, timeout: float = 900.0) -> None:
 
 
 def kick_official_warmups(*, force: bool = False) -> None:
-    """Un préchauffage après l'autre — jamais les cinq en parallèle (lot RC7)."""
+    """Un préchauffage après l'autre — jamais les cinq en parallèle."""
     _kick_official_grib()
     _wait_official_kick("official-grib")
     _kick_official_hindcast(force=force)
@@ -880,7 +880,7 @@ def kick_official_warmups(*, force: bool = False) -> None:
 
 
 def startup_official_voyage() -> Optional[dict]:
-    """Semis + travail de fond du stock (lot RF2) : le boot uvicorn ne bloque pas."""
+    """Semis + travail de fond du stock : le boot uvicorn ne bloque pas."""
     voy = seed_official_voyage()
     official_store.start_worker()
     return voy
@@ -976,7 +976,7 @@ def _regime_portions(clock: dict) -> list:
 
 
 def _kick_official_moments(*, force: bool = False) -> bool:
-    """Remplit le journal des moments en fond — jamais bloquant (lot R9a)."""
+    """Remplit le journal des moments en fond — jamais bloquant."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         return False
@@ -1000,7 +1000,7 @@ def _kick_official_moments(*, force: bool = False) -> bool:
 
 
 def _kick_official_film_story(*, force: bool = False) -> bool:
-    """Préchauffe le récit du film après le journal — jamais bloquant (lot R9c)."""
+    """Préchauffe le récit du film après le journal — jamais bloquant."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         return False
@@ -1030,7 +1030,7 @@ def _kick_official_film_story(*, force: bool = False) -> bool:
 
 
 def _kick_official_hindcast(*, force: bool = False) -> bool:
-    """Lot HC1 : l'ERA5 officiel appartient au remplisseur (trajet réel figé,
+    """L'ERA5 officiel appartient au remplisseur (trajet réel figé,
     cellules demandées par l'intégration — jamais par les dates de l'horloge
     climatologique du jour). Ici on ne fait que le réveiller."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
@@ -1053,7 +1053,7 @@ def _kick_official_hindcast(*, force: bool = False) -> bool:
 def _kick_official_eta(*, force: bool = False, stop: Optional[str] = None) -> bool:
     """Préchauffe l'ensemble ETA du voyage officiel, sans bloquer l'appelant.
 
-    Lot RC9 : un premier vide n'est pas terminal. Lot RE5 : on ne martèle
+    Un premier vide n'est pas terminal. RE5 : on ne martèle
     plus à chaque GET — tant que ``nextRetry`` n'est pas échu, pas de relance.
     """
     raw = (os.getenv("NAVIGUIDE_ETA_PREHEAT") or "1").strip().lower()
@@ -1176,7 +1176,7 @@ def ensure_official(body: VoyageCreate, background: BackgroundTasks, request: Re
             meta["clock"] = clock
         return meta
     log.warning("voyage officiel absent : créé depuis un client (%s points)", len(body.points))
-    # Route officielle (~1 200 pts) : jamais d'horloge sur la requête (RF2).
+    # Route officielle (~1 200 pts) : jamais d'horloge sur la requête.
     # Fixtures de test (quelques points) : horloge locale, aucun fournisseur.
     voy = _build_official(body, compute_clock=len(body.points) < 80)
     background.add_task(official_store.kick_worker)
@@ -1208,7 +1208,7 @@ def get_official_clock():
     try:
         raw = official_store.serve_clock_bytes()
         if raw:
-            # Lot RC34 : climo du jour sans realUntil → nudge le remplisseur,
+            # Climo du jour sans realUntil → nudge le remplisseur,
             # sans recalculer ici. L'horloge déjà rangée est servie telle quelle.
             official_store.nudge_climo_if_missing_real_until()
             return Response(content=raw, media_type="application/json")
@@ -1232,7 +1232,7 @@ def get_official_clock():
 
 @router.get("/voyage/official/regimes")
 def get_official_regimes():
-    """Portions de route par régime — snapshot du stock (lot RF2)."""
+    """Portions de route par régime — snapshot du stock."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     climo = official_store.serve_climo()
     clock = (climo or {}).get("clock") or official_store.stored_clock() or (voy or {}).get("clock")
@@ -1379,7 +1379,7 @@ def _rewrite_plan_advice(payload: dict) -> dict:
 
 
 def _localize_plan_advice(payload: dict, lang: str) -> dict:
-    """L6 : texte rédigé en anglais si l'UI est EN ; copie, jamais le cache du job."""
+    """Texte rédigé en anglais si l'UI est EN ; copie, jamais le cache du job."""
     out = copy.deepcopy(payload) if isinstance(payload, dict) else payload
     cand = out.get("best") if isinstance(out, dict) else None
     if not isinstance(cand, dict):
@@ -1408,7 +1408,7 @@ def get_official_advice(
     leg: int = Query(..., ge=0, le=400),
     lang: str = Query("fr"),
 ):
-    """Compromis par décalage de date (lot R10b). pending|done|unavailable — jamais 400 d'indice."""
+    """Compromis par décalage de date. pending|done|unavailable — jamais 400 d'indice."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
@@ -1650,7 +1650,7 @@ def get_voyage(voyage_id: str):
 
 @router.get("/voyage/{voyage_id}/moments")
 def get_voyage_moments(voyage_id: str):
-    """Moments de MA route (DM8A) : calcul à la demande, cache kv, jamais le stock officiel."""
+    """Moments de MA route : calcul à la demande, cache kv, jamais le stock officiel."""
     if _is_official(voyage_id):
         return get_official_moments()
     voy = load_voyage(voyage_id)
@@ -1674,7 +1674,7 @@ def get_voyage_film(
     seconds: int = Query(150, ge=0, le=300),
     style: str = Query("raw"),
 ):
-    """Film de MA route (DM8B) : même forme que l'officiel, brut seulement, jamais de LLM."""
+    """Film de MA route : même forme que l'officiel, brut seulement, jamais de LLM."""
     # Le chemin /voyage/official/film est aussi sur main.py ; ce paramètre le
     # capte si la route générique est enregistrée avant — on délègue, on ne
     # recalcule pas.
@@ -1712,7 +1712,7 @@ def get_clock(voyage_id: str):
     clock = voy.get("clock")
     if _clock_has_vertices(clock):
         return clock
-    # Voyage non officiel sans sommets : 200 daté, jamais 503 (lot RC15).
+    # Voyage non officiel sans sommets : 200 daté, jamais 503.
     # Aucune horloge inventée dans ce handler.
     return _preparing_clock_body(voy, "horloge en préparation")
 
@@ -1730,7 +1730,7 @@ def get_at(voyage_id: str, t: Optional[str] = Query(None)):
     else:
         clock = voy.get("clock")
         if not _clock_has_vertices(clock):
-            # Même contrat que l'officiel preparing : 200 daté, jamais 503 (lot RC15).
+            # Même contrat que l'officiel preparing : 200 daté, jamais 503.
             return {"voyageId": voyage_id, "t": t, **_dated_error("horloge en préparation", "preparing")}
     if not _clock_has_vertices(clock):
         return {"voyageId": voyage_id, "t": t, **_dated_error("horloge officielle en préparation", "preparing")}

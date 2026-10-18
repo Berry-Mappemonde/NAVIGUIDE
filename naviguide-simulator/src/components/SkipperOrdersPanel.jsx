@@ -75,7 +75,7 @@ export function resetNumberToProfile(id, profile = DEFAULT_PROFILE) {
 /**
  * One editable number: input + unit + « back to default » arrow.
  * Draft while typing: clamp-on-keystroke (setExpert → clampExpert) turned
- * « 34 → 2 → 29 » into 20 then 50, so ↺ never saw 29 (lot RD3, :5174).
+ * « 34 → 2 → 29 » into 20 then 50, so ↺ never saw 29 (:5174).
  */
 function NumberRow({ id, label, value, unit, field, forced, onChange, onReset, resetTitle, testPrefix = "skipper-expert", hint = "" }) {
   const [draft, setDraft] = useState(null);

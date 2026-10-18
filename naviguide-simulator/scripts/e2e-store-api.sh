@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Démarre l'API hors ligne sur le stock figé (lot RF11).
+# Démarre l'API hors ligne sur le stock figé.
 # Dépliage de server/tests/fixtures/official_store.tar.gz puis uvicorn.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -64,14 +64,14 @@ describe("journalFormat", () => {
     assert.equal(formatJournalEntry({ kind: "amp", t: "2026-05-26T08:00:00Z", event: "exit", name: "Cabrera" }, "en").text, "Left the marine protected area Cabrera");
   });
 
-  it("lot D: a logbook chat exchange shows its summary", () => {
+  it("A logbook chat exchange shows its summary", () => {
     const c = formatJournalEntry({ kind: "chat", t: "2026-09-19T18:00:00Z", question: "Quel vent ?", answer: "Vent 14 kn de OSO.", summary: "Quel vent ? → Vent 14 kn de OSO." }, "fr");
     assert.equal(c.icon, "💬");
     assert.equal(c.text, "Quel vent ? → Vent 14 kn de OSO.");
     assert.equal(formatJournalEntry({ kind: "chat", t: "2026-09-19T18:00:00Z", question: "Q", answer: "A" }, "en").text, "Q → A");
   });
 
-  it("lot A: ports of entry passed and remarkable weather derived from the GRIB", () => {
+  it("Ports of entry passed and remarkable weather derived from the GRIB", () => {
     assert.equal(formatJournalEntry({ kind: "poe", t: "2026-05-15T10:00:00Z", event: "passed", name: "La Rochelle - La Pallice", nm: 1.6 }, "fr").text, "Port d’entrée passé : La Rochelle - La Pallice (1,6 nm)");
     assert.equal(formatJournalEntry({ kind: "poe", t: "2026-05-15T10:00:00Z", event: "passed", name: "Porto" }, "en").text, "Port of entry passed: Porto");
     const g = formatJournalEntry({ kind: "wx", t: "2026-06-03T06:00:00Z", event: "gale", windKnots: 36.5, dirFromDeg: 250, hs: 2.0, model: "GFS" }, "fr");
@@ -80,7 +80,7 @@ describe("journalFormat", () => {
     assert.equal(formatJournalEntry({ kind: "wx", t: "2026-06-04T06:00:00Z", event: "sea", windKnots: 20, hs: 4.1 }, "en").text, "Heavy sea : wind 20 kn · Hs 4.1 m");
   });
 
-  it("lot F2: climo, sci, wx durée/max/level, stop avec lieux", () => {
+  it("Climo, sci, wx durée/max/level, stop avec lieux", () => {
     const rose = formatJournalEntry({
       kind: "climo", t: "2026-06-02T12:00:00Z", event: "rose",
       facts: { fromDeg: 45, toDeg: 165, deltaDeg: 120 },
@@ -112,7 +112,7 @@ describe("journalFormat", () => {
     );
   });
 
-  it("lot L4: veille news datée avec URL", () => {
+  it("Veille news datée avec URL", () => {
     const n = formatJournalEntry({
       kind: "news", t: "2026-09-20T12:00:00Z", name: "Nouméa",
       text: "Travaux annoncés à la marina de Motu Uta",

@@ -1,4 +1,4 @@
-// Lot U — zoom molette réactif ; profil CDP + longtask / écart de frame.
+// Zoom molette réactif ; profil CDP + longtask / écart de frame.
 import { expect, test } from "@playwright/test";
 import {
   collectObservers,
@@ -24,7 +24,7 @@ const shot = (page, name) => page.screenshot({
 const phase = process.env.ZOOM_PROFILE_PHASE || "after";
 const profileOnly = process.env.ZOOM_PROFILE_ONLY === "1";
 
-test("lot U — zoom Atlantique : tâche < 50 ms", async ({ page }) => {
+test("Zoom Atlantique : tâche < 50 ms", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });

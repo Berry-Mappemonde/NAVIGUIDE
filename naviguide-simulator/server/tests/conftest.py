@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("BI_API_URL", "http://127.0.0.1:9/api")
 # No background pearl warmer in tests: it would call MarineRegions for real.
 os.environ.setdefault("NAVIGUIDE_ICI_WARM", "0")
-# Jamais d'Open-Meteo / Copernicus réels pendant les tests (lot C2).
+# Jamais d'Open-Meteo / Copernicus réels pendant les tests.
 os.environ.setdefault("NAVIGUIDE_HINDCAST", "0")
 # Pas de préchauffage ETA (Open-Meteo Ensemble) pendant les tests.
 os.environ.setdefault("NAVIGUIDE_ETA_PREHEAT", "0")

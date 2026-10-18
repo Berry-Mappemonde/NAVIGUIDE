@@ -1,4 +1,4 @@
-// Lot R9c — le film raconte le journal (ordre de la route, 2 min 30, rédigé prêt).
+// Le film raconte le journal (ordre de la route, 2 min 30, rédigé prêt).
 // Sans API : le brut local tient debout. GET /voyage/official sondé ; s'il
 // manque, on annote et on saute seulement les assertions du script serveur.
 import { expect, test } from "@playwright/test";
@@ -19,7 +19,7 @@ async function dismissNotForNav(page) {
   }
 }
 
-test("lot R9c — Revoir : le film raconte le journal, dans l'ordre", async ({ page }) => {
+test("Revoir : le film raconte le journal, dans l'ordre", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {
@@ -86,7 +86,7 @@ test("lot R9c — Revoir : le film raconte le journal, dans l'ordre", async ({ p
     expect(film?.chapters?.length, "GET /voyage/official/film a des chapitres").toBeGreaterThan(0);
     {
       const blob = film.chapters.map((c) => c.text || "").join(" ");
-      // RD7 : pilules décochées par défaut — le stock peut servir 0, 150 ou 180.
+      // Pilules décochées par défaut — le stock peut servir 0, 150 ou 180.
       expect([0, 150, 180], "durée cible du stock").toContain(Number(film.targetSeconds));
       expect(blob, "pas de nm nu").not.toMatch(/\bnm\b/);
       expect(blob, "Saint-Maur").toMatch(/Saint-Maur/);

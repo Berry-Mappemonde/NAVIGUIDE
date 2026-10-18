@@ -1,4 +1,4 @@
-// Lot RA1 — la pensée du modèle ne s'affiche jamais (fiche d'escale, chat).
+// La pensée du modèle ne s'affiche jamais (fiche d'escale, chat).
 // Sans API : titre de fiche, drapeau, journal tiennent seuls. Le paragraphe
 // traduit et la réponse du chat sont sondés via GET /voyage/official.
 import { expect, test } from "@playwright/test";
@@ -76,7 +76,7 @@ async function openSaintMaurFlag(page) {
   expect(fired, "drapeau Saint-Maur").toBeTruthy();
 }
 
-test("lot RA1 — fiche EN et chat sans pensée du modèle", async ({ page }) => {
+test("Fiche EN et chat sans pensée du modèle", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/");
   await dismissNotForNav(page);

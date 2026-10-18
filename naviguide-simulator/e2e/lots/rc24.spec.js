@@ -1,4 +1,4 @@
-// Lot RC24 — fourchette ou raison sous la prochaine escale (Nouméa),
+// Fourchette ou raison sous la prochaine escale (Nouméa),
 // jamais sous La Rochelle à la place, jamais « 1 janv. ».
 // Sans API : Suivre + légende tiennent seuls. GET /voyage/official sondé ;
 // s'il manque, annotation + saut des seules assertions fourchette / raison.
@@ -58,7 +58,7 @@ function retryYear(iso) {
   return new Date(t).getUTCFullYear();
 }
 
-test("lot RC24 — fourchette ou raison sous la prochaine, pas sous La Rochelle", async ({ page }) => {
+test("Fourchette ou raison sous la prochaine, pas sous La Rochelle", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp, body: official, clock, live } = await probeOfficial(page);
   if (!apiUp) {

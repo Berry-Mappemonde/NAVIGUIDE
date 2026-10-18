@@ -1,4 +1,4 @@
-// Lot R3 — premier clic sur Revoir lance le film ; pas terminé après 5 s.
+// Premier clic sur Revoir lance le film ; pas terminé après 5 s.
 // Sans API : le brut local tient debout. Headless : pas de voix (webdriver).
 import { expect, test } from "@playwright/test";
 
@@ -18,7 +18,7 @@ async function dismissNotForNav(page) {
   }
 }
 
-test("lot R3 — premier clic lance le film, encore en cours après 5 s", async ({ page }) => {
+test("Premier clic lance le film, encore en cours après 5 s", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });

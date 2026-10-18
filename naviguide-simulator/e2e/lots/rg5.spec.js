@@ -1,4 +1,4 @@
-// Lot RG5 — stations qualifiées : type parlé, jamais un titre de jeu de données.
+// Stations qualifiées : type parlé, jamais un titre de jeu de données.
 // Sans API : Suivre, Revoir et la barre tiennent seuls ; le script serveur
 // est sauté. GET /voyage/official sondé ; s'il manque, annotation + saut des
 // seules assertions film — jamais Revoir retiré, ni les pilules, ni la barre.
@@ -62,7 +62,7 @@ async function probeOfficial(page) {
   return { apiUp: true };
 }
 
-test("lot RG5 — stations qualifiées, jamais un comptage ni un titre de jeu", async ({ page }) => {
+test("Stations qualifiées, jamais un comptage ni un titre de jeu", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

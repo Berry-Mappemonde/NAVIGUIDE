@@ -1,4 +1,4 @@
-// Lot UI1 — crédits Leaflet collés juste au-dessus de la barre film,
+// Crédits Leaflet collés juste au-dessus de la barre film,
 // même hauteur que les boutons + / − (revue du 14 oct.).
 // Sans API : géométrie attribution / zoom / barre film autonome.
 // GET /voyage/official sondé ; s'il manque, annotation seulement
@@ -88,7 +88,7 @@ async function assertAttributionOnBar(page, label) {
   expect(g.text).toMatch(/OpenStreetMap/);
 }
 
-test("lot UI1 — attribution collée à la barre film, même hauteur que + / −", async ({ page }) => {
+test("Attribution collée à la barre film, même hauteur que + / −", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = Boolean(await probeOfficial(page));
   if (!apiUp) {

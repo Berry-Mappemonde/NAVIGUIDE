@@ -1,6 +1,6 @@
-"""Revue de plan par règles (lot K) : jambes, ZEE / ports d'entrée des perles, drapeaux honnêtes.
+"""Revue de plan par règles : jambes, ZEE / ports d'entrée des perles, drapeaux honnêtes.
 
-Lot L5 : commentaire U7 — faux LLM, aucun chiffre nouveau, cache par hash.
+Commentaire U7 — faux LLM, aucun chiffre nouveau, cache par hash.
 """
 import asyncio
 from datetime import timedelta
@@ -228,7 +228,7 @@ def test_review_official_exposes_gibraltar_antishipping():
 
 
 def test_review_official_without_clock_builds_legs_and_names_gibraltar():
-    """Lot RC8 : semis sans clock → jambes depuis marks + t0 + points."""
+    """Semis sans clock → jambes depuis marks + t0 + points."""
     voy = {
         "voyageId": "seed-no-clock",
         "t0": "2026-05-15T08:00:00Z",
@@ -259,7 +259,7 @@ def test_review_official_without_clock_builds_legs_and_names_gibraltar():
 
 
 def test_plan_review_seeded_without_clock_has_legs(client, monkeypatch):
-    """Lot RC8 : voyage semé sans clock → GET /plan-review 200, jambes, Ajaccio."""
+    """Voyage semé sans clock → GET /plan-review 200, jambes, Ajaccio."""
     import voyage_api
     import voyage_clock
 
@@ -308,7 +308,7 @@ def test_plan_review_http_exposes_comment_source(client, monkeypatch):
 
 
 def test_noumea_dzaoudzi_eta_interval_is_a_few_days():
-    """Lot RA7 : un membre à ~0 kn ne doit plus ouvrir 7 mois sur Nouméa → Dzaoudzi."""
+    """Un membre à ~0 kn ne doit plus ouvrir 7 mois sur Nouméa → Dzaoudzi."""
     from datetime import datetime, timezone
 
     from ensemble_eta import (
@@ -339,7 +339,7 @@ def test_noumea_dzaoudzi_eta_interval_is_a_few_days():
 
 
 def test_pacific_leg_origin_is_cayenne_after_episode():
-    """Lot RC44 : après l'épisode, la jambe Pacifique part de Cayenne, pas de Saint-Pierre."""
+    """Après l'épisode, la jambe Pacifique part de Cayenne, pas de Saint-Pierre."""
     from voyage_clock import build_voyage_clock
 
     def wind_fn(lat, lon, t):
@@ -457,7 +457,7 @@ def _rc54_scrambled_pacific_voy():
 
 
 def test_mata_utu_noumea_has_no_atlantic_lanes():
-    """RC54 : Mata-Utu → Nouméa n'a ni Bay of Biscay ni N Atlantic."""
+    """Mata-Utu → Nouméa n'a ni Bay of Biscay ni N Atlantic."""
     out = plan_review.review_official(_rc54_scrambled_pacific_voy(), season=False)
     pacific = [
         lg for lg in out["legs"]
@@ -473,7 +473,7 @@ def test_mata_utu_noumea_has_no_atlantic_lanes():
 
 
 def test_noumea_la_rochelle_dates_match_sea_days():
-    """RC54 : Nouméa → La Rochelle, jours de mer et (arrivée − départ) sans facteur dix."""
+    """Nouméa → La Rochelle, jours de mer et (arrivée − départ) sans facteur dix."""
     from datetime import datetime, timezone
 
     clock = {

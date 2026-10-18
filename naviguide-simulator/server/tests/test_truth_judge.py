@@ -1,4 +1,4 @@
-"""Juge de vérité — faux Tavily + faux Ultra (lot L3)."""
+"""Juge de vérité — faux Tavily + faux Ultra."""
 import asyncio
 import json
 import time

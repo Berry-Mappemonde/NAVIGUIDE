@@ -86,7 +86,7 @@ function ZeeLine({ zee, lang }) {
 }
 
 /**
- * The sheet of a stop (lot C): a paragraph (usual LLM cascade, from the lists
+ * The sheet of a stop: a paragraph (usual LLM cascade, from the lists
  * only) then the lists themselves — every line a place with map focus, site
  * and Google Maps. Empty sections are simply not there.
  */

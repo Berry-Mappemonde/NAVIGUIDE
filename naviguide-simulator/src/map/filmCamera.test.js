@@ -33,7 +33,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const controller = readFileSync(join(here, "MapSceneController.js"), "utf8");
 
-describe("filmCamera lot R3 — premier mouvement = chapitre 1", () => {
+describe("filmCamera — premier mouvement = chapitre 1", () => {
   it("cadre la première jambe (Saint-Maur → La Rochelle), zoom [3 ; 7], sans flyTo", () => {
     const calls = [];
     const map = {
@@ -98,7 +98,7 @@ describe("filmCamera lot R3 — premier mouvement = chapitre 1", () => {
   });
 });
 
-describe("filmCamera lot R4 / RG13 — pan borné, un setView par chapitre", () => {
+describe("filmCamera — pan borné, un setView par chapitre", () => {
   function fakeMap(center = { lat: 46, lng: -1 }) {
     const calls = [];
     let here = { ...center };
@@ -205,7 +205,7 @@ describe("filmCamera lot R4 / RG13 — pan borné, un setView par chapitre", () 
   });
 });
 
-describe("filmCamera lot RA3 — dézoom archipels, tuiles gardées", () => {
+describe("filmCamera — dézoom archipels, tuiles gardées", () => {
   it("plafonne le zoom pour une jambe à sauts courts", () => {
     const map = {
       getBoundsZoom() { return 8; },
@@ -234,7 +234,7 @@ describe("filmCamera lot RA3 — dézoom archipels, tuiles gardées", () => {
   });
 });
 
-describe("filmCamera lot RF6 — interpolation hors React, zoom figé, tuiles", () => {
+describe("filmCamera — interpolation hors React, zoom figé, tuiles", () => {
   function fakeMap(center = { lat: 46, lng: -1 }) {
     const calls = [];
     let here = { ...center };
@@ -403,7 +403,7 @@ describe("filmCamera lot RF6 — interpolation hors React, zoom figé, tuiles", 
   });
 });
 
-describe("filmCamera lot RG13 — 60 Hz, cap lissé, zoom d'approche", () => {
+describe("filmCamera — 60 Hz, cap lissé, zoom d'approche", () => {
   it("ne pose pas de setView à chaque frame : translation puis commit", () => {
     const calls = [];
     let here = { lat: 46, lng: -1 };
@@ -488,7 +488,7 @@ describe("filmCamera lot RG13 — 60 Hz, cap lissé, zoom d'approche", () => {
   });
 });
 
-describe("filmCamera lot RC25 — chapitre sans bond (Δnm≈0, zoom 6→4)", () => {
+describe("filmCamera — chapitre sans bond (Δnm≈0, zoom 6→4)", () => {
   function mercatorMap(center = { lat: 46.1541, lng: -1.167 }, zoom = 6) {
     const size = { x: 1280, y: 800 };
     let here = { ...center };
@@ -609,7 +609,7 @@ describe("filmCamera lot RC25 — chapitre sans bond (Δnm≈0, zoom 6→4)", ()
     assert.equal(calls.filter((c) => c.action === "flyTo").length, 0);
   });
 
-  it("lot RC29 — 30 frames après ch0→ch1, même lat/lon, zoom 6→4 : cumul |Δpx| ≤ 40", () => {
+  it("30 frames après ch0→ch1, même lat/lon, zoom 6→4 : cumul |Δpx| ≤ 40", () => {
     const lat = 46.1541;
     const lon = -1.167;
     const { map, calls, boatPx } = mercatorMap({ lat, lng: lon }, 6);
@@ -688,7 +688,7 @@ describe("filmCamera lot RC25 — chapitre sans bond (Δnm≈0, zoom 6→4)", ()
   });
 });
 
-describe("filmCamera lot RC40 — pleine jambe, pas de saut d'ancre", () => {
+describe("filmCamera — pleine jambe, pas de saut d'ancre", () => {
   function mercatorMap(center = { lat: 14.6, lng: -61.07 }, zoom = 6.75) {
     const size = { x: 1280, y: 800 };
     let here = { ...center };
@@ -904,7 +904,7 @@ describe("filmCamera lot RC40 — pleine jambe, pas de saut d'ancre", () => {
   });
 });
 
-describe("filmCamera lot RC49 — un mouvement au flip, bateau au centre", () => {
+describe("filmCamera — un mouvement au flip, bateau au centre", () => {
   function mercatorMap(center = { lat: 41.9192, lng: 8.7386 }, zoom = 5) {
     const size = { x: 1280, y: 800 };
     let here = { ...center };
@@ -1142,7 +1142,7 @@ describe("filmCamera lot RC49 — un mouvement au flip, bateau au centre", () =>
   });
 });
 
-describe("filmCamera lot RC56 — pas écran ≤ 30 px hors zoom/flip", () => {
+describe("filmCamera — pas écran ≤ 30 px hors zoom/flip", () => {
   function mercatorMap(center = { lat: 46.1541, lng: -1.167 }, zoom = 5) {
     const size = { x: 1440, y: 860 };
     let here = { ...center };

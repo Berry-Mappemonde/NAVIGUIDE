@@ -6,9 +6,9 @@ const API_URL = import.meta.env?.VITE_API_URL ?? "";
 const REFRESH_MS = 10 * 60 * 1000;
 /** Même plancher que voyage_clock.PLANNING_MIN_KN / skipperOrders.PLANNING_MIN_KN. */
 export const ETA_MIN_KN = 3;
-/** Plafond p90 − p10 (lot RA7) : quelques jours, jamais des mois. */
+/** Plafond p90 − p10 : quelques jours, jamais des mois. */
 export const ETA_MAX_SPAN_DAYS = 7;
-/** Recul progressif tant que l'ensemble n'est pas prêt (lot RB7). */
+/** Recul progressif tant que l'ensemble n'est pas prêt. */
 export const ETA_RETRY_MS = [2000, 4000, 8000, 16000, 30000];
 
 export function stopMatch(name, query) {
@@ -135,7 +135,7 @@ export function formatEtaRangeTitle(eta, t) {
 /**
  * Instant et playhead de la légende / fiche : horloge officielle seulement
  * en Suivre × Berry. Hors Suivre, le sample du tracé — jamais official.live
- * (lot DM7 : Papeete ne doit pas gouverner Tracer à Saint-Maur).
+ * (Papeete ne doit pas gouverner Tracer à Saint-Maur).
  */
 export function legendNowAndLive({
   suivreBerry = false,
@@ -322,7 +322,7 @@ function looksFrench(text) {
   return /\b(Partir|Rester|plutôt|alertes au lieu|escales suivantes)\b/i.test(text);
 }
 
-/** Phrase dans la langue de l'UI : gabarit i18n ; texte rédigé seulement s'il est déjà dans cette langue (L6). */
+/** Phrase dans la langue de l'UI : gabarit i18n ; texte rédigé seulement s'il est déjà dans cette langue. */
 export function localizeAdviceSentence(best, t, lang = "fr") {
   const template = formatAdviceSentence(best, t, lang);
   const drafted = String(best?.sentence || "").trim();
@@ -499,7 +499,7 @@ async function defaultEtaFetch(stopName) {
 
 /**
  * Lecture unique de /ici/warm/status. La requête déjà partie va au bout ;
- * le nettoyage ignore la réponse (cancelled), sans abort() — lot RH2.
+ * le nettoyage ignore la réponse (cancelled), sans abort() — RH2.
  */
 export function startWarmStatusWatch(fetchFn, onSource) {
   let cancelled = false;
@@ -516,7 +516,7 @@ export function startWarmStatusWatch(fetchFn, onSource) {
 
 /**
  * Boucle /eta : à l'arrêt, seule l'attente entre deux sondes est coupée.
- * La requête en vol se termine ; sa réponse est ignorée (alive) — lot RH2.
+ * La requête en vol se termine ; sa réponse est ignorée (alive) — RH2.
  */
 export function startOfficialEtaWatch(stopName, {
   fetchFn,
@@ -575,7 +575,7 @@ export async function pollOfficialEta(stopName, {
   return null;
 }
 
-/** Lot RF4 — no /eta while the film plays; lot RC28 — pas de /eta sans horloge officielle. */
+/** No /eta while the film plays; pas de /eta sans horloge officielle. */
 export function shouldPollOfficialEta({
   frozen = false,
   enabled = true,
@@ -607,11 +607,11 @@ export function useOfficialEta(stopName, { enabled = true, frozen = false, offic
 }
 
 /**
- * Revue de plan par règles (lot K): GET /voyage/official/plan-review (legs,
+ * Revue de plan par règles: GET /voyage/official/plan-review (legs,
  * ZEE, ports of entry, MPA, unwarmed pearls) put into words with the season
  * read from the atlas cache (`lookup`, `revision` = the cache changed).
  * Read-only; refreshed every 10 min (the pearls keep warming).
- * Lot C6 : fourchette p10–p90 de la prochaine escale, si l'ensemble répond.
+ * Fourchette p10–p90 de la prochaine escale, si l'ensemble répond.
  */
 export function usePlanReview({
   enabled = true,

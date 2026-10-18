@@ -1,4 +1,4 @@
-/** Teinte de la route parcourue (lot C3). */
+/** Teinte de la route parcourue. */
 export const REGIME_COLORS = Object.freeze({
   hindcast: "#2dd4bf",
   forecast: "#38bdf8",

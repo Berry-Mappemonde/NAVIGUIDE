@@ -1,4 +1,4 @@
-// Lot N — panneau gauche stable : le chat ne saute pas pendant une lecture.
+// Panneau gauche stable : le chat ne saute pas pendant une lecture.
 import { expect, test } from "@playwright/test";
 
 const shot = (page, name) => page.screenshot({
@@ -34,7 +34,7 @@ async function showToolsPanel(page) {
   await expect(theme).toBeVisible({ timeout: 10_000 });
 }
 
-test("lot N — chat immobile pendant une lecture Suivre ; sombre puis clair", async ({ page }) => {
+test("Chat immobile pendant une lecture Suivre ; sombre puis clair", async ({ page }) => {
   test.setTimeout(45_000);
   await page.goto("/");
   await dismissNotForNav(page);

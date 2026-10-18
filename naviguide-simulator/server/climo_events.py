@@ -1,4 +1,4 @@
-"""Changements de climatologie notables, lus sur l'horloge (lot RG4).
+"""Changements de climatologie notables, lus sur l'horloge.
 
 Bascule de régime nommée, saut de force ≥ 8 kn ou de direction ≥ 60° tenu
 ≥ 24 h. Les chiffres viennent de l'horloge ou de l'atlas ; le repli de zone
@@ -89,7 +89,7 @@ _MONTHS = {
     ],
 }
 # Jalons climatiques : le nom vient d'ici, la position du sommet décide « au sud de ».
-# RC30 : un jalon à plus de PLACE_MAX_NM ne nomme pas le lieu — le 19 mai au
+# Un jalon à plus de PLACE_MAX_NM ne nomme pas le lieu — le 19 mai au
 # large de la Galice, le bateau n'est pas « au nord de Gibraltar » (445 nm).
 PLACE_MAX_NM = 240.0
 _LANDMARKS = (
@@ -184,7 +184,7 @@ def named_belt(
         return "mistral"
     if knots is not None and knots < CALM_KN and abs(lat) <= 10.0:
         return "equatorial_calms"
-    # RC30 : mistral / tramontane seulement dans la Méditerranée vraie (lon ≥ 0) —
+    # Mistral / tramontane seulement dans la Méditerranée vraie (lon ≥ 0) —
     # la boîte _in_med englobe la côte atlantique ibérique, où un vent de nord
     # n'est pas le mistral (transcription du 14 oct., bateau au large de la Galice).
     if (
@@ -246,7 +246,7 @@ def _compass(deg: float, lang: str) -> str:
 
 
 def _place_phrase(lat: float, lon: float, lang: str) -> str:
-    """Lieu de la phrase climato = position du bateau à cet instant (RC30) :
+    """Lieu de la phrase climato = position du bateau à cet instant :
     un jalon trop loin (> PLACE_MAX_NM) ne se dit pas — mieux vaut le silence
     qu'un « au nord de Gibraltar » quand le bateau longe la Galice."""
     if abs(lat) <= 5.0:

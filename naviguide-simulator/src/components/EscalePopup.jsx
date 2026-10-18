@@ -29,7 +29,7 @@ export {
   shouldCloseEscaleSheet,
 };
 
-/** Contenu React de la fiche ancrée au drapeau (lot R7). */
+/** Contenu React de la fiche ancrée au drapeau. */
 export function EscalePopup({ stop, fiche, loading, error, onClose, onFocus }) {
   if (!stop) return null;
   return (
@@ -111,7 +111,7 @@ export function attachEscalePopup(scene, L) {
 
   function requestClose() {
     requestEscaleClose(sheet);
-    // Retirer après le clic : sinon le même geste retombe sur le drapeau (R7).
+    // Retirer après le clic : sinon le même geste retombe sur le drapeau.
     if (typeof window !== "undefined" && typeof window.setTimeout === "function") {
       window.setTimeout(() => hide(), 0);
     } else {

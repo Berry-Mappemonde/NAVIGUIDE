@@ -1,4 +1,4 @@
-"""Client Tavily (lots L3–L4) — extract et search, jamais depuis le navigateur.
+"""Client Tavily — extract et search, jamais depuis le navigateur.
 
 Un appel HTTP = 1 crédit, compté dans `llm_budget.record_tavily`.
 Clé : `TAVILY_API_KEY` (VPS / .env local). Pas de clé → aucun réseau.

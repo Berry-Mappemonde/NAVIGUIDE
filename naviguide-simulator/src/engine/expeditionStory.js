@@ -309,7 +309,7 @@ function routeEventsSentence(events, lang) {
       ? `marine protected area${amp.length > 1 ? "s" : ""} within reach: ${joinList(names, lang)}${more}`
       : `aire${amp.length > 1 ? "s" : ""} marine${amp.length > 1 ? "s" : ""} protégée${amp.length > 1 ? "s" : ""} à portée : ${joinList(names, lang)}${more}`);
   }
-  // Ports of entry passed (lot A), each once.
+  // Ports of entry passed, each once.
   const seenPoe = new Set();
   const poe = events.filter((e) => {
     if (e.kind !== "poe") return false;
@@ -326,7 +326,7 @@ function routeEventsSentence(events, lang) {
       : `port${poe.length > 1 ? "s" : ""} d’entrée passé${poe.length > 1 ? "s" : ""} : ${joinList(names, lang)}${more}`);
   }
   const head = bits.length ? `${en ? "Meanwhile" : "Entre-temps"} — ${bits.join(" ; ")}.` : "";
-  // Remarkable weather at the boat (lot A): derived from journaled GRIBs, cited with its numbers.
+  // Remarkable weather at the boat: derived from journaled GRIBs, cited with its numbers.
   const wx = events.filter((e) => e.kind === "wx" && Number.isFinite(Number(e.windKnots ?? e.hs)));
   let wxSentence = "";
   if (wx.length) {
@@ -356,7 +356,7 @@ function notesBetween(journal, fromIso, toIso, max = 2) {
 }
 
 /** Latest GRIB entry of the journal (wind at the boat), if any. */
-/** The most recent journaled GRIB — not later than `beforeMs` (a replay reads the past, lot E). */
+/** The most recent journaled GRIB — not later than `beforeMs` (a replay reads the past). */
 function latestGrib(journal, beforeMs = null) {
   let best = null;
   for (const e of journalEntries(journal)) {
@@ -476,7 +476,7 @@ export function expeditionStory({ clock, marks, live, leg, journal = null, now =
     const left = Number(leg?.remainingNm);
     const dayAtSea = days(live.seaHours);
     const elapsed = t0 != null && nowMs != null ? Math.max(0, Math.floor((nowMs - t0) / 86_400_000)) : null;
-    // In a replay (lot E) the "today" of the story is the replayed day.
+    // In a replay the "today" of the story is the replayed day.
     const todayWord = live.replay ? (en ? "That day" : "Ce jour-là") : (en ? "Today" : "Aujourd’hui");
     const when = elapsed != null
       ? (en ? `${todayWord}, day ${elapsed}${dayAtSea ? ` (${dayAtSea} at sea)` : ""}` : `${todayWord}, jour ${elapsed}${dayAtSea ? ` (${dayAtSea} de mer)` : ""}`)
@@ -543,7 +543,7 @@ export function expeditionStoryText(params) {
   return expeditionStory(params).join("\n\n");
 }
 
-/** Lot F3 — script brut du film (règles), bilingue, ≤ 2 400 caractères. */
+/** Script brut du film (règles), bilingue, ≤ 2 400 caractères. */
 export const FILM_MAX_CHARS = 2400;
 export const FILM_MIN_EVENTS = 6;
 export const FILM_MAX_EVENTS = 9;

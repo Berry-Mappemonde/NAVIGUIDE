@@ -46,7 +46,7 @@ function fakeMarker(lat, lng, stop) {
   };
 }
 
-describe("EscalePopup — contrat (lot R7)", () => {
+describe("EscalePopup — contrat", () => {
   it("contenu = EscaleSheet, croix, pas de ListenButton, ≤ 340 × 260", () => {
     assert.match(src, /data-testid="escale-popup"/);
     assert.match(src, /<EscaleSheet/);
@@ -102,7 +102,7 @@ describe("EscalePopup — contrat (lot R7)", () => {
     assert.equal(findWaypointMarker(scene, { name: "Nouméa", lat: -22, lon: 166 }), null);
   });
 
-  it("lot RC44 — fiche du catamaran parqué à Cayenne, pas le drapeau Halifax", () => {
+  it("Fiche du catamaran parqué à Cayenne, pas le drapeau Halifax", () => {
     const cayenne = { name: "Cayenne (Guyane)", lat: 4.93, lon: -52.35 };
     const halifax = { name: "Halifax (Nouvelle-Écosse)", lat: 44.65, lon: -63.57 };
     const boat = fakeMarker(4.93, -52.35, cayenne);
@@ -136,7 +136,7 @@ describe("EscalePopup — contrat (lot R7)", () => {
   });
 });
 
-describe("EscalePopup lot RA5 — croix, Échap, pas de fiche en Suivre/Revoir", () => {
+describe("EscalePopup — croix, Échap, pas de fiche en Suivre/Revoir", () => {
   it("la croix appelle onClose", () => {
     let n = 0;
     const event = {

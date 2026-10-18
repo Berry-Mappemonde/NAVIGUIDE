@@ -1,5 +1,5 @@
-// Lot RF7 — accueil Suivre + Cinéma + monde dézoomé ; Tracer monde + dézoom libre.
-// Lot DM4 : accueil et clic Suivre = bateau au centre, zoom = plancher
+// Accueil Suivre + Cinéma + monde dézoomé ; Tracer monde + dézoom libre.
+// Accueil et clic Suivre = bateau au centre, zoom = plancher
 // (plus de zoom > 3). Sans API : montage (Suivre, Cinéma, zoom plancher,
 // panneaux fermés) et Tracer (vue monde, dézoom jusqu'au monde) tiennent seuls.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
@@ -51,7 +51,7 @@ async function mapZoom(page) {
 }
 
 async function enterTracer(page) {
-  // DM6 : la pilule Tracer ouvre le dessin (vue monde).
+  // La pilule Tracer ouvre le dessin (vue monde).
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   if (await panelClosed(page, "left")) {
@@ -61,7 +61,7 @@ async function enterTracer(page) {
   await expect(page.getByTestId("drawing-points")).toBeVisible({ timeout: 10_000 });
 }
 
-test("lot RF7 — accueil Suivre cinéma monde ; clic Suivre recadre ; Tracer dézoome", async ({ page }) => {
+test("Accueil Suivre cinéma monde ; clic Suivre recadre ; Tracer dézoome", async ({ page }) => {
   test.setTimeout(90_000);
 
   await page.goto("/");

@@ -23,7 +23,7 @@ function fingerprint(points, t0, startAt) {
   return `${t0}|${startAt}|${points?.length}|${first?.lat}|${last?.lat}|${last?.cumNm}`;
 }
 
-/** Repli progressif après un POST /voyage en échec (lot RF3) : 2 s → 30 s, jamais un martelage. */
+/** Repli progressif après un POST /voyage en échec : 2 s → 30 s, jamais un martelage. */
 export const CREATE_BACKOFF_MS = [2000, 4000, 8000, 16000, 30000];
 
 export function createBackoffMs(failCount) {
@@ -33,7 +33,7 @@ export function createBackoffMs(failCount) {
   return CREATE_BACKOFF_MS[i];
 }
 
-/** GET /voyage/{id}/at seulement quand l'horloge a des sommets (lot RC15). */
+/** GET /voyage/{id}/at seulement quand l'horloge a des sommets. */
 export function shouldFetchAt(clock) {
   if (!clock || typeof clock !== "object") return false;
   if (clock.status === "preparing") return false;
@@ -220,7 +220,7 @@ export function useVirtualVessel({
       if (!shouldFetchAt(clockRef.current)) return;
       refreshLive(voyage.voyageId).catch(() => {});
     };
-    // DM5 — Suivre sur ma route : la position « à maintenant » se lit dès
+    // Suivre sur ma route : la position « à maintenant » se lit dès
     // l'entrée en suivi, pas seulement au premier tic de 60 s.
     tick();
     const id = setInterval(tick, 60_000);
@@ -242,7 +242,7 @@ export function useVirtualVessel({
   }, [enabled, voyage?.voyageId, voyage?.forecastStatus, refreshMeta]);
 
   /**
-   * Route advice (lot G): `constraints` = { windMaxKt, hsMaxM } from the
+   * Route advice: `constraints` = { windMaxKt, hsMaxM } from the
    * skipper's orders — the isochrone never steps into a wind or a sea above them.
    */
   const recompute = useCallback(async (fromIso, constraints = null) => {
@@ -313,7 +313,7 @@ export function useVirtualVessel({
 }
 
 /**
- * Phrase d'explication du recalcul (lot L5 / U8). Les nombres viennent du
+ * Phrase d'explication du recalcul. Les nombres viennent du
  * serveur (`draft.advice.delta`) ; le LLM n'en invente pas.
  */
 export function RouteAdviceText({ draft }) {

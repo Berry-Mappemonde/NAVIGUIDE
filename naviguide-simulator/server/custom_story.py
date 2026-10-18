@@ -1,4 +1,4 @@
-"""Moments et film d'un voyage perso (lots DM8A / DM8B) — à la demande.
+"""Moments et film d'un voyage perso — à la demande.
 
 Contrat DM8A :
   moments_for_voyage(voyage, *, budget_nm=2000) →
@@ -410,7 +410,7 @@ def moments_for_voyage(
         _COMPUTE_LOCK.release()
 
 
-# ── film de ma route (DM8B) ─────────────────────────────────────────────────
+# ── film de ma route ─────────────────────────────────────────────────
 
 
 def _film_script_rev() -> str:

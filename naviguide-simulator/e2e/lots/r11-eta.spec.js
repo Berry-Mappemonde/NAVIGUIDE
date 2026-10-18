@@ -1,4 +1,4 @@
-// Lot R11 — fourchette d'arrivée lisible, jours de mer cohérents.
+// Fourchette d'arrivée lisible, jours de mer cohérents.
 // Sans API : fumée (barre film + Suivre). Avec API : les deux libellés
 // (légende / revue du plan) sont identiques, sans « p10 » ni « membres ».
 import { expect, test } from "@playwright/test";
@@ -25,7 +25,7 @@ async function showReview(page) {
   await openReviewTab(page);
 }
 
-test("lot R11 — fourchette identique sous l'escale et dans la revue", async ({ page }) => {
+test("Fourchette identique sous l'escale et dans la revue", async ({ page }) => {
   test.setTimeout(45_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
 

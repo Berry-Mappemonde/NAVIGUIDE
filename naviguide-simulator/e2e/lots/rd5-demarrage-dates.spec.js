@@ -1,4 +1,4 @@
-// Lot RD5 — démarrage Suivre, Date de départ visible (Revoir), horloge avec
+// Démarrage Suivre, Date de départ visible (Revoir), horloge avec
 // année, date de Revoir réglable (2025) et distincte de Tracer (DM7 : plus
 // de champ Date de départ en Tracer ; horloge = aujourd'hui).
 // Sans API : vue initiale, horloge, champ replay et décalage du script
@@ -49,7 +49,7 @@ function dateInput(page, testId) {
   return page.getByTestId(testId).locator("input").first();
 }
 
-test("lot RD5 — Suivre au chargement, dates distinctes, horloge avec année", async ({ page }) => {
+test("Suivre au chargement, dates distinctes, horloge avec année", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

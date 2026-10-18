@@ -1,4 +1,4 @@
-// Lot RC49 — au changement de chapitre, un seul mouvement, bateau au centre.
+// Au changement de chapitre, un seul mouvement, bateau au centre.
 // Sans API : GET /voyage/official sondé ; s'il manque, annotation + saut des
 // assertions caméra — barre et Revoir gardés.
 import { mkdirSync } from "node:fs";
@@ -42,7 +42,7 @@ function degJump(a, b) {
   return Math.hypot(b.lat - a.lat, dLon);
 }
 
-test("lot RC49 — Ajaccio → Fort-de-France : un recadrage, bateau au centre", async ({ page }) => {
+test("Ajaccio → Fort-de-France : un recadrage, bateau au centre", async ({ page }) => {
   test.setTimeout(120_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

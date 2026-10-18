@@ -28,7 +28,7 @@ const BADGE = {
 };
 
 /**
- * « Revue du plan » (lot K): one row per leg — dates, badges (sea days, rest,
+ * « Revue du plan »: one row per leg — dates, badges (sea days, rest,
  * EEZ / Gold, MPA, gale season, cyclones), notes. Collapsed by default under
  * the Expedition box; every figure comes from the server review or the atlas.
  */

@@ -34,7 +34,7 @@ function lineFlat() {
 }
 
 describe("iciAlong sample", () => {
-  it("lot T : flatFromCustomRoute suit la route dessinée, pas Berry", () => {
+  it("FlatFromCustomRoute suit la route dessinée, pas Berry", () => {
     const custom = {
       type: "FeatureCollection",
       features: [{
@@ -53,7 +53,7 @@ describe("iciAlong sample", () => {
     assert.equal(flatFromCustomRoute({ type: "FeatureCollection", features: [] }), null);
   });
 
-  it("lot LY2 : sampleLeg sur drawnSegments pendant le dessin, cap MAX_PEARLS_SIM", async () => {
+  it("SampleLeg sur drawnSegments pendant le dessin, cap MAX_PEARLS_SIM", async () => {
     const { geojsonFromDrawn } = await import("./layerWarm.js");
     const drawnSegments = [{ coords: [[-1.16, 46.15], [-1.16, 45.15], [-1.16, 44.15]] }];
     const drawnPoints = [{ lat: 46.15, lon: -1.16 }, { lat: 44.15, lon: -1.16 }];

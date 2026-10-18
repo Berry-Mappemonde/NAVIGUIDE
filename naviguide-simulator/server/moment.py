@@ -1,4 +1,4 @@
-"""Moment « ici et maintenant » (lot R8a, contrat PLAN_ICI § 1.1).
+"""Moment « ici et maintenant ».
 
 Une fonction pure : perle + point d'horloge + jambe + seuils skipper → Moment.
 Aucun chiffre inventé — tout vient de la perle et de l'horloge. Les noms de

@@ -31,7 +31,7 @@ describe("TILE_ATTRIBUTION", () => {
   });
 });
 
-describe("crédits Leaflet — marge ≥ hauteur barre (lot RA6)", () => {
+describe("crédits Leaflet — marge ≥ hauteur barre", () => {
   it("l'inset bas des crédits dépasse ou égale la hauteur de la barre film", () => {
     assert.ok(LEAFLET_ATTRIBUTION_BOTTOM_MIN_PX >= FILM_BAR_HEIGHT_PX.controls);
     assert.ok(LEAFLET_ATTRIBUTION_BOTTOM_MIN_PX >= FILM_BAR_HEIGHT_PX.compact);

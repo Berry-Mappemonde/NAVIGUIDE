@@ -7,7 +7,7 @@ export function coastNameNear(lat, lon, language = "fr") {
   const x = Number(lon);
   if (!Number.isFinite(y) || !Number.isFinite(x)) return "";
   const fr = language !== "en";
-  // Large de Nouadhibou / cap Blanc (lot T).
+  // Large de Nouadhibou / cap Blanc.
   if (y >= 15 && y <= 21.5 && x >= -20 && x <= -16) {
     return fr ? "Mauritanie" : "Mauritania";
   }

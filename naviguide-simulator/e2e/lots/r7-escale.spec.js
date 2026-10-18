@@ -1,6 +1,6 @@
-// Lot R7 — fiche d'escale en popup sur le drapeau (et dans Ici, pas here-product).
+// Fiche d'escale en popup sur le drapeau (et dans Ici, pas here-product).
 // Sans API : sonde GET /voyage/official ; saute drapeau / paragraphe /escale.
-// La liste n'ouvre plus la fiche (RE2 / RF8) ; le drapeau oui.
+// La liste n'ouvre plus la fiche ; le drapeau oui.
 import { expect, test } from "@playwright/test";
 import { centerOnFlag, dismissNotForNav, showLeftPanel, showRightPanel } from "../helpers.js";
 
@@ -56,7 +56,7 @@ async function openAjaccioFromFlag(page) {
   return (await page.getByTestId("escale-sheet").count()) > 0;
 }
 
-test("lot R7 — fiche d'escale sur le drapeau, plus dans le panneau", async ({ page }) => {
+test("Fiche d'escale sur le drapeau, plus dans le panneau", async ({ page }) => {
   test.setTimeout(60_000);
   await page.goto("/");
   await dismissNotForNav(page);
@@ -115,7 +115,7 @@ test("lot R7 — fiche d'escale sur le drapeau, plus dans le panneau", async ({ 
 
   await showToolsPanel(page);
   await expect(page.getByTestId("escale-sheet-open")).toHaveCount(0);
-  // RE2 / RF8 : la liste n'ouvre plus la fiche ; le drapeau oui.
+  // La liste n'ouvre plus la fiche ; le drapeau oui.
   // En Suivre la caméra LIVE est sur le bateau (Pacifique, 16 oct.) : il faut
   // lâcher le cadrage pending avant de recentrer, sinon le clic rate (CI 3/6).
   const openedSuivre = await openAjaccioFromFlag(page);

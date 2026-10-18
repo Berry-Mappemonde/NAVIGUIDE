@@ -15,14 +15,14 @@ export const FILM_INTERP_DELAY_MS = 80;
 export const FILM_TILE_READY_MIN = 0.7;
 export const FILM_TILE_SLOW = 0.35;
 
-/** Jambe plus courte que ça : un seul cadre pour tout le chapitre (RC40).
+/** Jambe plus courte que ça : un seul cadre pour tout le chapitre.
  * 280 nm couvre Fort-de-France → Marigot (~238 nm) sans prendre une traversée. */
 export const FILM_ARCHIPELAGO_NM = 280;
 export const FILM_ZOOM_ARCHIPELAGO_MAX = 5;
-/** Un pas bateau plus grand que ça (px / frame) = ancre, pas la glisse (RC40).
+/** Un pas bateau plus grand que ça (px / frame) = ancre, pas la glisse.
  * 80 px : un hitch ~54 px (VL / 180 px·s⁻¹ × 0,3 s) n'est plus classé ancre. */
 export const FILM_INTRA_JUMP_PX = 80;
-/** Hors zoom et hors flip : aucun pas écran bateau / caméra > 30 px (RC56). */
+/** Hors zoom et hors flip : aucun pas écran bateau / caméra > 30 px. */
 export const FILM_SCREEN_STEP_MAX_PX = 30;
 /** Après un saut d'ancre, on ne recadre que si le bateau quitte ~l'écran. */
 export const FILM_VIEWPORT_KEEP_FRAC = 0.8;
@@ -72,7 +72,7 @@ export function keepBoatInFrame(center, boat, map, { keepFrac = FILM_BOAT_KEEP_F
 /**
  * Borne un déplacement carte (lat/lon) à `maxPx` à l'écran.
  * Un `setView` / `keepBoatInFrame` / pan trop long est rejeté : on avance
- * d'au plus 30 px (RC56). Flip et premier calage n'appellent pas ceci.
+ * d'au plus 30 px. Flip et premier calage n'appellent pas ceci.
  */
 export function clampFilmScreenStep(map, from, to, maxPx = FILM_SCREEN_STEP_MAX_PX) {
   const a = toLatLngPair(from);
@@ -168,7 +168,7 @@ export function filmChapterCenter(leg) {
 }
 
 /**
- * En pleine jambe (RC40 / RC51) : la caméra traduit avec le bateau
+ * En pleine jambe : la caméra traduit avec le bateau
  * (`clampFilmPan` / delta bateau), y compris une jambe archipel (≤ 280 nm).
  * Un saut d'ancre (bouée, île, événement) déplace le bateau, pas le centre,
  * sauf si le bateau sortirait de l'écran (`FILM_INTRA_JUMP_PX`).
@@ -295,11 +295,11 @@ export function filmApproachZoom(baseZoom, progress, { min = FILM_ZOOM_MIN, max 
   return Math.max(min, Math.min(max, next));
 }
 
-/** Bateau encore à quai : moins que ça entre deux poses = pas bougé (RC25). */
+/** Bateau encore à quai : moins que ça entre deux poses = pas bougé. */
 export const FILM_CHAPTER_STILL_NM = 0.5;
-/** Après un flip de chapitre : pas de panBy / setView pendant ce délai (RC49). */
+/** Après un flip de chapitre : pas de panBy / setView pendant ce délai. */
 export const FILM_FLIP_HOLD_MS = 1000;
-/** Un saut bateau plus grand que ça (transat) = un recadrage, pas une ancre (RC49). */
+/** Un saut bateau plus grand que ça (transat) = un recadrage, pas une ancre. */
 export const FILM_FLIP_NM = 500;
 
 /** Un pas de zoom lent (~0,08 niveau par frame de commit). */
@@ -550,15 +550,15 @@ function stillNmFromAnchor(anchor, lat, lon) {
 }
 
 /**
- * Caméra du film (RG13 / RC25 / RC29 / RC40 / RC49 / RC56) : premier calage et
+ * Caméra du film : premier calage et
  * changement d'étape = un `setView` sur le bateau (pas le milieu de jambe) ;
  * ensuite translation du plan. Au changement d'étape, si le bateau n'a pas
- * bougé (Δnm≤0,5), un hold au zoom courant (RC25). Sinon un seul `setView`,
- * bateau au centre, puis `FILM_FLIP_HOLD_MS` sans panBy / setView (RC49) —
+ * bougé (Δnm≤0,5), un hold au zoom courant. Sinon un seul `setView`,
+ * bateau au centre, puis `FILM_FLIP_HOLD_MS` sans panBy / setView —
  * `FILM_RESET_EVERY` ne produit pas de (0,0) dans cette seconde. En pleine
  * jambe, la caméra suit le bateau par translation (aussi Caraïbes, RC51) ;
  * une ancre (bouée, île, événement) déplace le bateau, pas le centre, sauf
- * sortie d'écran. Hors flip / zoom, le pas écran est borné à 30 px (RC56) :
+ * sortie d'écran. Hors flip / zoom, le pas écran est borné à 30 px :
  * `keepBoatInFrame` ne peut plus ajouter 54 px après le clamp. `stillAnchor`
  * ne tient que le quai (Δnm≤0,5). Le zoom visé s'approche par `stepFilmZoom`.
  * Pas de `flyTo`.

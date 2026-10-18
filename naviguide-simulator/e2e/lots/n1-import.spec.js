@@ -1,4 +1,4 @@
-// Lot N1 — Importer GeoJSON / KML dans Tracer ma route.
+// Importer GeoJSON / KML dans Tracer ma route.
 // Sans API : parseur + drapeaux + corde /route tiennent seuls.
 // GET /voyage/official : sondé ; le sac après Terminer n'est vérifié
 // que s'il répond (jamais affaibli sinon).
@@ -53,7 +53,7 @@ async function importFile(page, name) {
   await page.getByTestId("route-import-file").setInputFiles(fixture(name));
 }
 
-test("lot N1 — Importer un .geojson puis un .kml : 3 drapeaux, route, Terminer", async ({ page }) => {
+test("Importer un .geojson puis un .kml : 3 drapeaux, route, Terminer", async ({ page }) => {
   test.setTimeout(45_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {

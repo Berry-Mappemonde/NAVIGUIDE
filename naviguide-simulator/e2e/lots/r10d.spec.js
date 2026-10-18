@@ -1,8 +1,8 @@
-// Lot R10d — interface de l'expert (revue + Demander conseil).
+// Interface de l'expert (revue + Demander conseil).
 // Sans API : fixture usePlanReview (Nouméa, 11 → 5, +41 nm, +7 j) et
 // le bouton Simulation tiennent seuls. GET /voyage/official : sondé ;
 // s'il manque, annotation + return après les assertions UI (jamais
-// affaiblies). Si /plan-review n'est pas ready (RC50), on ne clique pas
+// affaiblies). Si /plan-review n'est pas ready, on ne clique pas
 // Appliquer (la fixture disparaît). Dialogue de brouillon : seulement si l'API répond.
 import { expect, test } from "@playwright/test";
 
@@ -39,7 +39,7 @@ async function showReview(page) {
   await openReviewTab(page);
 }
 
-test("lot R10d — revue du plan conseillée, Demander conseil", async ({ page }) => {
+test("Revue du plan conseillée, Demander conseil", async ({ page }) => {
   test.setTimeout(45_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {

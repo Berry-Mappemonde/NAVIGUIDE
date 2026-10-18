@@ -1,11 +1,11 @@
-"""Cache de lecture des récits d'événements (lot F, RG18).
+"""Cache de lecture des récits d'événements.
 
 `POST /ici/story` (geste « Rédigé » seulement) lit le cache SQLite
 (`pearl_store.kv`, ns « story », 7 jours) indexé par `(type, stableKey, lang)`,
 puis `write_story` → `cascade_text(tier="write")` (Token Factory Super →
 OpenRouter → Claude → règles) et garde le résultat, **avec `source`**.
 
-Plus de pré-génération en fond (RG18) : un récit ne s'écrit que sur la
+Plus de pré-génération en fond : un récit ne s'écrit que sur la
 pilule Rédigé.
 """
 from __future__ import annotations
@@ -43,7 +43,7 @@ def story_key(body: dict | None) -> Optional[str]:
     return f"{typ}|{stable}|{body_lang(body)}"
 
 
-# ── traduction FR → EN (lot L6 / U9), cache par (hash, lang) ────────────────
+# ── traduction FR → EN, cache par (hash, lang) ────────────────
 
 TRANSLATE_NS = "story-tr"
 TRANSLATE_TTL_S = STORY_TTL_S
@@ -175,7 +175,7 @@ async def story_through_cache(body: dict, client=None, writer=None) -> dict[str,
     (`writer`, default story_cascade.write_story → cascade_text tier=write)
     — and remember, with `source` kept on the payload.
 
-    Langue EN (lot L6) : on réutilise le récit FR en cache, puis Lightning
+    Langue EN : on réutilise le récit FR en cache, puis Lightning
     traduit (clé `story` et `story-tr` portent `lang`).
     """
     if writer is None:
@@ -209,7 +209,7 @@ async def story_through_cache(body: dict, client=None, writer=None) -> dict[str,
 
 
 def status() -> dict[str, Any]:
-    """Lecture du cache seulement — plus d'étape de pré-génération (RG18)."""
+    """Lecture du cache seulement — plus d'étape de pré-génération."""
     import pearl_store  # noqa: PLC0415
     return {
         "skipped": "on-demand",
@@ -218,7 +218,7 @@ def status() -> dict[str, Any]:
     }
 
 
-# ── film script (lot F3 / R9c, ns « film-story ») ───────────────────────────
+# ── film script (ns « film-story ») ───────────────────────────
 
 FILM_NS = "film-story"
 FILM_TTL_S = 86400.0  # 1×/jour ; une nouvelle escale change la clé (hash journal)

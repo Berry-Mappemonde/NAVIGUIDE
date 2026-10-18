@@ -1,4 +1,4 @@
-"""Alias attendu par ``plan_alerts._hook('piracy_zones', …)`` (lot R10a)."""
+"""Alias attendu par ``plan_alerts._hook('piracy_zones', …)``."""
 
 from piracy import zone_at
 

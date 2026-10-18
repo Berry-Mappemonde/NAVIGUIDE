@@ -1,4 +1,4 @@
-// Lot RG19 (aligné CH1) — chat : faits par les règles, Ultra si le juge est ouvert.
+// Chat : faits par les règles, Ultra si le juge est ouvert.
 // Plus de case Raisonnement. Sans API : le panneau chat tient seul.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des questions.
 // En CI le juge est coupé : une question difficile reste sur les règles, jamais Super.
@@ -54,7 +54,7 @@ async function waitReply(page, { extra = null, sourcesBefore = 0 } = {}) {
   return list.innerText();
 }
 
-test("lot RG19 — chat trois paliers : faits par les règles, Ultra si juge ouvert", async ({ page }) => {
+test("Chat trois paliers : faits par les règles, Ultra si juge ouvert", async ({ page }) => {
   test.setTimeout(180_000);
   const official = await probeOfficial(page);
   const apiUp = Boolean(official);

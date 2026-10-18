@@ -20,7 +20,7 @@ function firstIndex(src, pattern) {
   return m.index;
 }
 
-describe("Sidebar layout (lot R8c)", () => {
+describe("Sidebar layout", () => {
   it("place carte Berry → chat → IciMaintenant, sans les anciens blocs", () => {
     const berryAt = firstIndex(sidebar, /<BerryCard/);
     const chatAt = firstIndex(sidebar, /<LogbookChat messages=\{chat\.messages\}/);
@@ -71,7 +71,7 @@ describe("Sidebar layout (lot R8c)", () => {
     assert.match(sidebar, /hereBody=\{!drawingHidesBerry \? \(/);
   });
 
-  it("lot DM6 — Berry ne jette pas le brouillon ; reprendre le tracé si points", () => {
+  it("Berry ne jette pas le brouillon ; reprendre le tracé si points", () => {
     assert.match(sidebar, /const activateBerry = \(\) => \{/);
     const berryAt = sidebar.indexOf("const activateBerry = () => {");
     const berryChunk = sidebar.slice(berryAt, berryAt + 220);
@@ -80,7 +80,7 @@ describe("Sidebar layout (lot R8c)", () => {
     assert.match(sidebar, /canContinueDraw \? onDrawContinue : onDrawStart/);
   });
 
-  it("lot N1 — Importer à côté de Terminer, sans texte d'aide", () => {
+  it("Importer à côté de Terminer, sans texte d'aide", () => {
     assert.match(sidebar, /data-testid="route-import"/);
     assert.match(sidebar, /data-testid="route-import-file"/);
     assert.match(sidebar, /accept="\.geojson,\.json,\.kml"/);
@@ -88,7 +88,7 @@ describe("Sidebar layout (lot R8c)", () => {
     assert.doesNotMatch(sidebar, /t\("clickToImport"\)|t\("importOrDraw"\)|t\("clickNewImport"\)/);
   });
 
-  it("lot RD2 — toggle gauche fermé à top-4, pas d'aplat blanc crédits/zoom", () => {
+  it("Toggle gauche fermé à top-4, pas d'aplat blanc crédits/zoom", () => {
     assert.match(sidebar, /naviguide-sidebar-toggle--left[\s\S]{0,280}absolute top-4/);
     assert.doesNotMatch(sidebar, /top-\[92px\]/);
     assert.match(css, /\.leaflet-bottom\.leaflet-right \.leaflet-control-attribution \{[\s\S]{0,80}background:\s*rgba\(15,\s*23,\s*42,\s*0\.72\)/);
@@ -100,7 +100,7 @@ describe("Sidebar layout (lot R8c)", () => {
   });
 });
 
-describe("Sidebar — lot DM9 : Tracer 2 onglets, Suivre 4", () => {
+describe("Sidebar — : Tracer 2 onglets, Suivre 4", () => {
   it("masque Maintenant et Journal en Tracer, sans les retirer du source", () => {
     assert.deepEqual(visibleIciTabs("follow").map((t) => t.id), ["now", "story", "journal", "review"]);
     assert.deepEqual(visibleIciTabs("simulation").map((t) => t.id), ["review", "story"]);
@@ -115,7 +115,7 @@ describe("Sidebar — lot DM9 : Tracer 2 onglets, Suivre 4", () => {
   });
 });
 
-describe("App — lot LY1 : couches le long d'une route perso", () => {
+describe("App — : couches le long d'une route perso", () => {
   it("lance le chauffage AMP au Terminer, sans nouveau libellé", () => {
     assert.match(app, /import \{[^}]*kickLayerWarm[^}]*\} from "\.\/engine\/layerWarm\.js"/);
     assert.match(app, /kickLayerWarm\(geojson\)/);
@@ -123,7 +123,7 @@ describe("App — lot LY1 : couches le long d'une route perso", () => {
   });
 });
 
-describe("App — lot LY2 : chauffage pendant le tracé", () => {
+describe("App — : chauffage pendant le tracé", () => {
   it("chauffe le brouillon dès un segment, coupe à l'Annuler, pas à la pilule Berry", () => {
     assert.match(app, /createDraftWarmer/);
     assert.match(app, /draftWarmerRef\.current\.schedule\(toGeoJson\(\)\)/);
@@ -141,7 +141,7 @@ describe("App — lot LY2 : chauffage pendant le tracé", () => {
   });
 });
 
-describe("contrat pop-up hors film (lot R8c)", () => {
+describe("contrat pop-up hors film", () => {
   it("ne rend plus les cartes flottantes ni la popup d'escale sur la carte", () => {
     assert.doesNotMatch(app, /<MomentNowCard/);
     assert.doesNotMatch(app, /<FreeMomentBlock/);

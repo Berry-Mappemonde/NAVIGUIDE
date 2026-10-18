@@ -1,4 +1,4 @@
-"""Lot R10a — evaluate_plan : contrat § 3.1, cyclone daté, cache, hors ligne."""
+"""Evaluate_plan : contrat § 3.1, cyclone daté, cache, hors ligne."""
 from __future__ import annotations
 
 import copy

@@ -1,4 +1,4 @@
-// Lot RG3 — AMP réelles et projets Blue Intelligence.
+// AMP réelles et projets Blue Intelligence.
 // Sans API : Suivre, Revoir et la barre tiennent seuls ; le script serveur
 // est sauté. GET /voyage/official sondé ; s'il manque, annotation + saut des
 // seules assertions film / ici — jamais Revoir retiré, ni les pilules, ni la barre.
@@ -62,7 +62,7 @@ async function probeOfficial(page) {
   return { apiUp: true };
 }
 
-test("lot RG3 — AMP réelles et projets BI, jamais une zone de pêche", async ({ page }) => {
+test("AMP réelles et projets BI, jamais une zone de pêche", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

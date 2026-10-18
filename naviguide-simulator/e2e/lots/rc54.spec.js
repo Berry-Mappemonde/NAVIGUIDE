@@ -1,4 +1,4 @@
-// Lot RC54 — Revue du plan : Mata-Utu → Nouméa sans couloir atlantique ;
+// Revue du plan : Mata-Utu → Nouméa sans couloir atlantique ;
 // Nouméa → La Rochelle : jours de mer et dates ne se contredisent pas.
 // Sans API : GET /voyage/official sondé ; s'il manque, annotation + saut des
 // assertions jambes — onglet Revue et Suivre gardés.
@@ -33,7 +33,7 @@ function calendarDays(departIso, arriveIso) {
   return (b - a) / 86400000;
 }
 
-test("lot RC54 — Mata-Utu → Nouméa sans Biscay ; dates Nouméa cohérentes", async ({ page }) => {
+test("Mata-Utu → Nouméa sans Biscay ; dates Nouméa cohérentes", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp, reviewReady, legs } = await probeOfficialPlanReview(page);
   if (!apiUp) {

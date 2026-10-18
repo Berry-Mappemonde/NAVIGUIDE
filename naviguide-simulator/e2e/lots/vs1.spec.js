@@ -1,4 +1,4 @@
-// Lot VS1 — choisir ce qui entre : 2:30 tient (≤ 2250), quelques sujets
+// Choisir ce qui entre : 2:30 tient (≤ 2250), quelques sujets
 // à la place de redites, pas neuf phrases nouvelles. Recharger : aucun
 // appel Nebius. Sans API (CI) : GET /voyage/official sondé ; s'il ne
 // répond pas, annotation + return des assertions film — barre, Suivre
@@ -45,7 +45,7 @@ async function muteVoice(page) {
   }
 }
 
-test("lot VS1 — Revoir 2:30 tient, pas neuf phrases, aucun Nebius au rechargement", async ({ page }) => {
+test("Revoir 2:30 tient, pas neuf phrases, aucun Nebius au rechargement", async ({ page }) => {
   test.setTimeout(90_000);
   const llmHits = [];
   page.on("request", (req) => {

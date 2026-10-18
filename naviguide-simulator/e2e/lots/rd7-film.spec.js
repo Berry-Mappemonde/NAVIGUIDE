@@ -1,4 +1,4 @@
-// Lot RD7 — le film raconte les vraies données : durées décochables,
+// Le film raconte les vraies données : durées décochables,
 // journal sans budget, plus jamais les phrases ATMOS.
 // Sans API : cases 2:30 / 3:00 et l'absence de remplissage dans le
 // sous-titre local tiennent seuls.
@@ -42,7 +42,7 @@ function durationBtn(page, sec) {
   return page.getByTestId("film-duration").locator(`[data-seconds="${sec}"]`);
 }
 
-test("lot RD7 — durées décochées, récit du journal, budget tenu", async ({ page }) => {
+test("Durées décochées, récit du journal, budget tenu", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());
@@ -75,7 +75,7 @@ test("lot RD7 — durées décochées, récit du journal, budget tenu", async ({
   await expect(btn150).toHaveAttribute("aria-pressed", "false");
   await expect(btn180).toHaveAttribute("aria-pressed", "false");
 
-  // D'abord Revoir sans pilule (RD7) : budget 0. Les bascules 2:30 / 3:00 ensuite.
+  // D'abord Revoir sans pilule : budget 0. Les bascules 2:30 / 3:00 ensuite.
   const { waitFilmReady } = await import("../helpers.js");
   if (apiUp) {
     await waitFilmReady(page);
@@ -116,7 +116,7 @@ test("lot RD7 — durées décochées, récit du journal, budget tenu", async ({
   await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 8_000 });
 
   await btn150.click();
-  // RE3 : les pilules se cachent le temps que le plan 2:30 se recharge, puis reviennent pressées.
+  // Les pilules se cachent le temps que le plan 2:30 se recharge, puis reviennent pressées.
   await expect(btn150).toBeVisible({ timeout: 20_000 });
   await expect(btn150).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
   await muteVoice(page);
