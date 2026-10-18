@@ -346,3 +346,66 @@ def test_am1b_amp_dedup_prefix_and_export_fallback(monkeypatch):
     assert len(exp) == 1 and exp[0]["event"] == "nearby" and "inside" in exp[0]
     assert exp[0]["inside"] is False
     assert exp[0].get("source") == "export"
+
+
+def test_watch_loop_starts_when_warmer_is_off(monkeypatch):
+    """Chauffage coupé, veille ouverte : la boucle part, sans enrichir les perles."""
+    import escale_watch
+
+    monkeypatch.setenv("NAVIGUIDE_ICI_WARM", "0")
+    monkeypatch.setenv("NAVIGUIDE_TAVILY_WATCH", "1")
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    saved = dict(ici_warm._state)
+    scheduled: list = []
+
+    class _Loop:
+        def create_task(self, coro):
+            scheduled.append(coro)
+            return coro
+
+    enrich_calls: list = []
+    daily_calls: list = []
+    real_daily = escale_watch.run_daily
+
+    async def spy_enrich(*_a, **_k):
+        enrich_calls.append(1)
+        return {"skipped": True}
+
+    async def spy_daily(*args, **kwargs):
+        daily_calls.append(dict(kwargs))
+        return await real_daily(*args, **kwargs)
+
+    sleeps: list = []
+
+    async def fake_sleep(delay, result=None):
+        sleeps.append(delay)
+        if len(sleeps) >= 2:
+            raise asyncio.CancelledError()
+        return result
+
+    monkeypatch.setattr(escale_watch, "run_daily_enrich", spy_enrich)
+    monkeypatch.setattr(escale_watch, "run_daily", spy_daily)
+    monkeypatch.setattr(ici_warm.asyncio, "sleep", fake_sleep)
+    try:
+        assert ici_warm.warm_enabled() is False
+        assert ici_warm.watch_enabled() is True
+        assert ici_warm.start_background(_Loop()) is False
+        assert ici_warm.status()["status"] == "disabled"
+        assert ici_warm.status()["watch"]["status"] == "scheduled"
+        assert len(scheduled) == 1
+        assert scheduled[0].cr_code.co_name == "_watch_loop"
+        try:
+            asyncio.run(scheduled[0])
+        except asyncio.CancelledError:
+            pass
+        assert enrich_calls == []
+        assert daily_calls and daily_calls[0].get("enrich") is False
+        assert sleeps[0] == 120.0
+        assert sleeps[1] == ici_warm._watch_period_s()
+        assert "watch" in ici_warm.status()
+    finally:
+        ici_warm._state.clear()
+        ici_warm._state.update(saved)
+        for coro in scheduled:
+            if getattr(coro, "cr_frame", None) is not None:
+                coro.close()

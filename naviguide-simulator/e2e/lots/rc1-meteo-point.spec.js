@@ -5,6 +5,7 @@
 // prévision = GFS ou climatologie + GFS seulement si les sources du point
 // le disent. Ne pas affaiblir les assertions qui n'ont pas besoin de l'API.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-rc1/${name}.webp`,
@@ -15,15 +16,6 @@ const shot = (page, name) => page.screenshot({
 
 const GFS_SRC = /gfs|om-forecast|open-?meteo/i;
 const TEN_DAYS_MS = 10 * 24 * 3600 * 1000;
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function probeOfficial(page) {
   for (let i = 0; i < 8; i += 1) {

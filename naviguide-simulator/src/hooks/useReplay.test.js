@@ -1148,6 +1148,8 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.doesNotMatch(hook, /Tavily|Nebius/i);
     assert.doesNotMatch(hook, /https?:\/\/\S*tokenfactory/i);
     assert.match(bar, /nemotron-super-token-factory|filmSourceKey/);
+    assert.match(bar, /LlmSourceBadge/);
+    assert.match(bar, /data-testid="film-source"/);
     assert.match(bar, /filmStoryWrittenSoon/);
     assert.match(bar, /replay\.hasWritten/);
     assert.match(bar, /film-style-\$\{id\}/);

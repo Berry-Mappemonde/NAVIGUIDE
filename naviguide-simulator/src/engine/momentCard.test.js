@@ -23,6 +23,9 @@ import {
   isFreeStale,
   isStaleCard,
   nextFree,
+  cardsFromOfficialMoments,
+  pageOfficialCards,
+  selectDisplayedMoments,
 } from "./momentCard.js";
 import { NM_TO_KM } from "../utils/berryLegs.js";
 
@@ -408,6 +411,13 @@ describe("advanceMoments — file, expiration, moment libre", () => {
     s = advanceMoments(s, { events: [withStory], filmCum: 100, nowMs: 1, playing: false, legId: "A", written: true });
     assert.equal(s.now.text, "Le vent monte à 36 nœuds : on réduit la toile.");
     assert.equal(s.now.storyStatus, "ready");
+    assert.equal(s.now.storySource, null);
+    const withModel = { ...withStory, story: { ...withStory.story, source: "nemotron-super" } };
+    s = advanceMoments(s, { events: [withModel], filmCum: 100, nowMs: 2, playing: false, legId: "A", written: true });
+    assert.equal(s.now.storySource, "nemotron-super");
+    const local = { ...withStory, story: { ...withStory.story, source: "nemotron-super", engine: "nemotron-super+local" } };
+    s = advanceMoments(s, { events: [local], filmCum: 100, nowMs: 3, playing: false, legId: "A", written: true });
+    assert.equal(s.now.storySource, null);
   });
 
   it("pur : deux appels sur le même état précédent donnent le même résultat (StrictMode)", () => {
@@ -539,5 +549,75 @@ describe("Carte NOW piraterie", () => {
       events: [], bag: { ...bag, piracy: aden }, filmCum: 0, nowMs: 3, playing: false, legId: "A",
     });
     assert.equal(s.now.kind, "piracy");
+  });
+});
+
+describe("cardsFromOfficialMoments", () => {
+  it("shows a card when official moments exist, and next / dismiss move it", () => {
+    const built = cardsFromOfficialMoments([
+      {
+        t: "2026-05-17T12:00:00Z",
+        signature: "early",
+        pos: { lat: 43.3, lon: -8.4 },
+        alerts: [{ title: "Ancienne alerte", fact: "passée" }],
+      },
+      {
+        t: "2026-10-18T06:00:00Z",
+        signature: "now",
+        pos: { lat: -22.2, lon: 166.4 },
+        alerts: [{ id: "a", title: "Carte maintenant", fact: "au bateau", severity: "alert" }],
+        around: [
+          { kind: "marina", title: "Marina de Nouméa", fact: "à portée", url: "https://example.test/marina", lat: -22.3, lon: 166.4 },
+          { kind: "poe", title: "Port d'entrée", fact: "formel", url: "https://example.test/poe", lat: -22.2, lon: 166.5 },
+        ],
+      },
+    ], { until: "2026-10-18T12:00:00Z" });
+    assert.equal(built.now.title, "Carte maintenant");
+    assert.equal(built.now.text, "au bateau");
+    assert.equal(built.freeQueue.length, 2);
+    const first = pageOfficialCards(built);
+    const second = pageOfficialCards(built, { freeIndex: 1 });
+    assert.equal(first.free.title, "Marina de Nouméa");
+    assert.equal(second.free.title, "Port d'entrée");
+    assert.equal(first.now.title, "Carte maintenant");
+    assert.equal(pageOfficialCards(built, { hideNow: true }).now, null);
+    assert.equal(first.free.entity.url, "https://example.test/marina");
+    assert.equal(first.free.entity.lat, -22.3);
+  });
+
+  it("keeps the official now card in front of the stopover card", () => {
+    const built = cardsFromOfficialMoments([
+      {
+        t: "2026-10-18T06:00:00Z",
+        signature: "now",
+        alerts: [{ title: "Carte maintenant", fact: "au bateau" }],
+        around: [{ kind: "marina", title: "Marina de Nouméa", fact: "à portée" }],
+      },
+    ], { until: "2026-10-18T12:00:00Z" });
+    const escale = escaleCard({ fromStop: "Saint-Maur (Berry, Indre)", toStop: "La Rochelle", kind: "land", legNm: 120 });
+    const shown = selectDisplayedMoments({
+      eventNow: escale,
+      officialNow: built.now,
+      officialHasNow: true,
+      officialFree: built.freeQueue[0],
+    });
+    assert.equal(shown.now.title, "Carte maintenant");
+    assert.equal(shown.free.title, "Marina de Nouméa");
+    const dismissed = selectDisplayedMoments({
+      eventNow: escale,
+      officialNow: null,
+      officialHasNow: true,
+      officialFree: built.freeQueue[0],
+    });
+    assert.equal(dismissed.now, null);
+    const galeCard = cardFromEvent(gale, "fr");
+    const safety = selectDisplayedMoments({
+      eventNow: galeCard,
+      officialNow: built.now,
+      officialHasNow: true,
+    });
+    assert.equal(safety.now.kind, "wind-gale");
+    const onlyEscale = selectDisplayedMoments({ eventNow: escale });
+    assert.equal(onlyEscale.now.kind, "escale");
   });
 });

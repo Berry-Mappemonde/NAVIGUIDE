@@ -1,25 +1,38 @@
 // Contrats UI actuels (RF7, RD9, RE3, RF8, RC18) — partagés par les scénarios.
 import { expect } from "@playwright/test";
 
-export async function dismissNotForNav(page) {
+// The "not for navigation" modal only opens after a gated action, never on load,
+// so by default this checks once without waiting, as the per-spec copies did.
+// A fixed wait would run in full before every spec and shift the timing they
+// rely on. Pass `timeout` (ms) right after an action that opens the modal.
+export async function dismissNotForNav(page, { timeout = 0 } = {}) {
   const modal = page.getByTestId("not-for-nav-modal");
-  if (await modal.isVisible({ timeout: 1500 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    const ok = page.getByTestId("not-for-nav-accept");
-    if (await ok.isVisible().catch(() => false)) {
-      await ok.click();
-      return;
-    }
+  const visible = timeout > 0
+    ? await modal.waitFor({ state: "visible", timeout }).then(() => true).catch(() => false)
+    : await modal.isVisible().catch(() => false);
+  if (!visible) return;
+  const ack = modal.getByTestId("not-for-nav-ack");
+  if (await ack.isVisible().catch(() => false)) await ack.check();
+  const ok = modal.getByTestId("not-for-nav-accept");
+  if (await ok.isVisible().catch(() => false)) {
+    await ok.click();
+    return;
   }
-  const ok = page.getByRole("button", {
+  const modalOk = modal.getByRole("button", {
     name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i,
   }).first();
-  if (await ok.isVisible({ timeout: 2000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
+  if (await modalOk.isVisible().catch(() => false)) await modalOk.click();
+}
+
+// Same contract as dismissNotForNav: one check by default, a real wait with `timeout` (ms).
+export async function dismissAiChatNotice(page, { timeout = 0 } = {}) {
+  const notice = page.getByTestId("logbook-chat-ai-notice");
+  const visible = timeout > 0
+    ? await notice.waitFor({ state: "visible", timeout }).then(() => true).catch(() => false)
+    : await notice.isVisible().catch(() => false);
+  if (!visible) return;
+  const btn = notice.getByTestId("logbook-chat-ai-notice-dismiss");
+  if (await btn.isVisible().catch(() => false)) await btn.click();
 }
 
 export function cinemaButton(page) {

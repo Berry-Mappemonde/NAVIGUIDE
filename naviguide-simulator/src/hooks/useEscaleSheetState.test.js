@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { nearestAlongside, parkedCatamaranSample, pickAutoEscaleStop } from "./escaleSheetPick.js";
+import {
+  ESCALE_SHEET_NM, escaleSheetVisible, nearestAlongside, parkedCatamaranSample, pickAutoEscaleStop,
+} from "./escaleSheetPick.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "useEscaleSheetState.js"), "utf8");
@@ -103,5 +105,46 @@ describe("useEscaleSheetState — KO #309 Fort-de-France", () => {
     assert.match(src, /userPickedRef\.current = true/);
     assert.match(src, /pickAutoEscaleStop\(/);
     assert.match(src, /userPicked: userPickedRef\.current/);
+  });
+});
+
+describe("fiche d'escale — seulement au port ou juste autour", () => {
+  const TROMELIN = { name: "Tromelin (TAAF)", lat: -15.892, lon: 54.524 };
+  const PAPEETE = { name: "Papeete (Polynésie française)", lat: -17.537, lon: -149.566 };
+  const atPapeete = { lat: PAPEETE.lat, lon: PAPEETE.lon };
+  const offPapeete = { lat: -16.9, lon: -151.2 }; // j94 : au large, vers Mata-Utu
+
+  it("KO parcours #21 : fiche Tromelin alors que le bateau est à Papeete → masquée", () => {
+    assert.equal(escaleSheetVisible({ stop: TROMELIN, clockSample: atPapeete }), false);
+    assert.equal(escaleSheetVisible({ stop: TROMELIN, clockSample: offPapeete }), false);
+  });
+
+  it("une fiche cliquée tient jusqu'à ce que l'horloge bouge, puis suit la règle de distance", () => {
+    assert.equal(
+      escaleSheetVisible({ stop: TROMELIN, clockSample: offPapeete, userPicked: true }),
+      true,
+      "juste après le clic sur le drapeau, la fiche demandée s'affiche",
+    );
+    // Le skipper déplace l'horloge : userPicked est relâché.
+    assert.equal(escaleSheetVisible({ stop: TROMELIN, clockSample: offPapeete, userPicked: false }), false);
+  });
+
+  it("à quai et juste autour : la fiche de cette escale reste ; au-delà de N nm elle part", () => {
+    assert.equal(escaleSheetVisible({ stop: PAPEETE, clockSample: atPapeete }), true);
+    const justOut = { lat: PAPEETE.lat + (ESCALE_SHEET_NM - 2) / 60, lon: PAPEETE.lon };
+    assert.equal(escaleSheetVisible({ stop: PAPEETE, clockSample: justOut }), true);
+    const farOut = { lat: PAPEETE.lat + (ESCALE_SHEET_NM + 5) / 60, lon: PAPEETE.lon };
+    assert.equal(escaleSheetVisible({ stop: PAPEETE, clockSample: farOut }), false);
+    assert.ok(ESCALE_SHEET_NM <= 30, "« au port ou juste autour »");
+  });
+
+  it("le hook ne rend la fiche que si elle est visible et la referme au départ", () => {
+    assert.match(src, /stop: visible \? stop : null/);
+    assert.match(src, /if \(!stop \|\| visible\) return;[\s\S]*?setStop\(null\)/);
+    // Déplacer l'horloge (scrub, lecture, précédent / suivant) relâche la fiche cliquée.
+    assert.match(src, /if \(!clockMoveToken \|\| !userPickedRef\.current\) return;\s*userPickedRef\.current = false;/);
+    const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
+    assert.match(app, /clockMoveToken,\n/);
+    assert.ok((app.match(/noteClockMove\(\);/g) || []).length >= 6, "scrub, lecture, précédent, suivant, journal, événement");
   });
 });

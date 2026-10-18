@@ -1,5 +1,7 @@
 import { reviewLeg } from "../engine/planReview.js";
-import { momentAtOrBefore } from "../hooks/useMomentJournal.js";
+import { momentNearest } from "../hooks/useMomentJournal.js";
+import frDict from "../i18n/fr.js";
+import enDict from "../i18n/en.js";
 
 const MONTHS_SHORT = {
   fr: ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],
@@ -233,9 +235,29 @@ function stripTypePrefix(name, type) {
  * The official journal is built in French. Live GET /ici/moment follows `lang`.
  * Prefer the live moment for alerts / here / around so EN is not a FR leftover.
  */
+/** Clock-now leg replaces the pearl/journal leg. Unknown numbers stay absent. */
+export function withNowLeg(shown, nowLeg) {
+  if (!nowLeg || typeof nowLeg !== "object") return shown;
+  const from = nowLeg.from || nowLeg.fromStop;
+  const to = nowLeg.to || nowLeg.toStop;
+  if (!from && !to) return shown;
+  const leg = {};
+  if (from) leg.from = from;
+  if (to) leg.to = to;
+  const kn = Number(nowLeg.kn ?? nowLeg.speedKnots);
+  if (Number.isFinite(kn) && kn > 0) leg.kn = kn;
+  const left = nowLeg.remainingNm ?? nowLeg.nmRemainingToStop;
+  if (left != null && Number.isFinite(Number(left))) leg.remainingNm = Number(left);
+  const day = Number(nowLeg.day);
+  if (Number.isFinite(day) && day > 0) leg.day = Math.trunc(day);
+  const base = shown && typeof shown === "object" ? shown : {};
+  return { ...base, leg };
+}
+
 export function displayIciFrame(moment, journalEntries, mode) {
+  // The journal entry for where the boat is, not for the closest date.
   const journalHit = mode === "follow" && moment
-    ? momentAtOrBefore(journalEntries, moment?.t)
+    ? momentNearest(journalEntries, { t: moment?.t, pos: moment?.pos })
     : null;
   const timeline = journalHit || moment;
   return {
@@ -270,9 +292,118 @@ export function nameFromJournalFact(fact) {
   return "";
 }
 
+function normFact(value) {
+  return String(value ?? "")
+    .normalize("NFC")
+    .replace(/[’`]/g, "'")
+    .replace(/\s+/g, " ")
+    .replace(/[\s.·:;,–—-]+$/u, "")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Fact key: what the item says (type and value), not where it was stored.
+ * The value is the title and the fact together, so two protected areas with
+ * the same generic fact stay two items.
+ */
+export function factKey(item) {
+  if (!item) return "";
+  const kind = String(item.kind || item.type || "").toLowerCase();
+  const title = normFact(item.title || item.name);
+  const fact = normFact(item.fact || item.text);
+  if (!title && !fact) return "";
+  return `${kind}|${title}|${fact === title ? "" : fact}`;
+}
+
+/** Keeps the first item for each fact key (« haute mer : aucune ZEE » once). */
+export function dedupeFacts(items) {
+  const seen = new Set();
+  const out = [];
+  for (const item of Array.isArray(items) ? items : []) {
+    const key = factKey(item);
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+function splitSentences(text) {
+  return String(text ?? "")
+    .split(/\n+|(?<=[.!?…])\s+/u)
+    .map(normFact)
+    .filter(Boolean);
+}
+
+/**
+ * Server « here » sentences not already said elsewhere in the tab: the
+ * briefing paragraph, an alert or an item around. The briefing and the
+ * server word the same fact the same way (« haute mer : aucune ZEE »), and
+ * they are free text, not items: `dedupeFacts` never saw them.
+ */
+export function sentencesNotShown(sentences, shownTexts = []) {
+  const list = Array.isArray(sentences) ? sentences : [];
+  const keep = keptSentences(list, shownTexts);
+  return list.filter((_, i) => keep[i]);
+}
+
+/** Same rule as `sentencesNotShown`, as one boolean per sentence (in order). */
+export function keptSentences(sentences, shownTexts = []) {
+  const seen = new Set();
+  for (const text of Array.isArray(shownTexts) ? shownTexts : [shownTexts]) {
+    for (const part of splitSentences(text)) seen.add(part);
+  }
+  return (Array.isArray(sentences) ? sentences : []).map((sentence) => {
+    const parts = splitSentences(sentence);
+    if (!parts.length || parts.every((part) => seen.has(part))) return false;
+    parts.forEach((part) => seen.add(part));
+    return true;
+  });
+}
+
+/** True when two cards / items show the same thing (title or fact). */
+export function sameShownMoment(a, b) {
+  if (!a || !b) return false;
+  if (a.key && b.key && a.key === b.key) return true;
+  const ta = normFact(a.title || a.name);
+  const tb = normFact(b.title || b.name);
+  if (ta && ta === tb) return true;
+  const fa = normFact(a.text || a.fact);
+  const fb = normFact(b.text || b.fact);
+  return Boolean(fa && fa === fb);
+}
+
+/** The « around » list without what the Next card already shows. */
+export function aroundWithoutShown(around, shownCard) {
+  return dedupeFacts(around).filter((item) => !sameShownMoment(item, shownCard));
+}
+
+const NO_POE_FOR = /^aucun port d['’]entr[ée]e officiel n['’]est connu pour (.+?)\.?$/i;
+
+/** Stored server facts are French: the entry alert goes through i18n FR / EN. */
+export function localizeStoredFact(text, lang) {
+  const raw = String(text || "").trim();
+  if (!raw) return raw;
+  const dict = lang === "en" ? enDict : frDict;
+  const m = NO_POE_FOR.exec(raw);
+  if (m) {
+    const zone = m[1].trim();
+    if (/^cette zee$/i.test(zone)) return dict.alertNoPortOfEntry;
+    return dict.alertNoPortOfEntryFor.replace("{zone}", localizeStoredTitle(zone, lang));
+  }
+  return raw;
+}
+
+/** A stored title: a known server sentence through i18n, else the title map. */
+export function localizeStoredLabel(text, lang) {
+  const raw = String(text || "").trim();
+  return NO_POE_FOR.test(raw) ? localizeStoredFact(raw, lang) : localizeStoredTitle(raw, lang);
+}
+
 export function visibleAlerts(alerts, dismissed) {
   const hide = dismissed instanceof Set ? dismissed : new Set(dismissed || []);
-  return (Array.isArray(alerts) ? alerts : []).filter((a) => a && a.id && !hide.has(a.id));
+  return dedupeFacts((Array.isArray(alerts) ? alerts : []).filter((a) => a && a.id && !hide.has(a.id)));
 }
 
 export function dismissAlert(dismissed, id) {

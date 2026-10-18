@@ -179,6 +179,8 @@ export default {
   iciLegDay:          "J{n}",
   iciLegKn:           "{kn} kn",
   iciLegRemaining:    "reste {nm} nm",
+  iciReasonUnavailable: "indisponible",
+  iciReasonNoData:    "pas de donnée",
   eventBubbleChipWind: "Vent",
   eventBubbleChipHs:   "Hs",
   eventBubbleChipQuay: "{n} j à quai",
@@ -575,6 +577,29 @@ export default {
   skipperExpertIciRadius:      "Rayon du sac ici()",
   skipperExpertAlongAmp:       "AMP sur le trait",
   skipperExpertAmpAhead:       "AMP devant, au moins",
+
+  // AI transparency
+  aiActGeneratedLabel: "Contenu généré par IA (modèle : {model})",
+  aiActChatNotice: "Vous échangez avec une intelligence artificielle. Les réponses sont générées automatiquement et peuvent contenir des erreurs.",
+  aiActChatNoticeDismiss: "Compris",
+
+  // Moment cards: fallback title and the stored entry alert
+  momentFallbackTitle: "Position du bateau",
+  momentKindGrib: "Prévision météo (GRIB)",
+  momentKindAmp: "Aire marine protégée",
+  momentKindZee: "Zone économique exclusive",
+  momentKindPoe: "Port d’entrée",
+  momentKindMarina: "Marina",
+  momentKindPort: "Port",
+  momentKindScience: "Station scientifique",
+  momentKindClimo: "Climatologie",
+  momentKindProject: "Projet",
+  momentKindLayer: "Couche de carte",
+  momentKindBathymetry: "Bathymétrie",
+  momentKindCapitainerie: "Capitainerie",
+  momentKindWeather: "Météo",
+  alertNoPortOfEntryFor: "Aucun port d’entrée officiel n’est connu pour {zone}.",
+  alertNoPortOfEntry: "Aucun port d’entrée officiel n’est connu pour cette ZEE.",
 
   // Fiche d’un point de calque
   layerFicheSite: "Site",

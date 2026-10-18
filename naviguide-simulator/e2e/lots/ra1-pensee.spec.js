@@ -2,6 +2,7 @@
 // Sans API : titre de fiche, drapeau, journal tiennent seuls. Le paragraphe
 // traduit et la réponse du chat sont sondés via GET /voyage/official.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-ra1/${name}.webp`,
@@ -11,15 +12,6 @@ const shot = (page, name) => page.screenshot({
 });
 
 const LEAK = /Analyze User Input|\bTask:\s|Wait,\s*let me|Thinking OFF|translate a sailing-log/i;
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function switchToEnglish(page) {
   const en = page.getByTestId("lang-en");

@@ -1915,6 +1915,51 @@ def reset_worker_flag() -> None:
 
 # ── lecture pour les routes ──────────────────────────────────────────────────
 
+def _journal_row_key(entry: dict) -> str:
+    return str(entry.get("id") or entry.get("signature") or f"{entry.get('kind')}:{entry.get('t')}")
+
+
+def _merge_journal_rows(*pools: list) -> list:
+    """Longest pool keeps its order. Rows only the others have are added, newest first."""
+    lists = []
+    for pool in pools:
+        rows = [e for e in (pool or []) if isinstance(e, dict) and e.get("t")]
+        lists.append(rows)
+    if not lists:
+        return []
+    base = max(lists, key=len)
+    seen = {_journal_row_key(e) for e in base}
+    extra = []
+    for rows in lists:
+        for entry in rows:
+            key = _journal_row_key(entry)
+            if key in seen:
+                continue
+            seen.add(key)
+            extra.append(entry)
+    if not extra:
+        return list(base)
+    merged = list(base) + extra
+    merged.sort(key=lambda e: (str(e.get("t") or ""), 1 if e.get("kind") == "note" else 0), reverse=True)
+    return merged
+
+
+def _journal_day_names(*sources) -> list:
+    names = []
+    for source in sources:
+        if isinstance(source, dict):
+            names.extend(str(k) for k in source.keys())
+            continue
+        for item in source or []:
+            if isinstance(item, str) and len(item) >= 10:
+                names.append(item[:10] if "T" in item else item)
+            elif isinstance(item, dict):
+                day = item.get("day") or (str(item.get("t") or "")[:10] if item.get("t") else None)
+                if day:
+                    names.append(str(day))
+    return sorted({n for n in names if n and len(n) >= 10})
+
+
 def serve_journal(limit: int = 50, kinds: Optional[tuple] = None) -> dict:
     from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
     import voyage_journal as journal  # noqa: PLC0415
@@ -1934,11 +1979,42 @@ def serve_journal(limit: int = 50, kinds: Optional[tuple] = None) -> dict:
     if kinds:
         latest = [e for e in latest if (e or {}).get("kind") in kinds]
         events = [e for e in events if (e or {}).get("kind") in kinds]
+    day_rows: list = []
+    journal_days = body.get("journal_days") or {}
+    if isinstance(journal_days, dict):
+        for day in sorted(journal_days):
+            day_rows.extend(e for e in (journal_days.get(day) or []) if isinstance(e, dict))
+    if kinds:
+        day_rows = [e for e in day_rows if e.get("kind") in kinds]
+    live_rows: list = []
+    try:
+        live_rows = journal.entries_until(datetime.now(timezone.utc), kinds=kinds)
+    except Exception:
+        live_rows = []
+    merged = _merge_journal_rows(latest, live_rows, list(reversed(day_rows)))
+    day_names = _journal_day_names(summary.get("days") or [], journal_days, merged)
+    try:
+        day_names = _journal_day_names(day_names, journal.list_days())
+    except Exception:
+        pass
+    day_objs = []
+    counts: dict = {}
+    for entry in merged:
+        day = str(entry.get("t") or "")[:10]
+        if len(day) >= 10:
+            counts[day] = counts.get(day, 0) + 1
+    for name in day_names:
+        day_objs.append({"day": name, "count": counts.get(name, 0)})
+    cap = max(1, int(limit))
     summary.update({
         "voyageId": OFFICIAL_VOYAGE_ID,
         "status": READY,
-        "latest": latest[: max(1, int(limit))],
+        "latest": merged[:cap],
         "events": events,
+        "days": day_objs or list(summary.get("days") or []),
+        "count": max(int(summary.get("count") or 0), len(merged)),
+        "first": day_objs[0]["day"] if day_objs else summary.get("first"),
+        "last": day_objs[-1]["day"] if day_objs else summary.get("last"),
         "kinds": list(journal.KINDS),
         **_stamp(hit),
     })
@@ -2008,9 +2084,36 @@ def serve_moments(until: Optional[str] = None) -> dict:
     body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
     if not body:
         return preparing_payload("moments", extra)
-    rows = list(body.get("moments") or [])
-    if not rows:
-        rows = _rows_from_journal(body)
+    stored = list(body.get("moments") or [])
+    from_journal = _rows_from_journal(body)
+    sqlite_rows: list = []
+    try:
+        from moment_journal import read_moments  # noqa: PLC0415
+        sqlite_rows = list(read_moments(OFFICIAL_VOYAGE_ID) or [])
+    except Exception:
+        sqlite_rows = []
+    primary = stored or from_journal or sqlite_rows
+    seen = set()
+    rows = []
+
+    def _add(row) -> None:
+        if not isinstance(row, dict):
+            return
+        key = str(row.get("signature") or row.get("id") or row.get("t") or id(row))
+        if key in seen:
+            return
+        seen.add(key)
+        rows.append(row)
+
+    for pool in (primary, stored, sqlite_rows):
+        for row in pool or []:
+            _add(row)
+    # Journal lines are the same facts as the moments, one row per fact: they
+    # only fill the days no moment covers, never a second copy of a day.
+    covered = {str(row.get("t") or "")[:10] for row in rows}
+    for row in from_journal:
+        if isinstance(row, dict) and str(row.get("t") or "")[:10] not in covered:
+            _add(row)
     if until:
         rows = [row for row in rows if _iso_le(row.get("t"), until)]
     return {

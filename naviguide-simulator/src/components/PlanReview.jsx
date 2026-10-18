@@ -163,7 +163,7 @@ export const PlanReview = memo(function PlanReview({
             </button>
           ) : null}
           <AdviceCompare compare={compare} todayLabel={t("planCompareToday")} advisedLabel={t("planCompareAdvised")} />
-          <LlmSourceBadge source={source} testId="plan-review-source" className="mt-1 [&_span]:text-white/40" />
+          <LlmSourceBadge source={source} testId="plan-review-source" className="mt-1 [&_span]:text-xs [&_span]:text-white" />
         </div>
       </div>
   );
