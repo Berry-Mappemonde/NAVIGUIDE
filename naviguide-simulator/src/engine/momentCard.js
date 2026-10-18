@@ -666,6 +666,107 @@ function pushCapped(queue, card, max) {
   return next;
 }
 
+function finiteOrNull(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function officialCard(item, lane, salt, pos) {
+  const title = String(item?.title || item?.name || "").trim();
+  const text = String(item?.fact || item?.text || "").trim();
+  if (!title && !text) return null;
+  const kind = item?.kind || (lane === "now" ? "alert" : "place");
+  const label = title || text;
+  return {
+    key: `${lane}:${salt}:${kind}:${label}`,
+    lane,
+    type: kind,
+    kind,
+    title: label,
+    text: text || title,
+    entity: {
+      kind,
+      name: label,
+      url: item?.url || item?.visit_url || null,
+      lat: finiteOrNull(item?.lat ?? pos?.lat),
+      lon: finiteOrNull(item?.lon ?? pos?.lon),
+    },
+  };
+}
+
+/** Cards for the boat at `until`, from GET /voyage/official/moments. */
+export function cardsFromOfficialMoments(entries, { until = null } = {}) {
+  const rows = (Array.isArray(entries) ? entries : []).filter((row) => {
+    if (!row?.t) return false;
+    if (!until) return true;
+    const cut = Date.parse(until);
+    const t = Date.parse(row.t);
+    if (Number.isFinite(cut) && Number.isFinite(t)) return t <= cut;
+    return String(row.t) <= String(until);
+  });
+  rows.sort((a, b) => String(a.t).localeCompare(String(b.t)));
+  const current = rows.at(-1);
+  if (!current) return { now: null, freeQueue: [] };
+  const pos = current.pos || {};
+  const salt = current.signature || current.t;
+  const alerts = Array.isArray(current.alerts) ? current.alerts : [];
+  const around = [
+    ...(Array.isArray(current.around) ? current.around : []),
+    ...(Array.isArray(current.changes) ? current.changes : []),
+  ];
+  const alert = alerts.find((item) => item && (item.title || item.fact || item.name)) || null;
+  const now = alert ? officialCard(alert, "now", salt, pos) : null;
+  const freeQueue = [];
+  const seen = new Set();
+  for (const item of around) {
+    const card = officialCard(item, "free", salt, pos);
+    if (!card || seen.has(card.key)) continue;
+    seen.add(card.key);
+    freeQueue.push(card);
+  }
+  if (!now && !freeQueue.length) {
+    const fallback = officialCard(
+      { title: String(salt), fact: String(current.t), kind: "place" },
+      "free",
+      salt,
+      pos,
+    );
+    if (fallback) freeQueue.push(fallback);
+  }
+  return { now, freeQueue };
+}
+
+export function pageOfficialCards(built, { hideNow = false, freeIndex = 0 } = {}) {
+  const queue = built?.freeQueue || [];
+  const index = Number.isFinite(Number(freeIndex)) ? Number(freeIndex) : 0;
+  return {
+    now: hideNow ? null : (built?.now || null),
+    free: queue[index] || null,
+  };
+}
+
+/**
+ * Now / Free slots. The official moment for this position fills Now.
+ * A live safety alert still comes first. The synthetic stopover card does
+ * not cover that moment, and does not come back after it is dismissed.
+ */
+export function selectDisplayedMoments({
+  eventNow = null,
+  eventFree = null,
+  officialNow = null,
+  officialHasNow = false,
+  officialFree = null,
+} = {}) {
+  const safety = eventNow
+    && eventNow.severity === "alert"
+    && eventNow.kind !== "escale"
+    && eventNow.type !== "escale-out"
+    ? eventNow
+    : null;
+  const now = safety || (officialHasNow ? (officialNow || null) : (eventNow || officialNow || null));
+  return { now, free: eventFree || officialFree || null };
+}
+
 export function nowTtlMs({ mode, playing }) {
   if (mode === "suivre") return TTL.nowSuivreMs;
   return playing ? TTL.nowPlayingMs : Infinity;

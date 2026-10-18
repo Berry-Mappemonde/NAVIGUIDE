@@ -233,6 +233,25 @@ function stripTypePrefix(name, type) {
  * The official journal is built in French. Live GET /ici/moment follows `lang`.
  * Prefer the live moment for alerts / here / around so EN is not a FR leftover.
  */
+/** Clock-now leg replaces the pearl/journal leg. Unknown numbers stay absent. */
+export function withNowLeg(shown, nowLeg) {
+  if (!nowLeg || typeof nowLeg !== "object") return shown;
+  const from = nowLeg.from || nowLeg.fromStop;
+  const to = nowLeg.to || nowLeg.toStop;
+  if (!from && !to) return shown;
+  const leg = {};
+  if (from) leg.from = from;
+  if (to) leg.to = to;
+  const kn = Number(nowLeg.kn ?? nowLeg.speedKnots);
+  if (Number.isFinite(kn) && kn > 0) leg.kn = kn;
+  const left = nowLeg.remainingNm ?? nowLeg.nmRemainingToStop;
+  if (left != null && Number.isFinite(Number(left))) leg.remainingNm = Number(left);
+  const day = Number(nowLeg.day);
+  if (Number.isFinite(day) && day > 0) leg.day = Math.trunc(day);
+  const base = shown && typeof shown === "object" ? shown : {};
+  return { ...base, leg };
+}
+
 export function displayIciFrame(moment, journalEntries, mode) {
   const journalHit = mode === "follow" && moment
     ? momentAtOrBefore(journalEntries, moment?.t)

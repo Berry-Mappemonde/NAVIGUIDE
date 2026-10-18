@@ -4,6 +4,8 @@
  */
 
 import { briefingEntities, placeLabel, segmentBriefingWithSources } from "./briefingLinks.js";
+import enDict from "../i18n/en.js";
+import frDict from "../i18n/fr.js";
 import { trafficKind } from "./ampRules.js";
 import { originName, spokenZeeName, watersLabel } from "./toponyms.js";
 import { getCardinalDirection } from "../utils/getCardinalDirection.js";
@@ -108,8 +110,20 @@ const REASONS = {
   null: ["pas de donnée", "no data"],
 };
 
+function cleanReason(code) {
+  let key = String(code ?? "null");
+  key = key.replace(/Traceback \(most recent call last\):[\s\S]*/g, "");
+  key = key.replace(/<class ['"][^'"]+['"]>/g, "");
+  key = key.replace(/:?\bHTTPStatusError\b/g, "");
+  key = key.replace(/:+/g, ":").replace(/^:+|:+$/g, "");
+  return key || "unavailable";
+}
+
 function why(code, lang) {
-  const key = String(code ?? "null");
+  const key = cleanReason(code);
+  const table = isEn(lang) ? enDict : frDict;
+  if (key === "unavailable") return table.iciReasonUnavailable;
+  if (key === "no_data") return table.iciReasonNoData;
   const row = REASONS[key];
   if (row) return row[isEn(lang) ? 1 : 0];
   if (/^openmeteo_unavailable/.test(key)) return isEn(lang) ? "Open-Meteo did not answer" : "Open-Meteo n’a pas répondu";

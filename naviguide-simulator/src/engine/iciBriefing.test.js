@@ -777,3 +777,25 @@ describe("lot AM1B — ampSentence dans / à N milles", () => {
   });
 });
 
+describe("iciBriefing — reason codes, no exception text", () => {
+  it("translates unavailable and no_data and hides HTTPStatusError", () => {
+    const text = narrateIci({
+      zee: { name: "Haute mer", mrgid: null, gold: false },
+      nearby: { marinas: [], capitaineries: [], wpi: [], anchorages: [] },
+      aton: { nearby: [], reason: "HTTPStatusError" },
+      emodnet: { reason: "unavailable" },
+      satellites: {
+        kind: "observation",
+        scene: null,
+        reason: "no_data",
+        derived: { coastline: { value: null, reason: "not_generated" } },
+      },
+      sources: { zee: "marineregions", bi: "ok" },
+    }, "fr");
+    assert.doesNotMatch(text, /HTTPStatusError/);
+    assert.doesNotMatch(text, /_unavailable/);
+    assert.match(text, /indisponible/);
+    assert.match(text, /pas de donnée/);
+  });
+});
+

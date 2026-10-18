@@ -321,7 +321,7 @@ export const Sidebar = memo(function Sidebar({
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
   canFinishDraw, drawing = null, onDrawUndo, onImportRoute, importBusy = false,
   isCockpit, polarData, view = VIEW_SUIVRE,
-  legContext, briefingLoading, officialFallback,
+  legContext, nowLeg = null, briefingLoading, officialFallback,
   iciBriefing = null,
   iciBriefingSegments = null, onBriefingFocus,
   skipperNotice = null,
@@ -459,11 +459,16 @@ export const Sidebar = memo(function Sidebar({
           <IciMaintenant
             moment={moment}
             journalEntries={journalEntries}
+            journalDays={journal?.days}
             onSeek={onSeek}
             mode={momentMode}
             routeSource={routeSource}
+            nowLeg={nowLeg}
             momentNow={!isDrawing ? momentNow : null}
             momentFree={!isDrawing ? momentFree : null}
+            onMomentDismiss={onMomentDismiss}
+            onMomentNext={onMomentNext}
+            onMomentFocus={onBriefingFocus}
             simulation={(
               <SimulationPanel
                 legContext={legContext}

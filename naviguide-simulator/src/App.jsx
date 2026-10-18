@@ -18,6 +18,7 @@ import { useVoyageClock } from "./hooks/useVoyageClock.js";
 import { useVirtualVessel } from "./hooks/useVirtualVessel.js";
 import { useOfficialExpedition } from "./hooks/useOfficialExpedition.js";
 import { useOfficialJournal } from "./hooks/useOfficialJournal.js";
+import { legAtClockNow } from "./hooks/useLegContext.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useIciAlong } from "./hooks/useIciAlong.js";
 import { useMomentCards } from "./hooks/useMomentCards.js";
@@ -585,20 +586,40 @@ export default function App() {
   });
   const { stop: escaleStop, setStop: setEscaleStop, sheet: escaleSheet, open: openEscaleSheet, close: closeEscaleSheet } = escale;
 
+  const nowLeg = useMemo(() => {
+    if (!suivreBerry || !officialClock) return null;
+    return legAtClockNow({
+      clock: officialClock,
+      now: sourceLive?.iso || Date.now(),
+      marks: escaleMarks,
+      cursor: playback.nm,
+      t0: officialClock.t0,
+      speedKnots: sourceLive?.speedKnots,
+    });
+  }, [suivreBerry, officialClock, sourceLive?.iso, sourceLive?.speedKnots, escaleMarks, playback.nm]);
+
   // Chatbot journal de bord (lot D): the client adds what only it knows —
   // the view, the film boat in Simulation, the polar, the skipper's orders.
   // Lot C3: une seule vitesse — horloge en Suivre, prévue en Simulation.
+  // Suivre reads the clock "now", not the playback cursor (a journal seek).
+  const followNow = isSuivre && sourceLive && Number.isFinite(Number(sourceLive.lat))
+    ? { lat: Number(sourceLive.lat), lon: Number(sourceLive.lon), iso: sourceLive.iso || null }
+    : null;
   const chatBoatPos = isSuivre
-    ? (clockSample && Number.isFinite(clockSample.lat)
+    ? (followNow || (clockSample && Number.isFinite(clockSample.lat)
       ? { lat: clockSample.lat, lon: clockSample.lon, iso: clockSample.iso || null }
-      : null)
+      : null))
     : (sample && Number.isFinite(sample.lat)
       ? { lat: sample.lat, lon: sample.lon, iso: clockSample?.iso || null }
       : null);
   const drawTip = drawingMode && drawnPoints.length ? drawnPoints[drawnPoints.length - 1] : null;
   const momentLat = Number(drawTip?.lat ?? chatBoatPos?.lat);
   const momentLon = Number(drawTip?.lon ?? chatBoatPos?.lon);
-  const momentIso = drawTip ? null : (chatBoatPos?.iso || clockSample?.iso || null);
+  const momentIso = drawTip
+    ? null
+    : (isSuivre
+      ? (followNow?.iso || chatBoatPos?.iso || null)
+      : (chatBoatPos?.iso || clockSample?.iso || null));
   const iciMoment = useMoment({
     lat: Number.isFinite(momentLat) ? Math.round(momentLat * 1000) / 1000 : null,
     lon: Number.isFinite(momentLon) ? Math.round(momentLon * 1000) / 1000 : null,
@@ -796,6 +817,9 @@ export default function App() {
     stories: !replay.active && replay.filmStyle === "written",
     cast,
     snappedPosition: legContext?.snappedPosition,
+    at: (suivreBerry && Number.isFinite(Number(sourceLive?.lat)) && Number.isFinite(Number(sourceLive?.lon)))
+      ? { lat: Number(sourceLive.lat), lon: Number(sourceLive.lon) }
+      : null,
     polarMeta: polarData,
     jambe,
     lang,
@@ -835,13 +859,14 @@ export default function App() {
   // Carte du moment : NOW (sécurité / décision) + FREE (information), nourries
   // par le registre jugé et le sac. Jamais un appel réseau de son côté.
   const momentFilmCum = isSuivre && live && !previewing ? (Number(live.filmNm) || playback.nm) : playback.nm;
-  const momentLegId = hudLeg ? `${hudLeg.fromStop || ""}→${hudLeg.toStop || ""}` : null;
+  const cardHud = suivreBerry && nowLeg?.fromStop ? nowLeg : hudLeg;
+  const momentLegId = cardHud ? `${cardHud.fromStop || ""}→${cardHud.toStop || ""}` : null;
   // What the escale card says when the boat leaves a stopover.
   const momentLeg = useMemo(() => {
-    if (!hudLeg?.fromStop) return null;
-    const from = legendMarks.find((m) => m.name === hudLeg.fromStop);
-    const to = hudLeg.toStop ? legendMarks.find((m) => m.name === hudLeg.toStop) : null;
-    const land = isLandLegNames(hudLeg.fromStop, hudLeg.toStop) || hudLeg.vehicle === "land";
+    if (!cardHud?.fromStop) return null;
+    const from = legendMarks.find((m) => m.name === cardHud.fromStop);
+    const to = cardHud.toStop ? legendMarks.find((m) => m.name === cardHud.toStop) : null;
+    const land = isLandLegNames(cardHud.fromStop, cardHud.toStop) || cardHud.vehicle === "land";
     const sailNm = from && to ? Math.max(0, (Number(to.nm) || 0) - (Number(from.nm) || 0)) : null;
     const filmDelta = from && to
       ? Math.max(0, (Number(to.filmNm ?? to.nm) || 0) - (Number(from.filmNm ?? from.nm) || 0))
@@ -852,8 +877,8 @@ export default function App() {
       ? Math.max(0, Math.round((toMs - fromMs) / 3_600_000))
       : null;
     return {
-      fromStop: hudLeg.fromStop,
-      toStop: hudLeg.toStop || null,
+      fromStop: cardHud.fromStop,
+      toStop: cardHud.toStop || null,
       holdDays: from?.holdHours > 0 ? Math.round(from.holdHours / 24) : 0,
       legNm: land ? (filmDelta || sailNm) : sailNm,
       kind: land ? "land" : undefined,
@@ -862,7 +887,7 @@ export default function App() {
       lat: from?.lat,
       lon: from?.lon,
     };
-  }, [hudLeg?.fromStop, hudLeg?.toStop, hudLeg?.vehicle, legendMarks, lang]);
+  }, [cardHud?.fromStop, cardHud?.toStop, cardHud?.vehicle, legendMarks, lang]);
   const moments = useMomentCards({
     enabled: sceneReady && !drawingMode && !replay.active,
     events: iciPack.events,
@@ -874,6 +899,8 @@ export default function App() {
     written: !replay.active && replay.filmStyle === "written",
     legId: momentLegId,
     leg: momentLeg,
+    officialMoments: suivreBerry ? momentJournal.entries : null,
+    nowIso: suivreBerry ? (sourceLive?.iso || null) : null,
   });
 
   // Stop auto : le film s'arrête sur chaque nouvelle carte (NOW, et FREE hors
@@ -896,7 +923,7 @@ export default function App() {
   // l'horloge officielle : le playhead ne doit pas effacer les escales déjà
   // franchies (RA2 lit ce texte pendant que le film joue).
   const storyLive = replay.active && sourceLive ? sourceLive : live;
-  const storyLeg = replay.active ? null : hudLeg;
+  const storyLeg = replay.active ? null : (nowLeg || hudLeg);
   const storyParagraphs = useMemo(() => {
     if (suivreCustom) return replay.filmParagraphs || [];
     if (!suivreBerry || !officialClock) return [];
@@ -1811,6 +1838,7 @@ export default function App() {
         skipperNotice={skipper.notice}
         view={view}
         legContext={sidebarHudLeg}
+        nowLeg={nowLeg}
         clockSample={sidebarClockSample}
         atQuay={atQuay}
         quayDays={quayDays}

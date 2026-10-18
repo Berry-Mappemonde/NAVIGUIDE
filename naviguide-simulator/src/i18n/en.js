@@ -178,6 +178,8 @@ export default {
   iciLegDay:          "D{n}",
   iciLegKn:           "{kn} kn",
   iciLegRemaining:    "{nm} nm left",
+  iciReasonUnavailable: "unavailable",
+  iciReasonNoData:    "no data",
   eventBubbleChipWind: "Wind",
   eventBubbleChipHs:   "Hs",
   eventBubbleChipQuay: "{n} d alongside",

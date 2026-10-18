@@ -165,6 +165,7 @@ export function useIciDossier({
   orders = null,
   stories = false,
   frozen = false,
+  at = null,
 }) {
   const [remote, setRemote] = useState(null);
   const [tick, setTick] = useState({ events: [], briefing: null });
@@ -197,7 +198,12 @@ export function useIciDossier({
   const prevFrozenRef = useRef(frozen);
   const holdRef = useRef(null);
   const filmBucket = Number.isFinite(filmCum) ? Math.round(filmCum / 5) * 5 : null;
-  const boat = boatPositionFromCast(cast, snappedPosition);
+  const castBoat = boatPositionFromCast(cast, snappedPosition);
+  const atLat = Number(at?.lat);
+  const atLon = Number(at?.lon);
+  const boat = Number.isFinite(atLat) && Number.isFinite(atLon)
+    ? { lat: atLat, lon: atLon }
+    : castBoat;
   const currentLeg = legKey(jambe);
 
   if (lastLegRef.current !== currentLeg) {
