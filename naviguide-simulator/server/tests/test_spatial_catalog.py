@@ -23,6 +23,7 @@ def test_index_filters_bbox_and_science_source_across_antimeridian():
     assert {feature["properties"]["name"] for feature in result["features"]} == {"Fidji Est", "Fidji Ouest"}
     assert all(feature["properties"]["naviguideCatalogId"].startswith("science:") for feature in result["features"])
     assert result["metadata"]["matched"] == 2
+    assert result["metadata"]["total"] == 2
 
 
 def test_index_clusters_points_to_zoom_budget_without_losing_count():
@@ -36,6 +37,20 @@ def test_index_clusters_points_to_zoom_budget_without_losing_count():
     assert len(result["features"]) <= 80
     assert sum(feature["properties"].get("clusterCount", 1) for feature in result["features"]) == 1_000
     assert result["metadata"]["clustered"] is True
+
+
+def test_empty_catalog_reports_total_zero_not_a_quiet_viewport():
+    index = SpatialCatalogIndex("capitaineries", [])
+    result = index.query(Bbox(-10, 40, 10, 50), zoom=4)
+    assert result["features"] == []
+    assert result["metadata"]["matched"] == 0
+    assert result["metadata"]["total"] == 0
+
+    full = SpatialCatalogIndex("capitaineries", [point(140, -35, name="Sydney")])
+    ocean = full.query(Bbox(-10, 40, 10, 50), zoom=4)
+    assert ocean["features"] == []
+    assert ocean["metadata"]["matched"] == 0
+    assert ocean["metadata"]["total"] == 1
 
 
 def test_cluster_does_not_carry_one_point_contact():

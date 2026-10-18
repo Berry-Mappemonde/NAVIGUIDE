@@ -11,6 +11,7 @@ import { SpatialCatalogLayer } from "./spatialCatalogLayer.js";
 import { quantizedCatalogBbox } from "./spatialFeatures.js";
 import { DEFAULT_SHOW_GRIB, DEFAULT_SHOW_ZEE } from "../constants/layers.js";
 import { recetteClimoFlags } from "../utils/recetteQuery.js";
+import { catalogSourceCount } from "./catalogSource.js";
 
 const EMPTY = { type: "FeatureCollection", features: [] };
 
@@ -193,6 +194,11 @@ export function useToggleLayers(
   usePersistentCatalogLayer(mapRef, mapReady, marinas.data, marinas.show, {
     ...pointOptions, color: "#ef4444", kind: "marina",
   });
+  useEffect(() => {
+    if (catalogSourceCount(capitaineries.data) !== 0) return;
+    capitaineries.setShow((on) => (on ? false : on));
+  }, [capitaineries.data, capitaineries.setShow]);
+
   usePersistentCatalogLayer(mapRef, mapReady, capitaineries.data, capitaineries.show, {
     ...pointOptions, color: "#7dd3fc", kind: "capitainerie",
   });
@@ -390,6 +396,7 @@ export function useToggleLayers(
     errorBiMarinas: marinas.error,
     showBiCapitaineries: capitaineries.show,
     setShowBiCapitaineries: capitaineries.setShow,
+    countBiCapitaineries: catalogSourceCount(capitaineries.data),
     loadingBiCapitaineries: capitaineries.loading,
     errorBiCapitaineries: capitaineries.error,
     showBiPoe: poe.show,
@@ -439,7 +446,7 @@ export function useToggleLayers(
     showBalisage, setShowBalisage,
     projects.show, projects.setShow, projects.loading, projects.error,
     marinas.show, marinas.setShow, marinas.loading, marinas.error,
-    capitaineries.show, capitaineries.setShow, capitaineries.loading, capitaineries.error,
+    capitaineries.show, capitaineries.setShow, capitaineries.loading, capitaineries.error, capitaineries.data,
     poe.show, poe.setShow, poe.loading, poe.error,
     amp.show, amp.setShow, amp.loading, amp.error,
     showSextant, showArgo, showOdatis, showEdmed, showCsr,
