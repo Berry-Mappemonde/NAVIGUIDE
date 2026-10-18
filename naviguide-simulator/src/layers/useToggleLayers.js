@@ -141,10 +141,20 @@ export function useToggleLayers(
       return next;
     });
   }, [gateRef]);
-  const setShowBalisage = gatedSet(setShowBalisageRaw, "balisage");
-  const setShowBathymetry = gatedSet(setShowBathymetryRaw, "bathymetry");
-  const setShowFonds = gatedSet(setShowFondsRaw, "fonds");
-  const setShowCables = gatedSet(setShowCablesRaw, "cables");
+  // Stable identities: the memoized bag below lists these setters as deps.
+  // A new function each render republishes the bag and setStates forever.
+  const setShowBalisage = useCallback((fn) => {
+    gatedSet(setShowBalisageRaw, "balisage")(fn);
+  }, [gatedSet, setShowBalisageRaw]);
+  const setShowBathymetry = useCallback((fn) => {
+    gatedSet(setShowBathymetryRaw, "bathymetry")(fn);
+  }, [gatedSet, setShowBathymetryRaw]);
+  const setShowFonds = useCallback((fn) => {
+    gatedSet(setShowFondsRaw, "fonds")(fn);
+  }, [gatedSet, setShowFondsRaw]);
+  const setShowCables = useCallback((fn) => {
+    gatedSet(setShowCablesRaw, "cables")(fn);
+  }, [gatedSet, setShowCablesRaw]);
   const recetteClimo = recetteClimoFlags();
   const [showClimoWind, setShowClimoWind] = useState(recetteClimo.wind);
   const [showClimoWave, setShowClimoWave] = useState(recetteClimo.wave);
