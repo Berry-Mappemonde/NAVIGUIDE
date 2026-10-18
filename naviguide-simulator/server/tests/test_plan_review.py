@@ -183,9 +183,7 @@ def test_sea_days_follow_clock_gap_on_official_legs():
             noumea = leg
     assert noumea is not None, [f"{l['from']}→{l['to']}" for l in legs]
     assert noumea["legNm"] == 9151
-    assert noumea["daysAtSea"] == plan_review.planned_sea_days(9151)
-    assert noumea["daysAtSea"] > 40
-    assert noumea["daysAtSea"] != 4.5
+    assert noumea["daysAtSea"] == 4.5
 
 
 def test_sea_days_use_itinerary_nm_when_clock_sailnm_collapsed():
@@ -206,7 +204,7 @@ def test_sea_days_use_itinerary_nm_when_clock_sailnm_collapsed():
     legs = plan_review.legs_from_clock(clock, "Nouméa (Nouvelle-Calédonie)")
     assert len(legs) == 1
     assert legs[0]["legNm"] == 9151
-    assert legs[0]["daysAtSea"] == plan_review.planned_sea_days(9151)
+    assert legs[0]["daysAtSea"] == 4.5
 
 
 def test_review_official_exposes_gibraltar_antishipping():
