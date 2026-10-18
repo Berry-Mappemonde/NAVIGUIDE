@@ -26,7 +26,7 @@ export function llmSourceI18nKey(source, reviewedBy) {
   const s = String(source || "");
   const lower = s.toLowerCase();
   const reviewed = String(reviewedBy || "").toLowerCase();
-  const ultraReviewed = reviewed.includes("ultra") && (lower.includes("nemotron") || lower.includes("super") || isLlmWrittenSource(s));
+  const ultraReviewed = reviewed.includes("ultra") && (lower.includes("nemotron") || lower.includes("super") || isLlmWrittenSource(s)) && (lower === "nemotron" || lower.includes("super"));
   if ((lower.includes("reviewed") && lower.includes("ultra")) || ultraReviewed) return "storySourceSuperReviewed";
   if (s === "openrouter" || lower.startsWith("openrouter")) return "storySourceOpenrouter";
   if (s === "claude" || lower.startsWith("claude")) return "storySourceClaude";

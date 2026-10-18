@@ -87,7 +87,8 @@ test("EN, Follow, Replay, Written: text label, no third-party logo", async ({ pa
   await expect(written).toBeEnabled({ timeout: 15_000 });
   await written.click();
   const source = page.getByTestId("film-source");
-  await expect(source).toContainText("Writing with Nemotron 3 Super on Nebius Token Factory", { timeout: 2_000 });
+  await expect(source).toContainText("Writing…", { timeout: 2_000 });
+  await expect(source).not.toContainText(/Nemotron|NIM|OpenRouter|Claude|Token Factory|Nebius/i);
   await expect(source).toContainText("AI-generated content", { timeout: 8_000 });
   await expect(source).toContainText("Nemotron 3 Super");
   await expect(source).toContainText("Token Factory");
