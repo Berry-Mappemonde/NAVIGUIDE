@@ -4,7 +4,8 @@ import { useLang } from "../i18n/LangContext.jsx";
 import { filmBarInsets } from "../utils/filmBarLayout.js";
 import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
 import { SAINT_MAUR_LAND_HOURS } from "../engine/voyageClock.js";
-import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
+import { isLandLegNames } from "../utils/berryLegs.js";
+import { displayStopName, roadTransferLabel } from "../utils/stopLabels.js";
 import { ListenButton } from "./ListenButton.jsx";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 import { DepartureField } from "./DepartureField.jsx";
@@ -138,7 +139,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     ? Number(remainingNm)
     : (Number(nm) > 0.5 ? Number(nm) : null);
   const landClock = landLeg
-    ? formatLandLegClock(landNm, SAINT_MAUR_LAND_HOURS, t, lang)
+    ? formatLandLegClock(landNm, SAINT_MAUR_LAND_HOURS, t, lang, fromName, toName)
     : "";
   const phaseLabel = phase === "air-out" || phase === "air"
     ? t("filmPhaseAir")
@@ -191,24 +192,34 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     >
         <div className={`naviguide-film-bar overflow-hidden rounded-xl border ${drawing ? "border-emerald-400/30" : "border-white/15"} bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm`}>
         <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0 text-[12px] font-semibold leading-tight truncate">
+          <div className="min-w-0 font-semibold leading-tight text-[12px] truncate">
             {drawing ? (
               <>
                 <span className="text-emerald-200">{t("drawingInProgress")}</span>
                 <span className="text-white/60 font-normal ml-2">{drawing.message}</span>
               </>
             ) : finished
-              ? t("filmArrived", { name: fromName || "—" })
+              ? t("filmArrived", { name: displayStopName(fromName, lang, t) || "—" })
               : (
-                <>
-                  <span className="text-blue-200">{fromName || "—"}</span>
-                  <span className="text-white/35 mx-1">→</span>
-                  <span className="text-cyan-200">{toName || "—"}</span>
-                </>
+                <span data-testid="film-leg" data-from={fromName || ""} data-to={toName || ""}>
+                  {landClock ? (
+                    <span
+                      data-testid="film-land-leg"
+                      title={landClock}
+                      className="block truncate font-normal text-[13px] leading-tight text-cyan-100"
+                    >
+                      {landClock}
+                    </span>
+                  ) : (
+                    <>
+                      <span className="text-blue-200">{displayStopName(fromName, lang, t) || "—"}</span>
+                      <span className="text-white/35 mx-1">→</span>
+                      <span className="text-cyan-200">{displayStopName(toName, lang, t) || "—"}</span>
+                    </>
+                  )}
+                </span>
               )}
-            {landClock ? (
-              <span data-testid="film-land-leg" className="text-[10px] font-normal text-cyan-300/80 ml-2">{landClock}</span>
-            ) : phaseLabel ? (
+            {!landClock && phaseLabel ? (
               <span className="text-[10px] font-normal text-cyan-300/80 ml-2">{phaseLabel}</span>
             ) : null}
           </div>
@@ -278,7 +289,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               key={`${m.name}-${m.nm}`}
               className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white pointer-events-none"
               style={{ left: `${barTotal > 0 ? ((m.filmNm ?? m.nm) / barTotal) * 100 : 0}%` }}
-              title={m.name}
+              title={displayStopName(m.name, lang, t)}
             />
           ))}
           {(eventMarks || []).map((ev) => {
@@ -622,11 +633,8 @@ function filmSourceLabel(source, t) {
 }
 
 /** Jambe terrestre (Saint-Maur → La Rochelle) : km par la route, pas de nm. */
-export function formatLandLegClock(nm, hours, t, lang = "fr") {
-  const km = nmToRoundedKm(nm);
-  if (km == null || !Number.isFinite(Number(hours))) return "";
-  const loc = lang === "en" ? "en-GB" : "fr-FR";
-  return `${km.toLocaleString(loc)} ${t("unitKm")} ${t("byRoad")} · ${Number(hours)} ${t("unitRoadHours")}`;
+export function formatLandLegClock(nm, hours, t, lang = "fr", fromName = "", toName = "") {
+  return roadTransferLabel(nm, hours, t, lang, fromName, toName, t("byRoad"), t("unitRoadHours"), t("unitKm"));
 }
 
 function formatEta(hours, lang = "fr") {

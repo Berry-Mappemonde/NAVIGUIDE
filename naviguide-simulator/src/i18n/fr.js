@@ -626,6 +626,25 @@ export default {
   layerFicheKindGlider: "Planeur sous-marin",
   layerFicheClose: "Fermer la fiche",
 
+  // FV2
+  fv2ClimoCaption: "Climatologie — moyenne mensuelle ({month}), pas une prévision",
+  fv2Month1: "janvier",
+  fv2Month2: "février",
+  fv2Month3: "mars",
+  fv2Month4: "avril",
+  fv2Month5: "mai",
+  fv2Month6: "juin",
+  fv2Month7: "juillet",
+  fv2Month8: "août",
+  fv2Month9: "septembre",
+  fv2Month10: "octobre",
+  fv2Month11: "novembre",
+  fv2Month12: "décembre",
+  fv2RoadTransfer: "Transfert routier {from} → {to} : {km} km, ≈ {hours} h",
+  fv2NmToPort: "{nm} nm jusqu’au port de destination",
+  fv2StopSaintMaur: "Saint-Maur (Indre)",
+  fv2StopAzores: "Açores",
+
   // Lot NB1 — Nemotron via Token Factory, badge en texte seul
   llmBrandNvidia: "NVIDIA",
   llmBrandNebius: "Nebius",
