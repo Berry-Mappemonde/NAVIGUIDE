@@ -59,8 +59,8 @@ def _watch_execute(monkeypatch):
     return seen
 
 
-def test_registry_is_only_the_fixture_job():
-    assert list(one_shot.REGISTRY) == [one_shot.FIXTURE_JOB]
+def test_registry_holds_fixture_and_vl_route():
+    assert list(one_shot.REGISTRY) == [one_shot.FIXTURE_JOB, "vl_route_bm"]
 
 
 def test_estimate_makes_no_call(monkeypatch, capsys):
