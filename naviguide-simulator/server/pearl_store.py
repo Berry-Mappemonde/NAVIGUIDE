@@ -456,6 +456,65 @@ def list_moments(voyage_id: str) -> list[dict]:
     return out
 
 
+def _table_row_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for table in ("pearls", "kv", "moments"):
+        try:
+            row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+            out[table] = int(row[0] or 0)
+        except Exception:
+            out[table] = 0
+    return out
+
+
+def sqlite_table_counts(path: Path) -> dict[str, int]:
+    """Comptes pearls / kv / moments sur un fichier sqlite (lecture seule)."""
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        return _table_row_counts(conn)
+    finally:
+        conn.close()
+
+
+def backup_database(dest: Path) -> dict[str, Any]:
+    """Copie cohérente à chaud (API backup), même si la base est en WAL."""
+    src = db_path()
+    if not src.is_file():
+        raise FileNotFoundError(f"sqlite absent : {src}")
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        dest.unlink()
+    src_conn = sqlite3.connect(str(src), timeout=30.0)
+    dst_conn = sqlite3.connect(str(dest))
+    try:
+        src_conn.execute("PRAGMA busy_timeout=30000")
+        with _LOCK:
+            src_conn.backup(dst_conn)
+        dst_conn.commit()
+    finally:
+        dst_conn.close()
+        src_conn.close()
+    return verify_database_backup(src, dest)
+
+
+def verify_database_backup(src: Path, dest: Path) -> dict[str, Any]:
+    """integrity_check + mêmes comptes de lignes sur la copie."""
+    src_counts = sqlite_table_counts(src)
+    dst_counts = sqlite_table_counts(dest)
+    if src_counts != dst_counts:
+        raise RuntimeError(f"backup sqlite : comptes différents {src_counts} vs {dst_counts}")
+    conn = sqlite3.connect(f"file:{dest}?mode=ro", uri=True)
+    try:
+        row = conn.execute("PRAGMA integrity_check").fetchone()
+        status = str(row[0] if row else "")
+    finally:
+        conn.close()
+    if status.lower() != "ok":
+        raise RuntimeError(f"backup sqlite : integrity_check={status!r}")
+    return {"integrity": status, "counts": dst_counts, "source": str(src), "dest": str(dest)}
+
+
 def count_kv_rows() -> int:
     try:
         with _LOCK:

@@ -31,7 +31,7 @@ Construire un stock poste depuis le dépôt (tests `pytest -m poste`) :
     export NAVIGUIDE_VOYAGE_DIR="${NAVIGUIDE_VOYAGE_DIR:-$HOME/blue-intelligence-map/naviguide-simulator/server/voyage_data}"
     python3 scripts/reanchor_official_moments.py --dry-run
     python3 scripts/reanchor_official_moments.py
-    sudo systemctl restart naviguide-simulator   # si le service tourne sous ce nom
+    sudo systemctl restart naviguide-simulator
 
 ── Production Contabo (après séparation : utilisateur naviguide) ──
 
@@ -70,15 +70,18 @@ def main() -> int:
         help="affiche le plan et les comptes sans écrire ni sauvegarder",
     )
     parser.add_argument(
-        "--no-backup",
+        "--i-accept-data-risk-without-backup",
         action="store_true",
-        help="désactive la sauvegarde (déconseillé en production)",
+        help="désactive la sauvegarde (interdit en production ; tests uniquement)",
     )
     args = parser.parse_args()
 
     from reanchor_official import run_reanchor
 
-    return run_reanchor(dry_run=args.dry_run, backup=not args.no_backup and not args.dry_run)
+    return run_reanchor(
+        dry_run=args.dry_run,
+        skip_backup=args.i_accept_data_risk_without_backup,
+    )
 
 
 if __name__ == "__main__":
