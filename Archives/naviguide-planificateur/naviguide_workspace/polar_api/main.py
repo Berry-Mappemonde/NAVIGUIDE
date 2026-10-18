@@ -7,7 +7,7 @@ persist the 181×61 interpolated grid, and expose it to all agents.
 Endpoints
 ─────────
 GET  /                                      Health check
-POST /api/v1/polar/upload                   Upload PDF → parse → store 181×61 grid
+POST /api/v1/polar/upload                   Upload PDF → parse → store 181×61 grid (admin)
 GET  /api/v1/polar/{expedition_id}          Retrieve full polar grid (181×61)
 GET  /api/v1/polar/{expedition_id}/summary  VMG summary only (lightweight, for briefing agents)
 POST /api/v1/polar/chat                     Polar agent chat (VMG-aware, LLM cascade-backed)
@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -36,6 +36,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent   # naviguide/
 sys.path.insert(0, str(REPO_ROOT / "polar_agent"))
 
 from polar_engine import parse_polar_pdf, parse_polar_csv, parse_polar_excel, PolarData  # noqa: E402
+
+try:
+    from polar_api.admin_guard import require_admin  # noqa: E402
+except ImportError:  # lancé comme script depuis polar_api/
+    from admin_guard import require_admin  # noqa: E402
 
 # LLM cascade NIM → OpenRouter → Claude (optional — chat falls back gracefully)
 sys.path.insert(0, str(REPO_ROOT))
@@ -148,7 +153,7 @@ def health():
     }
 
 
-@app.post("/api/v1/polar/upload")
+@app.post("/api/v1/polar/upload", dependencies=[Depends(require_admin)])
 async def upload_polar(
     file:          UploadFile     = File(...,  description="Polar table in PDF format"),
     expedition_id: str            = Form(...,  description="Unique expedition identifier (e.g. 'berry-mappemonde-2026')"),

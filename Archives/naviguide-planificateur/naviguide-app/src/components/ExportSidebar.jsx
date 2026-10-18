@@ -13,8 +13,7 @@ import { useLang } from "../i18n/LangContext.jsx";
 const POLAR_API_URL        = import.meta.env.VITE_POLAR_API_URL ?? "http://localhost:8004";
 const POLAR_EXPEDITION     = "berry-mappemonde-2026";
 const POLAR_VMG_TWS_KEYS  = ["8", "10", "12", "16", "20", "25"];
-const DEFAULT_POLAR_URL   = "/Leopard46_Standard_Sails.csv";
-const DEFAULT_POLAR_NAME  = "Leopard 46";
+const POLAR_UPLOAD_ADMIN_ONLY = "Upload reserved to the admin";
 
 function kts(v) { return v != null ? `${Number(v).toFixed(1)} kt` : "—"; }
 function deg(v) { return v != null ? `${Math.round(v)}°`          : "—"; }
@@ -316,26 +315,18 @@ export function ExportSidebar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [polarFile]);
 
-  /* ── Default load of Leopard 46 polars ───────────────────────── */
+  /* ── Default load: read the stored polar (upload is admin-only) ─────────── */
   useEffect(() => {
     if (polarData || defaultLoadAttemptedRef.current) return;
     defaultLoadAttemptedRef.current = true;
 
-    const loadDefaultPolars = async () => {
+    const loadStoredPolar = async () => {
       setPolarUploadStatus("uploading");
       setPolarUploadDetail("");
       try {
-        const res = await fetch(DEFAULT_POLAR_URL);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const blob = await res.blob();
-        const file = new File([blob], "Leopard46_Standard_Sails.csv", { type: "text/csv" });
-        const form = new FormData();
-        form.append("file", file);
-        form.append("expedition_id", POLAR_EXPEDITION);
-        form.append("boat_name", DEFAULT_POLAR_NAME);
-        const uploadRes = await fetch(`${POLAR_API_URL}/api/v1/polar/upload`, { method: "POST", body: form });
-        const data = await uploadRes.json();
-        if (!uploadRes.ok) throw new Error(data.detail ?? `HTTP ${uploadRes.status}`);
+        const res  = await fetch(`${POLAR_API_URL}/api/v1/polar/${POLAR_EXPEDITION}/summary`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail ?? `HTTP ${res.status}`);
         if (userDroppedFileRef.current) return; // User dropped a file during the load
         onPolarDataLoaded({
           expedition_id: data.expedition_id,
@@ -352,7 +343,7 @@ export function ExportSidebar({
         setPolarUploadDetail(String(err?.message ?? err));
       }
     };
-    loadDefaultPolars();
+    loadStoredPolar();
   }, [polarData, onPolarDataLoaded]);
 
   const handlePolarUpload = async (f) => {
@@ -363,6 +354,9 @@ export function ExportSidebar({
     form.append("expedition_id", POLAR_EXPEDITION);
     try {
       const res  = await fetch(`${POLAR_API_URL}/api/v1/polar/upload`, { method: "POST", body: form });
+      if (res.status === 401 || res.status === 403 || res.status === 503) {
+        throw new Error(POLAR_UPLOAD_ADMIN_ONLY);
+      }
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail ?? `HTTP ${res.status}`);
       onPolarDataLoaded({
