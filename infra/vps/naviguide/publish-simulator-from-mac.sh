@@ -47,7 +47,7 @@ rsync -az --delete -e "${RSH[*]}" \
   --exclude .pytest_cache \
   --exclude __pycache__ \
   --exclude .env \
-  --exclude server/polar_data/*.json \
+  --exclude server/polar_data/ \
   --exclude server/voyage_data/ \
   --exclude server/forecast_cache/ \
   "$SIM/" "$VPS:$REMOTE_APP/naviguide-simulator/"
@@ -56,6 +56,7 @@ echo "→ Copie des fichiers infra simulateur…"
 rsync -az -e "${RSH[*]}" \
   "$ROOT/infra/vps/naviguide/nginx-simulator.conf" \
   "$ROOT/infra/vps/naviguide/naviguide-simulator.service" \
+  "$ROOT/infra/vps/naviguide/naviguide-film-front.service" \
   "$ROOT/infra/vps/naviguide/deploy-simulator.sh" \
   "$ROOT/infra/vps/naviguide/simulator.env.example" \
   "$ROOT/infra/vps/naviguide/publish-simulator-from-mac.sh" \
