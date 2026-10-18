@@ -119,6 +119,12 @@ def _startup_official_grib():
     sauf NAVIGUIDE_SEED_OFFICIAL=force.
     """
     try:
+        from ici_engine import ensure_pearl_amp_layer_sig  # noqa: PLC0415
+
+        ensure_pearl_amp_layer_sig("api_startup")
+    except Exception as exc:
+        log.warning("signature de couche : %s", exc)
+    try:
         from voyage_api import (
             _auto_seed_official_enabled,
             _kick_official_eta,
