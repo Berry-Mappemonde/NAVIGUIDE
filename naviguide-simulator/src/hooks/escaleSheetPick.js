@@ -1,6 +1,8 @@
 import { haversineNm } from "../utils/geo.js";
 
 const ALONGSIDE_NM = 5;
+/** A port-of-call sheet is shown only at the port or just around it. */
+export const ESCALE_SHEET_NM = 20;
 const PARKED_VEHICLES = new Set(["plane", "side", "quay"]);
 
 /**
@@ -56,4 +58,28 @@ export function pickAutoEscaleStop({
   if (parked) return nearestAlongside(parked, marks);
   if (!atQuay) return null;
   return nearestAlongside(clockSample, marks);
+}
+
+function samplePos(clockSample) {
+  const parked = parkedCatamaranSample(clockSample);
+  if (parked) return parked;
+  if (!clockSample) return null;
+  const lat = Number(clockSample.lat);
+  const lon = Number(clockSample.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return { lat, lon };
+}
+
+/**
+ * Whether the open sheet may stay on screen: the boat is within
+ * ESCALE_SHEET_NM of that stop's own position. A sheet the skipper opened
+ * from a flag stays until the skipper moves the clock (`userPicked` is then
+ * released); from there on, only the stop the boat is at keeps its sheet.
+ */
+export function escaleSheetVisible({ stop, clockSample, userPicked = false } = {}) {
+  if (!stop || !Number.isFinite(stop.lat) || !Number.isFinite(stop.lon)) return false;
+  if (userPicked) return true;
+  const pos = samplePos(clockSample);
+  if (!pos) return false;
+  return haversineNm(pos.lat, pos.lon, stop.lat, stop.lon) <= ESCALE_SHEET_NM;
 }

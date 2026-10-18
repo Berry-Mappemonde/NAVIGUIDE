@@ -19,6 +19,7 @@ import { useVoyageClock } from "./hooks/useVoyageClock.js";
 import { useVirtualVessel } from "./hooks/useVirtualVessel.js";
 import { useOfficialExpedition } from "./hooks/useOfficialExpedition.js";
 import { useOfficialJournal } from "./hooks/useOfficialJournal.js";
+import { legAtClockNow } from "./hooks/useLegContext.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useIciAlong } from "./hooks/useIciAlong.js";
 import { useMomentCards } from "./hooks/useMomentCards.js";
@@ -72,6 +73,7 @@ import {
   shouldKeepSceneVisible,
 } from "./utils/sceneGate.js";
 import { summarizeRoute, featuresToSegments, haversineNm } from "./utils/geo.js";
+import { highSeasRuledOut, nearestStopNm } from "./engine/iciBriefing.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
 import { normalizeExpeditionPlan } from "./utils/expeditionPlan.js";
@@ -183,6 +185,10 @@ export default function App() {
   }, []);
   const [stopAuto, setStopAuto] = useState(false);
   const [escaleClear, setEscaleClear] = useState(0);
+  // The skipper moved the clock (scrub, play, previous / next, journal):
+  // a sheet opened from a flag then only stays near its own stop.
+  const [clockMoveToken, setClockMoveToken] = useState(0);
+  const noteClockMove = useCallback(() => setClockMoveToken((n) => n + 1), []);
   const [cameraFollow, setCameraFollow] = useState(false);
   const [cinemaRecapture, setCinemaRecapture] = useState(0);
   const [cameraFocusToken, setCameraFocusToken] = useState(0);
@@ -584,23 +590,44 @@ export default function App() {
     lang, isSuivre, atQuay, clockSample, marks: legendMarks,
     filmActive: replay.active,
     clearToken: escaleClear,
+    clockMoveToken,
   });
   const { stop: escaleStop, setStop: setEscaleStop, sheet: escaleSheet, open: openEscaleSheet, close: closeEscaleSheet } = escale;
+
+  const nowLeg = useMemo(() => {
+    if (!suivreBerry || !officialClock) return null;
+    return legAtClockNow({
+      clock: officialClock,
+      now: sourceLive?.iso || Date.now(),
+      marks: escaleMarks,
+      cursor: playback.nm,
+      t0: officialClock.t0,
+      speedKnots: sourceLive?.speedKnots,
+    });
+  }, [suivreBerry, officialClock, sourceLive?.iso, sourceLive?.speedKnots, escaleMarks, playback.nm]);
 
   // Chatbot journal de bord: the client adds what only it knows —
   // the view, the film boat in Simulation, the polar, the skipper's orders.
   // Une seule vitesse — horloge en Suivre, prévue en Simulation.
+  // Suivre reads the clock "now", not the playback cursor (a journal seek).
+  const followNow = isSuivre && sourceLive && Number.isFinite(Number(sourceLive.lat))
+    ? { lat: Number(sourceLive.lat), lon: Number(sourceLive.lon), iso: sourceLive.iso || null }
+    : null;
   const chatBoatPos = isSuivre
-    ? (clockSample && Number.isFinite(clockSample.lat)
+    ? (followNow || (clockSample && Number.isFinite(clockSample.lat)
       ? { lat: clockSample.lat, lon: clockSample.lon, iso: clockSample.iso || null }
-      : null)
+      : null))
     : (sample && Number.isFinite(sample.lat)
       ? { lat: sample.lat, lon: sample.lon, iso: clockSample?.iso || null }
       : null);
   const drawTip = drawingMode && drawnPoints.length ? drawnPoints[drawnPoints.length - 1] : null;
   const momentLat = Number(drawTip?.lat ?? chatBoatPos?.lat);
   const momentLon = Number(drawTip?.lon ?? chatBoatPos?.lon);
-  const momentIso = drawTip ? null : (chatBoatPos?.iso || clockSample?.iso || null);
+  const momentIso = drawTip
+    ? null
+    : (isSuivre
+      ? (followNow?.iso || chatBoatPos?.iso || null)
+      : (chatBoatPos?.iso || clockSample?.iso || null));
   const iciMoment = useMoment({
     lat: Number.isFinite(momentLat) ? Math.round(momentLat * 1000) / 1000 : null,
     lon: Number.isFinite(momentLon) ? Math.round(momentLon * 1000) / 1000 : null,
@@ -792,12 +819,24 @@ export default function App() {
     canonical: routeSource === "berry",
   });
 
+  const highSeasRuled = highSeasRuledOut({
+    vehicle: clockSample?.vehicle || jambe?.vehicle || null,
+    nearStopNm: nearestStopNm(clockSample?.lat, clockSample?.lon, legendMarks),
+  });
+  const momentHighSeasRuled = highSeasRuledOut({
+    vehicle: drawTip ? null : (clockSample?.vehicle || jambe?.vehicle || null),
+    nearStopNm: nearestStopNm(momentLat, momentLon, legendMarks),
+  });
   const iciPack = useIciDossier({
+    highSeasRuledOut: highSeasRuled,
     enabled: Boolean(cast),
     frozen: replay.active,
     stories: !replay.active && replay.filmStyle === "written",
     cast,
     snappedPosition: legContext?.snappedPosition,
+    at: (suivreBerry && Number.isFinite(Number(sourceLive?.lat)) && Number.isFinite(Number(sourceLive?.lon)))
+      ? { lat: Number(sourceLive.lat), lon: Number(sourceLive.lon) }
+      : null,
     polarMeta: polarData,
     jambe,
     lang,
@@ -837,13 +876,14 @@ export default function App() {
   // Carte du moment : NOW (sécurité / décision) + FREE (information), nourries
   // par le registre jugé et le sac. Jamais un appel réseau de son côté.
   const momentFilmCum = isSuivre && live && !previewing ? (Number(live.filmNm) || playback.nm) : playback.nm;
-  const momentLegId = hudLeg ? `${hudLeg.fromStop || ""}→${hudLeg.toStop || ""}` : null;
+  const cardHud = suivreBerry && nowLeg?.fromStop ? nowLeg : hudLeg;
+  const momentLegId = cardHud ? `${cardHud.fromStop || ""}→${cardHud.toStop || ""}` : null;
   // What the escale card says when the boat leaves a stopover.
   const momentLeg = useMemo(() => {
-    if (!hudLeg?.fromStop) return null;
-    const from = legendMarks.find((m) => m.name === hudLeg.fromStop);
-    const to = hudLeg.toStop ? legendMarks.find((m) => m.name === hudLeg.toStop) : null;
-    const land = isLandLegNames(hudLeg.fromStop, hudLeg.toStop) || hudLeg.vehicle === "land";
+    if (!cardHud?.fromStop) return null;
+    const from = legendMarks.find((m) => m.name === cardHud.fromStop);
+    const to = cardHud.toStop ? legendMarks.find((m) => m.name === cardHud.toStop) : null;
+    const land = isLandLegNames(cardHud.fromStop, cardHud.toStop) || cardHud.vehicle === "land";
     const sailNm = from && to ? Math.max(0, (Number(to.nm) || 0) - (Number(from.nm) || 0)) : null;
     const filmDelta = from && to
       ? Math.max(0, (Number(to.filmNm ?? to.nm) || 0) - (Number(from.filmNm ?? from.nm) || 0))
@@ -854,8 +894,8 @@ export default function App() {
       ? Math.max(0, Math.round((toMs - fromMs) / 3_600_000))
       : null;
     return {
-      fromStop: hudLeg.fromStop,
-      toStop: hudLeg.toStop || null,
+      fromStop: cardHud.fromStop,
+      toStop: cardHud.toStop || null,
       holdDays: from?.holdHours > 0 ? Math.round(from.holdHours / 24) : 0,
       legNm: land ? (filmDelta || sailNm) : sailNm,
       kind: land ? "land" : undefined,
@@ -864,7 +904,18 @@ export default function App() {
       lat: from?.lat,
       lon: from?.lon,
     };
-  }, [hudLeg?.fromStop, hudLeg?.toStop, hudLeg?.vehicle, legendMarks, lang]);
+  }, [cardHud?.fromStop, cardHud?.toStop, cardHud?.vehicle, legendMarks, lang]);
+  // Where the boat is on its leg: a port card only shows near that port.
+  const momentLeftNm = Number(cardHud?.nmRemainingToStop ?? cardHud?.remainingNm);
+  const momentLegNm = Number(momentLeg?.legNm);
+  const momentProgress = useMemo(() => {
+    if (!cardHud?.fromStop) return null;
+    const leftNm = Number.isFinite(momentLeftNm) ? Math.round(momentLeftNm) : null;
+    const doneNm = leftNm != null && Number.isFinite(momentLegNm) && momentLegNm > 0
+      ? Math.max(0, Math.round(momentLegNm - leftNm))
+      : null;
+    return { fromStop: cardHud.fromStop, toStop: cardHud.toStop || null, leftNm, doneNm };
+  }, [cardHud?.fromStop, cardHud?.toStop, momentLeftNm, momentLegNm]);
   const moments = useMomentCards({
     enabled: sceneReady && !drawingMode && !replay.active,
     events: iciPack.events,
@@ -876,6 +927,10 @@ export default function App() {
     written: !replay.active && replay.filmStyle === "written",
     legId: momentLegId,
     leg: momentLeg,
+    officialMoments: suivreBerry ? momentJournal.entries : null,
+    nowIso: suivreBerry ? (sourceLive?.iso || null) : null,
+    boat: chatBoatPos,
+    legProgress: momentProgress,
   });
 
   // Stop auto : le film s'arrête sur chaque nouvelle carte (NOW, et FREE hors
@@ -898,7 +953,7 @@ export default function App() {
   // l'horloge officielle : le playhead ne doit pas effacer les escales déjà
   // franchies (RA2 lit ce texte pendant que le film joue).
   const storyLive = replay.active && sourceLive ? sourceLive : live;
-  const storyLeg = replay.active ? null : hudLeg;
+  const storyLeg = replay.active ? null : (nowLeg || hudLeg);
   const storyParagraphs = useMemo(() => {
     if (suivreCustom) return replay.filmParagraphs || [];
     if (!suivreBerry || !officialClock) return [];
@@ -1002,10 +1057,11 @@ export default function App() {
       isTracer,
       playing: playback.playing,
     });
+    noteClockMove();
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(nextEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
     if (focusBoat) setCameraFocusToken((token) => token + 1);
-  }, [playback.playing, escaleMarks, isTracer, playControlsActive, isSuivre, sceneApi]);
+  }, [playback.playing, escaleMarks, isTracer, playControlsActive, isSuivre, sceneApi, noteClockMove]);
 
   const handleSimPrev = useCallback(() => {
     if (!playControlsActive) return;
@@ -1017,15 +1073,17 @@ export default function App() {
     const target = prevEscaleNm(escaleMarks, playheadNmRef.current);
     const origin = Number(escaleMarks?.[0]?.filmNm ?? escaleMarks?.[0]?.nm) || 0;
     if (isTracer && target <= origin + 1) voyage.resetToToday();
+    noteClockMove();
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(target, { jump: true });
     if (focusBoat) setCameraFocusToken((token) => token + 1);
-  }, [playback.playing, escaleMarks, isTracer, playControlsActive, isSuivre, sceneApi, voyage.resetToToday]);
+  }, [playback.playing, escaleMarks, isTracer, playControlsActive, isSuivre, sceneApi, voyage.resetToToday, noteClockMove]);
 
   const handleCatamaranDrag = useCallback((pos) => {
+    noteClockMove();
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(sailNmToFilmNm(flatRoute, nearestNm(flatRoute, pos.lat, pos.lon)));
-  }, [flatRoute, sceneApi]);
+  }, [flatRoute, sceneApi, noteClockMove]);
 
   const recaptureBoat = useCallback(() => {
     setCameraFollow(true);
@@ -1578,18 +1636,20 @@ export default function App() {
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
   const toggleTools = useCallback(() => setToolsOpen((open) => !open), []);
   const handleSidebarSeek = useCallback((nm) => {
+    noteClockMove();
     if (isSuivre) setUserPreview(true);
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(nm, { jump: true });
-  }, [isSuivre, sceneApi]);
+  }, [isSuivre, sceneApi, noteClockMove]);
   const handleSeekJournal = useCallback((iso) => {
     const sample = sampleClockAtTime(officialClock, iso);
     const nm = Number(sample?.filmNm);
     if (!Number.isFinite(nm)) return;
+    noteClockMove();
     if (isSuivre) setUserPreview(true);
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(nm, { jump: true });
-  }, [officialClock, isSuivre, sceneApi]);
+  }, [officialClock, isSuivre, sceneApi, noteClockMove]);
   // Revue de plan par règles: legs from the server (clock + pearls), season from the atlas cache.
   const planReviewState = usePlanReview({
     // GET /voyage/official/plan-review (et /eta) seulement en
@@ -1814,6 +1874,7 @@ export default function App() {
         skipperNotice={skipper.notice}
         view={view}
         legContext={sidebarHudLeg}
+        nowLeg={nowLeg}
         clockSample={sidebarClockSample}
         atQuay={atQuay}
         quayDays={quayDays}
@@ -1832,6 +1893,7 @@ export default function App() {
         chat={chat}
         onChatAsk={chat.ask}
         moment={iciMoment.moment}
+        momentHighSeasRuledOut={momentHighSeasRuled}
         journalEntries={momentJournal.entries}
         onSeek={handleSeekJournal}
         momentMode={momentMode}
@@ -2003,11 +2065,13 @@ export default function App() {
           ) {
             voyage.resetToToday();
           }
+          noteClockMove();
           sceneApiRef.current?.playback.toggle();
         }}
         marks={escaleMarks}
         onSeekNm={(nm) => {
           if (!playControlsActive) return;
+          noteClockMove();
           if (isSuivre) setUserPreview(true);
           sceneApiRef.current?.playback.pause();
           sceneApiRef.current?.playback.seek(nm, { jump: true });
@@ -2045,6 +2109,7 @@ export default function App() {
         onEventClick={(ev) => {
           setSkipperClickId(ev.id || ev.stableKey);
           if (!isTracer || !Number.isFinite(ev.filmCum)) return;
+          noteClockMove();
           sceneApiRef.current?.playback.pause();
           sceneApiRef.current?.playback.seek(ev.filmCum, { jump: true });
         }}
