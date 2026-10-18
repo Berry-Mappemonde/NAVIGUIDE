@@ -14,6 +14,24 @@ export function dwellMsForProfile(profileId) {
   return DWELL_MS[profileId] ?? DWELL_MS.normal;
 }
 
+/** Jours à quai : même table que l'horloge (Cayenne 3, Halifax 1, Saint-Maur 0). */
+export function portDwellDays(name) {
+  const n = String(name || "");
+  if (/saint[- ]?maur/i.test(n)) return 0;
+  if (/halifax/i.test(n)) return 1;
+  return 3;
+}
+
+/** Pause de lecture proportionnelle au séjour. 3 jours = la pause du profil. */
+export function dwellMsForStation(station, profileId) {
+  const base = dwellMsForProfile(profileId);
+  const days = Number.isFinite(Number(station?.holdDays))
+    ? Number(station.holdDays)
+    : portDwellDays(station?.name);
+  if (!(days > 0)) return 0;
+  return Math.round(base * (days / 3));
+}
+
 /**
  * Next stopover strictly after filmNm (not the start at 0).
  * @returns {{ filmNm: number, name: string, kind: string } | null}
@@ -101,7 +119,8 @@ export function stepPlayback({
 
   if (next && remaining > 0 && step >= remaining - 1e-9) {
     x = Math.min(max, nextAt);
-    const pause = Math.max(0, Number(dwellMs) || 0);
+    const days = Number.isFinite(Number(next.holdDays)) ? Number(next.holdDays) : portDwellDays(next.name);
+    const pause = Math.round(Math.max(0, Number(dwellMs) || 0) * (days / 3));
     left = pause;
     arrived = next;
     return { filmNm: x, dwellMsLeft: left, holding: pause > 0, arrived };
