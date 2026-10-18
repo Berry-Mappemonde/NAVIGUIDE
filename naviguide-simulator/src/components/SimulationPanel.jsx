@@ -13,6 +13,7 @@
 import { Navigation, Clock, Compass, Map as MapIcon } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { getCardinalDirection, numberLocale } from "../utils/getCardinalDirection.js";
+import { destinationPortLabel, displayStopName } from "../utils/stopLabels.js";
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 
@@ -73,6 +74,9 @@ export function SimulationPanel({
     finished,
   } = legContext;
 
+  const fromLabel = displayStopName(fromStop, lang, t);
+  const toLabel = displayStopName(toStop, lang, t);
+
   return (
     <div className="bg-slate-800/70 rounded-lg border border-blue-600/30 overflow-hidden">
 
@@ -80,13 +84,13 @@ export function SimulationPanel({
         <div className="flex items-center gap-1 min-w-0 flex-wrap">
           <Navigation size={10} className="text-blue-400 flex-shrink-0" />
           <span className="text-[10px] font-semibold text-blue-300 leading-tight">
-            {finished ? t("filmArrived", { name: fromStop }) : fromStop}
+            {finished ? t("filmArrived", { name: fromLabel }) : fromLabel}
           </span>
           {!finished && (
             <>
               <span className="text-white/30 text-[10px]">→</span>
               <span className="text-[10px] font-semibold text-cyan-300 leading-tight">
-                {toStop}
+                {toLabel}
               </span>
             </>
           )}
@@ -102,7 +106,7 @@ export function SimulationPanel({
               {t("nmRemaining")}
             </span>
           </div>
-          <span className="text-xs font-bold text-white leading-tight">{formatNm(nmRemainingToStop, lang)}</span>
+          <span data-testid="nm-to-destination-port" className="text-xs font-bold text-white leading-tight">{destinationPortLabel(nmRemainingToStop, t, lang)}</span>
         </div>
 
         <div className="bg-slate-800/60 px-2 py-1 flex flex-col">
