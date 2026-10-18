@@ -1,9 +1,12 @@
 """Passages uniques : estimation sans appel, empreinte, verrou, reprise."""
 import json
 import os
+import signal
 import socket
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -351,3 +354,210 @@ def test_script_estimate_and_second_run_refusal(tmp_path):
     assert second.returncode == 2
     assert "verrou de réussite présent" in second.stderr
     assert "lock: ok" not in second.stdout
+
+
+def _four_calls() -> list[one_shot.PlannedCall]:
+    return [one_shot.PlannedCall(f"c{i}", "fast", 1, 0) for i in range(4)]
+
+
+def test_two_threads_one_execution_and_no_duplicate_calls(monkeypatch):
+    _forbid_network(monkeypatch)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    sibling = threading.Event()
+    seen: list[str] = []
+    calls = _four_calls()
+
+    def execute(call):
+        if call.call_id == "c0" and not sibling.wait(5):
+            raise TimeoutError("l'autre lancement n'est pas arrivé")
+        seen.append(call.call_id)
+
+    one_shot.register(one_shot.Job("probe", lambda: list(calls), execute))
+    fingerprint = one_shot.build_estimate("probe")["fingerprint"]
+    outcomes: list[str] = []
+
+    def worker():
+        try:
+            one_shot.run("probe", fingerprint)
+            outcomes.append("ok")
+        except one_shot.Refused as exc:
+            outcomes.append(exc.code)
+            sibling.set()
+        except Exception as exc:
+            outcomes.append(type(exc).__name__)
+            sibling.set()
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+    assert [thread.is_alive() for thread in threads] == [False, False]
+    assert sorted(outcomes) == ["busy", "ok"]
+    assert seen == ["c0", "c1", "c2", "c3"]
+    assert one_shot.lock_exists("probe")
+    with pytest.raises(one_shot.Refused) as refused:
+        one_shot.run("probe", fingerprint)
+    assert refused.value.code == "locked"
+    assert seen == ["c0", "c1", "c2", "c3"]
+
+
+_CONCURRENT_WORKER = r"""
+import os
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, os.environ["ONE_SHOT_SERVER"])
+import one_shot
+
+calls = [one_shot.PlannedCall(f"c{i}", "fast", 1, 0) for i in range(4)]
+log_path = Path(os.environ["ONE_SHOT_LOG"])
+sibling = Path(os.environ["ONE_SHOT_SIBLING"])
+
+def execute(call):
+    if call.call_id == "c0":
+        deadline = time.time() + 5
+        while not sibling.exists():
+            if time.time() > deadline:
+                raise TimeoutError("l'autre lancement n'est pas arrivé")
+            time.sleep(0.01)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(call.call_id + "\n")
+        handle.flush()
+
+one_shot.register(one_shot.Job("probe", lambda: list(calls), execute))
+code = one_shot.main([
+    "--job", "probe",
+    "--run",
+    "--i-have-read-the-estimate",
+    os.environ["ONE_SHOT_FP"],
+])
+if code != 0:
+    sibling.write_text(str(code), encoding="utf-8")
+raise SystemExit(code)
+"""
+
+
+def test_two_processes_one_execution_and_no_duplicate_calls(tmp_path, monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    calls = _four_calls()
+    one_shot.register(one_shot.Job("probe", lambda: list(calls), lambda _call: None))
+    fingerprint = one_shot.build_estimate("probe")["fingerprint"]
+    log_path = tmp_path / "calls.log"
+    sibling = tmp_path / "sibling"
+    env = os.environ.copy()
+    env["NAVIGUIDE_LLM_MODE"] = "on-demand"
+    env[one_shot.ENV_DIR] = os.environ[one_shot.ENV_DIR]
+    env["NAVIGUIDE_VOYAGE_DIR"] = os.environ["NAVIGUIDE_VOYAGE_DIR"]
+    env["ONE_SHOT_SERVER"] = str(ROOT / "server")
+    env["ONE_SHOT_LOG"] = str(log_path)
+    env["ONE_SHOT_SIBLING"] = str(sibling)
+    env["ONE_SHOT_FP"] = fingerprint
+    env.pop("NAVIGUIDE_LLM_BACKGROUND", None)
+    env.pop("NAVIGUIDE_LLM_DAILY_USD", None)
+    for tier in llm_budget.TIERS:
+        env.pop(f"NAVIGUIDE_LLM_DAILY_TOKENS_{tier.upper()}", None)
+    for key in _SECRET_KEYS:
+        env.pop(key, None)
+    procs = []
+    try:
+        for _ in range(2):
+            procs.append(subprocess.Popen(
+                [sys.executable, "-c", _CONCURRENT_WORKER],
+                cwd=ROOT,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            ))
+        finished = [proc.wait(timeout=15) for proc in procs]
+    finally:
+        for proc in procs:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
+    assert sorted(finished) == [0, 2]
+    refused = next(proc for proc in procs if proc.returncode == 2)
+    assert "un passage est déjà en cours" in refused.stderr.read()
+    assert log_path.read_text(encoding="utf-8").split() == ["c0", "c1", "c2", "c3"]
+
+
+_HOLD_WORKER = r"""
+import os
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, os.environ["ONE_SHOT_SERVER"])
+import one_shot
+
+calls = [one_shot.PlannedCall(f"c{i}", "fast", 1, 0) for i in range(4)]
+
+def execute(call):
+    if call.call_id == "c0":
+        Path(os.environ["ONE_SHOT_READY"]).write_text("1", encoding="utf-8")
+        time.sleep(30)
+
+one_shot.register(one_shot.Job("probe", lambda: list(calls), execute))
+raise SystemExit(one_shot.main([
+    "--job", "probe",
+    "--run",
+    "--i-have-read-the-estimate",
+    os.environ["ONE_SHOT_FP"],
+]))
+"""
+
+
+def test_execution_lock_releases_when_the_process_is_killed(tmp_path, monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    calls = _four_calls()
+    seen: list[str] = []
+
+    def execute(call):
+        seen.append(call.call_id)
+
+    one_shot.register(one_shot.Job("probe", lambda: list(calls), execute))
+    fingerprint = one_shot.build_estimate("probe")["fingerprint"]
+    ready = tmp_path / "ready"
+    env = os.environ.copy()
+    env["NAVIGUIDE_LLM_MODE"] = "on-demand"
+    env[one_shot.ENV_DIR] = os.environ[one_shot.ENV_DIR]
+    env["NAVIGUIDE_VOYAGE_DIR"] = os.environ["NAVIGUIDE_VOYAGE_DIR"]
+    env["ONE_SHOT_SERVER"] = str(ROOT / "server")
+    env["ONE_SHOT_READY"] = str(ready)
+    env["ONE_SHOT_FP"] = fingerprint
+    env.pop("NAVIGUIDE_LLM_BACKGROUND", None)
+    env.pop("NAVIGUIDE_LLM_DAILY_USD", None)
+    for tier in llm_budget.TIERS:
+        env.pop(f"NAVIGUIDE_LLM_DAILY_TOKENS_{tier.upper()}", None)
+    for key in _SECRET_KEYS:
+        env.pop(key, None)
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _HOLD_WORKER],
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.time() + 5
+        while not ready.exists():
+            if proc.poll() is not None:
+                raise AssertionError(proc.stderr.read())
+            if time.time() > deadline:
+                raise AssertionError("le processus n'a pas pris le verrou")
+            time.sleep(0.02)
+        proc.send_signal(signal.SIGKILL)
+        proc.wait(timeout=5)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
+    result = one_shot.run("probe", fingerprint)
+    assert result["completed"] == ["c0", "c1", "c2", "c3"]
+    assert seen == ["c0", "c1", "c2", "c3"]
+    with pytest.raises(one_shot.Refused) as refused:
+        one_shot.run("probe", fingerprint)
+    assert refused.value.code == "locked"
