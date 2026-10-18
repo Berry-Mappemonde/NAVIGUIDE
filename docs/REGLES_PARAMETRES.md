@@ -90,7 +90,7 @@ Ces sections vivent dans le dépôt Blue Intelligence, fichier `backend/data/run
 
 ### 3.7 Horloge à trois régimes — hindcast / prévision / climatologie (lot C2)
 
-`docs/archives/PLAN_AUDIT_CALCULS.md` lot C2, `docs/audits/CALCULS_ETAT_DE_L_ART.md`. Décision du porteur : **toutes** les sources (Open-Meteo + Copernicus) sont lues ensemble, fusionnées par **médiane**. Un champ sans source reste vide (jamais inventé). Identifiants `COPERNICUS_USERNAME` / `COPERNICUS_PASSWORD` déjà lus par `server/main.py`.
+`docs/audits/CALCULS_ETAT_DE_L_ART.md`. Décision du porteur : **toutes** les sources (Open-Meteo + Copernicus) sont lues ensemble, fusionnées par **médiane**. Un champ sans source reste vide (jamais inventé). Identifiants `COPERNICUS_USERNAME` / `COPERNICUS_PASSWORD` déjà lus par `server/main.py`.
 
 | Id | Default | Family | Phenomenon / anchor |
 |----|---------|--------|---------------------|
@@ -115,7 +115,7 @@ Ces sections vivent dans le dépôt Blue Intelligence, fichier `backend/data/run
 
 ### 3.8 Mer, polaire et isochrones — lot C4
 
-`docs/archives/PLAN_AUDIT_CALCULS.md` lot C4, `docs/audits/CALCULS_ETAT_DE_L_ART.md` lignes 4, 7, 8, 10, 21. Aucun chiffre n'est produit par un LLM.
+`docs/audits/CALCULS_ETAT_DE_L_ART.md` lignes 4, 7, 8, 10, 21. Aucun chiffre n'est produit par un LLM.
 
 | Id | Default | Family | Phenomenon / anchor |
 |----|---------|--------|---------------------|
@@ -139,7 +139,7 @@ Ces sections vivent dans le dépôt Blue Intelligence, fichier `backend/data/run
 
 ### 3.9 Conventions horloge et repli — lot C7
 
-`docs/archives/PLAN_AUDIT_CALCULS.md` lot C7, `docs/audits/CALCULS_ETAT_DE_L_ART.md` lignes 5, 15, 16, 18. Aucune valeur n'est changée : la table reprend les constantes déjà dans le code. Source écrite : **programme Berry-Mappemonde 2026** (`server/data/port_days.json`).
+`docs/audits/CALCULS_ETAT_DE_L_ART.md` lignes 5, 15, 16, 18. Aucune valeur n'est changée : la table reprend les constantes déjà dans le code. Source écrite : **programme Berry-Mappemonde 2026** (`server/data/port_days.json`).
 
 | Id | Default | Family | Phenomenon / anchor |
 |----|---------|--------|---------------------|
@@ -159,7 +159,7 @@ Ces sections vivent dans le dépôt Blue Intelligence, fichier `backend/data/run
 
 ### 3.10 ETA probabiliste — ensembles Open-Meteo (lot C6)
 
-`docs/archives/PLAN_AUDIT_CALCULS.md` lot C6, `docs/audits/CALCULS_ETAT_DE_L_ART.md` ligne 9 et complément « Ensembles ». Au-delà de 7 jours, l'arrivée n'est pas une date unique : p10 / p50 / p90 des membres. Sans ensemble, rien n'est affiché (jamais inventé).
+`docs/audits/CALCULS_ETAT_DE_L_ART.md` ligne 9 et complément « Ensembles ». Au-delà de 7 jours, l'arrivée n'est pas une date unique : p10 / p50 / p90 des membres. Sans ensemble, rien n'est affiché (jamais inventé).
 
 | Id | Default | Family | Phenomenon / anchor |
 |----|---------|--------|---------------------|

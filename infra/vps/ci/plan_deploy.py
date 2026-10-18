@@ -68,7 +68,7 @@ def classify(files: list[str]) -> dict[str, str]:
     return out
 
 
-RECETTE_BRANCH = "recette"   # tête de pile poussée par infra/agents/run_lots.py : le site suit la nuit
+RECETTE_BRANCH = "recette"   # tête de pile de la branche recette : le site suit la nuit
 
 
 def decide(event_name: str, *, input_site: str | None = None,

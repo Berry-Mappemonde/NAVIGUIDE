@@ -1,5 +1,5 @@
 """29 sept. : les grosses réponses JSON (l'horloge officielle : 3,9 Mo → 335 ko) partent gzippées quand le
-client l'accepte — sans quoi le tunnel du poste de recette mettait plus d'une minute par horloge et Grok Bot
+client l'accepte — sans quoi le tunnel du poste de recette mettait plus d'une minute par horloge et le poste distant
 voyait le bateau au jour 0. Les petites réponses restent en clair."""
 from fastapi.testclient import TestClient
 

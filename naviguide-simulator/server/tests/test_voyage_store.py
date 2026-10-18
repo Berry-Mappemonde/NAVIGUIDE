@@ -3,7 +3,7 @@
 Le 29 sept. à 20:07 (changement de jour UTC), deux processus ont sauvegardé le voyage officiel en même temps
 par le même `voyage_….tmp` : chacun avait ouvert le fichier avant que l'autre n'écrive ; le contenu court a
 recouvert le début du long, la fin de l'ancien est restée → « Extra data » à la lecture, /voyage/official en
-500 toute la soirée, bateau au jour 0 chez Grok Bot. Ces tests rejouent le scénario au niveau des fichiers."""
+500 toute la soirée, bateau au jour 0 à distance. Ces tests rejouent le scénario au niveau des fichiers."""
 import json
 import os
 import threading

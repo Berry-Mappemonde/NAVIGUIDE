@@ -3,13 +3,13 @@
 #   bash ensure-dev.sh              # démarrer les deux (Vite en mode dev)
 #   bash ensure-dev.sh --open       # + ouvrir le navigateur
 #   bash ensure-dev.sh --foreground # Vite au premier plan (terminal dédié)
-#   bash ensure-dev.sh --quiet      # pas de messages (hooks Cursor)
+#   bash ensure-dev.sh --quiet      # pas de messages (appel depuis un script)
 #   bash ensure-dev.sh --prod       # poste de recette : build de prod + `vite preview`,
 #                                   # API et interface de CE checkout (remplace celles
 #                                   # d’un autre checkout qui tiendraient les ports)
 #   bash ensure-dev.sh --prod --dir=/chemin/worktree/naviguide-simulator
-#                                   # idem, sur un autre checkout (run_lots.py : script de main,
-#                                   # worktree du lot)
+#                                   # idem, sur un autre checkout (script de main,
+#                                   # autre worktree)
 #
 # Clés : le fichier ~/.config/naviguide/simulator.env (ou $NAVIGUIDE_ENV_FILE) est
 # chargé dans l’environnement de l’API — même fichier, même contenu que celui du
@@ -17,7 +17,7 @@
 set -euo pipefail
 
 # --dir <checkout>/naviguide-simulator : agir sur un AUTRE checkout (worktree d'un lot) avec CE
-# script — run_lots.py appelle toujours la version de main, même pour une branche plus ancienne.
+# script — on appelle toujours la version de main, même pour une branche plus ancienne.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPEN=0
 FOREGROUND=0
@@ -161,10 +161,10 @@ if [[ "$PROD" -eq 1 ]]; then
   # qu'au dernier moment et la nouvelle part par le binaire de Vite (0,3 s) plutôt que par npx
   # (résolution + vérification de mise à jour npm : 0,8 s). Il reste ~1 s sans origine derrière
   # le tunnel à chaque lot (22 sept., 12:27:01Z : 4 requêtes « Unable to reach the origin »,
-  # Grok Bot a conclu 503) : la routine du bot réessaie après un 5xx (GROK_BOT_ROUTINE.md § 2).
+  # vus comme des 503) : le client réessaie après un 5xx.
   local_vite=(npx vite)
   [[ -x node_modules/.bin/vite ]] && local_vite=(node_modules/.bin/vite)
-  # Poste vu depuis le cloud (Grok Bot) par un tunnel Cloudflare : Vite ≥ 6 refuse les
+  # Poste vu à distance par un tunnel Cloudflare : Vite ≥ 6 refuse les
   # hôtes inconnus ; cette variable l'autorise quel que soit le vite.config.js du checkout.
   export __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS="${NAVIGUIDE_PREVIEW_HOST:-.trycloudflare.com}"
   stop_listener 5174 "Interface"

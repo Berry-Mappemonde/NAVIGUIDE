@@ -14,7 +14,7 @@ A [Berry-Mappemonde](https://berrymappemonde.org) project. Code is **MIT or Apac
 
 The **Blue Intelligence** HTTP API remains at [https://blueintelligence.online/api](https://blueintelligence.online/api) (separate repository: [Berry-Mappemonde/Blue-Intelligence](https://github.com/Berry-Mappemonde/Blue-Intelligence)).
 
-This repository is the **NAVIGUIDE** codebase submitted to the [Nebius × NVIDIA Global AI Hackathon on Devpost](https://nebiusglobalaihackathon.devpost.com/). Hackathon planning and submission copy live under [`docs/`](docs/) (for example [`docs/HACKATHON_DEVPOST_SOUMISSION.md`](docs/HACKATHON_DEVPOST_SOUMISSION.md)).
+This repository is the **NAVIGUIDE** codebase submitted to the [Nebius × NVIDIA Global AI Hackathon on Devpost](https://nebiusglobalaihackathon.devpost.com/).
 
 ---
 
@@ -108,7 +108,7 @@ Copy templates and fill values **locally**—never commit secrets:
 
 **Weather (optional):** `COPERNICUS_USERNAME`, `COPERNICUS_PASSWORD` (see infra example).
 
-On macOS, project hooks may use `~/.config/naviguide/simulator.env` (documented in [`docs/WORKFLOW_INDUSTRIEL.md`](docs/WORKFLOW_INDUSTRIEL.md)). **Without API keys**, the app still runs: stories fall back to **rules**, caches, or mocks; CI runs with no secrets.
+On macOS, the local dev scripts may read `~/.config/naviguide/simulator.env`. **Without API keys**, the app still runs: stories fall back to **rules**, caches, or mocks; CI runs with no secrets.
 
 ---
 
@@ -155,7 +155,7 @@ CI mirrors: `npm test`, `npm run build`, `pytest`, Playwright shards ([`.github/
 ## Dependencies (summary)
 
 - **Map & UI:** Leaflet, React, Tailwind, Lucide icons.
-- **Server:** FastAPI, httpx, searoute, shapely, geographiclib, Copernicus Marine client, pandas/numpy/xarray for GRIB/climatology paths, pymongo only where tests or tooling expect it—not a simulator production MongoDB ([`docs/PLAN_SEPARATION_DEPOTS.md`](docs/PLAN_SEPARATION_DEPOTS.md)).
+- **Server:** FastAPI, httpx, searoute, shapely, geographiclib, Copernicus Marine client, pandas/numpy/xarray for GRIB/climatology paths, pymongo only where tests or tooling expect it—not a simulator production MongoDB.
 - **External APIs (when keys are set):** Nebius Token Factory (Nemotron), NVIDIA NIM, OpenRouter, Anthropic, Tavily, Copernicus, Blue Intelligence HTTP API.
 
 Attributions for map tiles and data layers: [`naviguide-simulator/README.md`](naviguide-simulator/README.md#licences-and-attributions).
@@ -217,7 +217,7 @@ When the cascade returns a Nemotron Token Factory source, the UI shows translate
 
 ## Other Nebius services
 
-**In this repository’s runtime code, only Nebius Token Factory is integrated** (HTTP API bases above, `NEBIUS_API_KEY`). Archived hackathon docs mention optional **Token Factory Data Lab** and **Sandboxes** as stretch goals ([`docs/archives/hackathon-nebius-nvidia.en.md`](docs/archives/hackathon-nebius-nvidia.en.md)); there are **no** calls to Nebius AI Cloud Jobs, Endpoints, or DevPods in `naviguide-simulator/server/`.
+**In this repository’s runtime code, only Nebius Token Factory is integrated** (HTTP API bases above, `NEBIUS_API_KEY`). Earlier design notes mentioned optional **Token Factory Data Lab** and **Sandboxes** as stretch goals; there are **no** calls to Nebius AI Cloud Jobs, Endpoints, or DevPods in `naviguide-simulator/server/`.
 
 ---
 
@@ -230,7 +230,7 @@ The simulator reads BI over HTTP:
 - Default base URL: [`naviguide-simulator/server/main.py`](naviguide-simulator/server/main.py), [`ici_engine.py`](naviguide-simulator/server/ici_engine.py), [`bi_proxy.py`](naviguide-simulator/server/bi_proxy.py) (`BI_API_URL` or `https://blueintelligence.online/api`).
 - Vite dev proxy: [`naviguide-simulator/vite.config.js`](naviguide-simulator/vite.config.js) (`BI_PROXY_TARGET`).
 
-Full API and MongoDB live in the **[Berry-Mappemonde/Blue-Intelligence](https://github.com/Berry-Mappemonde/Blue-Intelligence)** repository (OVH deployment). This split is documented in [`docs/PLAN_SEPARATION_DEPOTS.md`](docs/PLAN_SEPARATION_DEPOTS.md).
+Full API and MongoDB live in the **[Berry-Mappemonde/Blue-Intelligence](https://github.com/Berry-Mappemonde/Blue-Intelligence)** repository (OVH deployment).
 
 ---
 
@@ -252,7 +252,6 @@ Full API and MongoDB live in the **[Berry-Mappemonde/Blue-Intelligence](https://
 | Hackathon | [https://nebiusglobalaihackathon.devpost.com/](https://nebiusglobalaihackathon.devpost.com/) |
 | Nebius Token Factory docs | [https://docs.tokenfactory.nebius.com/](https://docs.tokenfactory.nebius.com/) |
 | Docs index | [`docs/README.md`](docs/README.md) |
-| Archive monorepo (history) | [Berry-Mappemonde/Blue-Intelligence-Map](https://github.com/Berry-Mappemonde/Blue-Intelligence-Map) |
 
 ---
 

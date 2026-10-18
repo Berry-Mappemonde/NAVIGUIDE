@@ -123,7 +123,7 @@ export function useOfficialExpedition({
     return data;
   }, [points, marks, expeditionId, meta]);
 
-  // Une seule lecture de l'horloge à la fois. 29 sept. (Grok Bot, poste derrière le tunnel) : la réponse
+  // Une seule lecture de l'horloge à la fois. 29 sept. (poste derrière le tunnel) : la réponse
   // /voyage/official/clock pèse 3,9 Mo et le PUT /voyage/official la porte aussi ; la relance toutes les 5 s
   // repartait sans attendre la précédente — 134 requêtes en 4 min, 50 téléchargements de l'horloge en vol,
   // le tunnel saturé, l'horloge jamais arrivée : le bateau restait au jour 0 et Revoir grisé.

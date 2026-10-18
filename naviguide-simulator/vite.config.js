@@ -30,7 +30,7 @@ const proxy = {
       "/logbook": { target: API, changeOrigin: true },
       // Climatologie BI : par le serveur local (server/bi_proxy.py, cache
       // disque, une requête par cellule par machine), jamais la prod en direct.
-      // Incident 2026-09-21 : dev Vite + Playwright + agents → 600-800 req/s
+      // Incident 2026-09-21 : dev Vite + Playwright → 600-800 req/s
       // sur blueintelligence.online. BI_PROXY_TARGET=https://blueintelligence.online
       // pour retrouver l'ancien direct (le chemin /bi devient alors /api).
       "/bi": process.env.BI_PROXY_TARGET
@@ -42,8 +42,8 @@ const proxy = {
         : { target: API, changeOrigin: true },
 };
 
-// Poste de recette vu depuis le cloud (Grok Bot) par un tunnel Cloudflare
-// (infra/agents/run_lots.py) : sans ceci, Vite répond 403 « Blocked request ».
+// Poste de recette vu à distance par un tunnel Cloudflare :
+// sans ceci, Vite répond 403 « Blocked request ».
 // Vite n'ajoute `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` qu'à `server.allowedHosts`
 // (et seulement si c'est déjà une liste), jamais à `preview` : la nuit du 22 sept.,
 // le tunnel nommé recette.blueintelligence.online a été refusé toute la nuit.
@@ -74,7 +74,7 @@ export default defineConfig({
     allowedHosts,
   },
   // `vite preview` (build de prod) parle à la même API : le profil de prod
-  // (lot J) et la fumée Playwright tournent sur une app complète.
+  // et la fumée Playwright tournent sur une app complète.
   preview: {
     host: "0.0.0.0",
     port: 5174,

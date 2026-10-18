@@ -27,8 +27,8 @@ os.environ.setdefault("NAVIGUIDE_TAVILY_WATCH", "0")
 # écrivent (TestClient = appel local direct → mode dev). Les tests du garde
 # posent le secret eux-mêmes via monkeypatch.
 os.environ.pop("NAVIGUIDE_ADMIN_SECRET", None)
-# Le mode LLM du poste n'est pas celui des tests : run_lots.py lance chaque agent
-# de lot avec NAVIGUIDE_LLM_MODE=off (aucun appel payant depuis le serveur de dev),
+# Le mode LLM du poste n'est pas celui des tests : les postes de dev tournent
+# avec NAVIGUIDE_LLM_MODE=off (aucun appel payant depuis le serveur de dev),
 # et la variable déteignait sur pytest — 21 tests rouges en local, verts en CI
 # (14 oct., batch 2 / HC1). Les tests partent du défaut (on-demand) ; ceux qui
 # veulent un mode précis le posent eux-mêmes via monkeypatch.

@@ -2,8 +2,7 @@
 
 Version **1.0** — 20 septembre 2026. Ce texte sert à trois choses : relire
 les **diagrammes générés depuis le dépôt** (ils doivent raconter cette chaîne,
-sinon ils sont faux), écrire la **description Devpost**
-(`HACKATHON_DEVPOST_SOUMISSION.md`), et donner à un agent la carte mentale
+sinon ils sont faux), écrire la **description Devpost**, et donner à un lecteur la carte mentale
 avant d'ouvrir un fichier. Références de code entre parenthèses.
 
 ## 1. Ce que l'application veut faire
@@ -68,7 +67,7 @@ réseau et répond en millisecondes.
 Le temps n'est pas un curseur arbitraire : `build_voyage_clock` intègre la
 route point par point avec la vitesse polaire au vent du moment, les jours à
 quai, le tronçon route et le saut avion. Aujourd'hui le passé est calculé à
-la climatologie ; la cible (`PLAN_AUDIT_CALCULS.md`) est **trois régimes** :
+la climatologie ; la cible est **trois régimes** :
 hindcast (ce que le bateau a rencontré), prévision (7 jours), climatologie
 (ensuite), et **une seule vitesse** partout.
 

@@ -98,7 +98,7 @@ app.add_middleware(
 )
 # 29 sept. : l'horloge officielle (GET /voyage/official/clock, et le PUT /voyage/official qui la porte) pèse
 # 3,9 Mo de JSON très répétitif — 335 ko une fois gzippés. Derrière le tunnel du poste de recette, ces 3,9 Mo
-# mettaient plus d'une minute et le bateau restait au jour 0 chez Grok Bot. Le client (navigateur, Cloudflare)
+# mettaient plus d'une minute et le bateau restait au jour 0 à distance. Le client (navigateur, Cloudflare)
 # annonce toujours gzip ; nginx en prod compresse déjà, uvicorn seul ne le faisait pas.
 app.add_middleware(GZipMiddleware, minimum_size=2048)
 app.include_router(polar_router)

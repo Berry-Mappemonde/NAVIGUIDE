@@ -45,7 +45,7 @@ _ENV_DAILY_USD = "NAVIGUIDE_LLM_DAILY_USD"
 
 # Mode LLM (NAVIGUIDE_LLM_MODE) — décision du porteur du 28 sept. : « Nemotron seulement quand je le dis ou
 # quand c'est utile ».
-#   off        : aucun appel payant, jamais (agents de lot, CI, machines de dev).
+#   off        : aucun appel payant, jamais (CI, machines de dev).
 #   on-demand  : (défaut) seulement sur une action de l'utilisateur — question au chat, clic « Rédigé » —
 #                jamais en arrière-plan (préchauffage des récits, écriture du film, phrase de la revue,
 #                remplisseur du stock).

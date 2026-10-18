@@ -1,7 +1,6 @@
 # Cahier des calculs du simulateur
 
-Version **1.0** — 20 septembre 2026. Lot C5 (`docs/lot-c5-cahier-calculs`).
-Inventaire : [`PLAN_AUDIT_CALCULS.md`](../PLAN_AUDIT_CALCULS.md) § 1.
+Version **1.0** — 20 septembre 2026.
 État de l’art : [`CALCULS_ETAT_DE_L_ART.md`](CALCULS_ETAT_DE_L_ART.md).
 Paramètres : [`REGLES_PARAMETRES.md`](../REGLES_PARAMETRES.md) § 3.7–3.8.
 

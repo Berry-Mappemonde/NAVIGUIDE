@@ -3,7 +3,7 @@
 Version **2.0** — 20 septembre 2026 (v1.0 le même jour, révisée sur décision
 du porteur : *« je ne veux pas remplacer Leaflet par MapLibre ; je veux les
 deux : soit une deuxième application avec un globe, soit une deuxième
-"carte" qui serait un globe »*). Règles : `docs/REGLES_WORKFLOW_AGENT.md`.
+"carte" qui serait un globe »*).
 Recherches refaites le 20 septembre sur MapLibre GL JS (sources en bas).
 
 ## 0. Décision

@@ -7,10 +7,6 @@ Every merge on `main` deploys this version.
 The Blue Intelligence API stays at https://blueintelligence.online/api
 (separate repository and server).
 
-FR plan: [`docs/archives/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md`](../docs/archives/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md) (v3.0)
-EN plan: [`docs/archives/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md`](../docs/archives/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md)
-Simulation A (climatology clock): [`docs/archives/PLAN_IMPLEMENTATION_SIMULATION_A.md`](../docs/archives/PLAN_IMPLEMENTATION_SIMULATION_A.md)
-Simulation B (virtual boat, after A): [`docs/archives/PLAN_IMPLEMENTATION_SIMULATION_B.md`](../docs/archives/PLAN_IMPLEMENTATION_SIMULATION_B.md)
 
 ## Run (macOS)
 
@@ -33,7 +29,7 @@ When the `simulator.naviguide.fr` DNS already points at `135.125.226.16`
 (from the Mac, or any machine with Node + SSH):
 
 ```bash
-cd /path/to/Blue-Intelligence-Map
+cd /path/to/NAVIGUIDE
 bash infra/vps/naviguide/publish-simulator-from-mac.sh
 ```
 

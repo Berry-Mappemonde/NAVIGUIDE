@@ -1,4 +1,4 @@
-// Lot DM2 — les mots des deux modes (après DM1, docs/archives/PLAN_DEUX_MODES_2026-09-29.md) :
+// Lot DM2 — les mots des deux modes (après DM1) :
 // chaque texte visible ou lu dit Suivre / Tracer (FR) et Follow / Plot (EN).
 // Lot CT1 : getByRole lit Tracer|Plot (libellé livré), pas Simulation comme mode.
 // Sans API : tout tient seul (textes, commutateur, ordres skipper, langue) —

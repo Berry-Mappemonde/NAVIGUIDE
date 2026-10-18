@@ -1,5 +1,5 @@
 // Lot DM1 — deux modes à l'écran : Suivre | Tracer (décision du porteur du
-// 29 sept., docs/archives/PLAN_DEUX_MODES_2026-09-29.md). Tracer = l'ex-Simulation sur
+// 29 sept.). Tracer = l'ex-Simulation sur
 // la route Berry-Mappemonde, avec la carte route sous les yeux : pilules
 // Berry-Mappemonde | <ma route>, « Tracer votre propre route », Importer.
 // Le mode interne (VIEW_SIMULATION) ne change pas (DM3 renomme).

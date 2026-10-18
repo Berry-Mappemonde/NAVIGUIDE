@@ -35,7 +35,7 @@ describe("useOfficialExpedition — position officielle", () => {
   });
 
   it("une seule lecture de l’horloge à la fois, relance espacée — jamais une pile de requêtes (29 sept.)", () => {
-    // Grok Bot derrière le tunnel : 134 requêtes en 4 min, 50 horloges de 3,9 Mo en vol, bateau au jour 0.
+    // Poste derrière le tunnel : 134 requêtes en 4 min, 50 horloges de 3,9 Mo en vol, bateau au jour 0.
     assert.match(source, /if \(inflightRef\.current\) \{/);
     assert.match(source, /inflightRef\.current = true;/);
     assert.match(source, /inflightRef\.current = false;/);
