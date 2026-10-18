@@ -17,7 +17,11 @@ from typing import Any
 NS = "llm-budget"
 LAST_SOURCE_NS = "llm"
 LAST_SOURCE_KEY = "last-source"
+LAST_SOURCE_BY_TIER_KEY = "last-source-by-tier"
 LAST_ERROR_KEY = "last-error"
+LAST_ERRORS_BY_TIER_KEY = "last-errors-by-tier"
+LAST_ERROR_AT_KEY = "last-error-at"
+FALLBACK_PROVIDERS = ("nim", "openrouter", "claude")
 
 TIERS = ("fast", "write", "deep", "judge")
 
@@ -319,7 +323,26 @@ def record(tier: str, prompt_tokens: int, completion_tokens: int) -> dict[str, A
         return dict(cur)
 
 
-def remember_source(source: str | None) -> None:
+def _last_source_by_tier_raw() -> dict[str, str]:
+    import pearl_store  # noqa: PLC0415
+
+    hit = pearl_store.kv_get(LAST_SOURCE_NS, LAST_SOURCE_BY_TIER_KEY)
+    val = (hit or {}).get("value")
+    if not isinstance(val, dict):
+        return {}
+    out: dict[str, str] = {}
+    for k, v in val.items():
+        if k in TIERS and isinstance(v, str) and v.strip():
+            out[k] = v.strip()
+    return out
+
+
+def last_source_by_tier() -> dict[str, str]:
+    """Dernière source réelle par palier (LT2) — pour `/ici/warm/status`."""
+    return dict(_last_source_by_tier_raw())
+
+
+def remember_source(source: str | None, tier: str | None = None) -> None:
     """Last provider that produced a text (not `cache`, so the UI keeps the model)."""
     import pearl_store  # noqa: PLC0415
 
@@ -327,6 +350,11 @@ def remember_source(source: str | None) -> None:
     if not src or src == "cache":
         return
     pearl_store.kv_put(LAST_SOURCE_NS, LAST_SOURCE_KEY, src)
+    if tier is not None:
+        t = normalize_tier(tier)
+        by = _last_source_by_tier_raw()
+        by[t] = src
+        pearl_store.kv_put(LAST_SOURCE_NS, LAST_SOURCE_BY_TIER_KEY, by)
 
 
 def last_source() -> str | None:
@@ -337,7 +365,55 @@ def last_source() -> str | None:
     return val if isinstance(val, str) and val.strip() else None
 
 
-def remember_cascade_errors(hops: list[dict[str, str]]) -> None:
+def _errors_by_tier_raw() -> dict[str, list[dict[str, str]]]:
+    import pearl_store  # noqa: PLC0415
+
+    hit = pearl_store.kv_get(LAST_SOURCE_NS, LAST_ERRORS_BY_TIER_KEY)
+    val = (hit or {}).get("value")
+    if not isinstance(val, dict):
+        return {}
+    out: dict[str, list[dict[str, str]]] = {}
+    for k, v in val.items():
+        if k not in TIERS or not isinstance(v, list):
+            continue
+        clean = [x for x in v if isinstance(x, dict) and (x.get("provider") or x.get("reason"))]
+        if clean:
+            out[k] = clean
+    return out
+
+
+def _merge_tier_errors(by: dict[str, list[dict[str, str]]]) -> list[dict[str, str]]:
+    merged: list[dict[str, str]] = []
+    for t in TIERS:
+        merged.extend(by.get(t) or [])
+    return merged
+
+
+def _sync_legacy_errors(by: dict[str, list[dict[str, str]]]) -> None:
+    import pearl_store  # noqa: PLC0415
+
+    merged = _merge_tier_errors(by)
+    if merged:
+        pearl_store.kv_put(LAST_SOURCE_NS, LAST_ERROR_KEY, merged)
+    else:
+        pearl_store.kv_delete(LAST_SOURCE_NS, LAST_ERROR_KEY)
+        pearl_store.kv_delete(LAST_SOURCE_NS, LAST_ERROR_AT_KEY)
+
+
+def clear_tier_errors(tier: str) -> None:
+    """Efface les erreurs d'un palier au premier succès Token Factory (LT2)."""
+    import pearl_store  # noqa: PLC0415
+
+    t = normalize_tier(tier)
+    by = _errors_by_tier_raw()
+    if t not in by:
+        return
+    del by[t]
+    pearl_store.kv_put(LAST_SOURCE_NS, LAST_ERRORS_BY_TIER_KEY, by)
+    _sync_legacy_errors(by)
+
+
+def remember_cascade_errors(hops: list[dict[str, str]], tier: str | None = None) -> None:
     """Every hop that failed in the last cascade (TF HTTP body first)."""
     import pearl_store  # noqa: PLC0415
 
@@ -351,16 +427,38 @@ def remember_cascade_errors(hops: list[dict[str, str]]) -> None:
             clean.append({"provider": prov, "reason": why})
     if not clean:
         return
+    t = normalize_tier(tier)
+    by = _errors_by_tier_raw()
+    by[t] = clean
+    pearl_store.kv_put(LAST_SOURCE_NS, LAST_ERRORS_BY_TIER_KEY, by)
+    pearl_store.kv_put(
+        LAST_SOURCE_NS,
+        LAST_ERROR_AT_KEY,
+        datetime.now(timezone.utc).isoformat(),
+    )
     pearl_store.kv_put(LAST_SOURCE_NS, LAST_ERROR_KEY, clean)
+    _sync_legacy_errors(by)
 
 
-def remember_cascade_error(provider: str, reason: str) -> None:
-    remember_cascade_errors([{"provider": provider, "reason": reason}])
+def remember_cascade_error(provider: str, reason: str, tier: str | None = None) -> None:
+    remember_cascade_errors([{"provider": provider, "reason": reason}], tier=tier)
+
+
+def last_error_at() -> str | None:
+    import pearl_store  # noqa: PLC0415
+
+    hit = pearl_store.kv_get(LAST_SOURCE_NS, LAST_ERROR_AT_KEY)
+    val = (hit or {}).get("value")
+    return val if isinstance(val, str) and val.strip() else None
 
 
 def last_errors() -> list[dict[str, str]] | None:
     import pearl_store  # noqa: PLC0415
 
+    by = _errors_by_tier_raw()
+    if by:
+        merged = _merge_tier_errors(by)
+        return merged or None
     hit = pearl_store.kv_get(LAST_SOURCE_NS, LAST_ERROR_KEY)
     val = (hit or {}).get("value")
     if isinstance(val, list):
@@ -419,6 +517,73 @@ def allow_tavily() -> bool:
     return int(tavily_usage()["credits"]) < tavily_cap()
 
 
+def _fallback_empty() -> dict[str, int]:
+    return {p: 0 for p in FALLBACK_PROVIDERS}
+
+
+def _fallback_key(day: str | None = None) -> str:
+    return f"{day or today()}:fallback"
+
+
+def fallback_usage(day: str | None = None) -> dict[str, int]:
+    """Repli NIM / OpenRouter / Claude du jour (LT2)."""
+    import pearl_store  # noqa: PLC0415
+
+    hit = pearl_store.kv_get(NS, _fallback_key(day))
+    val = (hit or {}).get("value")
+    if not isinstance(val, dict):
+        return _fallback_empty()
+    out = _fallback_empty()
+    for k in out:
+        try:
+            out[k] = max(0, int(val.get(k) or 0))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def record_fallback(provider: str, tier: str | None = None) -> dict[str, int]:
+    """Compte un succès après échec Token Factory (palier ignoré pour l'agrégat jour)."""
+    import pearl_store  # noqa: PLC0415
+
+    prov = (provider or "").strip().lower()
+    if prov not in _fallback_empty():
+        return fallback_usage()
+    with _LOCK:
+        cur = fallback_usage()
+        cur[prov] = int(cur[prov]) + 1
+        pearl_store.kv_put(NS, _fallback_key(), cur)
+        return dict(cur)
+
+
+def _retry_super_key(day: str | None = None) -> str:
+    return f"{day or today()}:retry-super"
+
+
+def retry_super_usage(day: str | None = None) -> dict[str, int]:
+    """Seconds essais Super (palier fast, LT1) du jour."""
+    import pearl_store  # noqa: PLC0415
+
+    hit = pearl_store.kv_get(NS, _retry_super_key(day))
+    val = (hit or {}).get("value")
+    if not isinstance(val, dict):
+        return {"count": 0}
+    try:
+        return {"count": max(0, int(val.get("count") or 0))}
+    except (TypeError, ValueError):
+        return {"count": 0}
+
+
+def record_retry_super() -> dict[str, int]:
+    import pearl_store  # noqa: PLC0415
+
+    with _LOCK:
+        cur = retry_super_usage()
+        nxt = {"count": int(cur["count"]) + 1}
+        pearl_store.kv_put(NS, _retry_super_key(), nxt)
+        return dict(nxt)
+
+
 def record_tavily(credits: int = 1) -> dict[str, Any]:
     """Add one Tavily search/extract call (1 credit / call)."""
     import pearl_store  # noqa: PLC0415
@@ -449,8 +614,16 @@ def status() -> dict[str, Any]:
     src = last_source()
     if src:
         out["lastSource"] = src
+    by_tier = last_source_by_tier()
+    if by_tier:
+        out["lastSourceByTier"] = by_tier
+    out["fallback"] = fallback_usage()
+    out["retrySuper"] = int(retry_super_usage()["count"])
     errs = last_errors()
     if errs:
         out["lastErrors"] = errs
         out["lastError"] = last_error()
+        at = last_error_at()
+        if at:
+            out["lastErrorAt"] = at
     return out
