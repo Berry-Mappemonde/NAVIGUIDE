@@ -99,7 +99,8 @@ sudo rsync -a --delete \
   --filter='P /sitemap.xml' \
   --filter='P /27424ae0389d9d7fb74e3ad6db0e9780.txt' \
   "$SIM/dist/" "$WWW_ROOT/"
-sudo chown -R ubuntu:ubuntu "$WWW_ROOT"
+# Contabo : compte naviguide (plus de compte ubuntu côté NAVIGUIDE).
+sudo chown -R "$(id -un):$(id -gn)" "$WWW_ROOT"
 sudo chmod -R a+rX "$WWW_ROOT"
 
 # ── systemd : naviguide-simulator (+ film-front si le code est sur disque) ───
@@ -177,20 +178,26 @@ if [ -f /etc/nginx/sites-available/naviguide ]; then
   sudo cp -a /etc/nginx/sites-available/naviguide \
     "/etc/nginx/sites-available/naviguide.bak-before-simulator-$(date +%Y%m%d)"
 fi
+CERT=/etc/letsencrypt/live/naviguide.fr/fullchain.pem
+HAVE_CERT=0
+sudo test -f "$CERT" && HAVE_CERT=1
 sudo cp "$NGINX_SRC" /etc/nginx/sites-available/naviguide-simulator
-sudo ln -sf /etc/nginx/sites-available/naviguide-simulator /etc/nginx/sites-enabled/naviguide-simulator
+if [ "$HAVE_CERT" -eq 1 ]; then
+  sudo ln -sf /etc/nginx/sites-available/naviguide-simulator /etc/nginx/sites-enabled/naviguide-simulator
+else
+  # Avant la bascule DNS (Contabo) : pas de certificat. Le vhost 443 du dépôt
+  # ferait échouer nginx -t ; on garde le bootstrap HTTP (naviguide-http-bootstrap).
+  echo "⚠  $CERT absent : vhost 443 copié mais non activé (mode bootstrap HTTP)." >&2
+fi
 sudo nginx -t
 sudo systemctl reload nginx
 
 # ── TLS: add the SAN if missing (Let's Encrypt, free) ──────────────────
 # nginx plugin (not webroot): the www vhost still redirects /.well-known
 # to HTTPS. certonly does not write a new skipper vhost.
-CERT=/etc/letsencrypt/live/naviguide.fr/fullchain.pem
-if ! sudo test -f "$CERT"; then
-  echo "Certificat $CERT introuvable — abort." >&2
-  exit 1
-fi
-if ! sudo openssl x509 -in "$CERT" -noout -text | grep -q 'DNS:simulator.naviguide.fr'; then
+if [ "$HAVE_CERT" -eq 0 ]; then
+  :  # certificat émis le jour J (plan §6.4), pas par ce script
+elif ! sudo openssl x509 -in "$CERT" -noout -text | grep -q 'DNS:simulator.naviguide.fr'; then
   echo "Extension du certificat Let's Encrypt (naviguide.fr + www + simulator)…"
   sudo certbot certonly --nginx --cert-name naviguide.fr \
     -d naviguide.fr -d www.naviguide.fr -d simulator.naviguide.fr \
@@ -216,6 +223,10 @@ for _ in $(seq 1 20); do
 done
 echo "  naviguide-film-front (:8011) → HTTP $film_code"
 
+if [ "$HAVE_CERT" -eq 0 ]; then
+  echo "  mode bootstrap : contrôles HTTPS publics sautés (le DNS pointe encore ailleurs)"
+  exit 0
+fi
 www_code=$(curl -s -o /dev/null -w "%{http_code}" "https://www.naviguide.fr/" || true)
 sim_code=$(curl -s -o /dev/null -w "%{http_code}" "https://simulator.naviguide.fr/" || true)
 echo "  https://www.naviguide.fr/ → HTTP $www_code (doit rester 200)"
