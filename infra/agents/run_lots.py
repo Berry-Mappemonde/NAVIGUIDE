@@ -45,6 +45,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -1031,8 +1032,10 @@ def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
         except Exception as e:  # l'attente ne doit jamais empêcher le poste de suivre la pile
             log(f"    attente du bot impossible : {e} — le poste est rebâti sans attendre")
         try:
-            prepare_recette(state, args, http, quiet=True)
-            if getattr(args, "publish_tip", False) and status == "success" and publish_tip(branch):
+            ready = prepare_recette(state, args, http, quiet=True)
+            if not ready:
+                log(f"    poste non servi sur `{branch}` — pas de lien ni de pré-revue (le film servi serait encore l'ancien)")
+            elif getattr(args, "publish_tip", False) and status == "success" and publish_tip(branch):
                 post_poste_link(state, lot.id, PROD_URL, args.repo, published=True)
             else:
                 url = None if getattr(args, "no_tunnel", False) else start_tunnel()
@@ -1552,9 +1555,44 @@ def night_report_line() -> str | None:
     return None
 
 
-def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = False) -> None:
+def kill_process_group(pid: int, sig: int = signal.SIGTERM) -> None:
+    """Tue le groupe lancé par start_new_session. Le timeout de subprocess.run ne tue que
+    le bash : le python du stock (petit-fils) restait et réécrivait le même fichier."""
+    try:
+        os.killpg(pid, sig)
+    except ProcessLookupError:
+        return
+    except PermissionError:
+        try:
+            os.kill(pid, sig)
+        except ProcessLookupError:
+            return
+
+
+def run_process_group(cmd: list[str], *, cwd: str, env: dict, timeout: int) -> tuple[int | None, str]:
+    """(code, sortie). code None = délai dépassé, et le groupe entier a été arrêté."""
+    proc = subprocess.Popen(
+        cmd, cwd=cwd, env=env, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+        return proc.returncode, out or ""
+    except subprocess.TimeoutExpired:
+        kill_process_group(proc.pid)
+        try:
+            out, _ = proc.communicate(timeout=20)
+        except subprocess.TimeoutExpired:
+            kill_process_group(proc.pid, signal.SIGKILL)
+            out, _ = proc.communicate(timeout=20)
+        return None, out or ""
+
+
+def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = False) -> bool:
     """Poste de recette sur la dernière branche. `quiet` (après chaque lot, lot W1) : on rebâtit
-    l'app et le md sans ouvrir de fenêtre — le porteur recharge son onglet, la PR porte ses cases."""
+    l'app et le md sans ouvrir de fenêtre — le porteur recharge son onglet, la PR porte ses cases.
+    Renvoie True seulement si l'échange a réussi (API, interface, film à la révision du checkout)."""
     branch = getattr(args, "branch", None) or state.last_branch or "main"
     log(("poste de recette rafraîchi" if quiet else "fin de batch : poste de recette") + f" sur `{branch}`")
     if not ENV_FILE.exists():
@@ -1571,12 +1609,16 @@ def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = Fals
         _name, host = tunnel_settings()
         if host:   # le preview doit accepter l'hôte du tunnel nommé (sinon Vite : « Blocked request »)
             env["NAVIGUIDE_PREVIEW_HOST"] = host
-        p = subprocess.run(cmd, cwd=str(sim), text=True, capture_output=True, timeout=1200, env=env)
-        for ln in (p.stdout + p.stderr).strip().splitlines()[-(4 if quiet else 12):]:
+        code, output = run_process_group(cmd, cwd=str(sim), env=env, timeout=1200)
+        for ln in (output or "").strip().splitlines()[-(4 if quiet else 12):]:
             log(f"    {ln}")
-        launched = p.returncode == 0
-    except subprocess.TimeoutExpired:
-        log("    ensure-dev.sh --prod : délai dépassé (20 min)")
+        if code is None:
+            log("    ensure-dev.sh --prod : délai dépassé (20 min) — groupe arrêté, pas de remplisseur orphelin")
+            launched = False
+        else:
+            launched = code == 0
+    except Exception as e:
+        log(f"    ensure-dev.sh --prod : {type(e).__name__}: {e}")
         launched = False
     if launched:
         try:
@@ -1586,7 +1628,7 @@ def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = Fals
     write_recette_md(state, args, http, branch, wt, launched)
     log(f"recette : {RECETTE_MD}")
     if quiet:
-        return
+        return launched
     try:   # la revue globale du porteur : un fichier à lui, ouvert à côté du md (lot W2 bis)
         from review_collect import ensure_global_template, GLOBAL_MD  # noqa: PLC0415
         ensure_global_template()
@@ -1595,6 +1637,7 @@ def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = Fals
         log(f"    REVUE_GLOBALE.md non préparé : {e}")
     if sh(["open", "-a", "Cursor", str(RECETTE_MD)], check=False, timeout=30).returncode != 0:
         sh(["open", str(RECETTE_MD)], check=False, timeout=30)
+    return launched
 
 
 POSTE_SKIP_RE = re.compile(r'test\.skip\(\s*!!process\.env\.CI\s*,\s*["\']poste', re.I)
