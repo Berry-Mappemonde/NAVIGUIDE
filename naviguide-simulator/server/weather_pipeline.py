@@ -22,6 +22,9 @@ Il ne recalcule pas les vecteurs. Conventions (cahier § 20) :
 from __future__ import annotations
 
 import asyncio
+import importlib
+import inspect
+import multiprocessing
 import logging
 import math
 import os
@@ -346,6 +349,10 @@ def get_pipeline() -> WeatherPipeline:
 # Open-Meteo du GRIB (20 s) : la page est déjà repartie, le travail s'arrête.
 DEFAULT_PROVIDER_TIMEOUT_S = 20.0
 _FLAG_ON = {"1", "true", "yes", "on"}
+# Au-delà, un « pending » ne veut plus rien dire : la couche passe unavailable.
+PENDING_MAX_AGE_S = 60.0
+# Le processus enfant a ce délai pour se terminer après kill().
+PROCESS_KILL_GRACE_S = 2.0
 
 
 def weather_pipeline_enabled() -> bool:
@@ -366,6 +373,84 @@ def layer_cache_key(provider: str, lat: float, lon: float, when=None) -> tuple:
     return (str(provider), weather_cell(lat, lon), hour_stamp(when))
 
 
+class ProviderError(RuntimeError):
+    """Échec rapporté par un processus enfant ; `reason` est le type d'origine."""
+
+    def __init__(self, reason: str, message: str = "") -> None:
+        super().__init__(message or reason)
+        self.reason = reason
+
+
+class ProcessJob:
+    """Travail exécuté dans un processus enfant, tué à l'échéance.
+
+    `target` vaut « module:fonction » (retrouvé par son nom dans l'enfant) ;
+    `args` / `kwargs` doivent être sérialisables.
+    """
+
+    def __init__(self, target: str, *args, **kwargs) -> None:
+        module, _, name = str(target).partition(":")
+        if not module or not name:
+            raise ValueError(f"cible invalide: {target!r}")
+        self.target = str(target)
+        self.args = tuple(args)
+        self.kwargs = dict(kwargs)
+
+    def __repr__(self) -> str:
+        return f"ProcessJob({self.target!r})"
+
+
+def _process_entry(conn, target: str, args: tuple, kwargs: dict) -> None:
+    try:
+        module, _, name = target.partition(":")
+        fn = getattr(importlib.import_module(module), name)
+        data = fn(*args, **kwargs)
+        conn.send(("ok", data if isinstance(data, dict) else {}))
+    except BaseException as exc:  # noqa: BLE001 - tout remonte au parent
+        try:
+            conn.send(("error", type(exc).__name__, str(exc)[:500]))
+        except Exception:
+            pass
+    finally:
+        conn.close()
+
+
+def run_process_job(job: ProcessJob, timeout: float) -> dict:
+    """Lance `job` dans un enfant « spawn » ; le tue à l'échéance (TimeoutError)."""
+    ctx = multiprocessing.get_context("spawn")
+    parent, child = ctx.Pipe(duplex=False)
+    proc = ctx.Process(
+        target=_process_entry,
+        args=(child, job.target, job.args, job.kwargs),
+        name=f"naviguide-wx-{job.target}",
+        daemon=True,
+    )
+    proc.start()
+    child.close()
+    try:
+        if not parent.poll(max(0.0, float(timeout))):
+            raise TimeoutError(job.target)
+        try:
+            message = parent.recv()
+        except EOFError as exc:
+            raise ProviderError("ProcessDied", f"exit {proc.exitcode}") from exc
+    finally:
+        if proc.is_alive():
+            proc.kill()
+        proc.join(PROCESS_KILL_GRACE_S)
+        parent.close()
+    if message[0] == "ok":
+        return message[1]
+    raise ProviderError(message[1], message[2])
+
+
+def _accepts_cancel(fn) -> bool:
+    try:
+        return "cancel" in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+
+
 class AsyncWeatherQueue:
     """File asyncio : un travail par clé, délai max par fournisseur, cache LRU."""
 
@@ -374,7 +459,11 @@ class AsyncWeatherQueue:
         *,
         default_timeout_s: float = DEFAULT_PROVIDER_TIMEOUT_S,
         timeouts: Optional[dict] = None,
+        pending_max_age_s: float = PENDING_MAX_AGE_S,
     ) -> None:
+        self._pending_max_age = float(pending_max_age_s)
+        # Références fortes : une tâche asyncio sans référence peut disparaître.
+        self._tasks: set[asyncio.Task] = set()
         self._default_timeout = float(default_timeout_s)
         self._timeouts = {str(k): float(v) for k, v in (timeouts or {}).items()}
         self._cache: dict[tuple, dict] = {}
@@ -389,20 +478,32 @@ class AsyncWeatherQueue:
     def timeout_for(self, provider: str) -> float:
         return self._timeouts.get(str(provider), self._default_timeout)
 
+    def _stale_pending(self, hit: Optional[dict]) -> bool:
+        if not hit or hit.get("status") != "pending":
+            return False
+        since = hit.get("since")
+        return since is not None and time.monotonic() - float(since) > self._pending_max_age
+
     def cached_status(self, provider: str, lat: float, lon: float, when=None) -> Optional[str]:
+        """ready / unavailable d'abord ; un pending trop vieux devient unavailable."""
         key = layer_cache_key(provider, lat, lon, when)
         with self._lock:
             hit = self._cache.get(key)
             inflight = key in self._inflight
         if hit and hit.get("status") in {"ready", "unavailable"}:
             return hit.get("status")
+        if self._stale_pending(hit):
+            return "unavailable"
         if inflight or (hit and hit.get("status") == "pending"):
             return "pending"
         return None
 
     def provider_busy(self, provider: str) -> bool:
         with self._lock:
-            return any(key[0] == provider for key in self._inflight)
+            return any(
+                key[0] == provider and not self._stale_pending(self._cache.get(key))
+                for key in self._inflight
+            )
 
     def layer(self, provider: str, lat: float, lon: float, when=None) -> dict:
         key = layer_cache_key(provider, lat, lon, when)
@@ -411,6 +512,8 @@ class AsyncWeatherQueue:
             inflight = key in self._inflight
         if hit and hit.get("status") in {"ready", "unavailable"}:
             return self._public(hit)
+        if self._stale_pending(hit):
+            return self._public({**hit, "status": "unavailable", "reason": "stale_pending"})
         if inflight or (hit and hit.get("status") == "pending"):
             return self._public(hit or self._pending_record(key))
         return self._public(self._absent_record(key))
@@ -536,23 +639,32 @@ class AsyncWeatherQueue:
             job = await queue.get()
             if job is None:
                 return
-            asyncio.create_task(self._run_job(job))
+            task = asyncio.create_task(self._run_job(job))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
 
     async def _run_job(self, job: dict) -> None:
         key = job["key"]
+        loader = job["loader"]
+        timeout = float(job["timeout"])
+        cancel = threading.Event()
         try:
-            data = await asyncio.wait_for(
-                asyncio.to_thread(job["loader"]),
-                timeout=float(job["timeout"]),
-            )
+            if isinstance(loader, ProcessJob):
+                # L'enfant est tué à l'échéance : rien ne continue en fond.
+                data = await asyncio.to_thread(run_process_job, loader, timeout)
+            else:
+                call = (lambda: loader(cancel=cancel)) if _accepts_cancel(loader) else loader
+                data = await asyncio.wait_for(asyncio.to_thread(call), timeout=timeout)
             if not isinstance(data, dict):
                 data = {}
             self._store(key, "ready", data, None)
         except TimeoutError:
+            # Arrêt coopératif pour un chargeur en fil qui lit `cancel`.
+            cancel.set()
             self._store(key, "unavailable", None, "timeout")
         except Exception as exc:
             log.warning("météo async %s: %s", key[0], exc)
-            self._store(key, "unavailable", None, type(exc).__name__)
+            self._store(key, "unavailable", None, getattr(exc, "reason", None) or type(exc).__name__)
         finally:
             with self._lock:
                 self._inflight.discard(key)
@@ -574,6 +686,7 @@ class AsyncWeatherQueue:
     def _pending_record(self, key: tuple) -> dict:
         return {
             "status": "pending",
+            "since": time.monotonic(),
             "provider": key[0],
             "cell": _cell_public(key[1][0], key[1][1]),
             "hour": key[2],

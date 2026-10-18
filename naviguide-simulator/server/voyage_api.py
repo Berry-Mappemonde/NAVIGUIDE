@@ -60,7 +60,7 @@ from voyage_clock import (
     to_iso,
 )
 from voyage_store import load_voyage, purge_stale_voyages, save_voyage, update_voyage
-from weather_pipeline import get_async_weather_queue, get_pipeline, weather_pipeline_enabled
+from weather_pipeline import ProcessJob, get_async_weather_queue, get_pipeline, weather_pipeline_enabled
 import voyage_journal as journal
 import official_store
 
@@ -909,19 +909,25 @@ def _kick_official_grib(
     around: Optional[dict] = None,
     when: Optional[datetime] = None,
     *,
-    force: bool = True,
+    force: Optional[bool] = None,
 ) -> bool:
-    """Démarre au plus un rafraîchissement GRIB pour cette cellule/cycle."""
+    """Démarre au plus un rafraîchissement GRIB pour cette cellule/cycle.
+
+    `force=None` : forcé sur le pipeline à fils (comportement inchangé, drapeau
+    éteint) ; sur la file asyncio, un GET ne force jamais — on calcule seulement
+    si la donnée manque ou est périmée, et jamais pendant un calcul en cours.
+    """
     target_when = when or _now()
     if around is None:
         voy = load_voyage(OFFICIAL_VOYAGE_ID)
         around = _resolve_grib_around(voy, target_when)
     if not around or around.get("lat") is None or around.get("lon") is None:
         return False
+    legacy_force = True if force is None else bool(force)
 
     def _load():
         try:
-            record = maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, target_when, force=force)
+            record = maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, target_when, force=legacy_force)
             # Mémoire : le vent du cycle au bateau entre au journal (une fois par cycle).
             _journal_safely(lambda: journal.record_grib(record, (load_voyage(OFFICIAL_VOYAGE_ID) or {}).get("clock"), target_when))
         except Exception as exc:  # defensive: the request that started us has already returned
@@ -929,20 +935,25 @@ def _kick_official_grib(
         return {}
 
     if weather_pipeline_enabled():
-        def _load_async():
-            record = maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, target_when, force=force)
-            _journal_safely(lambda: journal.record_grib(record, (load_voyage(OFFICIAL_VOYAGE_ID) or {}).get("clock"), target_when))
-            if not record or record.get("status") != "ready":
-                raise RuntimeError("grib_unavailable")
-            return {"stored": True}
-
+        forced = bool(force)
+        if not forced:
+            latest = load_latest(OFFICIAL_VOYAGE_ID, utc_day(target_when))
+            if latest and latest.get("status") == "ready" and not is_stale(latest, target_when):
+                return False
+        # Processus enfant tué à l'échéance du fournisseur (weather_jobs).
+        job = ProcessJob(
+            "weather_jobs:refresh_official_grib",
+            dict(around),
+            to_iso(target_when),
+            forced,
+        )
         return get_async_weather_queue().submit(
             "grib-wind",
             float(around["lat"]),
             float(around["lon"]),
-            _load_async,
+            job,
             when=target_when,
-            force=force,
+            force=forced,
         )
 
     return get_pipeline().kick(
@@ -951,7 +962,7 @@ def _kick_official_grib(
         float(around["lon"]),
         _load,
         when=target_when,
-        force=force,
+        force=legacy_force,
     )
 
 
@@ -967,14 +978,16 @@ def _grib_wind_layer(record: Optional[dict], around: Optional[dict], when: datet
     cached = None
     if lat is not None and lon is not None:
         cached = get_async_weather_queue().cached_status("grib-wind", float(lat), float(lon), when)
+    # Un état final l'emporte sur un « en cours » ; un pending trop vieux est
+    # déjà rendu unavailable par la file (PENDING_MAX_AGE_S).
     if record and record.get("status") == "ready":
         return "ready"
-    if cached == "pending" or refreshing:
-        return "pending"
     if cached == "unavailable":
         return "unavailable"
     if cached == "ready":
         return "ready"
+    if cached == "pending" or refreshing:
+        return "pending"
     return "unavailable"
 
 
