@@ -282,14 +282,34 @@ async def get_official_film(
     return out
 
 
-@app.post("/voyage/official/film")
+# Même gabarit que POST /ici/story : 12 / min / IP, 60 / min et 240 / h
+# pour tout le serveur. Compteurs séparés, pour qu'un récit ne mange pas
+# le budget du film. Pas de clé admin : le bouton public reste ouvert.
+_film_write_limited = rate_limited("film-write", 12, 60.0, global_limit=60)
+_film_write_hourly = rate_limited("film-write-hour", 10**9, 3600.0, global_limit=240)
+
+
+@app.post(
+    "/voyage/official/film",
+    dependencies=[Depends(_film_write_limited), Depends(_film_write_hourly)],
+)
 async def post_official_film_write(
     lang: str = Query("fr"),
     seconds: int = Query(150, ge=0, le=300),
     t0: str | None = Query(None),
 ):
-    """Clic Rédigé : une chaîne Super / Ultra / Lightning, jamais au GET."""
+    """Clic Rédigé : une chaîne Super / Ultra / Lightning, jamais au GET.
+
+    Durées acceptées : celles que le client envoie vraiment. La barre n'offre
+    que 2:30 (150) et 3:00 (180) ; aucun choix envoie 0 (film intégral —
+    l'état de départ, et le second clic sur la durée cochée). Le stock ne
+    prépare que ces trois clés. Toute autre valeur répond 422. On ne recale
+    pas vers la durée la plus proche : le rédigé serait rangé sous une autre
+    clé que celle relue ensuite par le GET.
+    """
     import official_store
+    if int(seconds) not in official_store.FILM_VARIANT_SECONDS:
+        raise HTTPException(422, "unsupported film duration")
     try:
         out = await official_store.write_film_on_click(lang=lang, seconds=seconds)
     except Exception as exc:

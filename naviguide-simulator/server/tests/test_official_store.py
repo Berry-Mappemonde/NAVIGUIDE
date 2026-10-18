@@ -1605,3 +1605,105 @@ def test_ed1_write_query_runs_once_then_cache(client, tmp_path, monkeypatch):
     get_only = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
     assert get_only.json()["hasWritten"] is True
     assert calls["n"] == 1
+
+
+# Visiteur public (nginx pose X-Real-IP). Sans ces en-têtes, l'appel local
+# est admin et le limiteur ne s'applique pas — comme pour POST /ici/story.
+_PUBLIC_FILM = {"X-Real-IP": "203.0.113.40", "X-Forwarded-For": "203.0.113.40"}
+_PUBLIC_FILM_OTHER = {"X-Real-IP": "203.0.113.41", "X-Forwarded-For": "203.0.113.41"}
+
+
+def test_film_write_rate_limit_and_offered_durations(client, tmp_path, monkeypatch):
+    """POST Rédigé : 429 au-delà du budget, 422 hors 0/150/180, 200 et cache inchangés."""
+    import admin_guard
+    import film_script
+    from official_store import FILM_VARIANT_SECONDS
+
+    admin_guard.reset_limiters()
+    store = OfficialStore(DiskBackend(tmp_path / "http-film-write-limit"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
+    calls = {"n": 0}
+
+    async def fake_chain(plan, *, seconds=150, cascade=None):
+        calls["n"] += 1
+        written = {
+            "chapters": list(plan.get("chapters") or []),
+            "source": official_store.WRITTEN_SOURCE,
+            "hasWritten": True,
+            "chars": 40,
+            "targetSeconds": seconds,
+        }
+        return written, None, {
+            "super": 1, "ultra_edit": 0, "ultra_judge": 0, "lightning": 0,
+            "source": official_store.WRITTEN_SOURCE, "reviewed": False,
+        }
+
+    monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
+
+    # Mode off : aucune écriture LLM, forme identique au GET rédigé.
+    for secs in FILM_VARIANT_SECONDS:
+        posted = client.post(
+            f"/voyage/official/film?lang=fr&seconds={secs}",
+            headers=_PUBLIC_FILM,
+        )
+        assert posted.status_code == 200, secs
+        got = client.get(
+            f"/voyage/official/film?lang=fr&seconds={secs}&style=written",
+            headers=_PUBLIC_FILM,
+        )
+        assert posted.json() == got.json()
+        assert "chapters" in posted.json()
+        assert isinstance(posted.json()["hasWritten"], bool)
+    assert calls["n"] == 0
+
+    for secs in (101, 115, 108, 200, 300):
+        denied = client.post(
+            f"/voyage/official/film?lang=fr&seconds={secs}",
+            headers=_PUBLIC_FILM,
+        )
+        assert denied.status_code == 422, secs
+        assert denied.json()["detail"] == "unsupported film duration"
+    assert client.post("/voyage/official/film?lang=fr&seconds=301", headers=_PUBLIC_FILM).status_code == 422
+    assert calls["n"] == 0
+    # La lecture n'est pas bornée : seul le clic qui lance la chaîne l'est.
+    assert client.get("/voyage/official/film?lang=fr&seconds=115").status_code == 200
+
+    # Chaîne mockée : un écrit, le suivant relit le cache.
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    admin_guard.reset_limiters()
+    first = client.post("/voyage/official/film?lang=fr&seconds=150", headers=_PUBLIC_FILM)
+    assert first.status_code == 200
+    assert first.json()["hasWritten"] is True
+    assert first.json()["source"] == official_store.WRITTEN_SOURCE
+    assert set(first.json()) >= {"chapters", "source", "chars", "targetSeconds", "hasWritten"}
+    assert calls["n"] == 1
+    second = client.post("/voyage/official/film?lang=fr&seconds=150", headers=_PUBLIC_FILM)
+    assert second.status_code == 200
+    assert second.json()["hasWritten"] is True
+    assert calls["n"] == 1
+    cached = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
+    assert cached.json()["hasWritten"] is True
+    assert calls["n"] == 1
+
+    # 12 / min / IP, comme POST /ici/story. Les deux appels ci-dessus comptent.
+    for _ in range(10):
+        again = client.post("/voyage/official/film?lang=fr&seconds=150", headers=_PUBLIC_FILM)
+        assert again.status_code == 200
+        assert again.json()["hasWritten"] is True
+    assert calls["n"] == 1
+    blocked = client.post("/voyage/official/film?lang=fr&seconds=150", headers=_PUBLIC_FILM)
+    assert blocked.status_code == 429
+    assert blocked.headers.get("retry-after")
+    other = client.post("/voyage/official/film?lang=fr&seconds=150", headers=_PUBLIC_FILM_OTHER)
+    assert other.status_code == 200
+    assert calls["n"] == 1
+    # Sans en-tête proxy, l'appel local reste accepté : pas de clé admin exigée.
+    local = client.post("/voyage/official/film?lang=fr&seconds=180")
+    assert local.status_code == 200
+    admin_guard.reset_limiters()
