@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fr from "../i18n/fr.js";
+import { MOMENT_MAX_NM, momentNearest } from "../hooks/useMomentJournal.js";
 import en from "../i18n/en.js";
 import {
   PORT_CARD_NEAR_NM,
@@ -8,12 +9,15 @@ import {
   cardsFromOfficialMoments,
   escaleCard,
   pickOfficialMoment,
+  readableCard,
+  stopKey,
   portCardIsCurrent,
   selectDisplayedMoments,
 } from "./momentCard.js";
 import {
   aroundWithoutShown,
   dedupeFacts,
+  displayIciFrame,
   sentencesNotShown,
   keptSentences,
   localizeStoredFact,
@@ -217,5 +221,77 @@ describe("keptSentences", () => {
   it("one flag per sentence, in order", () => {
     const a = "Le bateau est en haute mer : aucune ZEE, pas de formalités d’entrée à prévoir.";
     assert.deepEqual(keptSentences([a, "Vent 12 kn.", a], ["Vent 12 kn."]), [true, false, false]);
+  });
+});
+
+describe("Now tab: the moment is chosen by position, not by date", () => {
+  // Near Papeete, the latest stored moments are New Caledonia ones.
+  const rows = [
+    row("2026-09-20T00:00:00Z", -17.53, -149.57, { alerts: [{ kind: "zee", title: "ZEE Polynésie", fact: "Polynésie française" }] }),
+    row("2026-09-21T00:00:00Z", -22.25, 166.45, { alerts: [{ kind: "poe", title: "Nouméa", fact: "Aucun port d'entrée officiel n'est connu pour Nouvelle-Calédonie" }] }),
+    row("2026-09-21T06:00:00Z", -22.3, 166.5, { around: [{ kind: "marina", title: "Cercle Nautique Calédonien", fact: "Boulari 5,9 nm" }] }),
+  ];
+  const papeete = { lat: -17.55, lon: -149.6 };
+
+  it("never a moment from another territory: the nearest one within the cap", () => {
+    const picked = pickOfficialMoment(rows, { boat: papeete });
+    assert.equal(picked.t, "2026-09-20T00:00:00Z");
+    const { now, freeQueue } = cardsFromOfficialMoments(rows, { until: "2026-09-22T00:00:00Z", boat: papeete, lang: "fr" });
+    const text = JSON.stringify({ now, freeQueue });
+    assert.doesNotMatch(text, /Calédoni|Boulari|Nouméa/);
+  });
+
+  it("nothing near the boat: no moment rather than a far one", () => {
+    assert.equal(pickOfficialMoment(rows, { boat: { lat: 0, lon: -30 } }), null);
+    assert.ok(MOMENT_MAX_NM > 0 && MOMENT_MAX_NM < 1000, "well under Papeete – Nouméa (≈ 2 500 nm)");
+  });
+
+  it("the Ici frame takes the journal entry where the boat is", () => {
+    const live = { t: "2026-09-22T00:00:00Z", pos: papeete, alerts: [], here: {}, around: [] };
+    const journal = [
+      { t: "2026-09-20T00:00:00Z", pos: { lat: -17.53, lon: -149.57 }, signature: "pf", here: { sentences: ["Polynésie."] } },
+      { t: "2026-09-21T06:00:00Z", pos: { lat: -22.3, lon: 166.5 }, signature: "nc", here: { sentences: ["Nouvelle-Calédonie."] } },
+    ];
+    const frame = displayIciFrame(live, journal, "follow");
+    assert.equal(frame.shown.signature, "pf");
+    assert.deepEqual(frame.here.sentences, ["Polynésie."]);
+    assert.equal(momentNearest(journal, { t: live.t, pos: { lat: 0, lon: -30 } }), null);
+  });
+});
+
+describe("Now tab: no raw code as a card title", () => {
+  it("« grib / grib » and « amp / Pertuis… » read as words, FR and EN", () => {
+    const rowsCodes = [row("2026-09-01T00:00:00Z", 46.0, -1.6, {
+      changes: [
+        { kind: "layer", layer: "grib", title: "grib", fact: "grib" },
+        { kind: "amp", title: "amp", fact: "Pertuis charentais - Rochebonne" },
+      ],
+    })];
+    for (const [lang, grib, amp] of [["fr", fr.momentKindGrib, fr.momentKindAmp], ["en", en.momentKindGrib, en.momentKindAmp]]) {
+      const { freeQueue } = cardsFromOfficialMoments(rowsCodes, { lang, boat: { lat: 46.0, lon: -1.6 } });
+      const titles = freeQueue.map((c) => c.title);
+      assert.ok(titles.includes(grib), `${lang} ${titles}`);
+      assert.ok(titles.includes("Pertuis charentais - Rochebonne"), `${lang} ${titles}`);
+      assert.equal(freeQueue.find((c) => c.title === "Pertuis charentais - Rochebonne").text, amp);
+      for (const c of freeQueue) assert.doesNotMatch(`${c.title} ${c.text}`, /^(grib|amp)\b|\b(grib|amp)$/);
+    }
+  });
+});
+
+describe("Now tab: the departure port card at 6 nm", () => {
+  it("La Rochelle shows while arriving, whatever the stored name form", () => {
+    const card = { kind: "port", title: "Escale La Rochelle (Charente-Maritime)", entity: { name: "Escale La Rochelle (Charente-Maritime)" } };
+    assert.equal(portCardIsCurrent(card, { leg: { fromStop: "Saint-Maur (Berry, Indre)", toStop: "La Rochelle", doneNm: 120, leftNm: 6 } }), true);
+    assert.equal(stopKey("Escale La Rochelle (Charente-Maritime)"), stopKey("La Rochelle"));
+    assert.notEqual(stopKey("La Rochelle"), stopKey("Rochefort"));
+  });
+});
+
+describe("Now tab: « haute mer » once in the whole tab", () => {
+  it("the briefing and the server say it once between them", () => {
+    const HIGH = "Le bateau est en haute mer : aucune ZEE, pas de formalités d’entrée à prévoir.";
+    const briefing = `${HIGH}\n\nMétéo au bateau : vent 12 kn.`;
+    assert.deepEqual(sentencesNotShown([HIGH], [briefing]), []);
+    assert.deepEqual(keptSentences([HIGH, HIGH], [""]), [true, false]);
   });
 });

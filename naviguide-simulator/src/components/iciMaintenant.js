@@ -1,5 +1,5 @@
 import { reviewLeg } from "../engine/planReview.js";
-import { momentAtOrBefore } from "../hooks/useMomentJournal.js";
+import { momentNearest } from "../hooks/useMomentJournal.js";
 import frDict from "../i18n/fr.js";
 import enDict from "../i18n/en.js";
 
@@ -255,8 +255,9 @@ export function withNowLeg(shown, nowLeg) {
 }
 
 export function displayIciFrame(moment, journalEntries, mode) {
+  // The journal entry for where the boat is, not for the closest date.
   const journalHit = mode === "follow" && moment
-    ? momentAtOrBefore(journalEntries, moment?.t)
+    ? momentNearest(journalEntries, { t: moment?.t, pos: moment?.pos })
     : null;
   const timeline = journalHit || moment;
   return {
