@@ -37,10 +37,13 @@ UNAVAILABLE = "unavailable"
 # ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
 # plan_review : rc54 — marques recollées sur les milles d'itinéraire
 # (Mata-Utu / Nouméa plus sur le retour atlantique). Pas de repli sur rc44.
+# clock (famille climo) : départ après la jambe terrestre, séjour des ports.
+# moments suit cette horloge. Le remplisseur recalcule ; pas un parcours complet.
 FILM_SCRIPT_REV = "vs1-rg10"
 WRITTEN_SOURCE = "nemotron-super-token-factory"
 REVIEWED_SOURCE = "nemotron-super-reviewed-ultra"
-MOMENTS_REV = "rg4-anchor"
+MOMENTS_REV = "rg4-depart"
+CLOCK_REV = "depart-land"
 ICI_REV = "am1a"
 PLAN_REVIEW_REV = "rc54"
 DB_NAME = "naviguide_simulator"
@@ -168,10 +171,10 @@ def worker_enabled() -> bool:
 
 
 def _store_rev_relaxed() -> bool:
-    """Sans remplisseur (CI, stock figé) : une ancienne rev film/moments/ici reste joignable.
+    """Sans remplisseur (CI, stock figé) : une ancienne rev film/moments/ici/climo reste joignable.
 
     La clé `…:rg4` n'existe pas encore dans l'archive gelée ; sans ça, GET
-    /film, /moments et /ici restent « en préparation » et Revoir reste grisé.
+    /film, /moments, /ici et /clock restent « en préparation » et Revoir reste grisé.
     Sur le poste le remplisseur tourne (WORKER≠0) : pas de repli, il recalcule.
     plan_review n'est pas dans ce repli : un snapshot Halifax /
     Saint-Pierre → Papeete ne doit plus sortir ready.
@@ -345,6 +348,8 @@ class OfficialStore:
             return f"{base}:{ICI_REV}"
         if family == "plan_review":
             return f"{base}:{PLAN_REVIEW_REV}"
+        if family == "climo":
+            return f"{base}:{CLOCK_REV}"
         return base
 
     def _with_date(self, hit: Optional[dict]) -> Optional[dict]:
@@ -376,7 +381,7 @@ class OfficialStore:
             if r != route_id or t != t0:
                 continue
             exact = (want_suf or None) == (suf or None)
-            if not exact and not (family in {"film", "moments", "ici"} and _store_rev_relaxed()):
+            if not exact and not (family in {"film", "moments", "ici", "climo"} and _store_rev_relaxed()):
                 continue
             rank = (1 if exact else 0, date)
             if best is None or rank > best[0]:
@@ -705,6 +710,55 @@ def _itinerary_marks() -> list:
     return out
 
 
+# Port de Saint-Pierre (même point que la route officielle).
+SAINT_PIERRE_LAT = 46.7761
+SAINT_PIERRE_LON = -56.1628
+
+
+def _name_has(name: str, needle: str) -> bool:
+    return needle in (name or "").lower()
+
+
+def _plan_blob(marks: list, plan: Optional[dict] = None) -> str:
+    parts = [str(m.get("name") or "") for m in marks if isinstance(m, dict)]
+    if isinstance(plan, dict):
+        for ch in plan.get("chapters") or []:
+            if isinstance(ch, dict):
+                parts.append(" ".join(str(ch.get(k) or "") for k in ("fromName", "toName", "text")))
+    return " ".join(parts).lower()
+
+
+def plan_includes_halifax(marks: list, plan: Optional[dict] = None) -> bool:
+    """Halifax entre dans les marques seulement si le plan a l'épisode (Halifax ou Saint-Pierre)."""
+    blob = _plan_blob(marks, plan)
+    return "halifax" in blob or "saint-pierre" in blob or "miquelon" in blob
+
+
+def repair_call_marks(marks: list, plan: Optional[dict] = None) -> list:
+    """Saint-Pierre au port réel, Halifax si le plan l'inclut, Cayenne sans doublon."""
+    out: list[dict] = []
+    seen_cayenne = False
+    named = [m for m in (marks or []) if isinstance(m, dict)]
+    for raw in named:
+        mark = dict(raw)
+        name = str(mark.get("name") or "")
+        low = name.lower()
+        if "saint-pierre" in low or "miquelon" in low:
+            mark["lat"] = SAINT_PIERRE_LAT
+            mark["lon"] = SAINT_PIERRE_LON
+        if _name_has(name, "cayenne"):
+            if seen_cayenne:
+                continue
+            seen_cayenne = True
+        out.append(mark)
+    if plan_includes_halifax(out, plan) and not any(_name_has(m.get("name") or "", "halifax") for m in out):
+        for stop in _itinerary_marks():
+            if _name_has(stop.get("name") or "", "halifax"):
+                out.append(dict(stop))
+                break
+    return out
+
+
 def _voy_stored_marks(voy: Optional[dict]) -> list:
     voy = voy or {}
     marks = [m for m in (voy.get("marks") or []) if isinstance(m, dict)]
@@ -715,7 +769,7 @@ def _voy_stored_marks(voy: Optional[dict]) -> list:
         stored = stored_clock()
         if stored:
             marks.extend(m for m in (stored.get("marks") or []) if isinstance(m, dict))
-    return marks
+    return repair_call_marks(marks, voy if isinstance(voy, dict) else None)
 
 
 def _name_is_cayenne(name: str) -> bool:
@@ -727,20 +781,17 @@ def _marks_have_cayenne(marks: list) -> bool:
 
 
 def _voy_air_marks(voy: Optional[dict], plan: Optional[dict] = None) -> list:
-    """Marques du voyage ; l'itinéraire Berry n'est ajouté que si Cayenne est déjà là."""
-    marks = list(_voy_stored_marks(voy))
-    if _marks_have_cayenne(marks):
-        marks.extend(_itinerary_marks())
-        return marks
-    blob = ""
-    if isinstance(plan, dict):
-        blob = " ".join(
-            f"{c.get('fromName') or ''} {c.get('toName') or ''} {c.get('text') or ''}"
-            for c in (plan.get("chapters") or [])
-            if isinstance(c, dict)
-        )
-    if "cayenne" in blob.lower() or "guyane" in blob.lower():
-        marks.extend(_itinerary_marks())
+    """Marques du voyage. Halifax n'est ajouté que si le plan a l'épisode."""
+    marks = repair_call_marks(_voy_stored_marks(voy), plan)
+    if not _marks_have_cayenne(marks):
+        blob = _plan_blob([], plan)
+        if "cayenne" in blob or "guyane" in blob:
+            marks = repair_call_marks(marks + _itinerary_marks(), plan)
+    elif plan_includes_halifax(marks, plan) and not any(
+        _name_has(m.get("name") or "", "halifax") for m in marks if isinstance(m, dict)
+    ):
+        halifax = [m for m in _itinerary_marks() if _name_has(m.get("name") or "", "halifax")]
+        marks = repair_call_marks(marks + halifax, plan)
     return marks
 
 
@@ -1044,6 +1095,11 @@ def compute_climo(voy: dict, now: datetime) -> Optional[dict]:
         clock["hindcastCoverage"] = fields.get("hindcastCoverage")
         extra.update(fields)
     voy = dict(voy)
+    if isinstance(clock, dict) and clock.get("marks"):
+        clock = dict(clock)
+        clock["marks"] = repair_call_marks(clock.get("marks") or [], voy)
+    if voy.get("marks"):
+        voy["marks"] = repair_call_marks(voy.get("marks") or [], voy)
     voy["clock"] = clock
     voy.update({k: v for k, v in fields.items() if k != "realUntil"})
     save_voyage(voy)

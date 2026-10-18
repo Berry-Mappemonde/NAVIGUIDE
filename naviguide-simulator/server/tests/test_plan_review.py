@@ -509,3 +509,51 @@ def test_noumea_la_rochelle_dates_match_sea_days():
         f"{leg['departIso'][:10]} → {leg['arriveIso'][:10]} = {span:.1f} j "
         f"contre {days} j de mer ({leg['legNm']} nm)"
     )
+
+
+def test_sea_days_within_ten_percent_of_clock_gap():
+    """daysAtSea suit l'écart d'horloge (départ → arrivée), pas milles ÷ 8 kn."""
+    from datetime import datetime, timezone
+
+    gap_h = 11 * 24
+    clock = {
+        "t0": "2026-05-15T08:00:00Z",
+        "vertices": [
+            {"tHours": 0, "sailNm": 0, "lat": 46.15, "lon": -1.17, "vehicle": "main"},
+            {"tHours": gap_h, "sailNm": 1920, "lat": 41.92, "lon": 8.74, "vehicle": "main"},
+        ],
+        "marks": [
+            {"name": "La Rochelle", "tHours": 0, "holdHours": 0, "nm": 0, "filmNm": 0},
+            {"name": "Ajaccio (Corse)", "tHours": gap_h, "holdHours": 72, "nm": 1920, "filmNm": 1920},
+        ],
+    }
+    legs = plan_review.legs_from_clock(clock, "La Rochelle")
+    assert len(legs) == 1
+    leg = legs[0]
+    dep = datetime.fromisoformat(leg["departIso"].replace("Z", "+00:00"))
+    arr = datetime.fromisoformat(leg["arriveIso"].replace("Z", "+00:00"))
+    if dep.tzinfo is None:
+        dep = dep.replace(tzinfo=timezone.utc)
+    if arr.tzinfo is None:
+        arr = arr.replace(tzinfo=timezone.utc)
+    gap = (arr - dep).total_seconds() / 86400.0
+    assert gap == 11
+    assert abs(leg["daysAtSea"] - gap) <= 0.10 * gap
+    planned = plan_review.planned_sea_days(1920)
+    assert planned == 10.0
+    assert leg["daysAtSea"] != planned
+
+    voy = {
+        "t0": "2026-05-15T08:00:00Z",
+        "marks": [
+            {"name": "La Rochelle", "nm": 0},
+            {"name": "Ajaccio (Corse)", "nm": 1920},
+        ],
+        "points": [
+            {"lat": 46.15, "lon": -1.17, "cumNm": 0},
+            {"lat": 41.92, "lon": 8.74, "cumNm": 1920},
+        ],
+    }
+    fallback = plan_review.legs_from_voyage(voy)
+    assert len(fallback) == 1
+    assert fallback[0]["daysAtSea"] == planned

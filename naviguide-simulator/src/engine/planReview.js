@@ -43,7 +43,7 @@ export function reviewLeg(leg, season, lang = "fr", { galeLimitPct = GALE_PCT_DE
   const en = isEn(lang);
   const badges = [];
   const notes = [];
-  const days = Number(leg.daysAtSea) || 0;
+  const days = Number.isFinite(Number(leg.daysAtSea)) ? Number(leg.daysAtSea) : 0;
   badges.push({ kind: "sea", level: "info", text: en ? `${leg.legNm} nm · ${days} d at sea` : `${leg.legNm} nm · ${days} j de mer` });
   if (leg.holdDays > 0) {
     badges.push({ kind: "rest", level: "info", text: en ? `${leg.holdDays} d alongside` : `${leg.holdDays} j à quai` });
@@ -129,6 +129,32 @@ export function seasonForLeg(leg, clock, lookup) {
   const local = seasonFromAtlas(leg, legSamplePoints(clock, leg), lookup);
   if (local.cells > 0) return local;
   return { galePct: null, cyclones: null, cells: 0, missing: (s?.missing || 0) + local.missing };
+}
+
+/** Date proposée (ISO ou AAAA-MM-JJ). Vide si le conseil ne la porte pas. */
+export function proposedDepartureMs(best) {
+  const direct = best?.departIso || best?.departNow;
+  if (direct) {
+    const t = Date.parse(String(direct).length === 10 ? `${direct}T00:00:00Z` : direct);
+    if (Number.isFinite(t)) return t;
+  }
+  for (const raw of best?.facts || []) {
+    const dep = String(raw).match(/^départ (\d{4}-\d{2}-\d{2}) → (\d{4}-\d{2}-\d{2})$/);
+    if (dep) {
+      const t = Date.parse(`${dep[2]}T00:00:00Z`);
+      if (Number.isFinite(t)) return t;
+    }
+  }
+  return null;
+}
+
+/** Appliquer est interdit quand la date proposée n'est pas après maintenant. */
+export function adviceApplyDisabled(best, now = Date.now()) {
+  const when = proposedDepartureMs(best);
+  if (!Number.isFinite(when)) return false;
+  const t = now instanceof Date ? now.getTime() : Number(now);
+  if (!Number.isFinite(t)) return false;
+  return when <= t;
 }
 
 export function reviewPlan(review, clock, lookup, lang = "fr", opts = {}) {

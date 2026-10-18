@@ -25,7 +25,11 @@ describe("planReview — revue de plan par règles", () => {
     assert.equal(r.dates, "27 mai → 24 juin");
     const kinds = r.badges.map((b) => b.kind);
     assert.deepEqual(kinds, ["sea", "rest", "zee", "amp", "gale", "cyclone"]);
+    assert.equal(r.badges.find((b) => b.kind === "sea").text, "5153 nm · 26.8 j de mer");
     assert.equal(r.badges.find((b) => b.kind === "zee").text, "2 ZEE · 1 Gold");
+    const fromServer = reviewLeg({ ...LEG, daysAtSea: 11, legNm: 1920 }, null, "fr");
+    assert.equal(fromServer.badges.find((b) => b.kind === "sea").text, "1920 nm · 11 j de mer");
+    assert.equal(fromServer.daysAtSea, 11);
     assert.equal(r.badges.find((b) => b.kind === "gale").level, "alert");
     assert.match(r.notes[0], /Formalités à vérifier : Barbados EEZ/);
     assert.match(r.notes[1], /Saison ventée .* 18 % ≥ 15 %/);

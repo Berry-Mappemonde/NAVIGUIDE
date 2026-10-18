@@ -8,6 +8,7 @@ import {
   isAdviceDone,
   localizeAdviceSentence,
 } from "../hooks/usePlanReview.js";
+import { adviceApplyDisabled } from "../engine/planReview.js";
 import { REGIME_COLORS } from "../layers/regimeRoute.js";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 
@@ -74,6 +75,7 @@ export const PlanReview = memo(function PlanReview({
     ? legs[Number.isFinite(Number(advice?.leg)) ? Number(advice.leg) : 0] || legs[0]
     : null;
   const compare = applied && best ? buildAdviceCompare(best, advisedLeg, t, lang) : null;
+  const applyOff = best ? adviceApplyDisabled(best) : true;
   const source = (best && (advice?.best?.sentenceSource || commentSource)) || commentSource || "rules";
   const body = (
       <div className={startOpen ? "" : "border-t border-white/5"}>
@@ -100,7 +102,7 @@ export const PlanReview = memo(function PlanReview({
             const etaLabel = formatEtaRange(leg.etaRange, t, lang);
             const etaTitle = formatEtaRangeTitle(leg.etaRange, t);
             return (
-            <li key={leg.key} className="px-2 py-1.5 border-t border-white/5 first:border-t-0" data-level={leg.level} data-testid="plan-review-leg">
+            <li key={leg.key} className="px-2 py-1.5 border-t border-white/5 first:border-t-0" data-level={leg.level} data-testid="plan-review-leg" data-days-at-sea={leg.daysAtSea ?? ""}>
               <div className="flex items-baseline gap-1.5 min-w-0">
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${LEVEL_DOT[leg.level] || LEVEL_DOT.info}`} />
                 <span className="text-[11px] font-medium text-white leading-tight truncate">{leg.title}</span>
@@ -153,8 +155,9 @@ export const PlanReview = memo(function PlanReview({
             <button
               type="button"
               data-testid="plan-advice-apply"
-              onClick={() => { setApplied(true); onApply?.(); }}
-              className="mt-1.5 w-full rounded-md bg-cyan-700/80 py-1 text-[10px] font-semibold text-white hover:bg-cyan-600"
+              disabled={applyOff}
+              onClick={() => { if (applyOff) return; setApplied(true); onApply?.(); }}
+              className="mt-1.5 w-full rounded-md bg-cyan-700/80 py-1 text-[10px] font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-white/40"
             >
               {t("planReviewApply")}
             </button>
