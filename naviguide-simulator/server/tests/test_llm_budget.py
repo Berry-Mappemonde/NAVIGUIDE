@@ -195,6 +195,52 @@ def test_judge_cap_unchanged_without_token_env(monkeypatch):
     assert llm_budget.daily_cap("judge") == 60_000
 
 
+def test_last_source_by_tier_tracks_per_tier():
+    llm_budget.remember_source("nemotron-lightning", "fast")
+    llm_budget.remember_source("nemotron-super", "write")
+    assert llm_budget.last_source() == "nemotron-super"
+    assert llm_budget.last_source_by_tier() == {
+        "fast": "nemotron-lightning",
+        "write": "nemotron-super",
+    }
+    st = llm_budget.status()
+    assert st["lastSource"] == "nemotron-super"
+    assert st["lastSourceByTier"]["fast"] == "nemotron-lightning"
+    assert st["fallback"] == {"nim": 0, "openrouter": 0, "claude": 0}
+    assert st["retrySuper"] == 0
+
+
+def test_record_fallback_increments_provider():
+    llm_budget.record_fallback("nim", "fast")
+    assert llm_budget.fallback_usage()["nim"] == 1
+    st = llm_budget.status()
+    assert st["fallback"]["nim"] == 1
+    assert st["fallback"]["openrouter"] == 0
+
+
+def test_clear_tier_errors_keeps_other_tiers():
+    llm_budget.remember_cascade_errors(
+        [{"provider": "tokenfactory", "reason": "empty"}], tier="fast",
+    )
+    llm_budget.remember_cascade_errors(
+        [{"provider": "tokenfactory", "reason": "422"}], tier="write",
+    )
+    assert llm_budget.last_errors() and len(llm_budget.last_errors()) == 2
+    assert llm_budget.last_error_at()
+    llm_budget.clear_tier_errors("fast")
+    errs = llm_budget.last_errors()
+    assert errs and len(errs) == 1
+    assert errs[0]["reason"] == "422"
+    st = llm_budget.status()
+    assert "lastErrorAt" in st
+
+
+def test_record_retry_super_in_status():
+    llm_budget.record_retry_super()
+    assert llm_budget.retry_super_usage()["count"] == 1
+    assert llm_budget.status()["retrySuper"] == 1
+
+
 def test_deferred_demand_allows_write_in_on_demand_background(monkeypatch):
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_WRITE", "1000")
