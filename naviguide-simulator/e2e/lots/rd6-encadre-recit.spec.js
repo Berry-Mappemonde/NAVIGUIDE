@@ -6,6 +6,7 @@
 // assertions qui en dépendent (paragraphes du Récit en Suivre) — jamais
 // l'absence de Récit en Simulation, ni le nom Iroise.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-rd6/${name}.webp`,
@@ -33,15 +34,6 @@ function localJournalSeed() {
       changes: [{ kind: "amp", score: 1, title: "Iroise", fact: "Iroise (4 nm)" }],
     },
   ];
-}
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
 }
 
 async function leaveCinema(page) {

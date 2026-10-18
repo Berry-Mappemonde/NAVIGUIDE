@@ -6,6 +6,7 @@ import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
 import { SAINT_MAUR_LAND_HOURS } from "../engine/voyageClock.js";
 import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import { ListenButton } from "./ListenButton.jsx";
+import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
 import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle, writtenPillEnabled } from "../hooks/useReplay.js";
@@ -386,9 +387,9 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             />
             {replay && !replay.unavailable ? (
               <>
-                <span data-testid="film-source" hidden={(replay.style || "raw") !== "written" || !replay.hasWritten} className="text-[9px] text-white/70 whitespace-nowrap">
-                  {filmSourceLabel(replay.source, t)}
-                </span>
+                <div data-testid="film-source" hidden={(replay.style || "raw") !== "written" || !replay.hasWritten} className="min-w-0 max-w-full whitespace-normal break-words text-xs leading-snug text-white/90">
+                  <LlmSourceBadge source={replay.source} label={filmSourceLabel(replay.source, t)} testId="film-source-badge" className="[&_span]:text-xs [&_span]:text-white/90" />
+                </div>
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
                   {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => {
                     const filmReady = replay.remoteStatus === "ready" || replay.remoteStatus === "stale";

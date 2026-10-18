@@ -2,6 +2,7 @@
 // Sans API : pas de « Bourgenay » (la route officielle ne fuit pas).
 // Avec API (proxy /ici → :8010) : le briefing cite la Mauritanie.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-t/${name}.webp`,
@@ -13,15 +14,6 @@ const shot = (page, name) => page.screenshot({
 // Au large de Nouadhibou, hors de tout WPI vendéen.
 const MAURITANIE_A = { lat: 18.2, lon: -17.8 };
 const MAURITANIE_B = { lat: 17.6, lon: -16.9 };
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function clickLatLng(page, lat, lon) {
   await page.waitForFunction(() => typeof window.__naviguideAddDrawnPoint === "function", { timeout: 10_000 });

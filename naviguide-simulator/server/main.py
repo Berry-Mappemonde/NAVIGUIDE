@@ -568,8 +568,10 @@ async def post_ici_story(body: dict):
         raise HTTPException(400, "événement manquant")
     if len(str(body)) > 60_000:
         raise HTTPException(413, "événement trop volumineux")
+    from ai_transparency import enrich_llm_payload
     from story_cache import story_through_cache
-    return await story_through_cache(body, writer=write_story)
+    out = await story_through_cache(body, writer=write_story)
+    return enrich_llm_payload(out) if isinstance(out, dict) else out
 
 
 @app.get("/route")

@@ -6,6 +6,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rg7");
 mkdirSync(recetteDir, { recursive: true });
@@ -23,23 +24,6 @@ const PLAN = /Le plan compte|The plan has/i;
 const CLOSE = /Aujourd['’]hui, le bateau|Today, the boat/i;
 const UPCOMING = /Les escales à venir|Stops still to come/i;
 const ETA_RANGE = /entre le .+ et le |between .+ and /i;
-
-async function dismissNotForNav(page) {
-  const modal = page.getByTestId("not-for-nav-modal");
-  if (await modal.isVisible({ timeout: 1500 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    const ok = page.getByTestId("not-for-nav-accept");
-    if (await ok.isVisible().catch(() => false)) await ok.click();
-    return;
-  }
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 1500 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function leaveCinema(page) {
   const cinema = page.getByRole("button", { name: /^(cinéma|cinema)$/i });

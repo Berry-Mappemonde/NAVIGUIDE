@@ -3,6 +3,7 @@
 // GET /voyage/official : sondé ; s'il manque, on annote et on saute seulement
 // les assertions d'entrées officielles (15 mai → aujourd'hui).
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-r9b/${name}.webp`,
@@ -33,15 +34,6 @@ function localJournalSeed() {
       changes: [{ kind: "escale", score: 3, title: "Ajaccio", fact: "" }],
     },
   ];
-}
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
 }
 
 async function leaveCinema(page) {
