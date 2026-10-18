@@ -200,11 +200,11 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             ) : finished
               ? t("filmArrived", { name: fromName || "—" })
               : (
-                <>
+                <span data-testid="film-leg" data-from={fromName || ""} data-to={toName || ""}>
                   <span className="text-blue-200">{fromName || "—"}</span>
                   <span className="text-white/35 mx-1">→</span>
                   <span className="text-cyan-200">{toName || "—"}</span>
-                </>
+                </span>
               )}
             {landClock ? (
               <span data-testid="film-land-leg" className="text-[10px] font-normal text-cyan-300/80 ml-2">{landClock}</span>
