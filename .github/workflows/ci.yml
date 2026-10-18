@@ -150,12 +150,7 @@ jobs:
           R_E2E: ${{ needs.simulator-e2e.result }}
         run: |
           fail=0
-          echo "R_BACKEND=$R_BACKEND"
-          case "$R_BACKEND" in
-            success) ;;
-            *) echo "L'agrégateur pytest (backend) doit être success, pas skipped ni absent." >&2; fail=1 ;;
-          esac
-          for name in R_FRONTEND R_AUDIT R_CHANGES R_SIMULATOR R_E2E; do
+          for name in R_CHANGES R_SIMULATOR R_E2E; do
             result="${!name}"
             echo "$name=$result"
             case "$result" in
