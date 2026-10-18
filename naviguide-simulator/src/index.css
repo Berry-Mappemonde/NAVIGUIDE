@@ -4,6 +4,14 @@
 html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 
 .leaflet-container { background: #0f172a; font: inherit; z-index: 0; --map-control-h: 20px; }
+/* Zoom rapide : une tuile pas encore là reste couleur mer, pas un carré blanc. */
+.leaflet-container .leaflet-tile-pane,
+.leaflet-container .leaflet-map-pane,
+.leaflet-container img.leaflet-tile { background-color: #0f172a; }
+.leaflet-fade-anim .leaflet-tile { transition: none; }
+.light-mode .leaflet-container,
+.light-mode .leaflet-container .leaflet-tile-pane,
+.light-mode .leaflet-container img.leaflet-tile { background-color: #d6d3cd; }
 
 /*
  * Map credits stay inside the visible map: right of the tools panel's edge

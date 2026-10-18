@@ -29,16 +29,16 @@ FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafo
 PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
-# Clé film : ED1 (rédigé au clic, fenêtre selon la pilule) invalide dc3.
-# Le remplisseur recalcule la famille film, pas les perles, et ne paie
-# plus Super ni Ultra. Pas de kind de moment nouveau : moments reste rg4.
+# Clé film : VS1 (choix VL/Lightning ou repli, budget 2:30 / 3:00) invalide ed1.
+# Le remplisseur recalcule la famille film, pas les perles. Pas un WARM monde.
+# Pas de kind de moment nouveau : moments reste rg4.
 # ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
 # plan_review : rc54 — marques recollées sur les milles d'itinéraire
 # (Mata-Utu / Nouméa plus sur le retour atlantique). Pas de repli sur rc44.
-FILM_SCRIPT_REV = "ed1"
+FILM_SCRIPT_REV = "vs1-rg10"
 WRITTEN_SOURCE = "nemotron-super-token-factory"
 REVIEWED_SOURCE = "nemotron-super-reviewed-ultra"
-MOMENTS_REV = "rg4"
+MOMENTS_REV = "rg4-anchor"
 ICI_REV = "am1a"
 PLAN_REVIEW_REV = "rc54"
 DB_NAME = "naviguide_simulator"
@@ -566,6 +566,90 @@ def official_journal_moments() -> list[dict]:
             continue
         if date > best_date:
             best, best_date = cand, date
+    return best
+
+
+def _payload_has_chapters(payload: Optional[dict]) -> bool:
+    """Vrai si un plan FR, EN ou une variante a au moins un chapitre."""
+    if not isinstance(payload, dict):
+        return False
+    variants = payload.get("variants") if isinstance(payload.get("variants"), dict) else {}
+    for by_secs in variants.values():
+        if not isinstance(by_secs, dict):
+            continue
+        for plan in by_secs.values():
+            if isinstance(plan, dict) and (plan.get("chapters") or []):
+                return True
+    for key in ("fr", "en", "default"):
+        plan = payload.get(key)
+        if isinstance(plan, dict) and (plan.get("chapters") or []):
+            return True
+    return False
+
+
+def _patch_air_on_film(payload: dict, voy: Optional[dict]) -> dict:
+    """Ajoute les phrases d'avion manquantes. Le reste du script n'est pas réécrit."""
+    out = dict(payload)
+    variants = out.get("variants") if isinstance(out.get("variants"), dict) else None
+    if variants:
+        patched: dict = {}
+        for lang, by_secs in variants.items():
+            if not isinstance(by_secs, dict):
+                patched[lang] = by_secs
+                continue
+            lg = str(lang)[:2].lower() or "fr"
+            patched[lang] = {
+                sec: _apply_air_sentences(plan, lg, voy) if isinstance(plan, dict) else plan
+                for sec, plan in by_secs.items()
+            }
+        out["variants"] = patched
+        for key, lg in (("fr", "fr"), ("en", "en"), ("default", "fr")):
+            picked = (patched.get(lg) or patched.get("fr") or {})
+            if not isinstance(picked, dict):
+                continue
+            plan = picked.get("150") or picked.get("0") or next(iter(picked.values()), None)
+            if isinstance(plan, dict) and (plan.get("chapters") or []):
+                out[key] = plan
+    for key, lg in (("fr", "fr"), ("en", "en"), ("default", "fr")):
+        plan = out.get(key)
+        if isinstance(plan, dict) and (plan.get("chapters") or []):
+            out[key] = _apply_air_sentences(plan, lg, voy)
+    return out
+
+
+def _newest_film_hit() -> Optional[dict]:
+    """Dernier script qui a des chapitres, même révision ancienne.
+
+    La révision du checkout (vs1, rc55…) met du temps à s'écrire. Tant qu'elle
+    n'est pas là, Revoir joue le dernier film complet au lieu de rester
+    « en préparation ».
+    """
+    st = get_store()
+    voy = _load_official()
+    try:
+        route_id, t0, _, _suf = parse_key(st.family_key("film", voy))
+    except ValueError:
+        return None
+    lister = getattr(st.backend, "list_family", None)
+    if not callable(lister):
+        return None
+    best: Optional[dict] = None
+    best_date = ""
+    for stored_key, doc in lister("film"):
+        try:
+            route, stamp, date, _suf = parse_key(stored_key)
+        except ValueError:
+            continue
+        if route != route_id or stamp != t0:
+            continue
+        payload = doc.get("payload") if isinstance(doc, dict) else None
+        if not _payload_has_chapters(payload):
+            continue
+        if best is None or date > best_date:
+            hit = dict(doc)
+            hit["key"] = stored_key
+            hit["dataDate"] = date
+            best, best_date = hit, date
     return best
 
 
@@ -1139,6 +1223,7 @@ def compute_film(voy: dict, now: datetime) -> Optional[dict]:
     en = (variants.get("en") or {}).get(str(FILM_VARIANT_SECONDS[0]))
     if isinstance(en, dict) and (en.get("chapters") or []):
         out["en"] = en
+    out["film_script_rev"] = FILM_SCRIPT_REV
     return out
 
 
@@ -1528,25 +1613,47 @@ def _fill_script_stamp() -> str:
         return ""
 
 
-def other_fill_processes(keep: Optional[int] = None, store: Optional[Path] = None) -> list[int]:
-    """Les `prepare_official_store.py --loop --store <ce stock>` vivants sur cette machine, sauf `keep` et nous.
+def command_store(command: str, default: Optional[Path] = None) -> Optional[Path]:
+    """Dossier de stock visé par une ligne `ps`.
 
-    29 sept. : quatre remplisseurs tournaient en même temps (rg7, rg16 ×2, rc28) — le pidfile n'en connaît
-    qu'un, les autres avaient survécu aux rebuilds du poste — et tous écrivaient le même stock et le même
-    fichier voyage : c'est le mélange de deux écritures à 20:07 qui a corrompu le voyage officiel.
-    Le stock est reconnu par l'argument `--store` de la ligne de commande : le remplisseur d'un agent (stock
-    de son worktree) et celui du poste (stock partagé) ne se touchent jamais."""
+    `--store <chemin>` est explicite. Sans cet argument, le script écrit le stock par
+    défaut (`~/.cache/naviguide/voyage-store`) : c'est le passage orphelin du 17 oct.,
+    lancé sans `--loop` ni `--store`, que le filtre « --loop » laissait vivre.
+    """
+    if FILL_SCRIPT.name not in command:
+        return None
+    parts = command.split()
+    try:
+        i = parts.index("--store")
+    except ValueError:
+        return Path(default) if default is not None else Path.home() / ".cache" / "naviguide" / "voyage-store"
+    if i + 1 >= len(parts):
+        return None
+    return Path(parts[i + 1])
+
+
+def other_fill_processes(keep: Optional[int] = None, store: Optional[Path] = None) -> list[int]:
+    """Les `prepare_official_store.py` vivants qui écrivent CE stock, sauf `keep` et nous.
+
+    Boucle ou passage unique : les deux écrivent le même fichier. 29 sept. : quatre boucles
+    en même temps ont corrompu le voyage officiel. 17 oct. : trois passages sans `--loop`
+    ont survécu au timeout et au filtre qui ne voyait que `--loop`.
+    Un `--store` différent (stock d'un worktree d'agent) n'est pas touché."""
     import subprocess  # noqa: PLC0415
     try:
         out = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True, timeout=5).stdout
     except Exception:
         return []
     me = os.getpid()
-    marker = f"--store {store or disk_root()}"
+    want = Path(store or disk_root())
+    default = Path.home() / ".cache" / "naviguide" / "voyage-store"
     found: list[int] = []
     for line in out.splitlines():
         parts = line.strip().split(None, 1)
-        if len(parts) != 2 or FILL_SCRIPT.name not in parts[1] or "--loop" not in parts[1] or marker not in parts[1]:
+        if len(parts) != 2:
+            continue
+        got = command_store(parts[1], default)
+        if got is None or got != want:
             continue
         try:
             pid = int(parts[0])
@@ -2067,12 +2174,17 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
         "chapters": [], "source": "rules", "chars": 0,
         "targetSeconds": seconds, "hasWritten": False,
     }
+    voy = _load_official()
     hit = get("film")
     body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
-    if not body:
+    if not _payload_has_chapters(body):
+        hit = _newest_film_hit()
+        body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+    if not _payload_has_chapters(body):
         return preparing_payload("film", extra)
-    if film_snapshot_stale(body, _load_official()):
-        return preparing_payload("film", extra)
+    if film_snapshot_stale(body, voy):
+        body = _patch_air_on_film(body, voy)
+    # Un script déjà écrit se joue. Une phrase d'avion manquante ne bloque pas Revoir.
     lg = (lang or "fr")[:2].lower()
     plan = None
     variants = body.get("variants") if isinstance(body.get("variants"), dict) else {}
@@ -2112,6 +2224,9 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
     out["hasWritten"] = False
     out["source"] = out.get("source") or "rules"
     out["style"] = "raw"
+    rev = body.get("film_script_rev")
+    if rev:
+        out["film_script_rev"] = rev
     out.update(_stamp(hit))
     return out
 

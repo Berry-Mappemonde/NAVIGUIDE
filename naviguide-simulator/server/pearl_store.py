@@ -154,6 +154,33 @@ def put_pearl(key: str, bag: dict, kind: str = "thin", lat: float | None = None,
         return False
 
 
+def non_polygon_amp_pearls(kind: str = "rich") -> list[tuple[str, float | None, float | None]]:
+    """Perles riches dont une aire n'est pas marquée polygone (centroïde ou marque absente).
+
+    Une requête SQL, sans json.loads. (clé, lat, lon) — lat/lon peuvent manquer.
+    """
+    try:
+        with _LOCK:
+            rows = _connect().execute(
+                "SELECT DISTINCT p.key, p.lat, p.lon FROM pearls p, json_each(p.bag, '$.amp') j "
+                "WHERE p.kind = ? AND json_valid(p.bag) "
+                "AND COALESCE(json_extract(j.value, '$.source'), '') != 'polygon'",
+                (kind,),
+            ).fetchall()
+    except Exception as exc:
+        log.warning("store perles (AMP non polygones) : %s", exc)
+        return []
+    out: list[tuple[str, float | None, float | None]] = []
+    for key, lat, lon in rows:
+        try:
+            plat = float(lat) if lat is not None else None
+            plon = float(lon) if lon is not None else None
+        except (TypeError, ValueError):
+            plat = plon = None
+        out.append((str(key), plat, plon))
+    return out
+
+
 def delete_pearl(key: str) -> bool:
     try:
         with _LOCK:
@@ -427,6 +454,74 @@ def list_moments(voyage_id: str) -> list[dict]:
         except Exception:
             continue
     return out
+
+
+def _table_row_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for table in ("pearls", "kv", "moments"):
+        try:
+            row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+            out[table] = int(row[0] or 0)
+        except Exception:
+            out[table] = 0
+    return out
+
+
+def sqlite_table_counts(path: Path) -> dict[str, int]:
+    """Comptes pearls / kv / moments sur un fichier sqlite (lecture seule)."""
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        return _table_row_counts(conn)
+    finally:
+        conn.close()
+
+
+def backup_database(dest: Path) -> dict[str, Any]:
+    """Copie cohérente à chaud (API backup), même si la base est en WAL."""
+    src = db_path()
+    if not src.is_file():
+        raise FileNotFoundError(f"sqlite absent : {src}")
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        dest.unlink()
+    src_conn = sqlite3.connect(str(src), timeout=30.0)
+    dst_conn = sqlite3.connect(str(dest))
+    try:
+        src_conn.execute("PRAGMA busy_timeout=30000")
+        with _LOCK:
+            src_conn.backup(dst_conn)
+        dst_conn.commit()
+    finally:
+        dst_conn.close()
+        src_conn.close()
+    return verify_database_backup(src, dest)
+
+
+def verify_database_backup(src: Path, dest: Path) -> dict[str, Any]:
+    """integrity_check + mêmes comptes de lignes sur la copie."""
+    src_counts = sqlite_table_counts(src)
+    dst_counts = sqlite_table_counts(dest)
+    if src_counts != dst_counts:
+        raise RuntimeError(f"backup sqlite : comptes différents {src_counts} vs {dst_counts}")
+    conn = sqlite3.connect(f"file:{dest}?mode=ro", uri=True)
+    try:
+        row = conn.execute("PRAGMA integrity_check").fetchone()
+        status = str(row[0] if row else "")
+    finally:
+        conn.close()
+    if status.lower() != "ok":
+        raise RuntimeError(f"backup sqlite : integrity_check={status!r}")
+    return {"integrity": status, "counts": dst_counts, "source": str(src), "dest": str(dest)}
+
+
+def count_kv_rows() -> int:
+    try:
+        with _LOCK:
+            row = _connect().execute("SELECT COUNT(*) FROM kv").fetchone()
+            return int(row[0] or 0)
+    except Exception:
+        return 0
 
 
 def count_moments(voyage_id: str | None = None) -> int:

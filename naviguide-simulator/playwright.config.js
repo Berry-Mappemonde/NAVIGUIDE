@@ -36,6 +36,7 @@ const apiServer = {
 
 export default defineConfig({
   testDir: "./e2e",
+  globalSetup: "./e2e/global-setup.js",
   timeout: 30_000,
   retries: 0,
   workers: process.env.CI ? 2 : 4,
@@ -50,6 +51,8 @@ export default defineConfig({
     : "list",
   use: {
     baseURL: origin,
+    // Les lots existants affirment le français. Le visiteur sans choix est couvert par ouverture-langue.
+    storageState: "./e2e/.auth/fr.json",
     headless: true,
     viewport: { width: 1280, height: 800 },
     trace: process.env.CI ? "off" : "retain-on-failure",

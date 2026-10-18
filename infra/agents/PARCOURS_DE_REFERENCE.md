@@ -116,10 +116,11 @@ Depuis DM6 / DM7 / DM9, **Tracer ouvre le dessin**. L'horloge part d'**aujourd'h
 
 ## G. Journal de bord (chat)
 
-- Le champ est sous les logos, placeholder du type « Quel vent au bateau ? Prochaine escale ? ». Case **Raisonnement** à côté s'il s'agit de RG19 (libellé seul).
+- Le champ est sous les logos, placeholder du type « Quel vent au bateau ? Prochaine escale ? ». **Pas de case Raisonnement.**
+- Question simple : poser « Quel vent au bateau ? » → une phrase avec un vent en kn, source **règles**. Lightning classe si le palier `fast` est ouvert ; sinon les mots-clés. Super n’écrit pas.
+- Question difficile : poser « Pourquoi ralentir ? » → Ultra rédige si le plafond juge est ouvert ; sinon la même réponse de **règles**. Jamais Super.
 - Poser « À quelle vitesse va le bateau ? » → une **phrase** (chiffre en kn, source **règles**), jamais un prompt.
-- Poser « Quel vent au bateau ? » → une phrase avec un vent en kn, source **règles**.
-- Console : règles du préambule (pas d'appel Nebius / Token Factory hors case Raisonnement).
+- Console : règles du préambule (pas d’appel Nebius / Token Factory quand les modèles sont éteints).
 
 ## H. Carte
 

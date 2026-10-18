@@ -13,7 +13,8 @@ const proxy = {
         target: API,
         changeOrigin: true,
         bypass(req) {
-          // public/route.geojson = fallback interne, pas l'API searoute
+          // /route.geojson = fichier statique (lien vers backend/data/route.geojson),
+          // pas l'API searoute.
           if (req.url?.startsWith("/route.geojson")) return req.url;
         },
       },

@@ -87,7 +87,7 @@ Nouveaux tests : lesquels, ce qu'ils protègent. / New tests: which, what they p
 Écran : Suivre | Tracer | Revoir l'expédition | Panneau droit.
 - [ ] Ouvre …, clique … → **tu dois voir** … / Open …, click … → **you must see** …
 - [ ] …
-Captures : https://github.com/<owner>/<repo>/blob/<branche>/docs/recette/<lot>/01-….jpg?raw=true (≤ 4, 1280×800, JPEG q70).
+Captures : https://github.com/<owner>/<repo>/blob/<branche>/docs/recette/<lot>/01-….webp?raw=true (≤ 4, 1280×800, WebP q85).
 
 ## Review automatique / Automated review
 `npm run e2e -- e2e/lots/<lot>.spec.js` : vert. Ce que le spec vérifie (liste) —
@@ -129,7 +129,7 @@ Ce qu'on n'a pas touché exprès, ce qui pourrait bouger. / Left untouched on pu
     « tout marche comme avant » sur trois parcours fixes (Suivre à Nouméa,
     Tracer La Rochelle → Ajaccio, Tracer votre propre route Brisbane → SF).
 - Les captures sont **fixes** (pas de vidéo), rangées dans
-  `docs/recette/<lot>/`, nommées `01-…jpg`, `02-…jpg`, et **référencées dans la
+  `docs/recette/<lot>/`, nommées `01-…webp`, `02-…webp`, et **référencées dans la
   PR par leur URL complète sur la branche** (`…/blob/<branche>/docs/recette/…?raw=true`,
   un chemin relatif s'ouvre sur `main` où le fichier n'existe pas encore).
   Elles se prennent par le spec Playwright du lot (§ 5), pas à la main.
@@ -143,7 +143,7 @@ qui rejoue la recette et prend les captures :
 // e2e/lots/q-replay.spec.js — gabarit
 import { test, expect } from "@playwright/test";
 const shot = (page, name) => page.screenshot({
-  path: `../docs/recette/lot-q/${name}.jpg`, type: "jpeg", quality: 70, fullPage: false,
+  path: `../docs/recette/lot-q/${name}.webp`, type: "webp", quality: 85, fullPage: false,
 });
 
 test("lot Q — replay : zoom stable, récit dès le départ", async ({ page }) => {
@@ -221,7 +221,7 @@ Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/<PLAN>.md § 0 et le lot 
 Fichiers : ouvre SEULEMENT ceux listés dans le lot ; App.jsx et MapSceneController.js par `rg -n` + Read avec offset/limit.
 Branche : <type>/lot-<x>-<slug> depuis main à jour. Une PR sur main, corps = gabarit § 3. Ne merge pas.
 Tests : cd naviguide-simulator && npm test && .venv/bin/python -m pytest -q && npx vite build ; npm run e2e -- e2e/lots/<lot>.spec.js si l'UI change. Si tu changes un bouton, un libellé ou un onglet : mets à jour dans CETTE PR ton spec et tout spec / test qui affirme encore l'ancien texte.
-Recette : rejoue les étapes « Recette » du lot avec le spec Playwright du lot ; captures JPEG dans docs/recette/<lot>/ ; référence-les dans la PR.
+Recette : rejoue les étapes « Recette » du lot avec le spec Playwright du lot ; captures WebP dans docs/recette/<lot>/ ; référence-les dans la PR.
 Interdits : retirer une surface visible sur main ; un chiffre produit par un LLM ; une vidéo ; un merge ; un push --force ; un secret dans le diff.
 Modèle : cursor-grok-4.6-xhigh-fast (jamais claude-* sur un worker Cloud).
 Quand tu as fini : donne le numéro de PR, les compteurs de tests, la liste des captures, et ce que tu n'as pas fait.

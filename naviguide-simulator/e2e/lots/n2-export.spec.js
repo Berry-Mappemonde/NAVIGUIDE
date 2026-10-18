@@ -9,9 +9,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => join(here, "../../../docs/recette/lot-n1", name);
 
 const shot = (page, name) => page.screenshot({
-  path: `../docs/recette/lot-n2/${name}.jpg`,
-  type: "jpeg",
-  quality: 70,
+  path: `../docs/recette/lot-n2/${name}.webp`,
+  type: "webp",
+  quality: 85,
   fullPage: false,
 });
 

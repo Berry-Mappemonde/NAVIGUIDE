@@ -227,7 +227,6 @@ export default {
   logbookChatUnsaved: "reply not saved to the logbook",
   logbookChatLogged: "exchanges logged",
   logbookChatNotLogged: "replies are not saved to the logbook",
-  logbookChatReason: "Reasoning",
   replayStart: "Replay the expedition",
   replayStartTitle: "Replay the route from Saint-Maur to today, told day by day",
   replayBerryOnly: "Replay: Berry-Mappemonde route only — coming soon for your route",
