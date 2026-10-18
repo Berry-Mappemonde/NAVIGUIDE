@@ -301,6 +301,14 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(out["naviguide"], "true")
         self.assertEqual(out["simulator"], "false")
 
+    def test_film_front_unit_triggers_simulator_deploy(self):
+        import plan_deploy
+        out = plan_deploy.decide("push", files=[
+            "infra/vps/naviguide/naviguide-film-front.service",
+        ])
+        self.assertEqual(out["simulator"], "true")
+        self.assertEqual(out["naviguide"], "false")
+
     def test_dispatch_one_site(self):
         import plan_deploy
         out = plan_deploy.decide("workflow_dispatch", input_site="simulator")
