@@ -172,11 +172,17 @@ def test_snapshot_group_pending_until_every_product_ready():
     assert ready["wave"]["source"] == "wave"
 
 
-def test_weather_pipeline_flag_defaults_off(monkeypatch):
+def test_weather_pipeline_flag_defaults_on(monkeypatch):
+    # Consigne : « NAVIGUIDE_WEATHER_PIPELINE devient allumé par défaut » ;
+    # « la variable à 0 remet l'ancien chemin tant qu'il existe ».
     monkeypatch.delenv("NAVIGUIDE_WEATHER_PIPELINE", raising=False)
-    assert weather_pipeline_enabled() is False
+    assert weather_pipeline_enabled() is True
+    monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "")
+    assert weather_pipeline_enabled() is True
     monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "1")
     assert weather_pipeline_enabled() is True
+    monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "0")
+    assert weather_pipeline_enabled() is False
     monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "off")
     assert weather_pipeline_enabled() is False
 

@@ -4,11 +4,11 @@ Tous les fournisseurs passent ici : tâche de rafraîchissement dédupliquée,
 état durable (pending / ready / error) et cache par cellule 0,25° + cycle GFS.
 Les handlers répondent tout de suite ; le client actualise à faible cadence.
 
-Une file asyncio à part (NAVIGUIDE_WEATHER_PIPELINE, éteint par défaut)
+Une file asyncio (NAVIGUIDE_WEATHER_PIPELINE, allumée par défaut)
 borne chaque fournisseur, met en cache (fournisseur, cellule 0,25°, heure UTC)
 et expose pending / ready / unavailable. Une exception ou un dépassement
-devient unavailable, jamais une erreur de page. Le pipeline à fils reste
-le chemin emprunté quand le drapeau est éteint.
+devient unavailable, jamais une erreur de page. La variable à 0, off, false
+ou no reprend le pipeline à fils tant que cet ancien chemin existe.
 
 Le pipeline **transporte** les champs déjà convertis par les loaders
 (hindcast, Copernicus getWind / getWave / getCurrent, forecast_cube, saildocs).
@@ -477,15 +477,21 @@ def get_pipeline() -> WeatherPipeline:
 # Délai max d'un fournisseur sur la file asyncio. Même ordre que le client
 # Open-Meteo du GRIB (20 s) : la page est déjà repartie, le travail s'arrête.
 DEFAULT_PROVIDER_TIMEOUT_S = 20.0
-_FLAG_ON = {"1", "true", "yes", "on"}
 # Au-delà, un « pending » ne veut plus rien dire : la couche passe unavailable.
 PENDING_MAX_AGE_S = 60.0
 # Le processus enfant a ce délai pour se terminer après kill().
 PROCESS_KILL_GRACE_S = 2.0
 
 
+_FLAG_OFF = {"0", "false", "no", "off"}
+
+
 def weather_pipeline_enabled() -> bool:
-    return os.getenv("NAVIGUIDE_WEATHER_PIPELINE", "").strip().lower() in _FLAG_ON
+    """Allumé si la variable est absente. 0 / off / false / no : ancien chemin."""
+    raw = os.getenv("NAVIGUIDE_WEATHER_PIPELINE")
+    if raw is None or not str(raw).strip():
+        return True
+    return str(raw).strip().lower() not in _FLAG_OFF
 
 
 # Fournisseurs servis par la file asyncio quand le drapeau est allumé.

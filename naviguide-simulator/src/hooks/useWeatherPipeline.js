@@ -1,11 +1,12 @@
 import { useMemo } from "react";
 
-const ON = new Set(["1", "true", "yes", "on"]);
+const OFF = new Set(["0", "false", "no", "off"]);
 
 export function weatherPipelineEnabled(env) {
   const source = env ?? (typeof import.meta !== "undefined" ? import.meta.env : undefined);
-  const raw = source?.VITE_NAVIGUIDE_WEATHER_PIPELINE ?? source?.NAVIGUIDE_WEATHER_PIPELINE ?? "";
-  return ON.has(String(raw).trim().toLowerCase());
+  const raw = source?.VITE_NAVIGUIDE_WEATHER_PIPELINE ?? source?.NAVIGUIDE_WEATHER_PIPELINE;
+  if (raw == null || String(raw).trim() === "") return true;
+  return !OFF.has(String(raw).trim().toLowerCase());
 }
 
 /** Per-layer state for GRIB wind. Null when the flag is off. */

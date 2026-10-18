@@ -121,7 +121,8 @@ def test_grib_kick_deduplicates_active_thread(monkeypatch):
 
     from weather_pipeline import get_pipeline
 
-    monkeypatch.delenv("NAVIGUIDE_WEATHER_PIPELINE", raising=False)
+    # Défaut allumé : 0 demande explicitement l'ancien chemin à fils.
+    monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "0")
 
     started = threading.Event()
     release = threading.Event()

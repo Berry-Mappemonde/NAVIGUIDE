@@ -40,6 +40,11 @@ def _serve(monkeypatch, flag, provider, fixture, lat=46.15, lon=-1.16):
     for key, value in fixture.items():
         assert body[key] == value
     assert calls["n"] == 1
+    if flag not in {"0", "off", "false", "no"}:
+        queued = get_async_weather_queue().wait_layer(provider, lat, lon, timeout=2)
+        assert queued["status"] == "ready"
+        for key, value in fixture.items():
+            assert queued[key] == value
     return {key: body[key] for key in fixture}
 
 

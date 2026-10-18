@@ -9,10 +9,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const read = (name) => readFileSync(join(here, name), "utf8");
 
 describe("useWeatherPipeline", () => {
-  it("stays off unless the flag is explicitly on", () => {
-    assert.equal(weatherPipelineEnabled({}), false);
-    assert.equal(weatherPipelineEnabled({ VITE_NAVIGUIDE_WEATHER_PIPELINE: "" }), false);
+  it("is on unless the variable is 0 or off", () => {
+    assert.equal(weatherPipelineEnabled({}), true);
+    assert.equal(weatherPipelineEnabled({ VITE_NAVIGUIDE_WEATHER_PIPELINE: "" }), true);
     assert.equal(weatherPipelineEnabled({ NAVIGUIDE_WEATHER_PIPELINE: "off" }), false);
+    assert.equal(weatherPipelineEnabled({ VITE_NAVIGUIDE_WEATHER_PIPELINE: "0" }), false);
     assert.equal(weatherPipelineEnabled({ VITE_NAVIGUIDE_WEATHER_PIPELINE: "1" }), true);
     assert.equal(weatherPipelineEnabled({ NAVIGUIDE_WEATHER_PIPELINE: "on" }), true);
   });
