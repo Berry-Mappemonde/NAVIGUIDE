@@ -86,9 +86,13 @@ sudo chmod -R a+rX "$WWW_ROOT"
 
 # ── systemd : uniquement naviguide-simulator ─────────────────────────────────
 sudo cp "$UNIT_SRC" /etc/systemd/system/naviguide-simulator.service
+FILM_UNIT="$APP/infra/vps/naviguide/naviguide-film-front.service"
+sudo cp "$FILM_UNIT" /etc/systemd/system/naviguide-film-front.service
 sudo systemctl daemon-reload
 sudo systemctl enable naviguide-simulator >/dev/null 2>&1 || true
+sudo systemctl enable naviguide-film-front >/dev/null 2>&1 || true
 sudo systemctl restart naviguide-simulator
+sudo systemctl restart naviguide-film-front
 
 # ── nginx: cache climatologie BI partagé (zone + snippet inclus par le vhost) ─
 # Idempotent. Le vhost blue-intelligence (certbot) et naviguide (installé une
@@ -134,6 +138,14 @@ for _ in $(seq 1 20); do
   sleep 1
 done
 echo "  naviguide-simulator (:8010) → HTTP $code"
+
+film_code=000
+for _ in $(seq 1 20); do
+  film_code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8011/voyage/official/clock" || true)
+  [ "$film_code" != "000" ] && break
+  sleep 1
+done
+echo "  naviguide-film-front (:8011) → HTTP $film_code"
 
 www_code=$(curl -s -o /dev/null -w "%{http_code}" "https://www.naviguide.fr/" || true)
 sim_code=$(curl -s -o /dev/null -w "%{http_code}" "https://simulator.naviguide.fr/" || true)
