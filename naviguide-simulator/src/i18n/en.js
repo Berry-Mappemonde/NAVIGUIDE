@@ -584,6 +584,11 @@ export default {
   routeNetworkError:  "Network unavailable: leg not computed, try again",
   drawPointLimit:     "{max} points maximum",
 
+  // AI transparency
+  aiActGeneratedLabel: "AI-generated content (model: {model})",
+  aiActChatNotice: "You are interacting with artificial intelligence. Replies are generated automatically and may contain errors.",
+  aiActChatNoticeDismiss: "Got it",
+
   // Moment cards: fallback title and the stored entry alert
   momentFallbackTitle: "Boat position",
   momentKindGrib: "Weather forecast (GRIB)",

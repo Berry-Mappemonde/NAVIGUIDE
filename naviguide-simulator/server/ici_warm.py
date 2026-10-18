@@ -13,9 +13,10 @@ viennent donc des perles — les mêmes pour tous les visiteurs. Ce module :
   MarineRegions et Overpass ne sont appelés qu'une fois par cellule.
 
 `NAVIGUIDE_ICI_WARM=0` désactive le chauffeur (tests, dev sans réseau).
-La veille Tavily tourne après le chauffage, deux tours max par
-escale, si `NAVIGUIDE_TAVILY_WATCH=1`. Défaut 0. `NAVIGUIDE_TAVILY_WATCH_S`
-change la période de la passe (défaut 86 400 s).
+La veille Tavily part quand même si `NAVIGUIDE_TAVILY_WATCH=1` (défaut 0) :
+première passe 2 min après le démarrage, puis toutes les
+`NAVIGUIDE_TAVILY_WATCH_S` secondes (défaut 86 400). Une recherche par
+escale, fenêtre J-10 → J+2. Cette boucle ne parcourt pas les perles.
 """
 from __future__ import annotations
 
@@ -902,20 +903,41 @@ def official_pearls() -> dict[str, Any]:
     }
 
 
+def _watch_period_s(pause_s: float | None = None) -> float:
+    if pause_s is not None:
+        return float(pause_s)
+    raw = (os.environ.get("NAVIGUIDE_TAVILY_WATCH_S") or "").strip()
+    if not raw:
+        return WATCH_LOOP_S
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        return WATCH_LOOP_S
+
+
 def start_background(loop: asyncio.AbstractEventLoop | None = None) -> bool:
-    """Called at server startup. Never raises."""
+    """Called at server startup. Never raises.
+
+    La veille démarre même si le chauffeur de perles est coupé. Le retour
+    « disabled » vient après ce démarrage.
+    """
     try:
         load_cache_from_disk()
     except Exception as exc:
         log.warning("rechargement du cache perles : %s", exc)
+    if watch_enabled():
+        try:
+            loop = loop or asyncio.get_event_loop()
+            loop.create_task(_watch_loop())
+            _state["watch"] = {"status": "scheduled"}
+        except Exception as exc:
+            log.warning("veille Tavily non lancée : %s", exc)
     if not warm_enabled():
         _state["status"] = "disabled"
         return False
     try:
         loop = loop or asyncio.get_event_loop()
         loop.create_task(warm_official_route())
-        if watch_enabled():
-            loop.create_task(_watch_loop())
         return True
     except Exception as exc:
         _state["status"] = "error"
@@ -923,13 +945,18 @@ def start_background(loop: asyncio.AbstractEventLoop | None = None) -> bool:
         return False
 
 
-async def _watch_loop(pause_s: float = WATCH_LOOP_S) -> None:
-    """Relance la passe de veille toutes les `pause_s` (24 h) ; 1 search par escale, une fois pour toutes."""
-    await asyncio.sleep(min(120.0, max(5.0, pause_s / 30)))
+async def _watch_loop(pause_s: float | None = None) -> None:
+    """Passe de veille seule : 2 min après le démarrage, puis toutes les 24 h.
+
+    Une recherche par escale (`done:<slug>`), fenêtre J-10 → J+2.
+    Pas d'enrichissement des perles (mémoire).
+    """
+    period = _watch_period_s(pause_s)
+    await asyncio.sleep(120.0)
     while True:
         try:
             import escale_watch  # noqa: PLC0415
-            _state["watch"] = await escale_watch.run_daily()
+            _state["watch"] = await escale_watch.run_daily(enrich=False)
         except Exception as exc:
             log.debug("boucle veille : %s", exc)
-        await asyncio.sleep(pause_s)
+        await asyncio.sleep(period)

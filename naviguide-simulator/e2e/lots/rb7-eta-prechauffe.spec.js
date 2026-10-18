@@ -2,6 +2,7 @@
 // Sans API : fumée Suivre + liste des escales (la fourchette n'est jamais inventée).
 // Avec API : première réponse members:0 puis ensemble → la phrase apparaît.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-rb7/${name}.webp`,
@@ -9,15 +10,6 @@ const shot = (page, name) => page.screenshot({
   quality: 85,
   fullPage: false,
 });
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function showLegendAndReview(page) {
   const { showRightPanel, openReviewTab } = await import("../helpers.js");

@@ -2,20 +2,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+export { dismissNotForNav } from "./helpers.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const AUDIT_DIR = join(here, "../../docs/audits");
 
 export const ATLANTIC = { lat: 20, lon: -40, zoom: 3 };
-
-export async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 export async function waitForMap(page) {
   await page.waitForFunction(() => Boolean(window.__naviguideScene?.map), { timeout: 30_000 });

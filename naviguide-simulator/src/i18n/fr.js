@@ -584,6 +584,11 @@ export default {
   routeNetworkError:  "Réseau indisponible : jambe non calculée, réessayez",
   drawPointLimit:     "{max} points maximum",
 
+  // AI transparency
+  aiActGeneratedLabel: "Contenu généré par IA (modèle : {model})",
+  aiActChatNotice: "Vous échangez avec une intelligence artificielle. Les réponses sont générées automatiquement et peuvent contenir des erreurs.",
+  aiActChatNoticeDismiss: "Compris",
+
   // Moment cards: fallback title and the stored entry alert
   momentFallbackTitle: "Position du bateau",
   momentKindGrib: "Prévision météo (GRIB)",
