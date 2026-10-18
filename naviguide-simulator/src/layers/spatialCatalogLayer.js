@@ -1,10 +1,80 @@
 import L from "leaflet";
 import { circleOpts } from "./points.js";
 import {
+  catalogPointRadiusPx,
+  ficheFromHit,
+  isClusterFeature,
+  pickCatalogHit,
+} from "./catalogHit.js";
+import { paneZIndex } from "./layerOrder.js";
+import {
   worldCopyLineCoords,
   worldCopyLngs,
   worldCopyPolygonCoords,
 } from "../utils/geo.js";
+
+const catalogLayers = new Set();
+
+function featureStamp(feature) {
+  const properties = feature?.properties || {};
+  const geometry = feature?.geometry || {};
+  if (geometry.type === "Point") {
+    const [lon, lat] = geometry.coordinates || [];
+    return `${properties.naviguideCatalogId}|${properties.clusterCount || 1}|${lon}|${lat}`;
+  }
+  return `${properties.naviguideCatalogId}|${geometry.type}|${JSON.stringify(geometry.coordinates)}`;
+}
+
+function installCatalogPick(map) {
+  if (!map || map._biCatalogPick) return;
+  const onClick = (domEvent) => {
+    if (map._biSuspendCatalogPick) return;
+    if (domEvent.button != null && domEvent.button !== 0) return;
+    const target = domEvent.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest(".leaflet-control, .leaflet-marker-icon, .leaflet-popup")) return;
+    const latlng = map.mouseEventToLatLng(domEvent);
+    if (!latlng) return;
+    const zoom = map.getZoom();
+    const project = (lon, lat) => {
+      const point = map.latLngToContainerPoint([lat, lon]);
+      return { x: point.x, y: point.y };
+    };
+    const entries = [];
+    let order = 0;
+    catalogLayers.forEach((layer) => {
+      if (layer.map !== map) return;
+      const z = paneZIndex(layer.pane);
+      (layer.features || []).forEach((feature) => {
+        const clusterCount = Number(feature?.properties?.clusterCount) || 1;
+        entries.push({
+          feature,
+          kind: layer.kind,
+          z,
+          order,
+          radiusPx: feature?.geometry?.type === "Point"
+            ? catalogPointRadiusPx(zoom, clusterCount)
+            : 8,
+          layer,
+        });
+        order += 1;
+      });
+    });
+    const hit = pickCatalogHit(entries, latlng.lat, latlng.lng, project);
+    if (!hit) return;
+    domEvent.stopPropagation();
+    if (isClusterFeature(hit.feature)) {
+      map.setView(
+        latlng,
+        Math.min(map.getMaxZoom(), zoom + 2),
+        { animate: true },
+      );
+    }
+    hit.layer.onFeature?.(ficheFromHit(hit, latlng.lat, latlng.lng));
+  };
+  map.getContainer().addEventListener("click", onClick, true);
+  map._biCatalogPick = onClick;
+}
 
 function latLngs(coords) {
   return (coords || []).map(([lon, lat]) => [lat, lon]);
@@ -33,10 +103,6 @@ function isPolygon(type) {
   return type === "Polygon" || type === "MultiPolygon";
 }
 
-function isCluster(feature) {
-  return Number(feature?.properties?.clusterCount) > 1;
-}
-
 /**
  * Groupe durable pour un catalogue : un pan ne recrée que les features
  * entrées/sorties du viewport, les objets encore visibles sont patchés.
@@ -54,7 +120,10 @@ export class SpatialCatalogLayer {
     this.group = L.layerGroup().addTo(map);
     this.renderer = L.canvas({ padding: 0.5, tolerance: 8 });
     this.records = new Map();
+    this.features = [];
     this.configure({ color, kind, pane, pointFillOpacity, styleFor, onFeature });
+    catalogLayers.add(this);
+    installCatalogPick(map);
   }
 
   configure({ color, kind, pane, pointFillOpacity, styleFor, onFeature } = {}) {
@@ -93,30 +162,6 @@ export class SpatialCatalogLayer {
     };
   }
 
-  _bindClick(layer, feature) {
-    layer.on("click", (event) => {
-      L.DomEvent.stopPropagation(event);
-      const [lon, lat] = feature?.geometry?.type === "Point"
-        ? (feature.geometry.coordinates || [])
-        : [];
-      if (isCluster(feature)) {
-        this.map.setView(
-          event.latlng || [lat, lon],
-          Math.min(this.map.getMaxZoom(), this.map.getZoom() + 2),
-          { animate: true },
-        );
-        return;
-      }
-      const location = event.latlng || { lat, lng: lon };
-      this.onFeature?.({
-        lon: location.lng,
-        lat: location.lat,
-        kind: this.kind,
-        props: feature.properties || {},
-      });
-    });
-  }
-
   _addFeatureLayers(group, feature) {
     const geometry = feature?.geometry || {};
     if (geometry.type === "Point") {
@@ -124,7 +169,6 @@ export class SpatialCatalogLayer {
       if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
       worldCopyLngs(lon).forEach((copyLon) => {
         const layer = L.circleMarker([lat, copyLon], this._pointOptions(feature));
-        this._bindClick(layer, feature);
         group.addLayer(layer);
       });
       return;
@@ -136,7 +180,6 @@ export class SpatialCatalogLayer {
       const layer = isPolygon(geometry.type)
         ? L.polygon(latlngs, this._shapeOptions(feature))
         : L.polyline(latlngs, this._shapeOptions(feature));
-      this._bindClick(layer, feature);
       group.addLayer(layer);
     });
   }
@@ -147,11 +190,16 @@ export class SpatialCatalogLayer {
     this._addFeatureLayers(layer, feature);
     if (!layer.getLayers().length) return null;
     this.group.addLayer(layer);
-    return { layer, type: geometry.type, feature };
+    return { layer, type: geometry.type, feature, stamp: featureStamp(feature) };
   }
 
   _update(record, feature) {
     const geometry = feature?.geometry || {};
+    const stamp = featureStamp(feature);
+    if (record.stamp === stamp && record.type === geometry.type) {
+      record.feature = feature;
+      return record;
+    }
     if (record.type !== geometry.type) {
       this.group.removeLayer(record.layer);
       return this._create(feature);
@@ -160,10 +208,12 @@ export class SpatialCatalogLayer {
     this._addFeatureLayers(record.layer, feature);
     if (!record.layer.getLayers().length) return null;
     record.feature = feature;
+    record.stamp = stamp;
     return record;
   }
 
   update(featureCollection) {
+    this.features = featureCollection?.features || [];
     const next = new Map();
     (featureCollection?.features || []).forEach((feature, index) => {
       const key = this._featureKey(feature, index);
@@ -178,6 +228,8 @@ export class SpatialCatalogLayer {
   }
 
   remove() {
+    catalogLayers.delete(this);
+    this.features = [];
     this.group.remove();
     this.records.clear();
   }

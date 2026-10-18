@@ -138,6 +138,7 @@ export function MapScene({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return undefined;
+    map._biSuspendCatalogPick = Boolean(scene.drawingMode);
     const onClick = (event) => {
       const { lat, lng: lon } = event.latlng;
       if (scene.drawingMode) {
