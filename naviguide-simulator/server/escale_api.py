@@ -420,6 +420,8 @@ async def build_escale(name: str, lat: float, lon: float, lang: str = "fr",
 
 _escale_limited = rate_limited("escale", 20, 60.0, global_limit=120)
 _INFLIGHT: set[str] = set()
+# Référence forte : une tâche asyncio sans référence peut être ramassée en cours de route.
+_WATCH_TASKS: set[Any] = set()
 
 
 def _schedule_escale_watch(name: str, lat: float, lon: float) -> None:
@@ -448,7 +450,9 @@ def _schedule_escale_watch(name: str, lat: float, lon: float) -> None:
         return
     _INFLIGHT.add(key)
     try:
-        asyncio.create_task(escale_watch.watch_stop(stop, datetime.now(timezone.utc)))
+        task = asyncio.create_task(escale_watch.watch_stop(stop, datetime.now(timezone.utc)))
+        _WATCH_TASKS.add(task)
+        task.add_done_callback(_WATCH_TASKS.discard)
     except RuntimeError:
         _INFLIGHT.discard(key)
         log.debug("veille non planifiée : %s", key)

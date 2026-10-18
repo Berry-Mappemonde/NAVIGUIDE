@@ -391,7 +391,7 @@ def test_get_escale_schedules_one_watch_task(monkeypatch):
         if code is not None and code.co_name == "watch_stop":
             tasks.append(code.co_name)
             coro.close()
-            return None
+            return real_create(asyncio.sleep(0))
         return real_create(coro, *args, **kwargs)
 
     monkeypatch.setattr(asyncio, "create_task", capture)
@@ -407,5 +407,54 @@ def test_get_escale_schedules_one_watch_task(monkeypatch):
         other = client.get("/escale?name=Ajaccio&lat=41.92&lon=8.74&lang=fr")
         assert other.status_code == 200
         assert tasks == ["watch_stop"]
+    finally:
+        escale_api._INFLIGHT.clear()
+
+
+def test_get_escale_no_watch_task_once_tavily_cap_reached(monkeypatch):
+    """Plafond de crédits Tavily atteint : GET /escale ne lance aucune tâche de veille."""
+    from datetime import datetime, timedelta, timezone
+
+    import llm_budget
+    import voyage_store
+    from voyage_clock import OFFICIAL_VOYAGE_ID
+
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    escale_api._INFLIGHT.clear()
+    arrival = (datetime.now(timezone.utc) + timedelta(days=3)).strftime("%Y-%m-%dT08:00:00Z")
+    voyage_store.save_voyage({
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "points": [],
+        "marks": [],
+        "t0": "2026-01-01T00:00:00Z",
+        "clock": {
+            "t0": "2026-01-01T00:00:00Z",
+            "marks": [{"name": "Nouméa", "iso": arrival, "lat": -22.27, "lon": 166.44}],
+        },
+    })
+    _seed_fiche("Nouméa", -22.27, 166.44)
+    monkeypatch.setenv("NAVIGUIDE_TAVILY_WATCH", "1")
+    monkeypatch.setenv("NAVIGUIDE_TAVILY_DAILY_CREDITS", "1")
+    llm_budget.record_tavily(1)
+    assert llm_budget.allow_tavily() is False
+    from main import app
+    client = TestClient(app)
+    tasks: list = []
+    real_create = asyncio.create_task
+
+    def capture(coro, *args, **kwargs):
+        code = getattr(coro, "cr_code", None)
+        if code is not None and code.co_name == "watch_stop":
+            tasks.append(code.co_name)
+            coro.close()
+            return real_create(asyncio.sleep(0))
+        return real_create(coro, *args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_task", capture)
+    try:
+        resp = client.get("/escale?name=Noum%C3%A9a&lat=-22.27&lon=166.44&lang=fr")
+        assert resp.status_code == 200
+        assert tasks == []
+        assert "Nouméa" not in escale_api._INFLIGHT and "noumea" not in escale_api._INFLIGHT
     finally:
         escale_api._INFLIGHT.clear()
