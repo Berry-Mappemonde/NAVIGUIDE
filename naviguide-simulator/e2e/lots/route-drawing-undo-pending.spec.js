@@ -1,23 +1,33 @@
-// ↶ pendant le calcul d'une jambe (/route lent, 1,5 s) : la page reste affichée,
+// ↶ pendant le calcul d'une jambe (réponse /route retenue jusqu'à ce que le test la libère) : la page reste affichée,
 // la console reste propre, la réponse tardive est ignorée, aucun trou de jambe.
 import { expect, test } from "@playwright/test";
 import { dismissNotForNav, enterTracer } from "../helpers.js";
 
-const ROUTE_DELAY_MS = 1500;
+// Each /route answer is held until the test releases it: the ↶ always lands
+// while the leg is being computed, however loaded the machine is.
+const SETTLE_MS = 500;
 const A = { lat: 46.0, lon: -2.5, name: "A" };
 const B = { lat: 44.5, lon: -4.0, name: "B" };
 const C = { lat: 43.8, lon: -8.5, name: "C" };
 const D = { lat: 42.0, lon: -10.0, name: "D" };
+const NAMES = [A, B, C, D];
 
-async function slowRoute(page) {
+function nameAt(lat, lon) {
+  return NAMES.find((p) => Math.abs(p.lat - lat) < 1e-6 && Math.abs(p.lon - lon) < 1e-6)?.name || "?";
+}
+
+async function heldRoute(page) {
+  const held = [];
   await page.route("**/route?*", async (route) => {
     const url = new URL(route.request().url());
     const slat = Number(url.searchParams.get("start_lat"));
     const slon = Number(url.searchParams.get("start_lon"));
     const elat = Number(url.searchParams.get("end_lat"));
     const elon = Number(url.searchParams.get("end_lon"));
-    await new Promise((resolve) => setTimeout(resolve, ROUTE_DELAY_MS));
-    await route.fulfill({
+    let open;
+    const gate = new Promise((resolve) => { open = resolve; });
+    const entry = { leg: `${nameAt(slat, slon)}-${nameAt(elat, elon)}`, released: false, open };
+    entry.done = gate.then(() => route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
@@ -25,8 +35,24 @@ async function slowRoute(page) {
         geometry: { type: "LineString", coordinates: [[slon, slat], [(slon + elon) / 2, (slat + elat) / 2], [elon, elat]] },
         properties: { length: 185.2, units: "km" },
       }),
-    }).catch(() => {});
+    }).catch(() => {}));
+    held.push(entry);
   });
+  const find = (leg) => held.find((e) => e.leg === leg && !e.released);
+  return {
+    // The request for this leg has reached the server (it is pending).
+    async arrived(leg) {
+      await expect.poll(() => Boolean(find(leg)), { timeout: 30_000, message: `request ${leg}` }).toBe(true);
+    },
+    // Let its answer go and wait until it has been delivered.
+    async release(leg) {
+      await this.arrived(leg);
+      const entry = find(leg);
+      entry.released = true;
+      entry.open();
+      await entry.done;
+    },
+  };
 }
 
 function drawn(page) {
@@ -55,7 +81,7 @@ test("↶ pendant le calcul d'une jambe ne vide pas la page", async ({ page }) =
     if (/Failed to load resource/i.test(text)) return;
     consoleErrors.push(text);
   });
-  await slowRoute(page);
+  const server = await heldRoute(page);
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
@@ -67,30 +93,39 @@ test("↶ pendant le calcul d'une jambe ne vide pas la page", async ({ page }) =
   // 1) ↶ pendant la toute première jambe.
   await add(page, A);
   await add(page, B);
-  await page.waitForTimeout(300);
+  await server.arrived("A-B");
   await undo.click();
+  await expect.poll(() => drawn(page), { timeout: 15_000 }).toEqual({ names: ["A"], legs: [] });
+  await server.release("A-B");
+  await page.waitForTimeout(SETTLE_MS);
   expect(await drawn(page)).toEqual({ names: ["A"], legs: [] });
 
   // 2) Deux jambes posées, ↶ pendant la deuxième, puis un nouveau point.
   await add(page, B);
+  await server.release("A-B");
   await page.waitForFunction(() => window.__naviguideDrawn?.segments?.length === 1, null, { timeout: 15_000 });
   await add(page, C);
-  await page.waitForTimeout(300);
+  await server.arrived("B-C");
   await undo.click();
-  expect(await drawn(page)).toEqual({ names: ["A", "B"], legs: ["A-B"] });
+  await expect.poll(() => drawn(page), { timeout: 15_000 }).toEqual({ names: ["A", "B"], legs: ["A-B"] });
   // La réponse tardive B→C arrive : elle est ignorée.
-  await page.waitForTimeout(ROUTE_DELAY_MS + 500);
+  await server.release("B-C");
+  await page.waitForTimeout(SETTLE_MS);
   expect(await drawn(page)).toEqual({ names: ["A", "B"], legs: ["A-B"] });
 
   await add(page, D);
+  await server.release("B-D");
   await page.waitForFunction(() => window.__naviguideDrawn?.segments?.length === 2, null, { timeout: 15_000 });
   expect(await drawn(page)).toEqual({ names: ["A", "B", "D"], legs: ["A-B", "B-D"] });
 
   // 3) Rétablir après un ↶ pendant le calcul recalcule la jambe.
   await add(page, C);
-  await page.waitForTimeout(300);
+  await server.arrived("D-C");
   await undo.click();
+  await expect.poll(() => drawn(page), { timeout: 15_000 }).toEqual({ names: ["A", "B", "D"], legs: ["A-B", "B-D"] });
   await page.getByTitle(/^(Rétablir|Redo)$/).click();
+  await server.release("D-C");
+  await server.release("D-C");
   await page.waitForFunction(() => window.__naviguideDrawn?.segments?.length === 3, null, { timeout: 15_000 });
   expect(await drawn(page)).toEqual({ names: ["A", "B", "D", "C"], legs: ["A-B", "B-D", "D-C"] });
 
@@ -102,7 +137,7 @@ test("↶ pendant le calcul d'une jambe ne vide pas la page", async ({ page }) =
 
 test("↶ puis D aussitôt : la jambe B-C n'apparaît jamais", async ({ page }) => {
   test.setTimeout(90_000);
-  await slowRoute(page);
+  const server = await heldRoute(page);
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
@@ -122,14 +157,17 @@ test("↶ puis D aussitôt : la jambe B-C n'apparaît jamais", async ({ page }) 
   });
   await add(page, A);
   await add(page, B);
+  await server.release("A-B");
   await page.waitForFunction(() => window.__naviguideDrawn?.segments?.length === 1, null, { timeout: 15_000 });
   await add(page, C);
-  await page.waitForTimeout(300);
+  await server.arrived("B-C");
   await undo.click();
   await add(page, D);
+  // The late B→C answer comes back after the ↶ and after D: it is never shown.
+  await server.release("B-C");
+  await server.release("B-D");
   await page.waitForFunction(() => window.__naviguideDrawn?.segments?.length === 2, null, { timeout: 15_000 });
-  // La réponse tardive B→C est passée : toujours pas de B-C.
-  await page.waitForTimeout(ROUTE_DELAY_MS + 500);
+  await page.waitForTimeout(SETTLE_MS);
   expect(await drawn(page)).toEqual({ names: ["A", "B", "D"], legs: ["A-B", "B-D"] });
   const seen = await page.evaluate(() => [...window.__seenLegs]);
   expect(seen).not.toContain("B-C");

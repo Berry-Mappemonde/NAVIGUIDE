@@ -42,7 +42,7 @@ function parseNm(text) {
 }
 
 test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page }) => {
-  test.setTimeout(45_000);
+  test.setTimeout(90_000);
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
@@ -60,10 +60,23 @@ test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page })
   await clickLatLng(page, BRISBANE.lat, BRISBANE.lon);
   await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) >= 1, { timeout: 10_000 });
   await clickLatLng(page, SAN_FRANCISCO_UNFOLDED.lat, SAN_FRANCISCO_UNFOLDED.lon);
-  const gotSeg = await page.waitForFunction(
+  const legShown = () => page.waitForFunction(
     () => (window.__naviguideDrawn?.segments?.length || 0) >= 1,
+    null,
     { timeout: 8_000 },
   ).then(() => true).catch(() => false);
+  let gotSeg = await legShown();
+  // A busy server (other routes computed in parallel) says « try again » and
+  // keeps the point: do what the reader would, undo it and click again.
+  const undo = page.getByTitle(/Annuler le dernier point|Undo last point/).filter({ hasText: "↶" });
+  for (let attempt = 0; !gotSeg && attempt < 3; attempt += 1) {
+    const busy = await page.getByText(/Serveur occupé|Server busy/).first().isVisible().catch(() => false);
+    if (!busy) break;
+    await undo.click();
+    await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) === 1, null, { timeout: 5_000 });
+    await clickLatLng(page, SAN_FRANCISCO_UNFOLDED.lat, SAN_FRANCISCO_UNFOLDED.lon);
+    gotSeg = await legShown();
+  }
   if (!gotSeg) {
     test.info().annotations.push({
       type: "poste",
