@@ -1,6 +1,6 @@
 # Répétition générale de la séparation des dépôts
 
-## Verdict (plan `bd696abb`, `main` `e1e26e02`)
+## Verdict (plan `bd696abb` / branche répétition `b93c083d`, `main` `e1e26e02`)
 
 Date : 18 octobre 2026. Source filtrée : `main` `e1e26e02fb2e23e4620bf19133056e9945810e14` (merge #572 CI shardée, #574 film-front, #573 LT1, #567 Overpass). Plan exécuté : `cursor/plan-separation-depots-c3c8` à `bd696abb`. Aucun dépôt GitHub créé ou renommé. Aucun push hors des branches #554 et #555. Aucune action sur un serveur. Aucune fusion. Aucun test supprimé, ignoré par un marqueur nouveau, ni affaibli.
 
@@ -20,7 +20,7 @@ Date : 18 octobre 2026. Source filtrée : `main` `e1e26e02fb2e23e4620bf19133056e
 | Contrôles statiques (`check_split_coverage`, `generate_split_ci_diffs --check`, diffs plan = générateur, MR1 dans le plan) | les deux | **OK** |
 | `bash -n` des scripts nommés par chaque `deploy-gate` (copies bi-work / ng-work) | les deux | OK |
 
-Résumé script : **PASS 25, FAIL 0, AVERT 1** (rappel manuel Devpost Q13, pas un échec).
+Résumé script : **PASS 26, FAIL 0, AVERT 1** (rappel manuel Devpost Q13, pas un échec).
 
 ### CI shardée (#572)
 
@@ -29,14 +29,14 @@ Blue Intelligence après diff 6.6 : jobs `frontend`, `audit-tags`, `backend-pyte
 ### Classeur (`main` `e1e26e02`)
 
 ```text
-fichiers suivis : 1873
-Blue Intelligence seul : 590
-NAVIGUIDE seul : 1244
+fichiers suivis : 1876
+Blue Intelligence seul : 592
+NAVIGUIDE seul : 1245
 les deux : 36
 exclus : 3
 non classés : 0
 lignes --emit bi : 98
-lignes --emit ng : 117
+lignes --emit ng : 118
 ```
 
 ### Migration données (MR1)
