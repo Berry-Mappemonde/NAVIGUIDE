@@ -1,8 +1,10 @@
 // Route dessinée Brisbane → San Francisco dans le Pacifique.
-// Sans API : le spec vérifie le mode Tracer + l'absence de sommet > 50° N
-// (repli/dépli client, corde de repli). Avec API (proxy /route → :8010) :
-// distance du résumé entre 6 000 et 7 500 nm.
+// La jambe vient toujours de /route (aucune corde de repli) : sommet ≤ 50° N,
+// pas de saut de 360°, distance du résumé entre 6 000 et 7 500 nm. Sans jambe
+// (serveur occupé, erreur, searoute absent) : échec avec PW_WITH_API=1, sinon
+// test.skip avec la raison — jamais réussi sans avoir vérifié la distance.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-s/${name}.webp`,
@@ -14,15 +16,6 @@ const shot = (page, name) => page.screenshot({
 const BRISBANE = { lat: -27.0, lon: 153.4 };
 // SF (−122,4) sur la copie-monde +360 : c'est la lon dépliée envoyée avant le lot S.
 const SAN_FRANCISCO_UNFOLDED = { lat: 37.7, lon: 237.6 };
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function clickLatLng(page, lat, lon) {
   // Même chemin que le clic carte (handleDrawingClick → addPoint).
@@ -42,7 +35,7 @@ function parseNm(text) {
 }
 
 test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page }) => {
-  test.setTimeout(45_000);
+  test.setTimeout(240_000);
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
@@ -57,20 +50,71 @@ test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page })
   }
   await expect(page.getByTestId("drawing-summary")).toBeVisible({ timeout: 10_000 });
 
+  // « Server busy » is told apart from « no searoute » by the answer itself.
+  let busyAnswers = 0;
+  // A server error (500, 502) is an answer too: the leg will not come.
+  let errorAnswers = 0;
+  let lastError = 0;
+  page.on("response", (res) => {
+    if (!res.url().includes("/route?")) return;
+    if (res.status() === 503) busyAnswers += 1;
+    else if (res.status() === 500 || res.status() === 502) {
+      errorAnswers += 1;
+      lastError = res.status();
+    }
+  });
   await clickLatLng(page, BRISBANE.lat, BRISBANE.lon);
-  await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) >= 1, { timeout: 10_000 });
+  await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) >= 1, null, { timeout: 10_000 });
   await clickLatLng(page, SAN_FRANCISCO_UNFOLDED.lat, SAN_FRANCISCO_UNFOLDED.lon);
-  const gotSeg = await page.waitForFunction(
-    () => (window.__naviguideDrawn?.segments?.length || 0) >= 1,
-    { timeout: 8_000 },
-  ).then(() => true).catch(() => false);
+  // Wait for the server's answer itself: a leg, or a 503. Under load the 503
+  // can land after the 12 s deadline (ROUTE_DEADLINE_S) plus the queue in
+  // front of it — a fixed wait could give up before it and skip the retry.
+  const legShown = async () => {
+    const busyBefore = busyAnswers;
+    const errorsBefore = errorAnswers;
+    const deadline = Date.now() + 45_000;
+    while (Date.now() < deadline) {
+      const legs = await page.evaluate(() => window.__naviguideDrawn?.segments?.length || 0);
+      if (legs >= 1) return true;
+      if (busyAnswers > busyBefore || errorAnswers > errorsBefore) return false;
+      await page.waitForTimeout(250);
+    }
+    return false;
+  };
+  const busyShown = () => page.getByText(/Serveur occupé|Server busy/).first().isVisible().catch(() => false);
+  let gotSeg = await legShown();
+
+  // A busy server (other routes computed in parallel) says « try again » and
+  // keeps the point: do what the reader would, undo it and click again.
+  const undo = page.getByTitle(/Annuler le dernier point|Undo last point/).filter({ hasText: "↶" });
+  for (let attempt = 0; !gotSeg && attempt < 3; attempt += 1) {
+    if (!busyAnswers && !(await busyShown())) break;
+    await undo.click();
+    await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) === 1, null, { timeout: 5_000 });
+    await clickLatLng(page, SAN_FRANCISCO_UNFOLDED.lat, SAN_FRANCISCO_UNFOLDED.lon);
+    gotSeg = await legShown();
+  }
   if (!gotSeg) {
-    test.info().annotations.push({
-      type: "poste",
-      description: "searoute / Overpass interdits en CI — segments Brisbane→SF non calculés",
-    });
-    await shot(page, "01-corde").catch(() => {});
-    return;
+    // No leg was routed: the point stays, and nothing is drawn in its place.
+    const state = await page.evaluate(() => ({
+      points: window.__naviguideDrawn?.points?.length || 0,
+      legs: window.__naviguideDrawn?.segments?.length || 0,
+    }));
+    expect(state).toEqual({ points: 2, legs: 0 });
+    // The message is cleared after 4 s (App.jsx): read it if it is there, never wait for it.
+    const errorText = (await page.getByTestId("route-import-error").textContent({ timeout: 1000 }).catch(() => "")) || "";
+    const reason = busyAnswers > 0
+      ? `serveur occupé : /route a répondu 503 busy ${busyAnswers} fois (échéance atteinte)`
+      : errorAnswers > 0
+        ? `jambe en échec : /route a répondu ${lastError}${errorText ? ` — ${errorText}` : ""}`
+        : errorText
+          ? `jambe en échec : ${errorText}`
+          : "searoute absent (ou interdit sur ce poste) : aucune jambe Brisbane→SF";
+    await shot(page, "01-sans-jambe").catch(() => {});
+    // With the API the distance must be checked: no leg is a failure. Without
+    // it, the test is skipped — never passed without checking the distance.
+    expect(process.env.PW_WITH_API !== "1", `distance non vérifiée avec l'API — ${reason}`).toBe(true);
+    test.skip(true, reason);
   }
 
   const info = await page.evaluate(() => {
@@ -87,7 +131,6 @@ test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page })
     return {
       n: coords.length,
       maxLat: lats.length ? Math.max(...lats) : null,
-      failed: segs.some((s) => s.failed),
       jump,
       points: drawn.points || [],
     };
@@ -103,13 +146,11 @@ test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page })
   expect(info.maxLat).toBeLessThanOrEqual(50);
   expect(info.jump).toBeLessThanOrEqual(180);
 
-  if (!info.failed) {
-    const summary = await page.getByTestId("drawing-summary").innerText();
-    const nm = parseNm(summary);
-    expect(nm, `résumé: ${summary}`).not.toBeNull();
-    expect(nm).toBeGreaterThanOrEqual(6000);
-    expect(nm).toBeLessThanOrEqual(7500);
-  }
+  const summary = await page.getByTestId("drawing-summary").innerText();
+  const nm = parseNm(summary);
+  expect(nm, `résumé: ${summary}`).not.toBeNull();
+  expect(nm).toBeGreaterThanOrEqual(6000);
+  expect(nm).toBeLessThanOrEqual(7500);
 
   await page.evaluate(({ a, b }) => {
     const map = window.__naviguideScene?.map;

@@ -20,6 +20,7 @@ import httpx
 from dotenv import load_dotenv
 
 import llm_budget
+from ai_transparency import with_ai_transparency
 
 log = logging.getLogger("naviguide-simulator.story-cascade")
 
@@ -429,6 +430,7 @@ _META_RE = re.compile(
 )
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
 _MD_RE = re.compile(r"[*_#>`]+")
+_EN_EMPHASIS_RE = re.compile(r"\*{2,}|_{2,}")
 MAX_SENTENCES = 2
 MAX_CHARS = 320
 
@@ -470,7 +472,7 @@ async def translate(
     if not _is_en(lang):
         return src, "rules"
     user = f"French text:\n{src}"
-    out, source = await cascade_text(
+    result = await cascade_text(
         TRANSLATE_SYSTEM,
         user,
         client,
@@ -478,11 +480,18 @@ async def translate(
         fallback=src,
         facts=facts if facts is not None else src,
         max_tokens=_translate_max_tokens(src, max_tokens),
+        lang="en",
     )
-    cleaned = _clean_text(out)
+    out, source = result
+    cleaned = _EN_EMPHASIS_RE.sub("", _clean_text(out))
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
     if not cleaned:
-        return (_clean_text(src) or ""), "rules"
-    return cleaned, source
+        return _as_result(_clean_text(src) or "", "rules", tier="fast")
+    return _as_result(
+        cleaned, source,
+        model=str(getattr(result, "model", "") or ""),
+        tier=str(getattr(result, "tier", "") or "fast"),
+    )
 
 
 def _is_title(line: str) -> bool:
@@ -528,23 +537,88 @@ def _tf_url(tier: str) -> str:
     return TOKENFACTORY_URL
 
 
-def _openai_text(data: dict[str, Any] | None) -> str:
-    """Read message.content only — never reasoning / reasoning_content
-    (NVIDIA Nemotron 3 Ultra Day-0: message.reasoning)."""
-    msg = ((data or {}).get("choices") or [{}])[0].get("message") or {}
-    content = msg.get("content")
-    if isinstance(content, str):
-        return _clean_text(content)
-    if isinstance(content, list):
-        parts = []
-        for p in content:
-            if isinstance(p, dict):
-                if p.get("type") in {"reasoning", "thinking"}:
-                    continue
-                parts.append(p.get("text") or "")
-            elif isinstance(p, str):
-                parts.append(p)
-        return _clean_text("".join(parts))
+class CascadeResult(tuple):
+    """`(text, source)` plus the model id and tier that actually answered.
+
+    Unpacking stays `text, source = result`. `model` is the id the server
+    ran (or the one we sent). `tier` is fast / write / deep / judge.
+    """
+
+    model: str
+    tier: str
+
+    def __new__(cls, text: str, source: str, model: str = "", tier: str = ""):
+        self = super().__new__(cls, (text, source))
+        self.model = str(model or "")
+        self.tier = str(tier or "")
+        return self
+
+
+def _as_result(text: str, source: str, model: str = "", tier: str = "") -> CascadeResult:
+    return CascadeResult(text, source, model=model, tier=tier)
+
+
+def _exact_model(source: str, reported: str, requested: str) -> str:
+    """Model id that matches the source.
+
+    A fallback (NIM, OpenRouter, Claude) must not keep a Nemotron id: the
+    badge would otherwise say Token Factory. Token Factory keeps the id the
+    server echoed, or the id we sent.
+    """
+    got = (reported or "").strip()
+    asked = (requested or "").strip()
+    nemotron = "nemotron" in got.lower() or "lightning" in got.lower()
+    if (source or "").strip().lower().startswith("nemotron"):
+        return got if nemotron else (asked or got)
+    if got and not nemotron:
+        return got
+    return asked or got
+
+
+def _message_parts(raw: Any) -> list[tuple[str, str]]:
+    """`(kind, text)` pairs. A bare string is kind `text`."""
+    if isinstance(raw, str):
+        return [("text", raw)]
+    if isinstance(raw, dict):
+        kind = str(raw.get("type") or "text")
+        text = raw.get("text") if raw.get("text") is not None else raw.get("content")
+        if not isinstance(text, str):
+            text = "" if text is None else str(text)
+        return [(kind, text)]
+    if isinstance(raw, list):
+        out: list[tuple[str, str]] = []
+        for part in raw:
+            out.extend(_message_parts(part))
+        return out
+    return []
+
+
+def _parts_text(parts: list[tuple[str, str]]) -> str:
+    """Visitor text. Reasoning and thinking parts stay out."""
+    return "".join(
+        text for kind, text in parts if kind.lower() not in {"reasoning", "thinking"}
+    )
+
+
+def _openai_text(data: dict[str, Any] | None, *, prompt: str = "", lang: str = "fr") -> str:
+    """Visitor text from a chat completion: `content` only.
+
+    Empty content stays empty. A reasoning trace (`message.reasoning`,
+    `reasoning_content`, a reasoning part) is never the visitor text, so the
+    cascade can fall back with an honest label. `prompt` and `lang` are
+    accepted and ignored: they used to filter a recovered sentence.
+    """
+    del prompt, lang
+    choice = ((data or {}).get("choices") or [{}])[0] or {}
+    if not isinstance(choice, dict):
+        choice = {}
+    msg = choice.get("message") or {}
+    if not isinstance(msg, dict):
+        msg = {}
+    content_parts = _message_parts(msg.get("content"))
+    content = _clean_text(_parts_text(content_parts))
+    if content:
+        return content
     return ""
 
 
@@ -608,6 +682,7 @@ async def _call_tokenfactory(
     *,
     max_tokens: int | None = None,
     cascade_tier: str | None = None,
+    lang: str = "fr",
 ) -> tuple[str, str]:
     key = nebius_key()
     if not key:
@@ -625,24 +700,29 @@ async def _call_tokenfactory(
     if r.status_code >= 400:
         raise _http_error("tokenfactory", r)
     data = r.json()
-    text = _openai_text(data)
-    if not text:
-        choice = ((data or {}).get("choices") or [{}])[0]
-        fr = choice.get("finish_reason") or "?"
-        usage = (data or {}).get("usage") or {}
-        ct = usage.get("completion_tokens")
-        model = payload.get("model") or "?"
-        raise RuntimeError(f"tokenfactory empty finish={fr} ct={ct} model={model}")
-    pt, ct = _usage_tokens(data, system, user, text)
-    llm_budget.record(t, pt, ct)
+    text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
+    reported = str((data or {}).get("model") or "")
     source = llm_budget.source_for(t)
+    model = _exact_model(source, reported, str(payload.get("model") or ""))
+    pt, ct = _usage_tokens(data, system, user, text)
+    if not text:
+        # The trace was billed even though content is empty.
+        llm_budget.record(t, pt, ct)
+        choice = ((data or {}).get("choices") or [{}])[0]
+        if not isinstance(choice, dict):
+            choice = {}
+        fr = choice.get("finish_reason") or "?"
+        raise RuntimeError(f"tokenfactory empty finish={fr} ct={ct} model={model or '?'}")
+    llm_budget.record(t, pt, ct)
     report_tier = cascade_tier if cascade_tier is not None else t
     llm_budget.remember_source(source, report_tier)
     llm_budget.clear_tier_errors(report_tier)
-    return text, source
+    return _as_result(text, source, model=model, tier=t)
 
 
-async def _call_nim(system: str, user: str, client: httpx.AsyncClient) -> tuple[str, str]:
+async def _call_nim(
+    system: str, user: str, client: httpx.AsyncClient, *, tier: str = "", lang: str = "fr",
+) -> CascadeResult:
     key = nvidia_key()
     if not key:
         raise RuntimeError("NVIDIA_API_KEY missing")
@@ -666,16 +746,21 @@ async def _call_nim(system: str, user: str, client: httpx.AsyncClient) -> tuple[
     )
     if r.status_code >= 400:
         raise _http_error("nvidia", r)
-    text = _openai_text(r.json())
+    data = r.json()
+    text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
     if not text:
         raise RuntimeError("nvidia empty")
-    return text, f"nvidia-{NIM_MODEL.split('/')[-1]}"
+    source = f"nvidia-{NIM_MODEL.split('/')[-1]}"
+    model = _exact_model(source, str((data or {}).get("model") or ""), NIM_MODEL)
+    return _as_result(text, source, model=model, tier=tier)
 
 
 async def _call_openrouter(
     system: str, user: str, client: httpx.AsyncClient, *, online: bool,
     max_tokens: int | None = None,
-) -> tuple[str, str]:
+    tier: str = "",
+    lang: str = "fr",
+) -> CascadeResult:
     key = openrouter_key()
     if not key:
         raise RuntimeError("OPENROUTER_API_KEY missing")
@@ -699,15 +784,18 @@ async def _call_openrouter(
     )
     if r.status_code >= 400:
         raise _http_error("openrouter", r)
-    text = _openai_text(r.json())
+    data = r.json()
+    text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
     if not text:
         raise RuntimeError("openrouter empty")
-    return text, "openrouter"
+    answered = _exact_model("openrouter", str((data or {}).get("model") or ""), model)
+    return _as_result(text, "openrouter", model=answered, tier=tier)
 
 
 async def _call_claude(
     system: str, user: str, client: httpx.AsyncClient, *, max_tokens: int | None = None,
-) -> tuple[str, str]:
+    tier: str = "",
+) -> CascadeResult:
     key = anthropic_key()
     if not key:
         raise RuntimeError("ANTHROPIC_API_KEY missing")
@@ -729,10 +817,12 @@ async def _call_claude(
     )
     if r.status_code >= 400:
         raise _http_error("claude", r)
-    text = _claude_text(r.json())
+    data = r.json()
+    text = _claude_text(data)
     if not text:
         raise RuntimeError("claude empty")
-    return text, "claude"
+    answered = _exact_model("claude", str((data or {}).get("model") or ""), CLAUDE_MODEL)
+    return _as_result(text, "claude", model=answered, tier=tier)
 
 
 def _cache_get(key: str) -> tuple[str, str] | None:
@@ -752,17 +842,21 @@ def _cache_get(key: str) -> tuple[str, str] | None:
     if not cleaned:
         pearl_store.kv_delete(CACHE_NS, key)
         return None
+    stored_model = str(val.get("model") or "")
     if cleaned != text:
-        pearl_store.kv_put(CACHE_NS, key, {"text": cleaned, "source": val.get("source") or "cache"})
-    return cleaned, "cache"
+        pearl_store.kv_put(
+            CACHE_NS, key,
+            {"text": cleaned, "source": val.get("source") or "cache", "model": stored_model},
+        )
+    return _as_result(cleaned, "cache", model=stored_model)
 
 
-def _cache_put(key: str, text: str, source: str) -> None:
+def _cache_put(key: str, text: str, source: str, model: str = "") -> None:
     import pearl_store  # noqa: PLC0415
 
     if not text or source in {"budget", "rules"}:
         return
-    pearl_store.kv_put(CACHE_NS, key, {"text": text, "source": source})
+    pearl_store.kv_put(CACHE_NS, key, {"text": text, "source": source, "model": model or ""})
 
 
 async def _cascade_once(
@@ -775,23 +869,26 @@ async def _cascade_once(
     facts: Any,
     fallback: str | None,
     max_tokens: int | None = None,
+    lang: str = "fr",
 ) -> tuple[str, str]:
     cache_key = prompt_cache_key(system, user, tier, online=online, max_tokens=max_tokens)
     hit = _cache_get(cache_key)
     if hit:
-        return hit[0], "cache"
+        return hit
     if not llm_budget.allow(tier):
         text = _apply_filter(fallback or "", facts if facts is not None else user, keep_if_empty=True)
-        return text, "budget"
+        return _as_result(text, "budget", tier=llm_budget.normalize_tier(tier))
 
     last = "no_llm_backend"
     hops: list[tuple[str, Any]] = []
     norm_tier = llm_budget.normalize_tier(tier)
+    asked_lang = "en" if _is_en(lang) else "fr"
 
     async def _tokenfactory_hop() -> tuple[str, str]:
         try:
             return await _call_tokenfactory(
                 system, user, tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
+                lang=asked_lang,
             )
         except Exception as exc:
             if norm_tier != "fast" or not _tf_fast_super_retry(exc):
@@ -801,22 +898,31 @@ async def _cascade_once(
             super_mt = max(int(budget), 400)
             return await _call_tokenfactory(
                 system, user, "write", http, max_tokens=super_mt, cascade_tier=norm_tier,
+                lang=asked_lang,
             )
 
     for name in providers():
         if name == "tokenfactory":
             hops.append((name, _tokenfactory_hop))
         elif name == "openrouter":
-            hops.append((name, lambda: _call_openrouter(system, user, http, online=online, max_tokens=max_tokens)))
+            hops.append((name, lambda: _call_openrouter(
+                system, user, http, online=online, max_tokens=max_tokens, tier=norm_tier,
+                lang=asked_lang,
+            )))
         elif name == "claude":
-            hops.append((name, lambda: _call_claude(system, user, http, max_tokens=max_tokens)))
+            hops.append((name, lambda: _call_claude(
+                system, user, http, max_tokens=max_tokens, tier=norm_tier,
+            )))
         elif name == "nim":
-            hops.append((name, lambda: _call_nim(system, user, http)))
+            hops.append((name, lambda: _call_nim(
+                system, user, http, tier=norm_tier, lang=asked_lang,
+            )))
 
     failures: list[dict[str, str]] = []
     for name, step in hops:
         try:
-            text, source = await step()
+            result = await step()
+            text, source = result
             text = _apply_filter(text, facts if facts is not None else user)
             if _clean_text(text):
                 if failures:
@@ -824,14 +930,17 @@ async def _cascade_once(
                 if name in llm_budget.FALLBACK_PROVIDERS:
                     llm_budget.record_fallback(name, norm_tier)
                     llm_budget.remember_source(name, norm_tier)
+                public = source if source in KNOWN_SOURCES else (
+                    "openrouter" if source.startswith("openrouter") else source
+                )
+                model = str(getattr(result, "model", "") or "")
+                answered_tier = str(getattr(result, "tier", "") or norm_tier)
                 # NIM returns `nvidia-<model>` (not in KNOWN_SOURCES). Cache it
                 # anyway: a gale is written live to the story store, but the
                 # same prompt must not re-hit the GPU (RG18 + RG19 deep tier).
-                if source in KNOWN_SOURCES or source.startswith("nvidia-"):
-                    _cache_put(cache_key, text, source)
-                return text, source if source in KNOWN_SOURCES else (
-                    "openrouter" if source.startswith("openrouter") else source
-                )
+                if public in KNOWN_SOURCES or str(public).startswith("nvidia-"):
+                    _cache_put(cache_key, text, public, model=model)
+                return _as_result(text, public, model=model, tier=answered_tier)
             last = f"{name} empty"
             log.warning("cascade %s: empty after filter", name)
             failures.append({"provider": name, "reason": last})
@@ -845,7 +954,7 @@ async def _cascade_once(
 
     if fallback is not None:
         text = _apply_filter(fallback, facts if facts is not None else user, keep_if_empty=True)
-        return text, "rules"
+        return _as_result(text, "rules", tier=norm_tier)
     raise RuntimeError(last)
 
 
@@ -859,6 +968,7 @@ async def cascade_text(
     fallback: str | None = None,
     facts: Any = None,
     max_tokens: int | None = None,
+    lang: str = "fr",
 ) -> tuple[str, str]:
     """Cache SQLite → Token Factory → OpenRouter → Claude → rules.
 
@@ -891,7 +1001,7 @@ async def cascade_text(
             try:
                 result = await _cascade_once(
                     system, user, http, online=online, tier=t, facts=facts, fallback=fallback,
-                    max_tokens=max_tokens,
+                    max_tokens=max_tokens, lang=lang,
                 )
                 if not fut.done():
                     fut.set_result(result)
@@ -926,6 +1036,7 @@ def story_tier(body: dict[str, Any] | None) -> str:
     return "write"
 
 
+@with_ai_transparency
 async def write_story(
     body: dict[str, Any] | None,
     client: httpx.AsyncClient | None = None,
@@ -943,11 +1054,15 @@ async def write_story(
     system, user = build_prompt(event if not page else {**event, "pageUrl": page_url}, page_url)
     fallback = (body or {}).get("phrase") if isinstance((body or {}).get("phrase"), str) else None
     try:
-        text, source = await cascade_text(
+        drafted = await cascade_text(
             system, user, client, online=page, tier=story_tier(body),
             fallback=fallback if fallback is not None else "",
             facts=event,
+            lang="fr",
         )
+        text, source = drafted
+        model = str(getattr(drafted, "model", "") or "")
+        tier_name = str(getattr(drafted, "tier", "") or story_tier(body))
     except Exception as exc:
         return {
             "status": "failed",
@@ -973,7 +1088,12 @@ async def write_story(
         }
     used_local = tidy == (fallback or "").strip() and tidy != _clean_text(text).strip()
     if want_en and tidy and not used_local:
-        tidy, source = await translate(tidy, "en", client, facts=tidy)
+        translated = await translate(tidy, "en", client, facts=tidy)
+        tidy, source = translated
+        if getattr(translated, "model", ""):
+            model = str(translated.model)
+        if getattr(translated, "tier", ""):
+            tier_name = str(translated.tier)
         if not tidy:
             return {
                 "status": "failed",
@@ -988,12 +1108,18 @@ async def write_story(
     engine = source
     if used_local:
         engine = f"{source}+local"
-    return {
+    out: dict[str, Any] = {
         "status": "ready",
         "text": tidy,
         "engine": engine,
         "source": source,
+        "tier": tier_name,
         "cascade": "tokenfactory-openrouter-claude",
         "tavily": None,
         "nvidia": source if source.startswith("nemotron-") else engine,
     }
+    # Exact model id of the call that produced the text. A local phrase and
+    # rules/budget/cache do not borrow a Nemotron id.
+    if model and not used_local and source not in {"rules", "budget", "cache"}:
+        out["model"] = model
+    return out

@@ -3,6 +3,7 @@
 // Jambe Saint-Maur « km par la route » : seulement si GET /voyage/official répond
 // (ou si le repli interne affiche déjà le libellé).
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-ra6/${name}.webp`,
@@ -10,15 +11,6 @@ const shot = (page, name) => page.screenshot({
   quality: 85,
   fullPage: false,
 });
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function showLeftPanel(page) {
   const chat = page.getByTestId("logbook-chat");
@@ -95,8 +87,7 @@ test("Skipper, crédits, info-bulle, km terre, cadre chat", async ({ page }) => 
   const land = page.getByTestId("film-land-leg");
   const landVisible = await land.isVisible({ timeout: 8000 }).catch(() => false);
   if (landVisible) {
-    await expect(land).toContainText(/km par la route|km by road/);
-    await expect(land).toContainText(/h de route|h on the road/);
+    await expect(land).toContainText(/Transfert routier Saint-Maur \(Indre\) → La Rochelle : \d[\d\s\u202f]* km, ≈ \d+ h|Road transfer Saint-Maur \(Indre\) → La Rochelle: \d[\d,\s]* km, ≈ \d+ h/);
   } else if (apiUp) {
     test.info().annotations.push({
       type: "sans jambe terre",

@@ -1,14 +1,13 @@
 // Fumée : ce que `main` garantit à l'ouverture, sans serveur API.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "./helpers.js";
 
 test.describe("simulateur — fumée", () => {
   test("ouvre en Suivre cinéma, barre film, sans erreur de page", async ({ page }) => {
     const errors = [];
     page.on("pageerror", (err) => errors.push(String(err)));
     await page.goto("/");
-    // Modal « ne convient pas à la navigation » (si présente) : on la ferme.
-    const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer/i }).first();
-    if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) await ok.click();
+    await dismissNotForNav(page);
     await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
     const cinema = page.getByRole("button", { name: /^(cinéma|cinema)$/i });

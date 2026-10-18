@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { MessageSquare, Send } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { hasAdminSecret } from "../utils/adminSecret.js";
@@ -10,11 +10,37 @@ import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
  * question sur toutes les données de l'application, une réponse citant les
  * faits du serveur, l'échange consigné au journal quand la clé admin est là.
  */
+const AI_CHAT_NOTICE_KEY = "naviguide-ai-act-chat-notice-v1";
+
+function aiNoticeDismissed() {
+  try {
+    return localStorage.getItem(AI_CHAT_NOTICE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export const LogbookChat = memo(function LogbookChat({ messages = [], pending = false, error = null, onAsk }) {
   const { t } = useLang();
   const [draft, setDraft] = useState("");
+  const [aiNoticeOff, setAiNoticeOff] = useState(aiNoticeDismissed);
+  const [aiNoticeArmed, setAiNoticeArmed] = useState(false);
+  const showAiNotice = !aiNoticeOff && (aiNoticeArmed || messages.length > 0);
   const listRef = useRef(null);
   const admin = hasAdminSecret();
+
+  const dismissAiNotice = useCallback(() => {
+    setAiNoticeOff(true);
+    try {
+      localStorage.setItem(AI_CHAT_NOTICE_KEY, "1");
+    } catch {
+      /* private mode: the notice stays closed for this view */
+    }
+  }, []);
+
+  const onChatFocus = useCallback(() => {
+    if (!aiNoticeDismissed()) setAiNoticeArmed(true);
+  }, []);
 
   useEffect(() => {
     const el = listRef.current;
@@ -60,11 +86,29 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
           {error ? <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p> : null}
         </div>
       </div>
+      {showAiNotice ? (
+        <div
+          data-testid="logbook-chat-ai-notice"
+          className="mt-1.5 rounded-md border border-violet-300/45 bg-violet-950 px-2 py-1.5 text-xs leading-snug text-violet-50"
+          role="note"
+        >
+          <p>{t("aiActChatNotice")}</p>
+          <button
+            type="button"
+            data-testid="logbook-chat-ai-notice-dismiss"
+            onClick={dismissAiNotice}
+            className="mt-1 text-xs font-semibold text-white underline underline-offset-2 hover:text-violet-100"
+          >
+            {t("aiActChatNoticeDismiss")}
+          </button>
+        </div>
+      ) : null}
       <form onSubmit={submit} className="mt-1.5 flex items-center gap-1 flex-shrink-0">
         <input
           type="text"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
+          onFocus={onChatFocus}
           placeholder={t("logbookChatPlaceholder")}
           maxLength={500}
           data-testid="logbook-chat-input"

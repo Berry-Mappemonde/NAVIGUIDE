@@ -2,6 +2,7 @@
 // Sans API : le décompte innerText tient seul (repli route interne).
 // GET /voyage/official : sondé ; nom du bateau / polaire chargée seulement si l'API répond.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,15 +47,6 @@ function formatReport(labels, data) {
     block("données (information différente, conservées)", data),
     "",
   ].join("\n");
-}
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
 }
 
 async function showLeftPanel(page) {

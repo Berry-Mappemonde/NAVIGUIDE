@@ -17,6 +17,8 @@ const bar = readFileSync(join(here, "..", "components", "SimulationFilmBar.jsx")
 describe("useReplay contract", () => {
   it("replays on the official clock, consumes the film plan, and hands back to live at the end or on Stop", () => {
     assert.match(hook, /replayWindow\(clockToUse, Date\.now\(\)\)/);
+    assert.match(hook, /fromLat: c\.fromLat/);
+    assert.match(hook, /toLon: c\.toLon/);
     assert.match(hook, /requestAnimationFrame\(tick\)/);
     assert.match(hook, /if \(done\)/);
     assert.match(hook, /const stop = useCallback/);
@@ -1148,6 +1150,8 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.doesNotMatch(hook, /Tavily|Nebius/i);
     assert.doesNotMatch(hook, /https?:\/\/\S*tokenfactory/i);
     assert.match(bar, /nemotron-super-token-factory|filmSourceKey/);
+    assert.match(bar, /LlmSourceBadge/);
+    assert.match(bar, /data-testid="film-source"/);
     assert.match(bar, /filmStoryWrittenSoon/);
     assert.match(bar, /replay\.hasWritten/);
     assert.match(bar, /film-style-\$\{id\}/);

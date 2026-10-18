@@ -1,6 +1,7 @@
 // Événements climo / sci dans le fil de cartes (Suivre).
 // Sans API : repli sur cardFromJournalEntry (titre climo non vide).
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 import { cardFromJournalEntry } from "../../src/engine/momentCard.js";
 
 const shot = (page, name) => page.screenshot({
@@ -9,15 +10,6 @@ const shot = (page, name) => page.screenshot({
   quality: 85,
   fullPage: false,
 });
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 test("Fil de cartes : climo ou sci, sinon titre fixture", async ({ page }) => {
   await page.goto("/");
