@@ -59,6 +59,7 @@ from polar_api import router as polar_router
 from escale_api import router as escale_router
 from logbook_chat import router as logbook_router
 from route_engine import (
+    RouteBusy,
     endpoint_on_land,
     searoute_with_exact_end,
     segment_crosses_land,
@@ -591,27 +592,29 @@ def get_route(
 ):
     # Searoute attend [−180, 180]. Une longitude dépliée (236,84° = SF vue depuis
     # l'Australie) est acceptée jusqu'à ±540° et repliée ici ; au-delà, ou non
-    # finie, c'est une erreur d'appel (422). On redéplie relativement au départ.
-    for value in (start_lat, start_lon, end_lat, end_lon):
-        if not math.isfinite(value):
-            raise HTTPException(status_code=422, detail="non_finite_coordinate")
+    # finie, la validation des paramètres répond 422. On redéplie relativement
+    # au départ.
     orig_start_lon = start_lon
     start = (wrap_lon(start_lon), start_lat)
     end = (wrap_lon(end_lon), end_lat)
-    if endpoint_on_land(start[1], start[0]) or endpoint_on_land(end[1], end[0]):
-        raise HTTPException(status_code=422, detail="on_land")
+    # `end` says which point is on land (on_land_start / on_land_end), so the
+    # client removes that point and no other.
+    for which, (lon_, lat_) in (("on_land_start", start), ("on_land_end", end)):
+        if endpoint_on_land(lat_, lon_):
+            return JSONResponse(status_code=422, content={"detail": "on_land", "end": which})
     if abs(start[0] - end[0]) < 1e-4 and abs(start[1] - end[1]) < 1e-4:
         return {
             "type": "Feature",
             "geometry": {
                 "type": "LineString",
-                "coordinates": [[start[0], start[1]], [end[0], end[1]]],
+                "coordinates": unwrap_path([[start[0], start[1]], [end[0], end[1]]], orig_start_lon),
             },
             "properties": {"length": 0, "units": "km"},
         }
     try:
         route = searoute_with_exact_end(start, end)
         if route is None:
+            # searoute really answered « no route »: only then is it land.
             if segment_crosses_land(start[0], start[1], end[0], end[1]):
                 raise HTTPException(status_code=422, detail="crosses_land")
             raise HTTPException(status_code=404, detail="Route non trouvée")
@@ -623,6 +626,9 @@ def get_route(
         return route
     except HTTPException:
         raise
+    except RouteBusy as exc:
+        # Out of time or of searoute slots: not land, just « try again ».
+        raise HTTPException(status_code=503, detail="busy", headers={"Retry-After": "5"}) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

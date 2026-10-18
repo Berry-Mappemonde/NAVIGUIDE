@@ -14,6 +14,11 @@ import threading
 import time
 
 TIMED_OUT = object()
+
+
+class WorkerDied(RuntimeError):
+    """The worker process went away mid-call (not an answer from searoute)."""
+
 _MAX_IDLE = 2
 # At most this many searoute processes run at once; a call waits its turn
 # within its own deadline, then gives up (TIMED_OUT) without starting one.
@@ -81,7 +86,6 @@ class ProcessRunner:
         self.max_busy = max(1, int(max_busy))
         self._lock = threading.Lock()
         self._max_idle = max_idle
-        self.last_worker: _Worker | None = None  # tests: the process that ran the last call
 
     def _take(self) -> _Worker:
         with self._lock:
@@ -114,7 +118,6 @@ class ProcessRunner:
 
     def _run(self, target: str, args: tuple, timeout_s: float):
         worker = self._take()
-        self.last_worker = worker
         try:
             worker.conn.send((target, args))
             if not worker.conn.poll(float(timeout_s)):
@@ -123,7 +126,12 @@ class ProcessRunner:
             status, value = worker.conn.recv()
         except (EOFError, OSError, BrokenPipeError) as exc:
             worker.kill()
-            raise RuntimeError(f"searoute worker died: {exc}") from exc
+            raise WorkerDied(f"searoute worker died: {exc}") from exc
+        except BaseException:
+            # Interrupted (cancel, KeyboardInterrupt, SystemExit) while the
+            # child computes: kill it, it must not outlive the call.
+            worker.kill()
+            raise
         self._give(worker)
         if status != "ok":
             raise RuntimeError(value)

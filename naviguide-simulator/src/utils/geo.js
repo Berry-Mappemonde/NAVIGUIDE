@@ -111,33 +111,41 @@ export function splitAntimeridianCoords(coords) {
  * dépliée ; seuls les fichiers et les textes reçoivent celle-ci.
  */
 export function wrapLonParts(coords) {
-  const parts = [];
-  let part = [];
-  let prev = null;
+  // Unfolded copy (no jump between neighbours), lat and extra values kept.
+  const pts = [];
   for (const c of coords || []) {
     const lon = Number(c?.[0]);
     const lat = Number(c?.[1]);
     if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
-    if (prev) {
-      // Bord franchi entre prev et c (sur la forme dépliée, sans saut).
-      const a = unwrapLon(prev[0], prev[0]);
-      const b = unwrapLon(a, lon);
-      const k0 = Math.floor((a + 180) / 360);
-      const k1 = Math.floor((b + 180) / 360);
-      if (k0 !== k1) {
-        const edge = (Math.max(k0, k1) * 360) - 180;
-        const t = (edge - a) / (b - a);
-        const edgeLat = prev[1] + (lat - prev[1]) * t;
-        const out = b > a ? 180 : -180;
-        part.push([out, edgeLat]);
-        if (part.length >= 2) parts.push(part);
-        part = [[-out, edgeLat]];
-      }
+    const u = pts.length ? unwrapLon(pts[pts.length - 1].u, lon) : lon;
+    pts.push({ u, lat, extra: c.length > 2 ? c.slice(2) : [] });
+  }
+  if (!pts.length) return [];
+  // A vertex exactly on ±180 belongs to the part in progress: the band
+  // (copy of the world) comes from the first vertex off the edge.
+  const onEdge = (u) => ((u + 180) % 360 + 360) % 360 === 0;
+  const first = pts.find((p) => !onEdge(p.u)) || pts[0];
+  let band = Math.round(first.u / 360);
+  const parts = [];
+  let part = [];
+  let prev = null;
+  for (const p of pts) {
+    let rel = p.u - band * 360;
+    // Cut only when the edge is strictly crossed.
+    while (rel > 180 || rel < -180) {
+      const edge = rel > 180 ? 180 : -180;
+      const prevRel = prev ? prev.u - band * 360 : edge;
+      const t = prev && rel !== prevRel ? (edge - prevRel) / (rel - prevRel) : 0;
+      const edgeLat = prev ? prev.lat + (p.lat - prev.lat) * t : p.lat;
+      const last = part[part.length - 1];
+      if (!last || last[0] !== edge || last[1] !== edgeLat) part.push([edge, edgeLat]);
+      if (part.length >= 2) parts.push(part);
+      part = [[-edge, edgeLat]];
+      band += edge > 0 ? 1 : -1;
+      rel = p.u - band * 360;
     }
-    const point = [wrapLon(lon), lat];
-    if (c.length > 2) point.push(...c.slice(2));
-    part.push(point);
-    prev = [lon, lat];
+    part.push([rel, p.lat, ...p.extra]);
+    prev = p;
   }
   if (part.length >= 2) parts.push(part);
   return parts;
@@ -406,14 +414,15 @@ export function summarizeLegs(escaleMarks, segments) {
     };
   }
 
+  // No marks (a drawn or imported route): one leg per segment between two
+  // placed points, whatever the number of router vertices inside it.
   let sea = 0;
   let land = 0;
   for (const seg of segs) {
     const n = seg?.coords?.length ?? 0;
     if (n < 2) continue;
-    const edges = n - 1;
-    if (seg.nonMaritime) land += edges;
-    else sea += edges;
+    if (seg.nonMaritime) land += 1;
+    else sea += 1;
   }
   if (sea + land > 0) {
     return {

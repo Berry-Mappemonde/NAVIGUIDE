@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { coordsFromRoutePayload } from "../utils/berryLegs.js";
 import { haversineNm, unwrapPath, wrapLon } from "../utils/geo.js";
-import { refuseRhumbFallback, ROUTE_IMPORT_MAX_POINTS } from "../utils/routeImport.js";
+import { ROUTE_IMPORT_MAX_POINTS } from "../utils/routeImport.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
 export const DRAW_MAX_POINTS = ROUTE_IMPORT_MAX_POINTS;
@@ -45,13 +45,15 @@ async function loadLeg(from, to) {
     let data = null;
     try { data = await res.json(); } catch { data = null; }
     const detail = typeof data?.detail === "string" ? data.detail : "";
-    if (res.status === 422 && detail === "on_land") return { reject: "on_land" };
-    if (res.status === 422 && detail === "crosses_land") return { reject: "crosses_land" };
+    if (res.status === 422 && detail === "on_land") {
+      // The server names the end on land; an older one does not (the end).
+      return { reject: "on_land", end: data?.end === "on_land_start" ? "start" : "end" };
+    }
+    if (res.status === 422 && detail === "crosses_land") return { reject: "crosses_land", end: "end" };
+    // Out of time or slots: not land. Say so; the point stays.
+    if (res.status === 503) return { busy: true };
     let coords = coordsFromRoutePayload(data);
     if (!res.ok || !coords.length) {
-      if (refuseRhumbFallback(from, to, { serverDetail: detail })) {
-        return { reject: "crosses_land" };
-      }
       const line = rhumbCoords(from, to);
       return { coords: line, failed: true, nm: lengthNm(null, line) };
     }
@@ -114,11 +116,12 @@ export function useRouteDrawing() {
   const segmentsRef = useRef([]);
   const undonePointsRef = useRef([]);
   const undoneSegmentsRef = useRef([]);
-  const fetchIdRef = useRef(0);
   const epochRef = useRef(0);
   const queueRef = useRef(Promise.resolve());
-  const pendingRef = useRef(0);
   const pendingSlotsRef = useRef(new Map());
+  // Generation per leg slot: bumped when the leg is undone or replaced, so a
+  // late answer for the old leg is dropped. Shifted with the points when one
+  // is removed from the middle.
   const slotGenRef = useRef([]);
   const noticeTokenRef = useRef(0);
 
@@ -132,10 +135,8 @@ export function useRouteDrawing() {
     segmentsRef.current = [];
     undonePointsRef.current = [];
     undoneSegmentsRef.current = [];
-    fetchIdRef.current = 0;
     epochRef.current += 1;
     slotGenRef.current = [];
-    pendingRef.current = 0;
     pendingSlotsRef.current = new Map();
     setDrawingLoading(false);
     publishDrawn([], []);
@@ -154,33 +155,64 @@ export function useRouteDrawing() {
     return job;
   }, []);
 
+  // Removes the point at `index` wherever it is, and joins its neighbours
+  // with a new leg (fetched like any other).
+  const removePointAt = useCallback((index, refetch) => {
+    const pts = pointsRef.current;
+    if (index < 0 || index >= pts.length) return;
+    const before = pts[index - 1] || null;
+    const after = pts[index + 1] || null;
+    const g = slotGenRef.current;
+    slotGenRef.current = index === 0
+      ? g.slice(1)
+      : [...g.slice(0, index - 1), Math.max(g[index - 1] || 0, g[index] || 0) + 1, ...g.slice(index + 1)];
+    const segs = segmentsRef.current;
+    const nextSegs = index === 0
+      ? segs.slice(1)
+      : [...segs.slice(0, index - 1), undefined, ...segs.slice(index + 1)];
+    pointsRef.current = [...pts.slice(0, index), ...pts.slice(index + 1)];
+    segmentsRef.current = nextSegs.slice(0, Math.max(0, pointsRef.current.length - 1));
+    undonePointsRef.current = [];
+    undoneSegmentsRef.current = [];
+    setCanRedo(false);
+    setDrawnPoints([...pointsRef.current]);
+    setDrawnSegments(denseSegments(segmentsRef.current));
+    publishDrawn(pointsRef.current, segmentsRef.current);
+    if (before && after) refetch(before, after);
+  }, []);
+
   const loadSegment = useCallback(async (from, to) => {
     const slot = pointsRef.current.indexOf(from);
     // The leg was undone (or replaced) before its turn came: nothing to fetch.
     if (slot < 0 || pointsRef.current[slot + 1] !== to) return;
     const seen = epochRef.current;
     const gen = slotGenRef.current[slot] || 0;
-    pendingRef.current += 1;
     const slots = pendingSlotsRef.current;
     slots.set(slot, (slots.get(slot) || 0) + 1);
     setDrawingLoading(true);
     try {
       const result = await loadLeg(from, to);
       if (epochRef.current !== seen) return;
+      // Points may have moved (one removed before): find the leg again.
+      const at = pointsRef.current.indexOf(from);
+      if (at < 0 || pointsRef.current[at + 1] !== to) return;
       // A late answer for a leg that was undone meanwhile is dropped.
-      if ((slotGenRef.current[slot] || 0) !== gen) return;
-      if (pointsRef.current[slot] !== from || pointsRef.current[slot + 1] !== to) return;
+      if ((slotGenRef.current[at] || 0) !== gen) return;
+      if (result?.busy) {
+        notify("busy");
+        return;
+      }
       if (result?.reject) {
-        if (pointsRef.current.length === slot + 2) {
-          pointsRef.current = pointsRef.current.slice(0, slot + 1);
-          setDrawnPoints([...pointsRef.current]);
-          publishDrawn(pointsRef.current, segmentsRef.current);
-        }
+        // Remove the point at fault (on land, or the end of a leg across
+        // land) wherever it is, then join its neighbours.
+        const bad = result.end === "start" ? from : to;
+        const index = pointsRef.current.indexOf(bad);
+        if (index >= 0) removePointAt(index, (a, b) => fetchSegmentRef.current(a, b));
         notify(result.reject);
         return;
       }
       const next = segmentsRef.current.slice();
-      next[slot] = {
+      next[at] = {
         coords: result.coords,
         failed: Boolean(result.failed),
         nm: result.nm,
@@ -191,7 +223,6 @@ export function useRouteDrawing() {
       setDrawnSegments(denseSegments(segmentsRef.current));
       publishDrawn(pointsRef.current, segmentsRef.current);
     } finally {
-      pendingRef.current = Math.max(0, pendingRef.current - 1);
       const left = (slots.get(slot) || 0) - 1;
       if (left > 0) slots.set(slot, left);
       else slots.delete(slot);
@@ -199,12 +230,14 @@ export function useRouteDrawing() {
         setDrawingLoading(legsStillLoading(slots, pointsRef.current.length));
       }
     }
-  }, [notify]);
+  }, [notify, removePointAt]);
 
   const fetchSegment = useCallback(
     (from, to) => enqueue(() => loadSegment(from, to)),
     [enqueue, loadSegment],
   );
+  const fetchSegmentRef = useRef(fetchSegment);
+  fetchSegmentRef.current = fetchSegment;
 
   const probeFirstPoint = useCallback(async (point) => {
     const seen = epochRef.current;
@@ -254,7 +287,6 @@ export function useRouteDrawing() {
   // points carry on; the removed leg's late answer is ignored (slot generation).
   const undo = useCallback(() => {
     if (!pointsRef.current.length) return;
-    fetchIdRef.current += 1;
     const slot = pointsRef.current.length - 2;
     if (slot >= 0) slotGenRef.current[slot] = (slotGenRef.current[slot] || 0) + 1;
     undonePointsRef.current = [...undonePointsRef.current, pointsRef.current.at(-1)];

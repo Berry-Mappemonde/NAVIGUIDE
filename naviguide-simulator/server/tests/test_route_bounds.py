@@ -99,19 +99,29 @@ def test_searoute_deadline_is_about_8_s():
     assert 6.0 <= route_engine.SEAROUTE_TIMEOUT_S <= 10.0
 
 
-def test_timed_out_call_leaves_no_work_running():
+def test_timed_out_call_leaves_no_work_running(monkeypatch):
     """À l'échéance, le process qui calculait est tué : rien ne continue derrière."""
     import time
 
+    import searoute_worker
     from searoute_worker import TIMED_OUT, ProcessRunner
 
+    killed = []
+    real_kill = searoute_worker._Worker.kill
+
+    def kill(self):
+        killed.append(self)
+        real_kill(self)
+
+    monkeypatch.setattr(searoute_worker._Worker, "kill", kill)
     runner = ProcessRunner()
     try:
         assert runner.run("math:hypot", (3, 4), 30) == 5.0
         t0 = time.monotonic()
         assert runner.run("time:sleep", (30,), 0.5) is TIMED_OUT
         assert time.monotonic() - t0 < 5
-        assert not runner.last_worker.proc.is_alive()
+        assert len(killed) == 1
+        assert not killed[0].proc.is_alive()
         assert runner.run("math:hypot", (6, 8), 30) == 10.0
     finally:
         runner.shutdown()
@@ -234,3 +244,180 @@ def test_runner_caps_concurrent_searoute_processes():
         assert runner.run("time:sleep", (0,), 20.0) is None
     finally:
         runner.shutdown()
+
+
+def test_interrupted_call_kills_its_worker(monkeypatch):
+    """Interrompu pendant le calcul (BaseException) : le process est tué, l'exception repart."""
+    import pytest
+
+    import searoute_worker
+    from searoute_worker import ProcessRunner
+
+    killed = []
+    real_kill = searoute_worker._Worker.kill
+
+    def kill(self):
+        killed.append(self)
+        real_kill(self)
+
+    monkeypatch.setattr(searoute_worker._Worker, "kill", kill)
+    runner = ProcessRunner()
+    try:
+        worker = runner._take()
+
+        class Stop(BaseException):
+            pass
+
+        def poll(_timeout):
+            raise Stop()
+
+        monkeypatch.setattr(worker.conn, "poll", poll)
+        monkeypatch.setattr(runner, "_take", lambda: worker)
+        with pytest.raises(Stop):
+            runner.run("time:sleep", (30,), 5)
+        assert killed == [worker]
+        assert not worker.proc.is_alive()
+        assert runner._idle == []
+    finally:
+        runner.shutdown()
+
+
+def _fresh(route_engine, start, end):
+    route_engine._route_cache.pop(route_engine._route_cache_key(start, end), None)
+
+
+def test_busy_searoute_is_503_not_crosses_land(monkeypatch):
+    """Délai dépassé / sémaphore plein : 503 « busy », jamais 422 crosses_land."""
+    import route_engine
+    import searoute_worker
+
+    monkeypatch.setattr(main, "endpoint_on_land", lambda *_a, **_k: False)
+    monkeypatch.setattr(main, "segment_crosses_land", lambda *_a, **_k: True)
+    monkeypatch.setattr(searoute_worker.RUNNER, "run", lambda *_a, **_k: searoute_worker.TIMED_OUT)
+    _fresh(route_engine, (-1.7, 46.25), (-2.1, 46.05))
+    client = TestClient(main.app)
+    response = client.get("/route", params={"start_lat": 46.25, "start_lon": -1.7, "end_lat": 46.05, "end_lon": -2.1})
+    assert response.status_code == 503
+    assert response.json()["detail"] == "busy"
+
+
+def test_dead_worker_is_503(monkeypatch):
+    import route_engine
+    import searoute_worker
+
+    def died(*_a, **_k):
+        raise searoute_worker.WorkerDied("gone")
+
+    monkeypatch.setattr(main, "endpoint_on_land", lambda *_a, **_k: False)
+    monkeypatch.setattr(searoute_worker.RUNNER, "run", died)
+    _fresh(route_engine, (-1.7, 46.25), (-2.1, 46.05))
+    response = TestClient(main.app).get("/route", params={"start_lat": 46.25, "start_lon": -1.7, "end_lat": 46.05, "end_lon": -2.1})
+    assert response.status_code == 503
+
+
+def test_no_route_from_searoute_still_checks_land(monkeypatch):
+    """searoute a vraiment répondu « pas de route » : alors seulement crosses_land."""
+    import route_engine
+
+    monkeypatch.setattr(main, "endpoint_on_land", lambda *_a, **_k: False)
+    monkeypatch.setattr(main, "segment_crosses_land", lambda *_a, **_k: True)
+    monkeypatch.setattr(route_engine, "_invoke_searoute", lambda *_a, **_k: None)
+    _fresh(route_engine, (-1.7, 46.25), (-2.1, 46.05))
+    response = TestClient(main.app).get("/route", params={"start_lat": 46.25, "start_lon": -1.7, "end_lat": 46.05, "end_lon": -2.1})
+    assert response.status_code == 422
+    assert response.json()["detail"] == "crosses_land"
+
+
+def test_on_land_says_which_end(monkeypatch):
+    client = TestClient(main.app)
+    monkeypatch.setattr(main, "searoute_with_exact_end", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError()))
+    monkeypatch.setattr(main, "endpoint_on_land", lambda lat, lon: lat > 48)
+    start_land = client.get("/route", params={"start_lat": 48.85, "start_lon": 2.35, "end_lat": 46.2, "end_lon": -1.7})
+    assert start_land.status_code == 422
+    assert start_land.json() == {"detail": "on_land", "end": "on_land_start"}
+    end_land = client.get("/route", params={"start_lat": 46.2, "start_lon": -1.7, "end_lat": 48.85, "end_lon": 2.35})
+    assert end_land.json() == {"detail": "on_land", "end": "on_land_end"}
+
+
+def test_detours_run_in_the_worker_with_the_time_left(monkeypatch):
+    """avoid_land : searoute ne tourne jamais dans ce process, et chaque appel
+    reçoit le reste du budget global (~8 s pour toute la requête)."""
+    import route_engine
+    import searoute_worker
+
+    seen = []
+
+    def fake_run(target, args, timeout_s):
+        seen.append(timeout_s)
+        a, b = args
+        return {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [a, [(a[0] + b[0]) / 2, a[1] - 1], b]}, "properties": {"length": 1, "units": "km"}}
+
+    monkeypatch.setattr(searoute_worker.RUNNER, "run", fake_run)
+    monkeypatch.setattr(route_engine, "_segment_crosses_land", lambda *a: len(seen) < 2)
+    deadline = route_engine.time.monotonic() + 3.0
+    route_engine.avoid_land([[0.0, 0.0], [1.0, 0.0]], max_iterations=1, deadline=deadline)
+    assert seen and all(0 < t <= 3.0 for t in seen)
+    assert route_engine.ROUTE_DEADLINE_S <= 8.0
+
+
+def test_detour_past_the_deadline_is_busy(monkeypatch):
+    import pytest
+
+    import route_engine
+    import searoute_worker
+
+    monkeypatch.setattr(searoute_worker.RUNNER, "run", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("no call once spent")))
+    monkeypatch.setattr(route_engine, "_segment_crosses_land", lambda *a: True)
+    with pytest.raises(route_engine.RouteBusy):
+        route_engine.avoid_land([[0.0, 0.0], [1.0, 0.0]], max_iterations=1, deadline=route_engine.time.monotonic() - 0.1)
+
+
+def test_whole_request_has_one_deadline(monkeypatch):
+    import pytest
+
+    import route_engine
+    import searoute_worker
+
+    budgets = []
+
+    def slow(target, args, timeout_s):
+        budgets.append(timeout_s)
+        return searoute_worker.TIMED_OUT
+
+    monkeypatch.setattr(searoute_worker.RUNNER, "run", slow)
+    _fresh(route_engine, (-1.7, 46.25), (-2.1, 46.05))
+    with pytest.raises(route_engine.RouteBusy):
+        route_engine.searoute_with_exact_end((-1.7, 46.25), (-2.1, 46.05))
+    assert budgets and budgets[0] <= route_engine.ROUTE_DEADLINE_S
+
+
+def test_cached_length_is_the_final_line(monkeypatch):
+    """properties.length = longueur géodésique des coordonnées servies, pas celle de searoute."""
+    import route_engine
+
+    start, end = (-1.7, 46.25), (-2.6, 46.05)
+
+    def fake(_s, _e, _t=None):
+        # searoute snaps to nodes 5 km from both ends and claims 1 km.
+        return {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[-1.77, 46.25], [-2.53, 46.05]]}, "properties": {"length": 1.0, "units": "km"}}
+
+    monkeypatch.setattr(route_engine, "_invoke_searoute", fake)
+    monkeypatch.setattr(route_engine, "avoid_land", lambda c, **_k: c)
+    _fresh(route_engine, start, end)
+    route = route_engine.searoute_with_exact_end(start, end)
+    coords = route["geometry"]["coordinates"]
+    assert coords[0][:2] == [start[0], start[1]]
+    expected = route_engine.route_length_km(coords)
+    assert route["properties"]["units"] == "km"
+    assert abs(route["properties"]["length"] - expected) < 0.01
+    assert route["properties"]["length"] > 60
+    cached = route_engine.searoute_with_exact_end(start, end)
+    assert abs(cached["properties"]["length"] - expected) < 0.01
+
+
+def test_same_point_answer_is_unfolded(monkeypatch):
+    monkeypatch.setattr(main, "endpoint_on_land", lambda *_a, **_k: False)
+    response = TestClient(main.app).get("/route", params={"start_lat": -17.5, "start_lon": 214.02, "end_lat": -17.5, "end_lon": 214.02})
+    assert response.status_code == 200
+    coords = response.json()["geometry"]["coordinates"]
+    assert all(abs(c[0] - 214.02) < 1e-9 for c in coords)

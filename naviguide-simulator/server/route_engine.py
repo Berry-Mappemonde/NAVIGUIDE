@@ -1,11 +1,12 @@
 """Moteur searoute + évitement des terres — extrait de naviguide-api/main.py."""
 from __future__ import annotations
 
+import contextvars
 import math
 import pathlib
+import time
 from typing import Optional
 
-import searoute as sr
 from geographiclib.geodesic import Geodesic
 
 from longitude import unwrap_lon, wrap_lon  # noqa: F401  (wrap_lon : API de main.py)
@@ -198,7 +199,43 @@ def unwrap_path(coords: list, ref_lon: float) -> list:
     return _normalize_antimeridian(list(coords), float(ref_lon))
 
 
-def _reroute_segment(a: list, b: list) -> list:
+class RouteBusy(Exception):
+    """No answer in time (deadline passed, or every searoute slot busy).
+    Not « no route »: the caller says « busy, try again » (503)."""
+
+
+# Set by `_invoke_searoute` when it gave up for lack of time or slot.
+_SEAROUTE_BUSY: contextvars.ContextVar[bool] = contextvars.ContextVar("searoute_busy", default=False)
+
+
+def _time_left(deadline: float | None) -> float | None:
+    return None if deadline is None else deadline - time.monotonic()
+
+
+def _sub_searoute(a: list, b: list, deadline: float | None = None):
+    """searoute(a, b) for a detour, in the worker process (never in this one).
+    With a deadline, uses what is left of it and raises RouteBusy once spent;
+    without one, a time-out is just « no detour »."""
+    from searoute_worker import RUNNER, TIMED_OUT, WorkerDied  # noqa: PLC0415
+
+    left = _time_left(deadline)
+    timeout_s = SEAROUTE_TIMEOUT_S if left is None else min(SEAROUTE_TIMEOUT_S, left)
+    if timeout_s <= 0:
+        raise RouteBusy("route deadline reached")
+    try:
+        sub = RUNNER.run(SEAROUTE_TARGET, ([a[0], a[1]], [b[0], b[1]]), timeout_s)
+    except WorkerDied as exc:
+        if deadline is not None:
+            raise RouteBusy(str(exc)) from exc
+        return None
+    if sub is TIMED_OUT:
+        if deadline is not None:
+            raise RouteBusy("route deadline reached")
+        return None
+    return sub
+
+
+def _reroute_segment(a: list, b: list, deadline: float | None = None) -> list:
     """
     Try to replace a land-crossing direct segment [a→b] with a proper
     maritime sub-route from searoute.
@@ -207,7 +244,7 @@ def _reroute_segment(a: list, b: list) -> list:
     Falls back to [b] (direct hop) when searoute also fails.
     """
     try:
-        sub = sr.searoute((a[0], a[1]), (b[0], b[1]))
+        sub = _sub_searoute(a, b, deadline)
         if sub and sub.get("geometry", {}).get("coordinates"):
             sub_coords = sub["geometry"]["coordinates"]
             # Only use searoute result if it contains at least one intermediate
@@ -217,12 +254,14 @@ def _reroute_segment(a: list, b: list) -> list:
                 # Normalize antimeridian continuity relative to point 'a'
                 normalized = _normalize_antimeridian(sub_coords[1:], a[0])
                 return normalized    # exclude 'a' — already in result
+    except RouteBusy:
+        raise
     except Exception:
         pass
     return [b]   # fallback: direct connection (still not ideal, but keeps route valid)
 
 
-def _fix_land_crossing_segments(coords: list) -> list:
+def _fix_land_crossing_segments(coords: list, deadline: float | None = None) -> list:
     """
     Walk through consecutive waypoint pairs.  For any segment that crosses
     deeply-inland land, replace it with a maritime sub-route obtained from
@@ -238,7 +277,7 @@ def _fix_land_crossing_segments(coords: list) -> list:
         b = coords[i + 1]
 
         if _segment_crosses_land(a[0], a[1], b[0], b[1]):
-            replacement = _reroute_segment(a, b)
+            replacement = _reroute_segment(a, b, deadline)
             result.extend(replacement)
         else:
             result.append(b)
@@ -246,7 +285,7 @@ def _fix_land_crossing_segments(coords: list) -> list:
     return result
 
 
-def _find_land_crossing_detour(a: list, b: list) -> list:
+def _find_land_crossing_detour(a: list, b: list, deadline: float | None = None) -> list:
     """
     Given a segment A→B known to cross land, return a replacement list of
     waypoints (excluding A, including B) that navigates around the land.
@@ -262,7 +301,7 @@ def _find_land_crossing_detour(a: list, b: list) -> list:
     # Strategy 1: maritime routing library
     geod = Geodesic.WGS84
     try:
-        sub = sr.searoute((a[0], a[1]), (b[0], b[1]))
+        sub = _sub_searoute(a, b, deadline)
         if sub and sub.get("geometry", {}).get("coordinates"):
             sub_coords = sub["geometry"]["coordinates"]
             # Only accept if searoute added at least one INTERMEDIATE waypoint
@@ -292,6 +331,8 @@ def _find_land_crossing_detour(a: list, b: list) -> list:
                     # Normalize antimeridian continuity relative to point 'a'
                     normalized = _normalize_antimeridian(sub_coords[1:], a[0])
                     return normalized
+    except RouteBusy:
+        raise
     except Exception:
         pass
 
@@ -339,7 +380,7 @@ def _find_land_crossing_detour(a: list, b: list) -> list:
     return [b]   # last-resort direct hop
 
 
-def avoid_land(coords: list, max_iterations: int = 8) -> list:
+def avoid_land(coords: list, max_iterations: int = 8, deadline: float | None = None) -> list:
     """
     Iteratively scan every consecutive segment in the route and reroute
     any that cross land, until the route is fully clean or max_iterations
@@ -361,7 +402,7 @@ def avoid_land(coords: list, max_iterations: int = 8) -> list:
             b = coords[i + 1]
 
             if _segment_crosses_land(a[0], a[1], b[0], b[1]):
-                detour = _find_land_crossing_detour(a, b)
+                detour = _find_land_crossing_detour(a, b, deadline)
                 result.extend(detour)
                 changed = True
             else:
@@ -565,26 +606,45 @@ def segment_crosses_land(lon1: float, lat1: float, lon2: float, lat2: float) -> 
 # Un seul essai, borné à ~8 s. Searoute tourne dans un process enfant, tué à
 # l'échéance (searoute_worker) : aucun calcul ne continue après le délai.
 SEAROUTE_TIMEOUT_S = 8.0
+# The whole /route request (searoute, then the detours around land).
+ROUTE_DEADLINE_S = 8.0
 SEAROUTE_TARGET = "searoute:searoute"
 
 
 def _invoke_searoute(start, end, timeout_s: float | None = None):
-    from searoute_worker import RUNNER, TIMED_OUT
+    """searoute's answer, or None. None after a time-out, a full pool or a dead
+    worker also flags `_SEAROUTE_BUSY`, so the caller can tell « busy » from
+    « searoute found no route »."""
+    from searoute_worker import RUNNER, TIMED_OUT, WorkerDied
 
     if timeout_s is None:
         timeout_s = SEAROUTE_TIMEOUT_S
     try:
         route = RUNNER.run(SEAROUTE_TARGET, (list(start), list(end)), timeout_s)
+    except WorkerDied as exc:
+        print(f"⚠️ searoute worker: {exc}")
+        _SEAROUTE_BUSY.set(True)
+        return None
     except Exception as exc:
         print(f"⚠️ Erreur searoute: {exc}")
         return None
     if route is TIMED_OUT:
         print("⚠️ searoute timeout")
+        _SEAROUTE_BUSY.set(True)
         return None
     return route
 
 
-def searoute_with_exact_end(start, end):
+def route_length_km(coords: list) -> float:
+    """Geodesic length of the final polyline (unfolded lon are fine)."""
+    geod = Geodesic.WGS84
+    total = 0.0
+    for p, q in zip(coords, coords[1:]):
+        total += geod.Inverse(p[1], p[0], q[1], q[0])["s12"]
+    return total / 1000.0
+
+
+def searoute_with_exact_end(start, end, deadline: float | None = None):
     """
     Calcule une route maritime entre deux points et ajoute un segment géodésique
     jusqu'à la destination exacte si searoute s'arrête trop tôt.
@@ -612,7 +672,19 @@ def searoute_with_exact_end(start, end):
             route["geometry"]["coordinates"].reverse()
         return attach_anti_shipping(route)
 
-    route = _invoke_searoute(start, end)
+    if deadline is None:
+        deadline = time.monotonic() + ROUTE_DEADLINE_S
+    left = _time_left(deadline)
+    if left <= 0:
+        raise RouteBusy("route deadline reached")
+    token = _SEAROUTE_BUSY.set(False)
+    try:
+        route = _invoke_searoute(start, end, min(SEAROUTE_TIMEOUT_S, left))
+        busy = _SEAROUTE_BUSY.get()
+    finally:
+        _SEAROUTE_BUSY.reset(token)
+    if busy:
+        raise RouteBusy("searoute did not answer in time")
 
     if not route or "geometry" not in route:
         return None
@@ -648,7 +720,7 @@ def searoute_with_exact_end(start, end):
     # Step 1 — initial avoid-land pass: iteratively reroute every segment
     #           that crosses any landmass or island (major coasts, peninsulas,
     #           small islands like Nias / Mentawai).
-    coords = avoid_land(coords)
+    coords = avoid_land(coords, deadline=deadline)
 
     # Step 2 — densify: insert intermediate waypoints so no segment exceeds
     #           75 km, preventing the renderer from drawing a chord that
@@ -663,11 +735,17 @@ def searoute_with_exact_end(start, end):
     # Step 4 — second avoid-land pass: densification in Step 2 can place new
     #           geodesic midpoints on small islands (e.g. Nias).  This final
     #           iterative scan catches and reroutes any remaining crossings.
-    coords = avoid_land(coords, max_iterations=5)
+    coords = avoid_land(coords, max_iterations=5, deadline=deadline)
 
     # Continu relativement au départ replié : pas de saut ±360° entre deux sommets.
     coords = _normalize_antimeridian(coords, start[0])
     route["geometry"]["coordinates"] = coords
+    # searoute's length is for its own line: the exact ends and the detours
+    # changed it. The length cached and served is the one drawn.
+    props = dict(route.get("properties") or {})
+    props["length"] = round(route_length_km(coords), 3)
+    props["units"] = "km"
+    route["properties"] = props
     attach_anti_shipping(route)
 
     # Store in bidirectional cache so the reverse leg reuses this result

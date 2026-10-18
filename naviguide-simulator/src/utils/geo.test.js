@@ -120,6 +120,18 @@ describe("summarizeLegs", () => {
     assert.equal(out.land, 0);
   });
 
+  it("route perso : N points posés → N − 1 étapes, pas un compte de sommets", () => {
+    // 3 points, searoute legs with intermediate vertices.
+    const out = summarizeLegs([], [
+      { coords: [[-1.15, 46.16], [-3, 45], [-5.66, 43.55]], nonMaritime: false },
+      { coords: [[-5.66, 43.55], [-8, 42], [-9.3, 40], [-9.14, 38.72]], nonMaritime: false },
+    ]);
+    assert.equal(out.legs, 2);
+    assert.equal(out.sea, 2);
+    assert.equal(out.land, 0);
+    assert.equal(out.points, 7);
+  });
+
   it("Cayenne réinséré (HUD aérien) ne crée pas d'escale de plus", () => {
     const marks = [
       ...OFFICIAL_ESCALES.slice(0, 9).map((name) => ({ name })),

@@ -1562,7 +1562,9 @@ export default function App() {
       ? "pointOnLand"
       : drawingNotice.code === "limit"
         ? "drawPointLimitReached"
-        : "rhumbCrossesLand";
+        : drawingNotice.code === "busy"
+          ? "routeServerBusy"
+          : "rhumbCrossesLand";
     setDrawNotice({ kind: drawingNotice.code === "limit" ? "notice" : "error", text: t(key, { max: DRAW_MAX_POINTS }) });
   }, [drawingNotice, t]);
   const statsSegs = useMemo(

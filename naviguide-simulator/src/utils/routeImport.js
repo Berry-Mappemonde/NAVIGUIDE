@@ -204,10 +204,6 @@ function looksJson(text) {
 }
 
 /**
- * GeoJSON (Point / MultiPoint / LineString / Feature / FeatureCollection)
- * or KML Placemark Point / LineString → ordered waypoints.
- */
-/**
  * A rhumb sampled between the endpoints. Two consecutive land hits
  * (a mask already loaded, or the caller's predicate) refuse the fallback.
  */
@@ -242,6 +238,10 @@ export function refuseRhumbFallback(from, to, options = {}) {
   return null;
 }
 
+/**
+ * GeoJSON (Point / MultiPoint / LineString / Feature / FeatureCollection)
+ * or KML Placemark Point / LineString → ordered waypoints.
+ */
 export function parseRouteFile(text, name = "") {
   const raw = String(text ?? "").replace(/^\uFEFF/, "");
   if (!raw.trim()) return { error: "empty" };

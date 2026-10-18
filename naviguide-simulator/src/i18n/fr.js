@@ -579,5 +579,6 @@ export default {
   pointOnLand:        "Point sur terre : non ajouté",
   rhumbCrossesLand:   "La ligne droite traverse la terre",
   drawPointLimitReached: "Limite de {max} points atteinte",
+  routeServerBusy:    "Serveur occupé, réessayez",
   drawPointLimit:     "{max} points maximum",
 };

@@ -55,6 +55,43 @@ describe("antiméridien : longitudes dans [−180, 180] à l'export", () => {
     assert.equal(fc.features[0].properties.nm, 1098);
   });
 
+  // No piece of line may span the globe (a jump of more than 180° in lon).
+  const maxJump = (line) => Math.max(0, ...line.slice(1).map((c, i) => Math.abs(c[0] - line[i][0])));
+  // searoute, Suva → Papeete: vertices exactly on 180 before the crossing.
+  const SEAROUTE_FJ_PF = [[178.4263, -18.3806], [178.7, -18.4], [180, -20], [180, -20], [184.5, -21], [190, -20], [194.9996, -20.0692], [200, -20], [205.189, -18.77], [209.484027, -17.273762], [210.3, -17.4]];
+
+  it("a vertex exactly on 180 does not draw a line across the globe", () => {
+    const parts = wrapLonParts([[178.7, -20], [180, -20], [180, -20], [184.5, -21]]);
+    assert.equal(parts.length, 2);
+    for (const part of parts) assert.ok(maxJump(part) <= 180, JSON.stringify(parts));
+    assert.equal(parts[0].at(-1)[0], 180);
+    assert.equal(parts[1][0][0], -180);
+    assert.equal(parts[1].at(-1)[0], -175.5);
+    // The same vertices given folded (−180 then 180) stay on one side.
+    const folded = wrapLonParts([[-180, -20], [180, -20], [180, -20], [-175.5, -21]]);
+    for (const part of folded) assert.ok(maxJump(part) <= 180, JSON.stringify(folded));
+  });
+
+  it("real searoute Fiji → Tahiti: GeoJSON and KML never span the globe", () => {
+    const parts = wrapLonParts(SEAROUTE_FJ_PF);
+    assert.equal(parts.length, 2);
+    for (const part of parts) assert.ok(maxJump(part) <= 180, JSON.stringify(parts));
+    const points = [
+      { name: "Suva", lat: -18.38, lon: 178.4263 },
+      { name: "Papeete", lat: -17.4, lon: 210.3 },
+    ];
+    const segs = [{ coords: SEAROUTE_FJ_PF, nm: 1730, from: points[0], to: points[1] }];
+    const fc = buildGeoJSON(segs, points, "t");
+    const line = fc.features.find((f) => f.geometry.type !== "Point").geometry;
+    assert.equal(line.type, "MultiLineString");
+    for (const part of line.coordinates) assert.ok(maxJump(part) <= 180, JSON.stringify(line.coordinates));
+    const kml = buildKML(segs, points, "t");
+    const lines = [...kml.matchAll(/<LineString>[\s\S]*?<coordinates>([\s\S]*?)<\/coordinates>/g)]
+      .map((m) => m[1].trim().split(/\s+/).map((c) => c.split(",").map(Number)));
+    assert.ok(lines.length >= 2);
+    for (const l of lines) assert.ok(maxJump(l) <= 180, JSON.stringify(l));
+  });
+
   it("KML : aucune lon hors [−180, 180]", () => {
     const kml = buildKML(SEGS, P, "t");
     const lons = [...kml.matchAll(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?),0/g)].map((m) => Number(m[1]));
