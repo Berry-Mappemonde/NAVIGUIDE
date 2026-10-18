@@ -359,6 +359,32 @@ under `~/.cache/naviguide/voyage-store/` (or a temp dir). First boot with
 an empty store: the background worker fills it; the API answers
 « en préparation » until a family is actually computed.
 
+### Film / horloge sur :8011 (PR #549)
+
+`server/film_front.py` et `infra/vps/naviguide/naviguide-film-front.service` vivent
+sur `main` ; le workflow **rsync** doit les copier sur le VPS (`rsync-to-vps.sh`
+liste explicitement l’unité systemd — sans ça, `deploy-simulator.sh` échouait
+alors que nginx pointait déjà film/clock vers :8011).
+
+Après déploiement :
+
+```bash
+systemctl is-active naviguide-simulator naviguide-film-front
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8010/
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8011/voyage/official/clock
+sudo nginx -t
+```
+
+Réancrage RG10/RG14 (stock vivant par défaut
+`naviguide-simulator/server/voyage_data/official-store`, pas `~/.cache/…`) :
+
+```bash
+cd ~/blue-intelligence-map/naviguide-simulator
+set -a && . ~/.config/naviguide/simulator.env && set +a
+unset NAVIGUIDE_OFFICIAL_STORE_DIR
+python3 scripts/reanchor_official_moments.py --dry-run
+```
+
 DNS: **A** record `simulator` → `135.125.226.16` (`naviguide.fr` zone,
 free). First deploy from a machine with Node + SSH (local Vite
 build, no `npm` on the VPS):

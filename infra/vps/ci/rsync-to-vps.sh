@@ -80,12 +80,13 @@ case "$SITE" in
       --exclude .pytest_cache \
       --exclude __pycache__ \
       --exclude .env \
-      --exclude "server/polar_data/*.json" \
+      --exclude server/polar_data/ \
       --exclude server/voyage_data/ \
       "$ROOT/naviguide-simulator/" "$VPS:$REMOTE/naviguide-simulator/"
     rsync_to \
       "$ROOT/infra/vps/naviguide/nginx-simulator.conf" \
       "$ROOT/infra/vps/naviguide/naviguide-simulator.service" \
+      "$ROOT/infra/vps/naviguide/naviguide-film-front.service" \
       "$ROOT/infra/vps/naviguide/deploy-simulator.sh" \
       "$ROOT/infra/vps/naviguide/simulator.env.example" \
       "$ROOT/infra/vps/naviguide/publish-simulator-from-mac.sh" \
