@@ -1140,8 +1140,10 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.doesNotMatch(en.storySourceOpenrouter, /Token Factory/);
     assert.doesNotMatch(fr.storySourceNim, /Token Factory/);
     assert.doesNotMatch(fr.storySourceOpenrouter, /Token Factory/);
-    assert.match(en.ed2WritingNemotron, /Writing with Nemotron 3 Super on Nebius Token Factory/);
-    assert.match(fr.ed2WritingNemotron, /Token Factory/);
+    assert.equal(en.ed2WritingNemotron, "Writing…");
+    assert.equal(fr.ed2WritingNemotron, "Rédaction en cours…");
+    assert.doesNotMatch(en.ed2WritingNemotron, /Nemotron|Token Factory|NIM|OpenRouter|Claude|Nebius/i);
+    assert.doesNotMatch(fr.ed2WritingNemotron, /Nemotron|Token Factory|NIM|OpenRouter|Claude|Nebius/i);
     const served = resolveServedFilm({
       hasWritten: true,
       source: "nemotron-super",

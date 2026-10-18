@@ -646,6 +646,6 @@ export default {
   fv2StopAzores: "Açores",
 
   // ED2
-  ed2WritingNemotron: "Rédaction avec Nemotron 3 Super sur Nebius Token Factory…",
+  ed2WritingNemotron: "Rédaction en cours…",
   ed2BrandLine: "NVIDIA · Nebius",
 };

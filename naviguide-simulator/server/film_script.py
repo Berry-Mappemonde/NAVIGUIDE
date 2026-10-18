@@ -9371,7 +9371,7 @@ async def write_stored_plan(
                 source_last = "budget"
             continue
         any_llm = True
-        source_last = source
+        source_last = source if public_written_source(source_last) in {"rules", "budget", WRITTEN_SOURCE} else source_last
         guarded, rw, fb = apply_written_guard(raw, text, facts, lang=lang)
         cap = budgets[i] if i < len(budgets) else 0
         if cap:
@@ -9518,7 +9518,7 @@ async def edit_written_once(
     text, source = await cascade(
         EDIT_SYSTEM, user, tier="judge", fallback="", facts=facts, max_tokens=max_tok,
     )
-    if not (text or "").strip() or source in {"rules", "budget"}:
+    if not (text or "").strip() or not str(source).endswith("-ultra"):
         return None
     return _redistribute_written_blob(raw_plan, text, lang="fr")
 
@@ -9613,7 +9613,10 @@ async def write_film_chain(
         accepted = _stamp_written_plan(super_plan, WRITTEN_SOURCE, seconds, model=_write_model())
     else:
         stats["source"] = origin or "rules"
-        accepted = _stamp_written_plan(super_plan, origin or "rules", seconds, model=origin or None)
+        from story_cascade import NIM_MODEL  # noqa: PLC0415
+        nim_source = f"nvidia-{NIM_MODEL.split('/')[-1]}"
+        model = NIM_MODEL if (origin or "") == nim_source else (origin or None)
+        accepted = _stamp_written_plan(super_plan, origin or "rules", seconds, model=model)
 
     if film_ultra_open():
         edited = await edit_written_once(accepted, raw, cascade=cascade)
