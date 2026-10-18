@@ -95,6 +95,15 @@ def _strict_era5_wind(now: datetime, *, fetch: bool = True):
     return wind_fn
 
 
+def _unwrap_lon(ref: float, lon: float) -> float:
+    x = float(lon)
+    while x - ref > 180.0:
+        x -= 360.0
+    while x - ref < -180.0:
+        x += 360.0
+    return x
+
+
 def _is_real_vertex(v: dict) -> bool:
     return (v.get("regime") or v.get("kind")) == "hindcast"
 
@@ -219,19 +228,37 @@ def future_clock(voy: dict, track: dict, polar_raw: Optional[dict]) -> Optional[
     i = int(trunc.get("pointIndex") or 0)
     seam_cum = float(trunc.get("pointCumNm") or 0)
     last = verts[-1]
+    tail = [dict(p) for p in pts[i + 1:]]
+    seam_lon = float(last["lon"])
+    if tail and isinstance(tail[0].get("lon"), (int, float)):
+        # Sommets repliés [-180, 180], points de route dépliés : la couture
+        # reprend la longitude dépliée du point suivant (pas de saut de 360°).
+        seam_lon = _unwrap_lon(float(tail[0]["lon"]), seam_lon)
     seam_pt = {
         "lat": last["lat"],
-        "lon": last["lon"],
+        "lon": seam_lon,
         "cumNm": seam_cum,
         "filmCum": float(trunc.get("pointFilmCum") or seam_cum),
         "jump": False,
         "nonMaritime": False,
     }
-    rest = [seam_pt] + [dict(p) for p in pts[i + 1:]]
-    marks = [
-        m for m in (voy.get("marks") or [])
-        if float(m.get("nm") or m.get("filmNm") or 0) > seam_cum + 0.01
-    ]
+    rest = [seam_pt] + tail
+    marks = []
+    for m in voy.get("marks") or []:
+        if float(m.get("nm") or m.get("filmNm") or 0) <= seam_cum + 0.01:
+            continue
+        m = dict(m)
+        # `index` vise la route complète ; `rest[k]` = `pts[i + k]` (k >= 1).
+        # Sans ce recalage, Nouméa (index 620) tombait sur pts[i + 620], dans
+        # le golfe de Gascogne, et son ETA passait en mai 2027.
+        idx = m.get("index")
+        if isinstance(idx, int) and not isinstance(idx, bool):
+            local = idx - i
+            if 1 <= local < len(rest):
+                m["index"] = local
+            else:
+                m.pop("index", None)
+        marks.append(m)
     return build_voyage_clock(
         rest, marks, last["iso"], polar_raw=polar_raw, start_at="seam",
     )
