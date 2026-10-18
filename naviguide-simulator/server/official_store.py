@@ -35,10 +35,10 @@ UNAVAILABLE = "unavailable"
 # ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
 # plan_review : rc54 — marques recollées sur les milles d'itinéraire
 # (Mata-Utu / Nouméa plus sur le retour atlantique). Pas de repli sur rc44.
-FILM_SCRIPT_REV = "vs1"
+FILM_SCRIPT_REV = "vs1-rg10"
 WRITTEN_SOURCE = "nemotron-super-token-factory"
 REVIEWED_SOURCE = "nemotron-super-reviewed-ultra"
-MOMENTS_REV = "rg4"
+MOMENTS_REV = "rg4-anchor"
 ICI_REV = "am1a"
 PLAN_REVIEW_REV = "rc54"
 DB_NAME = "naviguide_simulator"
