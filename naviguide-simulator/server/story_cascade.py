@@ -429,8 +429,9 @@ _META_RE = re.compile(
     re.IGNORECASE,
 )
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
-_WORD_RE = re.compile(r"[0-9A-Za-zÀ-ÿ]+")
-# Marqueurs de raisonnement. En cas de doute la phrase est rejetée.
+# Formes de raisonnement. Le champ reasoning n'est plus relu : seul `content`
+# sort. Ces motifs restent pour les tests qui décrivent une fuite.
+
 _REASON_MARK_RE = re.compile(
     r"\bthe\s+user\b"
     r"|\bwe\s+need\b"
@@ -519,7 +520,8 @@ async def translate(
         lang="en",
     )
     out, source = result
-    cleaned = _clean_text(out)
+    cleaned = _clean_text(out).replace("**", "")
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
     if not cleaned:
         return _as_result(_clean_text(src) or "", "rules", tier="fast")
     return _as_result(
@@ -640,20 +642,6 @@ def _parts_text(parts: list[tuple[str, str]], *, reasoning: bool) -> str:
     return "".join(chunks)
 
 
-def _words(text: str) -> list[str]:
-    return [w.lower() for w in _WORD_RE.findall(text or "")]
-
-
-def _shares_prompt_span(sentence: str, prompt: str, n: int = 6) -> bool:
-    """True when `n` consecutive words of the sentence are copied from the prompt."""
-    sw = _words(sentence)
-    pw = _words(prompt)
-    if len(sw) < n or len(pw) < n:
-        return False
-    grams = {tuple(pw[i:i + n]) for i in range(len(pw) - n + 1)}
-    return any(tuple(sw[i:i + n]) in grams for i in range(len(sw) - n + 1))
-
-
 def _sentence_matches_lang(text: str, *, en: bool) -> bool:
     """Keep the sentence only when it is clearly the requested language.
 
@@ -668,49 +656,15 @@ def _sentence_matches_lang(text: str, *, en: bool) -> bool:
     return (en_n > fr) if en else (fr > en_n)
 
 
-def _recover_reasoning_text(raw: Any, *, prompt: str = "", lang: str = "fr") -> str:
-    """A plain sentence left beside an empty `content`.
-
-    The reasoning blob itself is never returned. A sentence is kept only when
-    it has no reasoning marker, no 6-word copy of the prompt, and it is in the
-    requested language. Anything doubtful stays empty so the cascade can fall
-    back with an honest label.
-    """
-    if raw is None:
-        return ""
-    if isinstance(raw, str):
-        blob = raw
-    else:
-        parts = _message_parts(raw)
-        blob = _parts_text(parts, reasoning=True) or _parts_text(parts, reasoning=False)
-    stripped = _strip_preamble(_strip_think(_FENCE_RE.sub("", blob or "")))
-    want_en = _is_en(lang)
-    kept: list[str] = []
-    for sentence in _SENT_SPLIT_RE.split(stripped):
-        sentence = sentence.strip()
-        if not sentence:
-            continue
-        piece = _clean_text(sentence)
-        if not piece or _PROMPT_LEAK_RE.search(piece) or _META_RE.search(piece):
-            continue
-        if _REASON_MARK_RE.search(piece):
-            continue
-        if _shares_prompt_span(piece, prompt):
-            continue
-        if not _sentence_matches_lang(piece, en=want_en):
-            continue
-        kept.append(piece)
-    return " ".join(kept).strip()
-
-
 def _openai_text(data: dict[str, Any] | None, *, prompt: str = "", lang: str = "fr") -> str:
-    """Visitor text from a chat completion.
+    """Visitor text from a chat completion: `content` only.
 
-    `content` wins. When it is empty, Nemotron on Token Factory often spent
-    the budget on the trace (`finish_reason=length`) and left the answer in
-    `message.reasoning` (vLLM) or `reasoning_content` (older field). Only a
-    sentence that passes `_recover_reasoning_text` may leave that field.
+    Empty content stays empty. A reasoning trace (`message.reasoning`,
+    `reasoning_content`, a reasoning part) is never the visitor text, so the
+    cascade can fall back with an honest label. `prompt` and `lang` are
+    accepted and ignored: they used to filter a recovered sentence.
     """
+    del prompt, lang
     choice = ((data or {}).get("choices") or [{}])[0] or {}
     if not isinstance(choice, dict):
         choice = {}
@@ -721,13 +675,6 @@ def _openai_text(data: dict[str, Any] | None, *, prompt: str = "", lang: str = "
     content = _clean_text(_parts_text(content_parts, reasoning=False))
     if content:
         return content
-    for raw in (msg.get("reasoning"), msg.get("reasoning_content"), choice.get("reasoning")):
-        recovered = _recover_reasoning_text(raw, prompt=prompt, lang=lang)
-        if recovered:
-            return recovered
-    typed = _parts_text(content_parts, reasoning=True)
-    if typed:
-        return _recover_reasoning_text(typed, prompt=prompt, lang=lang)
     return ""
 
 
