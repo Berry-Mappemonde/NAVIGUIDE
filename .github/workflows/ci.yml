@@ -367,24 +367,26 @@ jobs:
       - uses: actions/download-artifact@v7
         with:
           pattern: pytest-shard-*
-          path: shard-artifacts
+          path: ${{ github.workspace }}/ci-shard-artifacts
           merge-multiple: false
       - name: Réorganiser les artefacts shard
+        working-directory: ${{ github.workspace }}
         run: |
-          mkdir -p shard-artifacts-flat
+          mkdir -p ci-shard-artifacts-flat
           for g in 1 2 3 4; do
-            src="shard-artifacts/pytest-shard-${g}"
+            src="ci-shard-artifacts/pytest-shard-${g}"
             if [ -d "$src" ]; then
-              mkdir -p "shard-artifacts-flat/shard-${g}"
-              cp "$src"/* "shard-artifacts-flat/shard-${g}/"
+              mkdir -p "ci-shard-artifacts-flat/shard-${g}"
+              cp "$src"/* "ci-shard-artifacts-flat/shard-${g}/"
             else
-              echo "Artefact manquant pour shard $g" >&2
+              echo "Artefact manquant pour shard $g (contenu de ci-shard-artifacts:)" >&2
+              ls -la ci-shard-artifacts >&2 || true
               exit 1
             fi
           done
       - name: Exhaustivité collectés vs exécutés
         env:
-          SHARD_ARTIFACTS_DIR: ${{ github.workspace }}/backend/shard-artifacts-flat
+          SHARD_ARTIFACTS_DIR: ${{ github.workspace }}/ci-shard-artifacts-flat
         run: python scripts/ci_pytest_gate.py
 
   deploy-gate:
