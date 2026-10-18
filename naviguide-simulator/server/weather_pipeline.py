@@ -4,6 +4,12 @@ Tous les fournisseurs passent ici : tâche de rafraîchissement dédupliquée,
 état durable (pending / ready / error) et cache par cellule 0,25° + cycle GFS.
 Les handlers répondent tout de suite ; le client actualise à faible cadence.
 
+Une file asyncio à part (NAVIGUIDE_WEATHER_PIPELINE, éteint par défaut)
+borne chaque fournisseur, met en cache (fournisseur, cellule 0,25°, heure UTC)
+et expose pending / ready / unavailable. Une exception ou un dépassement
+devient unavailable, jamais une erreur de page. Le pipeline à fils reste
+le chemin emprunté quand le drapeau est éteint.
+
 Le pipeline **transporte** les champs déjà convertis par les loaders
 (hindcast, Copernicus getWind / getWave / getCurrent, forecast_cube, saildocs).
 Il ne recalcule pas les vecteurs. Conventions (cahier § 20) :
@@ -15,10 +21,13 @@ Il ne recalcule pas les vecteurs. Conventions (cahier § 20) :
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
+import os
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any, Callable, Iterable, Optional
 
 from saildocs import last_ready_cycle, to_iso
@@ -331,3 +340,275 @@ _PIPELINE = WeatherPipeline()
 
 def get_pipeline() -> WeatherPipeline:
     return _PIPELINE
+
+
+# Délai max d'un fournisseur sur la file asyncio. Même ordre que le client
+# Open-Meteo du GRIB (20 s) : la page est déjà repartie, le travail s'arrête.
+DEFAULT_PROVIDER_TIMEOUT_S = 20.0
+_FLAG_ON = {"1", "true", "yes", "on"}
+
+
+def weather_pipeline_enabled() -> bool:
+    return os.getenv("NAVIGUIDE_WEATHER_PIPELINE", "").strip().lower() in _FLAG_ON
+
+
+def hour_stamp(when=None) -> str:
+    if not isinstance(when, datetime):
+        when = datetime.now(timezone.utc)
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    when = when.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    return when.strftime("%Y-%m-%dT%H")
+
+
+def layer_cache_key(provider: str, lat: float, lon: float, when=None) -> tuple:
+    """(fournisseur, cellule, heure). La cellule est le couple d'indices 0,25°."""
+    return (str(provider), weather_cell(lat, lon), hour_stamp(when))
+
+
+class AsyncWeatherQueue:
+    """File asyncio : un travail par clé, délai max par fournisseur, cache LRU."""
+
+    def __init__(
+        self,
+        *,
+        default_timeout_s: float = DEFAULT_PROVIDER_TIMEOUT_S,
+        timeouts: Optional[dict] = None,
+    ) -> None:
+        self._default_timeout = float(default_timeout_s)
+        self._timeouts = {str(k): float(v) for k, v in (timeouts or {}).items()}
+        self._cache: dict[tuple, dict] = {}
+        self._inflight: set[tuple] = set()
+        self._lock = threading.Lock()
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._thread: Optional[threading.Thread] = None
+        self._queue: Optional[asyncio.Queue] = None
+        self._ready = threading.Event()
+        self._closed = False
+
+    def timeout_for(self, provider: str) -> float:
+        return self._timeouts.get(str(provider), self._default_timeout)
+
+    def cached_status(self, provider: str, lat: float, lon: float, when=None) -> Optional[str]:
+        key = layer_cache_key(provider, lat, lon, when)
+        with self._lock:
+            hit = self._cache.get(key)
+            inflight = key in self._inflight
+        if hit and hit.get("status") in {"ready", "unavailable"}:
+            return hit.get("status")
+        if inflight or (hit and hit.get("status") == "pending"):
+            return "pending"
+        return None
+
+    def provider_busy(self, provider: str) -> bool:
+        with self._lock:
+            return any(key[0] == provider for key in self._inflight)
+
+    def layer(self, provider: str, lat: float, lon: float, when=None) -> dict:
+        key = layer_cache_key(provider, lat, lon, when)
+        with self._lock:
+            hit = self._cache.get(key)
+            inflight = key in self._inflight
+        if hit and hit.get("status") in {"ready", "unavailable"}:
+            return self._public(hit)
+        if inflight or (hit and hit.get("status") == "pending"):
+            return self._public(hit or self._pending_record(key))
+        return self._public(self._absent_record(key))
+
+    def submit(
+        self,
+        provider: str,
+        lat: float,
+        lon: float,
+        loader: Loader,
+        *,
+        when=None,
+        force: bool = False,
+    ) -> bool:
+        """Enfile au plus un travail. Retour immédiat. Ne lève pas."""
+        key = None
+        try:
+            key = layer_cache_key(provider, lat, lon, when)
+            with self._lock:
+                if self._closed:
+                    return False
+                if key in self._inflight:
+                    return False
+                hit = self._cache.get(key)
+                if not force and hit and hit.get("status") in {"ready", "unavailable"}:
+                    return False
+                self._inflight.add(key)
+                _lru_set(self._cache, key, self._pending_record(key))
+            self._ensure()
+            job = {"key": key, "loader": loader, "timeout": self.timeout_for(provider)}
+            asyncio.run_coroutine_threadsafe(self._queue.put(job), self._loop).result(timeout=2.0)
+            return True
+        except Exception as exc:
+            log.warning("file météo %s: %s", provider, exc)
+            if key is not None:
+                self._store(key, "unavailable", None, type(exc).__name__)
+            return False
+
+    def snapshot(
+        self,
+        provider: str,
+        lat: float,
+        lon: float,
+        loader: Loader,
+        *,
+        when=None,
+        force: bool = False,
+    ) -> dict:
+        self.submit(provider, lat, lon, loader, when=when, force=force)
+        return self.layer(provider, lat, lon, when=when)
+
+    def wait_layer(
+        self,
+        provider: str,
+        lat: float,
+        lon: float,
+        *,
+        when=None,
+        timeout: float = 2.0,
+    ) -> dict:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            view = self.layer(provider, lat, lon, when=when)
+            if view.get("status") in {"ready", "unavailable"}:
+                return view
+            time.sleep(0.01)
+        return self.layer(provider, lat, lon, when=when)
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+        loop = self._loop
+        if loop is not None and loop.is_running() and self._queue is not None:
+            try:
+                asyncio.run_coroutine_threadsafe(self._queue.put(None), loop).result(timeout=1.0)
+            except Exception:
+                pass
+            loop.call_soon_threadsafe(loop.stop)
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+
+    def _ensure(self) -> None:
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                wait = not self._ready.is_set()
+            else:
+                self._ready.clear()
+                self._thread = threading.Thread(
+                    target=self._run_loop,
+                    name="naviguide-wx-async",
+                    daemon=True,
+                )
+                self._thread.start()
+                wait = True
+        if wait and not self._ready.wait(2.0):
+            raise RuntimeError("async weather queue did not start")
+
+    def _run_loop(self) -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        self._loop = loop
+
+        async def _main() -> None:
+            self._queue = asyncio.Queue()
+            self._ready.set()
+            await self._worker(self._queue)
+
+        loop.create_task(_main())
+        try:
+            loop.run_forever()
+        finally:
+            pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
+            for task in pending:
+                task.cancel()
+            if pending:
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.close()
+
+    async def _worker(self, queue: asyncio.Queue) -> None:
+        while True:
+            job = await queue.get()
+            if job is None:
+                return
+            asyncio.create_task(self._run_job(job))
+
+    async def _run_job(self, job: dict) -> None:
+        key = job["key"]
+        try:
+            data = await asyncio.wait_for(
+                asyncio.to_thread(job["loader"]),
+                timeout=float(job["timeout"]),
+            )
+            if not isinstance(data, dict):
+                data = {}
+            self._store(key, "ready", data, None)
+        except TimeoutError:
+            self._store(key, "unavailable", None, "timeout")
+        except Exception as exc:
+            log.warning("météo async %s: %s", key[0], exc)
+            self._store(key, "unavailable", None, type(exc).__name__)
+        finally:
+            with self._lock:
+                self._inflight.discard(key)
+
+    def _store(self, key: tuple, status: str, data, reason) -> None:
+        record = {
+            "status": status,
+            "provider": key[0],
+            "cell": _cell_public(key[1][0], key[1][1]),
+            "hour": key[2],
+            "data": dict(data or {}) or None,
+            "reason": reason,
+        }
+        with self._lock:
+            _lru_set(self._cache, key, record)
+            if status in {"ready", "unavailable"}:
+                self._inflight.discard(key)
+
+    def _pending_record(self, key: tuple) -> dict:
+        return {
+            "status": "pending",
+            "provider": key[0],
+            "cell": _cell_public(key[1][0], key[1][1]),
+            "hour": key[2],
+            "data": None,
+            "reason": None,
+        }
+
+    def _absent_record(self, key: tuple) -> dict:
+        return {
+            "status": "unavailable",
+            "provider": key[0],
+            "cell": _cell_public(key[1][0], key[1][1]),
+            "hour": key[2],
+            "data": None,
+            "reason": None,
+        }
+
+    def _public(self, record: dict) -> dict:
+        body: dict[str, Any] = dict(record.get("data") or {})
+        body["status"] = record.get("status") or "pending"
+        body["provider"] = record.get("provider")
+        body["cell"] = record.get("cell")
+        body["hour"] = record.get("hour")
+        if record.get("reason") and not body.get("reason"):
+            body["reason"] = record["reason"]
+        return body
+
+
+_ASYNC_QUEUE: Optional[AsyncWeatherQueue] = None
+_ASYNC_GUARD = threading.Lock()
+
+
+def get_async_weather_queue() -> AsyncWeatherQueue:
+    global _ASYNC_QUEUE
+    with _ASYNC_GUARD:
+        if _ASYNC_QUEUE is None or _ASYNC_QUEUE._closed:
+            _ASYNC_QUEUE = AsyncWeatherQueue()
+        return _ASYNC_QUEUE

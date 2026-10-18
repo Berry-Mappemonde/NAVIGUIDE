@@ -60,7 +60,7 @@ from voyage_clock import (
     to_iso,
 )
 from voyage_store import load_voyage, purge_stale_voyages, save_voyage, update_voyage
-from weather_pipeline import get_pipeline
+from weather_pipeline import get_async_weather_queue, get_pipeline, weather_pipeline_enabled
 import voyage_journal as journal
 import official_store
 
@@ -928,6 +928,23 @@ def _kick_official_grib(
             log.warning("rafraîchissement GRIB officiel: %s", exc)
         return {}
 
+    if weather_pipeline_enabled():
+        def _load_async():
+            record = maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, target_when, force=force)
+            _journal_safely(lambda: journal.record_grib(record, (load_voyage(OFFICIAL_VOYAGE_ID) or {}).get("clock"), target_when))
+            if not record or record.get("status") != "ready":
+                raise RuntimeError("grib_unavailable")
+            return {"stored": True}
+
+        return get_async_weather_queue().submit(
+            "grib-wind",
+            float(around["lat"]),
+            float(around["lon"]),
+            _load_async,
+            when=target_when,
+            force=force,
+        )
+
     return get_pipeline().kick(
         "official-grib",
         float(around["lat"]),
@@ -939,7 +956,26 @@ def _kick_official_grib(
 
 
 def _official_grib_refreshing() -> bool:
+    if weather_pipeline_enabled():
+        return get_async_weather_queue().provider_busy("grib-wind")
     return get_pipeline().provider_busy("official-grib")
+
+
+def _grib_wind_layer(record: Optional[dict], around: Optional[dict], when: datetime, *, refreshing: bool) -> str:
+    lat = (around or {}).get("lat")
+    lon = (around or {}).get("lon")
+    cached = None
+    if lat is not None and lon is not None:
+        cached = get_async_weather_queue().cached_status("grib-wind", float(lat), float(lon), when)
+    if record and record.get("status") == "ready":
+        return "ready"
+    if cached == "pending" or refreshing:
+        return "pending"
+    if cached == "unavailable":
+        return "unavailable"
+    if cached == "ready":
+        return "ready"
+    return "unavailable"
 
 
 def _regime_portions(clock: dict) -> list:
@@ -1506,6 +1542,13 @@ def _pending_grib(record: Optional[dict], around: Optional[dict], when: datetime
                 for product in (body.get("products") or [])
             ]
     body["refreshing"] = refreshing
+    if weather_pipeline_enabled():
+        body["layers"] = {
+            "gribWind": {
+                "provider": "grib-wind",
+                "status": _grib_wind_layer(record, around, when, refreshing=refreshing),
+            }
+        }
     return body
 
 
