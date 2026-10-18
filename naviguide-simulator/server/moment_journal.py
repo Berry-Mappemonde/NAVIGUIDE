@@ -863,6 +863,12 @@ def warm_moments(voyage_id: str, voy: dict | None = None) -> dict[str, Any]:
     voy = _with_clock(voy)
     try:
         rows = _build_rows(voyage_id, voy)
+        try:
+            from film_script import anchor_moment_changes  # noqa: PLC0415
+
+            anchor_moment_changes(rows, voy.get("clock"))
+        except Exception:
+            pass
         if rows and not any(r.get("t") for r in rows):
             # Des moments sans date ne servent ni au Journal ni au film : mieux vaut le dire que les ranger.
             log.warning("warm_moments(%s) : %d moments sans date (horloge absente ?) — rien n'est écrit", voyage_id, len(rows))
