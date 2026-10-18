@@ -445,6 +445,8 @@ def _legs_from_voyage(voy: dict) -> list[dict]:
     if legs:
         return legs
     marks = [m for m in (voy.get("marks") or []) if isinstance(m, dict)]
+    if not marks:
+        marks = [m for m in _voyage_marks(voy) if isinstance(m, dict)]
     marks = sorted(marks, key=lambda m: float(m.get("nm") if m.get("nm") is not None else m.get("filmNm") or 0))
     out: list[dict] = []
     for left, right in zip(marks, marks[1:]):

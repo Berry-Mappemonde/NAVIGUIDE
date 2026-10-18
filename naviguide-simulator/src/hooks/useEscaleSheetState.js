@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useEscaleSheet } from "./useEscaleSheet.js";
-import { nearestAlongside, parkedCatamaranSample, pickAutoEscaleStop } from "./escaleSheetPick.js";
+import {
+  escaleSheetVisible, nearestAlongside, parkedCatamaranSample, pickAutoEscaleStop,
+} from "./escaleSheetPick.js";
 
-export { nearestAlongside, parkedCatamaranSample, pickAutoEscaleStop };
+export { escaleSheetVisible, nearestAlongside, parkedCatamaranSample, pickAutoEscaleStop };
 
 /**
  * Which stop's sheet is open (moved out of App.jsx): opened
@@ -15,6 +17,7 @@ export { nearestAlongside, parkedCatamaranSample, pickAutoEscaleStop };
  */
 export function useEscaleSheetState({
   lang, isSuivre, atQuay, clockSample, marks, onOpen, filmActive = false, clearToken = 0,
+  clockMoveToken = 0,
 }) {
   const [stop, setStop] = useState(null);
   const sheet = useEscaleSheet(stop, lang);
@@ -53,6 +56,23 @@ export function useEscaleSheetState({
     if (!atQuay) holdRef.current = false;
   }, [atQuay]);
 
+  // The sheet belongs to the stop the boat is at: once the clock carries
+  // the boat away from it, the sheet closes and the stop may auto-open again.
+  // A flag click holds its sheet until the skipper moves the clock.
+  const [released, setReleased] = useState(0);
+  useEffect(() => {
+    if (!clockMoveToken || !userPickedRef.current) return;
+    userPickedRef.current = false;
+    setReleased((n) => n + 1);
+  }, [clockMoveToken]);
+  const visible = escaleSheetVisible({ stop, clockSample, userPicked: userPickedRef.current });
+  useEffect(() => {
+    if (!stop || visible) return;
+    userPickedRef.current = false;
+    if (autoRef.current === stop.name) autoRef.current = null;
+    setStop(null);
+  }, [stop, visible, released]);
+
   useEffect(() => {
     if (filmActive) {
       holdRef.current = true;
@@ -74,5 +94,5 @@ export function useEscaleSheetState({
     setStop({ name: best.name, lat: best.lat, lon: best.lon });
   }, [filmActive, isSuivre, atQuay, clockSample, marks, stop]);
 
-  return { stop, setStop, sheet, open, close };
+  return { stop: visible ? stop : null, setStop, sheet, open, close };
 }

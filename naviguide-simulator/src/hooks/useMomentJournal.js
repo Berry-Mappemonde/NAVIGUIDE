@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { nextEtaRetryMs, sleepMs } from "./usePlanReview.js";
+import { haversineNm, wrapLon } from "../utils/geo.js";
+// A null coordinate is unknown, never 0 (Number(null) === 0).
+import { finiteCoord } from "./useMoment.js";
+
+/**
+ * A journal moment further than this from the boat does not describe it.
+ * A little more than one day of sailing (the journal writes about one moment
+ * a day), far less than the distance between two territories.
+ */
+export const MOMENT_MAX_NM = 200;
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
 
@@ -48,6 +58,44 @@ export function momentAtOrBefore(entries, t) {
   const last = rows[rows.length - 1];
   if (!last) return null;
   return last.moment || last;
+}
+
+function entryPos(row) {
+  const pos = row?.pos || row?.moment?.pos || null;
+  const lat = finiteCoord(pos?.lat);
+  const lon = finiteCoord(pos?.lon);
+  return pos && Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
+}
+
+/** Distance (nm) from a journal row to a position, or Infinity. */
+export function entryNmFrom(row, at) {
+  const p = entryPos(row);
+  const lat = finiteCoord(at?.lat);
+  const lon = finiteCoord(at?.lon);
+  if (!p || !Number.isFinite(lat) || !Number.isFinite(lon)) return Infinity;
+  return haversineNm(p.lat, wrapLon(p.lon), lat, wrapLon(lon));
+}
+
+/**
+ * The journal moment for a position: the nearest one up to `t`, within
+ * `maxNm`; among equally near ones, the latest. Never one far away just
+ * because its date is the closest. Without a position: by date.
+ */
+export function momentNearest(entries, { t, pos, maxNm = MOMENT_MAX_NM } = {}) {
+  const lat = finiteCoord(pos?.lat);
+  const lon = finiteCoord(pos?.lon);
+  if (!pos || !Number.isFinite(lat) || !Number.isFinite(lon)) return momentAtOrBefore(entries, t);
+  const rows = visibleJournalEntries(entries, { until: t });
+  let best = null;
+  let bestNm = Infinity;
+  for (const row of rows) {
+    const nm = entryNmFrom(row, { lat, lon });
+    if (nm <= maxNm && nm <= bestNm) {
+      best = row;
+      bestNm = nm;
+    }
+  }
+  return best ? (best.moment || best) : null;
 }
 
 export function parseOfficialMoments(body) {

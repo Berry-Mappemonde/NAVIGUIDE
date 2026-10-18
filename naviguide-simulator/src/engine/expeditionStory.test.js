@@ -56,6 +56,20 @@ describe("expeditionStory — chronologique, jambe par jambe", () => {
     assert.equal(expeditionStoryText({ clock, marks, live, leg, journal, now }).split("\n\n").length, 8);
   });
 
+  it("le paragraphe en cours suit la jambe de l'horloge, pas la jambe de départ", () => {
+    const live = { filmNm: 19400, sailNm: 19260, seaHours: 94 * 24, iso: "2026-09-19T02:00:00Z", status: "live", vehicle: "main" };
+    const nowLeg = { fromStop: "Nouméa (Nouvelle-Calédonie)", toStop: "Dzaoudzi (Mayotte)", remainingNm: 9100 };
+    const departure = { fromStop: "La Rochelle", toStop: "Ajaccio (Corse)", remainingNm: 1453 };
+    const atNow = expeditionStory({ clock, marks, live, leg: nowLeg, now, lang: "fr" }).map(plain);
+    const atCursor = expeditionStory({ clock, marks, live, leg: departure, now, lang: "fr" }).map(plain);
+    const enRoute = atNow.find((p) => /en route/.test(p));
+    const cursorRoute = atCursor.find((p) => /en route/.test(p));
+    assert.match(enRoute, /Dzaoudzi \(Mayotte\)/);
+    assert.doesNotMatch(enRoute, /Ajaccio/);
+    assert.match(cursorRoute, /Ajaccio/);
+    assert.notEqual(enRoute, cursorRoute);
+  });
+
   it("deux paragraphes consécutifs n’ont pas le même connecteur", () => {
     const live = { filmNm: 19400, sailNm: 19260, seaHours: 94 * 24, iso: "2026-09-19T02:00:00Z", status: "live", vehicle: "main" };
     const paras = expeditionStory({ clock, marks, live, now, lang: "fr" });
