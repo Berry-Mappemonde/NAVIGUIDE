@@ -8,7 +8,7 @@
 set -euo pipefail
 
 SITE="${1:?usage: apply-site.sh blue-intelligence|naviguide|simulator}"
-APP="${APP:-$HOME/blue-intelligence-map}"
+APP="${APP:-${REMOTE_APP:-/home/naviguide/naviguide}}"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/blue-intelligence-deploy"
 FORCE="${FORCE_DEPLOY:-0}"
 SKIP_FRONTEND_BUILD="${SKIP_FRONTEND_BUILD:-1}"

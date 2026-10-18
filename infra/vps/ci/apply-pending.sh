@@ -2,7 +2,7 @@
 # Reprend les déploiements reportés (à lancer SUR le VPS).
 set -euo pipefail
 
-APP="${APP:-$HOME/blue-intelligence-map}"
+APP="${APP:-${REMOTE_APP:-/home/naviguide/naviguide}}"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/blue-intelligence-deploy"
 APPLY="$APP/infra/vps/ci/apply-site.sh"
 
