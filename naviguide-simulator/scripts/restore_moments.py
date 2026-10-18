@@ -57,8 +57,10 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    from ici_engine import ensure_pearl_amp_layer_sig  # noqa: PLC0415
     from restore_moments import run_restore, validate_source_sqlite  # noqa: PLC0415
 
+    ensure_pearl_amp_layer_sig("restore_moments")
     src = validate_source_sqlite(args.source_sqlite)
     print(f"source : {src}", flush=True)
     json_paths = list(args.moments_json or [])
