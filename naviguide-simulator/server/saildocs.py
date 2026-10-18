@@ -144,8 +144,10 @@ def bbox_around(lat: float, lon: float, radius_nm: float = DAILY_RADIUS_NM) -> T
     dlat, dlon = _disk_delta(lat, radius_nm)
     south = max(-90.0, lat - dlat)
     north = min(90.0, lat + dlat)
-    west = lon - dlon
-    east = lon + dlon
+    # Bornes repliées : près de 180° la boîte passe la couture (ouest > est,
+    # ex. 175.1E → 177.9W), jamais 182.1W.
+    west = _wrap_lon(lon - dlon)
+    east = _wrap_lon(lon + dlon)
     return (round(south, 4), round(north, 4), round(west, 4), round(east, 4))
 
 
@@ -318,7 +320,8 @@ def _hem_lat(v: float) -> str:
 
 
 def _hem_lon(v: float) -> str:
-    return f"{abs(v):.1f}{'E' if v >= 0 else 'W'}"
+    x = _wrap_lon(v)
+    return f"{abs(x):.1f}{'E' if x >= 0 else 'W'}"
 
 
 def saildocs_query(

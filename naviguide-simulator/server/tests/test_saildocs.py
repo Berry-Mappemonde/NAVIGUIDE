@@ -142,3 +142,55 @@ def test_globe_ingest_rejected(tmp_path, monkeypatch):
 
 def test_missing_label():
     assert GRIB_MISSING == "dernière prévision absente"
+
+
+# ── Antiméridien (parcours du 18/10, NAV-W-06 : bateau près des Fidji) ──────
+
+def _query_lons(q: str):
+    box = q.split(":", 1)[1].split("|", 1)[0].split(",")
+    return box[2], box[3]
+
+
+def _lon_value(token: str) -> float:
+    v = float(token[:-1])
+    assert token[-1] in "EW", token
+    assert 0.0 <= v <= 180.0, token
+    return v if token[-1] == "E" else -v
+
+
+@pytest.mark.parametrize(
+    "lat, lon, west, east",
+    [
+        (-18.2, -178.6, "177.9E", "175.1W"),
+        (-18.2, 178.6, "175.1E", "177.9W"),
+        (-17.0, 179.5, "176.0E", "177.0W"),
+        (-17.0, 180.0, "176.5E", "176.5W"),
+        (-17.0, -180.0, "176.5E", "176.5W"),
+    ],
+)
+def test_saildocs_query_near_antimeridian_is_valid(lat, lon, west, east):
+    q = saildocs_query(lat, lon)
+    w, e = _query_lons(q)
+    assert (w, e) == (west, east), q
+    # Saildocs : lon0 (ouest) puis lon1 (est), chacune dans 0–180 E/W ;
+    # une boîte qui passe 180° s'écrit ouest en E, est en W.
+    wv, ev = _lon_value(w), _lon_value(e)
+    assert wv > 0 > ev
+    assert 0 < (ev - wv) % 360 < 20
+
+
+@pytest.mark.parametrize("lon", [-178.6, 178.6, 179.5, 180.0, -180.0, 540.0])
+def test_bbox_around_longitudes_stay_folded(lon):
+    south, north, west, east = bbox_around(-17.0, lon)
+    assert -180.0 <= west <= 180.0
+    assert -180.0 <= east <= 180.0
+    assert_corridor_not_globe((south, north, west, east))
+
+
+def test_saildocs_query_one_point_matches_along_track_convention():
+    """Un point seul et une route ici → demain donnent la même écriture."""
+    alone = saildocs_query(-18.2, -178.6)
+    with_dest = saildocs_query(-18.2, -178.6, dest={"lat": -18.3, "lon": -178.7})
+    assert _query_lons(alone)[1].endswith("W")
+    assert _query_lons(with_dest)[0].endswith("E")
+    assert "182" not in alone and "182" not in with_dest
