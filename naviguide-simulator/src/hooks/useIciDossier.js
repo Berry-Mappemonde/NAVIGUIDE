@@ -67,6 +67,24 @@ export function isStaleBag(bag, boat, limitNm = STALE_BAG_NM) {
   return bagDistanceNm(bag, boat) > limitNm;
 }
 
+/**
+ * During the voyage film the held bag is today's live place (no GET /ici
+ * per frame). When it sits farther than STALE_BAG_NM from the film boat,
+ * the Here panel hides it and labels today's position. A bag that still
+ * matches the film boat, and every bag outside the film, stays shown.
+ */
+export function filmStaleBagDecision({
+  playing = false,
+  bag = null,
+  boat = null,
+  limitNm = STALE_BAG_NM,
+} = {}) {
+  const shown = { hidden: false, labelToday: false };
+  if (!playing || !bag || !boat) return shown;
+  if (!isStaleBag(bag, boat, limitNm)) return shown;
+  return { hidden: true, labelToday: true };
+}
+
 /** The previous bag is a fresh start (no zee-exit, no wind-shift) when the boat jumped. */
 export function isJump(prevBag, bag, limitNm = JUMP_NM) {
   if (!prevBag?.at || !bag?.at) return false;
@@ -557,7 +575,12 @@ export function useIciDossier({
     pearl: effective?.pearl ?? (effective?.thin ? "thin" : null),
     events: tick.events,
     display: tick.briefing,
+    todayPosition: false,
   };
   if (!frozen) holdRef.current = pack;
-  return frozen && holdRef.current ? holdRef.current : pack;
+  if (!frozen) return pack;
+  const held = holdRef.current || pack;
+  const decision = filmStaleBagDecision({ playing: true, bag: held.dossier, boat });
+  if (!decision.labelToday) return held;
+  return { ...held, todayPosition: decision.labelToday };
 }

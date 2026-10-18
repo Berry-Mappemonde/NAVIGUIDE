@@ -1802,6 +1802,7 @@ export default function App() {
         officialFallback={officialFallback}
         iciBriefing={iciPack.briefing}
         iciBriefingSegments={iciPack.briefingSegments}
+        todayPosition={Boolean(iciPack.todayPosition)}
         onBriefingFocus={handleBriefingFocus}
         journal={officialJournal.journal}
         journalLoading={officialJournal.loading}

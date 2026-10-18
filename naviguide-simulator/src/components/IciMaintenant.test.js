@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import en from "../i18n/en.js";
+import fr from "../i18n/fr.js";
 import fixture from "../fixtures/moment.json" with { type: "json" };
 import { momentSearchParams } from "../hooks/useMoment.js";
 import { wrapLon } from "../utils/geo.js";
@@ -38,6 +40,26 @@ const tFr = (key, vars = {}) => {
   };
   return Object.entries(vars).reduce((s, [k, v]) => s.replace(`{${k}}`, v), table[key] || key);
 };
+
+describe("IciMaintenant — film : étiquette position du jour", () => {
+  it("masque le sac live et affiche l'étiquette i18n", () => {
+    assert.equal(en.iciTodayPosition, "Today's position");
+    assert.equal(fr.iciTodayPosition, "position du jour");
+    assert.match(src, /todayPosition = false/);
+    assert.match(src, /data-testid="ici-today-position"/);
+    assert.match(src, /t\("iciTodayPosition"\)/);
+    assert.doesNotMatch(src, /Today's position|position du jour/);
+    const section = src.slice(src.indexOf('testId="ici-section-here"'));
+    const labelAt = section.indexOf('data-testid="ici-today-position"');
+    const elseAt = section.indexOf(") : (", labelAt);
+    const bodyAt = section.indexOf("{hereBody}", elseAt);
+    assert.ok(labelAt >= 0 && elseAt > labelAt && bodyAt > elseAt, "le sac est dans la branche sans étiquette");
+    const sidebar = readFileSync(join(here, "Sidebar.jsx"), "utf8");
+    const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
+    assert.match(sidebar, /todayPosition=\{todayPosition\}/);
+    assert.match(app, /todayPosition=\{Boolean\(iciPack\.todayPosition\)\}/);
+  });
+});
 
 describe("IciMaintenant — lot R8b : cinq sections, pas de titre", () => {
   it("rend les cinq sections et le sélecteur à trois onglets, sans bandeau", () => {
