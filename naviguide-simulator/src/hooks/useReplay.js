@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEFAULT_SECONDS_PER_DAY, FILM_TARGET_SECONDS, MIN_CARD_MS, FILM_RECALE_MS, cardDwellMs, measuredCps, cardsBetween, chapterAtElapsed, chapterZoomEstimate, filmChaptersFromStory, filmPlan, journalTimeline, nextMovingTime, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, sentenceIsStationary, sentenceSpan, stepFilmTime, trimQueue, voiceShouldWait,
+  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, cardDwellMs, measuredCps, cardsBetween, chapterAtElapsed, chapterZoomEstimate, filmChaptersFromStory, filmPlan, journalTimeline, nextMovingTime, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, sentenceIsStationary, sentenceSpan, stepFilmTime, trimQueue, voiceShouldWait,
 } from "../engine/replay.js";
 import { FILM_UI_MS } from "../map/filmCamera.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
@@ -1492,9 +1492,14 @@ export function useReplay({
     setFilmReviewedBy("");
     const userBudget = Number(targetSeconds) > 0 ? Number(targetSeconds) : 0;
     budgetRef.current = userBudget;
-    // Case décochée : pas de budget imposé, mais le plan tient 2:30.
-    const planSeconds = userBudget > 0 ? userBudget : FILM_TARGET_SECONDS;
-    const plan = filmPlan({ chapters, targetSeconds: planSeconds });
+    // Durée cochée ou non : un chapitre du texte reste un chapitre joué.
+    // 2:30 fusionnait les chapitres courts (15 → 5) dès que le budget était 150.
+    const planSeconds = resolveFilmTargetSeconds(userBudget, chapters);
+    const plan = filmPlan({
+      chapters,
+      targetSeconds: planSeconds,
+      keepChapters: true,
+    });
     if (!plan.chapters.length) return false;
     clockRef.current = clockToUse;
     pinnedIdxRef.current = null;
