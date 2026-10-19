@@ -9,6 +9,8 @@ pour ne pas compter deux fois).
 le dossier de données du poste (hors dépôt) interdit de relancer : il se
 retire à la main. Il n'y a pas de ``--force``. Au plafond (``llm_budget.allow``),
 l'avancement est écrit et les appels déjà faits ne sont pas rejoués.
+Cette écriture est synchronisée sur le disque avant de passer à l'appel
+suivant : un arrêt brutal ensuite ne les fait pas repayer.
 
 Un seul passage s'exécute à la fois : ``<job>/.lock`` est pris en exclusif
 non bloquant après le contrôle de l'empreinte. Le second lancement échoue
@@ -47,10 +49,36 @@ class Refused(OneShotError):
 
 
 class StoppedAtCap(OneShotError):
-    def __init__(self, call_id: str, completed: list[str]):
-        super().__init__("stopped", f"arrêté au plafond avant {call_id}")
+    def __init__(self, call_id: str, completed: list[str], reason: str = "cap"):
+        super().__init__("stopped", _stop_message(call_id, reason))
         self.call_id = call_id
         self.completed = list(completed)
+        self.reason = reason
+
+
+def _stop_message(call_id: str, reason: str) -> str:
+    if reason == "mode":
+        return f"arrêté avant {call_id} : le mode interdit l'appel"
+    if reason == "tokens":
+        return f"arrêté au plafond de jetons avant {call_id}"
+    if reason == "usd":
+        return f"arrêté au plafond du jour avant {call_id}"
+    return f"arrêté au plafond avant {call_id}"
+
+
+def _block_reason(tier: str) -> str:
+    """Pourquoi ``allow`` est faux. Même ordre que ``llm_budget.allow``."""
+    if not llm_budget.llm_allowed_here(tier):
+        return "mode"
+    used = llm_budget.get_usage(tier)
+    if int(used["tokens"]) >= llm_budget.daily_cap(tier):
+        return "tokens"
+    cap = llm_budget.daily_usd_cap()
+    if cap is not None:
+        reserve = llm_budget.estimate_usd(tier, 0, llm_budget.max_tokens_for(tier))
+        if llm_budget.today_usd() + reserve > cap:
+            return "usd"
+    return "cap"
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,10 +259,30 @@ def format_estimate(est: dict[str, Any]) -> str:
 
 
 def _atomic_write(path: Path, text: str) -> None:
+    """Remplace ``path`` par un fichier 0600, synchronisé avant le retour."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    tmp.write_text(text, encoding="utf-8")
+    data = text.encode("utf-8")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC, 0o600)
+    try:
+        view = data
+        while view:
+            written = os.write(fd, view)
+            if written <= 0:
+                raise OSError("écriture incomplète")
+            view = view[written:]
+        os.fsync(fd)
+    except Exception:
+        os.close(fd)
+        tmp.unlink(missing_ok=True)
+        raise
+    os.close(fd)
     os.replace(tmp, path)
+    dir_fd = os.open(path.parent, os.O_RDONLY | os.O_CLOEXEC)
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
 
 
 def _load_progress(job_name: str, fingerprint: str) -> list[str]:
@@ -334,7 +382,7 @@ def run(job_name: str, fingerprint: str) -> dict[str, Any]:
                 continue
             if not llm_budget.allow(call.tier):
                 _save_progress(job.name, est["fingerprint"], ordered)
-                raise StoppedAtCap(call.call_id, ordered)
+                raise StoppedAtCap(call.call_id, ordered, _block_reason(call.tier))
             job.execute(call)
             ordered.append(call.call_id)
             seen.add(call.call_id)
