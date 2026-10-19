@@ -213,7 +213,9 @@ test.describe("iPhone 13 — tiroir et barre sur deux lignes", () => {
       seen = await page.evaluate(() => {
         const el = document.activeElement;
         if (!el || el === document.body) return null;
-        const bar = el.closest?.("[data-testid='film-bar'], .naviguide-sidebar-toggle");
+        const bar = el.closest?.(
+          "[data-testid='film-bar'], .naviguide-sidebar-toggle, .naviguide-sidebar-drawer, .naviguide-sidebar-panel",
+        );
         if (!bar) return null;
         const s = getComputedStyle(el);
         const r = el.getBoundingClientRect();
