@@ -1,4 +1,6 @@
 /** Rayon terrestre en milles nautiques. */
+import { dropRepeatedStops } from "./escales.js";
+
 export const R_NM = 3440.065;
 
 export function toRad(deg) {
@@ -102,6 +104,53 @@ export function splitAntimeridianCoords(coords) {
     part.push(c);
   }
   return parts.filter((p) => p.length >= 2);
+}
+
+/**
+ * Une polyligne dépliée (lon hors [−180, 180] après l'antiméridien), ramenée
+ * dans [−180, 180] pour l'affichage et les exports : coupée au franchissement,
+ * avec un point au bord (±180) de chaque côté. Le tracé carte garde la forme
+ * dépliée ; seuls les fichiers et les textes reçoivent celle-ci.
+ */
+export function wrapLonParts(coords) {
+  // Unfolded copy (no jump between neighbours), lat and extra values kept.
+  const pts = [];
+  for (const c of coords || []) {
+    const lon = Number(c?.[0]);
+    const lat = Number(c?.[1]);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+    const u = pts.length ? unwrapLon(pts[pts.length - 1].u, lon) : lon;
+    pts.push({ u, lat, extra: c.length > 2 ? c.slice(2) : [] });
+  }
+  if (!pts.length) return [];
+  // A vertex exactly on ±180 belongs to the part in progress: the band
+  // (copy of the world) comes from the first vertex off the edge.
+  const onEdge = (u) => ((u + 180) % 360 + 360) % 360 === 0;
+  const first = pts.find((p) => !onEdge(p.u)) || pts[0];
+  let band = Math.round(first.u / 360);
+  const parts = [];
+  let part = [];
+  let prev = null;
+  for (const p of pts) {
+    let rel = p.u - band * 360;
+    // Cut only when the edge is strictly crossed.
+    while (rel > 180 || rel < -180) {
+      const edge = rel > 180 ? 180 : -180;
+      const prevRel = prev ? prev.u - band * 360 : edge;
+      const t = prev && rel !== prevRel ? (edge - prevRel) / (rel - prevRel) : 0;
+      const edgeLat = prev ? prev.lat + (p.lat - prev.lat) * t : p.lat;
+      const last = part[part.length - 1];
+      if (!last || last[0] !== edge || last[1] !== edgeLat) part.push([edge, edgeLat]);
+      if (part.length >= 2) parts.push(part);
+      part = [[-edge, edgeLat]];
+      band += edge > 0 ? 1 : -1;
+      rel = p.u - band * 360;
+    }
+    part.push([rel, p.lat, ...p.extra]);
+    prev = p;
+  }
+  if (part.length >= 2) parts.push(part);
+  return parts;
 }
 
 /** Fenêtre navigable RA4 : une copie de chaque côté, pas l'infini. */
@@ -244,6 +293,35 @@ export function worldCopyParts(parts) {
 }
 
 /**
+ * Distance of a drawn route, leg by leg: the length the server gave for the
+ * leg when there is one, otherwise the great-circle sum of its vertices.
+ * The drawing box and the local briefing both use it, so they agree.
+ */
+export function legsDistanceNm(legs) {
+  let nm = 0;
+  for (const leg of legs || []) {
+    if (!leg) continue;
+    if (Number.isFinite(leg.nm)) {
+      nm += leg.nm;
+      continue;
+    }
+    const c = leg.coords || [];
+    for (let i = 1; i < c.length; i++) nm += haversineNm(c[i - 1][1], c[i - 1][0], c[i][1], c[i][0]);
+  }
+  return nm;
+}
+
+/**
+ * What the Expedition box shows: the distance through legsDistanceNm (the
+ * length of each leg, as in the drawing box, the briefing and the export),
+ * and the vertex segment count of summarizeRoute.
+ */
+export function routeStats(segments) {
+  const { segments: count } = summarizeRoute(segments);
+  return { nm: Math.round(legsDistanceNm(segments) * 10) / 10, segments: count };
+}
+
+/**
  * Distance nautique + nombre de segments d'une liste de polylignes
  * `segments` : [{ coords: [[lon, lat], ...] }]
  */
@@ -254,7 +332,8 @@ export function summarizeRoute(segments) {
   for (const seg of segments) {
     const coords = seg?.coords;
     if (!coords || coords.length < 2) continue;
-    count += 1;
+    // N sommets d'une polyligne → N − 1 segments.
+    count += coords.length - 1;
     for (let i = 0; i < coords.length - 1; i++) {
       nm += haversineNm(coords[i][1], coords[i][0], coords[i + 1][1], coords[i + 1][0]);
     }
@@ -288,18 +367,7 @@ function legIsLand(from, to, segments) {
  * retour final qui reprend un nom déjà vu (La Rochelle) est gardé.
  */
 export function marksForSummary(escaleMarks) {
-  const named = (escaleMarks || []).filter((mark) => mark?.name);
-  if (named.length <= 1) return named;
-  const seen = new Set();
-  const out = [];
-  for (let i = 0; i < named.length; i++) {
-    const name = named[i].name;
-    const isLast = i === named.length - 1;
-    if (seen.has(name) && !isLast) continue;
-    seen.add(name);
-    out.push(named[i]);
-  }
-  return out;
+  return dropRepeatedStops(escaleMarks);
 }
 
 function vertexCount(segments) {
@@ -312,7 +380,7 @@ function routerWaypointCount(segments) {
 
 /**
  * Étapes entre escales (pas les sommets du routeur).
- * Sans marques, une route dessinée compte pour 1 étape.
+ * N points donnent N − 1 segments.
  */
 export function summarizeLegs(escaleMarks, segments) {
   const segs = segments || [];
@@ -337,13 +405,21 @@ export function summarizeLegs(escaleMarks, segments) {
     };
   }
 
-  const hasTrack = segs.some((seg) => seg?.coords?.length >= 2);
-  if (hasTrack) {
-    const landOnly = segs.every((seg) => !seg.coords?.length || seg.nonMaritime);
+  // No marks (a drawn or imported route): one leg per segment between two
+  // placed points, whatever the number of router vertices inside it.
+  let sea = 0;
+  let land = 0;
+  for (const seg of segs) {
+    const n = seg?.coords?.length ?? 0;
+    if (n < 2) continue;
+    if (seg.nonMaritime) land += 1;
+    else sea += 1;
+  }
+  if (sea + land > 0) {
     return {
-      legs: 1,
-      sea: landOnly ? 0 : 1,
-      land: landOnly ? 1 : 0,
+      legs: sea + land,
+      sea,
+      land,
       escales: marks.length,
       points,
       waypoints,
@@ -363,5 +439,6 @@ export function featuresToSegments(fc) {
       from: { name: f.properties?.from || f.properties?.name || "" },
       to: { name: f.properties?.to || "" },
       nonMaritime: false,
+      ...(Number.isFinite(f.properties?.nm) ? { nm: f.properties.nm } : {}),
     }));
 }

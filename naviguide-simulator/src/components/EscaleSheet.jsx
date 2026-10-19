@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { googleMapsUrl } from "../engine/briefingLinks.js";
 import { localizePlaceName } from "../utils/placeNames.js";
+import { displayStopName } from "../utils/stopLabels.js";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 
 /** Section / subsection labels; anything unknown falls back to the raw key. */
@@ -102,7 +103,7 @@ export const EscaleSheet = memo(function EscaleSheet({ stop, fiche, loading, err
       <div className="flex items-center gap-1.5 mb-1">
         <div className="min-w-0 flex-1">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200 leading-snug">{t("escaleSheetTitle")}</div>
-          <div className="text-[12px] font-semibold text-white leading-snug truncate">{stop.name}</div>
+          <div className="text-[12px] font-semibold text-white leading-snug truncate">{displayStopName(stop.name, lang, t)}</div>
         </div>
         {onClose ? (
           <button

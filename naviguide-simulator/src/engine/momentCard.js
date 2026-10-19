@@ -29,6 +29,7 @@ import { MOMENT_MAX_NM } from "../hooks/useMomentJournal.js";
 // A null coordinate is unknown, never 0 (Number(null) === 0).
 import { finiteCoord } from "../hooks/useMoment.js";
 import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
+import { displayStopName } from "../utils/stopLabels.js";
 import { factKey, localizeStoredFact, localizeStoredTitle, sameShownMoment } from "../components/iciMaintenant.js";
 import fr from "../i18n/fr.js";
 import enDict from "../i18n/en.js";
@@ -595,8 +596,10 @@ function isLandEscale(leg) {
 export function escaleCard(leg, lang = "fr", { filmCum = null } = {}) {
   if (!leg?.fromStop) return null;
   const en = isEn(lang);
-  const from = String(leg.fromStop);
-  const to = leg.toStop ? String(leg.toStop) : null;
+  const fromRaw = String(leg.fromStop);
+  const toRaw = leg.toStop ? String(leg.toStop) : null;
+  const from = displayStopName(fromRaw, lang);
+  const to = toRaw ? displayStopName(toRaw, lang) : null;
   const land = isLandEscale(leg);
   const u = en ? enDict : fr;
   const loc = en ? "en-GB" : "fr-FR";
@@ -627,7 +630,7 @@ export function escaleCard(leg, lang = "fr", { filmCum = null } = {}) {
       : `Escale ${from}${quay}. Départ : cap sur ${to}${dist}${roadH}${eta}.`)
     : (en ? `Stopover ${from}${quay}.` : `Escale ${from}${quay}.`);
   return {
-    key: `ev:escale:${from}→${to || ""}`,
+    key: `ev:escale:${fromRaw}→${toRaw || ""}`,
     lane: LANE_NOW,
     origin: "event",
     kind: "escale",
@@ -636,7 +639,7 @@ export function escaleCard(leg, lang = "fr", { filmCum = null } = {}) {
     title: kindWord("escale", lang),
     text,
     entity: Number.isFinite(leg.lat) && Number.isFinite(leg.lon)
-      ? { id: `escale:${from}`, kind: "wpi", name: from, rawName: from, lat: leg.lat, lon: leg.lon, nm: 0, url: null, source: null }
+      ? { id: `escale:${fromRaw}`, kind: "wpi", name: from, rawName: fromRaw, lat: leg.lat, lon: leg.lon, nm: 0, url: null, source: null }
       : null,
     filmCum,
     whenNm: 0,
@@ -927,7 +930,7 @@ function isPortCard(card) {
  */
 export function portCardIsCurrent(card, { boat = null, leg = null } = {}) {
   if (!isPortCard(card)) return true;
-  const name = card?.entity?.name || card?.entity?.rawName || null;
+  const name = card?.entity?.rawName || card?.entity?.name || null;
   const done = Number(leg?.doneNm);
   const left = Number(leg?.leftNm);
   const phaseKnown = Number.isFinite(done) || Number.isFinite(left);
