@@ -54,7 +54,7 @@ describe("recette A–G (contrats source)", () => {
   });
 
   it("G — Open-Meteo une fois, jambe sans modèle", () => {
-    const panel = read("../components/SimulationPanel.jsx");
+    const panel = read("../components/EtapePanel.jsx");
     assert.doesNotMatch(panel, /forecastModel/);
     assert.doesNotMatch(panel, /clockSample\.model/);
     assert.doesNotMatch(panel, /Open-Meteo/);

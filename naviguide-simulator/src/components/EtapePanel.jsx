@@ -1,5 +1,5 @@
 /**
- * SimulationPanel — Shows catamaran progress metrics
+ * EtapePanel — leg metrics (nm, ETA, heading).
  *
  * Purely geometric calculation from useLegContext.
  * No API call — data available instantly on drag.
@@ -40,7 +40,7 @@ function formatBearing(deg, lang = "fr") {
 
 // ── Main component ──────────────────────────────────────────────────────
 
-export function SimulationPanel({
+export function EtapePanel({
   legContext,
   clockSample = null,
   kindLabel = "",

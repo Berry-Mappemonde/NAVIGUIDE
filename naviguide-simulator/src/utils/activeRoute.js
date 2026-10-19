@@ -34,12 +34,12 @@ export function namedSegments(segments, stops) {
   }));
 }
 
-export function activeSimulationStops(customRoute, berryStops) {
+export function activeRouteStops(customRoute, berryStops) {
   if (customRoute) return stopsFromCustomRoute(customRoute);
   return berryStops || [];
 }
 
-export function activeSimulationSegments(customRoute, berrySegments) {
+export function activeRouteSegments(customRoute, berrySegments) {
   if (customRoute) {
     return namedSegments(featuresToSegments(customRoute), stopsFromCustomRoute(customRoute));
   }
@@ -50,7 +50,7 @@ export function activeSimulationSegments(customRoute, berrySegments) {
  * Next/Previous targets: start, then midpoint and end of each maritime leg.
  * [start, mid0, end0, mid1, end1, …]
  */
-export function buildSimTargets(segments, fallbackStops = []) {
+export function buildRouteTargets(segments, fallbackStops = []) {
   const maritimeSegs = (segments || []).filter((s) => !s.nonMaritime && s.coords?.length >= 2);
   if (maritimeSegs.length === 0) {
     const stops = (fallbackStops || []).filter(
@@ -96,7 +96,7 @@ export function buildSimTargets(segments, fallbackStops = []) {
   return list;
 }
 
-export function simulationStartPos(targets, fallback = FALLBACK_START) {
+export function routeStartPos(targets, fallback = FALLBACK_START) {
   const first = targets?.[0];
   if (first && Number.isFinite(first.lat) && Number.isFinite(first.lon)) {
     return { lat: first.lat, lon: first.lon };

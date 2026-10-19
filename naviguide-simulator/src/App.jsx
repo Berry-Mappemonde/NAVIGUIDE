@@ -79,9 +79,9 @@ import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
 import { normalizeExpeditionPlan } from "./utils/expeditionPlan.js";
 import {
-  activeSimulationSegments,
-  activeSimulationStops,
-} from "./utils/simulationRoute.js";
+  activeRouteSegments,
+  activeRouteStops,
+} from "./utils/activeRoute.js";
 import {
   SEGMENT_BATCH_SIZE,
   buildBerryLegs,
@@ -302,8 +302,8 @@ export default function App() {
   const playControlsActive = isTracer || suivreCustom;
   const routeForView = routeForSource(routeSource, customRoute);
   const routeReady = isRouteReady(segProgress) || (officialFallback && segments.length > 0);
-  const activeStops = useMemo(() => activeSimulationStops(routeForView, points.length ? points : ITINERARY_POINTS), [routeForView, points]);
-  const activeSegments = useMemo(() => activeSimulationSegments(routeForView, segments), [routeForView, segments]);
+  const activeStops = useMemo(() => activeRouteStops(routeForView, points.length ? points : ITINERARY_POINTS), [routeForView, points]);
+  const activeSegments = useMemo(() => activeRouteSegments(routeForView, segments), [routeForView, segments]);
   const baseFlat = useMemo(() => flattenRoute(activeSegments), [activeSegments]);
   const flatRoute = voyageFlat || baseFlat;
   const escaleMarks = useMemo(
