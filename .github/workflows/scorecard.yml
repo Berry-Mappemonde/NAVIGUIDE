@@ -1,8 +1,8 @@
 name: Scorecard
 
-# OpenSSF Scorecard. Score privé (décision du 18 oct. 2026) : publish_results
-# vaut false, rien n'est publié chez OpenSSF. Le SARIF va seulement vers
-# l'onglet sécurité du dépôt. Workflow séparé, non requis.
+# OpenSSF Scorecard. Score publié (décision du 18 oct. 2026, 21 h 15) :
+# publish_results vaut true, d'où id-token: write sur ce seul job. Le SARIF va
+# aussi vers l'onglet sécurité du dépôt. Workflow séparé, non requis.
 # La protection de branche reste un réglage du dépôt, pas de ce fichier.
 
 on:
@@ -37,7 +37,7 @@ jobs:
         with:
           results_file: results.sarif
           results_format: sarif
-          publish_results: false
+          publish_results: true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
