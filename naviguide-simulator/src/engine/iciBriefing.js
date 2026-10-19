@@ -167,6 +167,65 @@ function formatEta(hours, lang) {
   return `${h} h ${String(m).padStart(2, "0")}`;
 }
 
+function watersZee(zee) {
+  if (!zee) return false;
+  if (zee.ashore || String(zee.name || "").startsWith("À terre")) return false;
+  if (!zee.mrgid || zee.name === "Haute mer" || zee.name === "High seas") return false;
+  return true;
+}
+
+function mentionsFormalities(text) {
+  return /formalit/i.test(String(text || ""));
+}
+
+/** zee-enter, puis zee-ahead, puis zee-exit — seulement dans une ZEE nommée.
+ *  En haute mer, seule la phrase zee-exit peut remplacer la phrase actuelle. */
+function zeeFilmHit(dossier, lang) {
+  const zee = dossier?.zee;
+  if (!zee || zee.ashore || String(zee.name || "").startsWith("À terre")) return null;
+  const order = watersZee(zee) ? ["zee-enter", "zee-ahead", "zee-exit"] : ["zee-exit"];
+  for (const type of order) {
+    const text = pickFilmPhrase({ type }, dossier, lang);
+    if (text) return { type, text };
+  }
+  return null;
+}
+
+function poeFilmPhrase(dossier, lang) {
+  const poe = (dossier?.poe || []).find((p) => p?.name);
+  return pickFilmPhrase({
+    type: "poe-ahead",
+    name: poe?.name,
+    payload: poe ? { poe } : {},
+  }, dossier, lang);
+}
+
+/** Types déjà dits en tête, pour ne pas recoller la ligne d'événement. */
+function filmTypesSpokenInOpening(dossier, lang) {
+  const types = [];
+  const zee = zeeFilmHit(dossier, lang);
+  if (zee) types.push(zee.type);
+  if (poeFilmPhrase(dossier, lang)) types.push("poe-ahead");
+  return types;
+}
+
+function zeeFormalities(zee, lang) {
+  const en = isEn(lang);
+  if (zee.gold) {
+    return en
+      ? "Entry formalities go through official ports of entry, listed below."
+      : "Les formalités d’entrée passent par des ports officiels, listés ci-dessous.";
+  }
+  if (zee.territory) {
+    return en
+      ? "French EEZ; the entry formalities are not complete in our data yet."
+      : "ZEE française ; les formalités d’entrée ne sont pas encore complètes dans nos données.";
+  }
+  return en
+    ? "Not a French EEZ: check the local entry formalities."
+    : "Ce n’est pas une ZEE française : formalités d’entrée locales à vérifier.";
+}
+
 // Territorial sea: a known port this close means the boat is not on the high seas.
 export const TERRITORIAL_SEA_NM = 12;
 
@@ -313,24 +372,16 @@ function zeeSentence(dossier, lang) {
       ? `The boat is ashore${extra ? ` ${extra}` : ""}, outside any EEZ.`
       : `Le bateau est à terre${extra ? ` ${extra}` : ""}, hors de toute ZEE.`;
   }
-  if (!zee.mrgid || zee.name === "Haute mer" || zee.name === "High seas") return highSeas;
+  const film = zeeFilmHit(dossier, lang);
+  if (!watersZee(zee)) return film?.text || highSeas;
   const spoken = spokenZeeName(zee, lang);
   const territory = TERRITORY[en ? "en" : "fr"][zee.territory];
   const zeeLabel = localizePlaceName(zee.name, lang);
   const where = spoken || (territory ? `${zeeLabel} (${territory})` : zeeLabel);
-  let formalities;
-  if (zee.gold) {
-    formalities = en
-      ? "Entry formalities go through official ports of entry, listed below."
-      : "Les formalités d’entrée passent par des ports officiels, listés ci-dessous.";
-  } else if (zee.territory) {
-    formalities = en
-      ? "French EEZ; the entry formalities are not complete in our data yet."
-      : "ZEE française ; les formalités d’entrée ne sont pas encore complètes dans nos données.";
-  } else {
-    formalities = en
-      ? "Not a French EEZ: check the local entry formalities."
-      : "Ce n’est pas une ZEE française : formalités d’entrée locales à vérifier.";
+  const formalities = zeeFormalities(zee, lang);
+  if (film?.text) {
+    if (mentionsFormalities(film.text)) return film.text;
+    return `${film.text} ${formalities}`;
   }
   return en
     ? `The boat is sailing in ${where}. ${formalities}`
@@ -380,6 +431,8 @@ export function replayHereFrame({
 
 function poeSentence(dossier, lang) {
   const en = isEn(lang);
+  const film = poeFilmPhrase(dossier, lang);
+  if (film) return film;
   const poe = dossier?.poe || [];
   if (!poe.length) {
     if (!dossier?.zee?.mrgid) return "";
@@ -1021,6 +1074,8 @@ export function narrateIci(dossier, lang = "fr", { written = false } = {}) {
   const kind = pearlKind(dossier);
   const live = kind == null;
   const thin = kind === "thin";
+  const spokenTypes = new Set(filmTypesSpokenInOpening(dossier, lang));
+  const evType = dossier?.event?.type;
   const parts = [
     [zeeSentence(dossier, lang), poeSentence(dossier, lang)].filter(Boolean).join(" "),
     aroundSentence(dossier, lang),
@@ -1028,7 +1083,7 @@ export function narrateIci(dossier, lang = "fr", { written = false } = {}) {
     live ? weatherSentence(dossier, lang) : "",
     thin ? "" : emodnetSentence(dossier, lang),
     live ? reviewSentence(dossier, lang) : "",
-    eventSentence(dossier, lang, written),
+    evType && spokenTypes.has(evType) ? "" : eventSentence(dossier, lang, written),
     thin ? "" : depthSentence(dossier, lang),
     climatologyShownOnBanner(dossier) ? "" : climatologySentence(dossier, lang),
     legSentence(dossier, lang),
