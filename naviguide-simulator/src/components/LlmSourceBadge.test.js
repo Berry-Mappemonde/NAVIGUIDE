@@ -59,7 +59,7 @@ export function useLang() {
         ["nvidia-gpt-oss-20b", "AI-generated content (model: NVIDIA NIM (fallback))", /Token Factory|Nebius/],
       ]) {
         const fallback = render(source);
-        assert.match(fallback, new RegExp(exact.replace(/[()]/g, "\\$&")));
+        assert.match(fallback, new RegExp(exact.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
         assert.doesNotMatch(fallback, banned);
         assert.doesNotMatch(fallback, /<img\b|<svg\b|\.svg|background-image|backgroundImage|url\(/i);
       }

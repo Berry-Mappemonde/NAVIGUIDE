@@ -1,6 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 import pytest
@@ -23,6 +24,13 @@ from story_cascade import (
     translate,
     write_story,
 )
+
+def _url_host_is(url: str, root: str) -> bool:
+    """Hôte exact, ou sous-domaine. Jamais une sous-chaîne ailleurs dans l'URL."""
+    host = (urlparse(str(url)).hostname or "").lower().rstrip(".")
+    root = root.lower().strip(".")
+    return bool(host) and (host == root or host.endswith("." + root))
+
 
 # Capture PR #252 / revue du 22 sept. : fiche Pointe-à-Pitre servie depuis le cache.
 CAPTURE_LEAK = (
@@ -1162,7 +1170,12 @@ def test_empty_content_with_reasoning_stays_on_the_tier(monkeypatch):
         assert len(tf) == 1, tier
         assert tf[0][1] == model, tier
         assert ("us-central1" in tf[0][0]) is ultra_host, tier
-        assert not any("nvidia.com" in url or "openrouter" in url or "anthropic" in url for url, _asked in seen), tier
+        assert not any(
+            _url_host_is(url, "nvidia.com")
+            or _url_host_is(url, "openrouter.ai")
+            or _url_host_is(url, "anthropic.com")
+            for url, _asked in seen
+        ), tier
         usage = llm_budget.get_usage(tier)
         assert usage["calls"] == before["calls"] + 1, tier
         assert usage["prompt_tokens"] == before["prompt_tokens"] + 8, tier
@@ -1455,7 +1468,7 @@ def test_plain_reasoning_sentence_stays_on_nemotron(monkeypatch):
     assert "The user" not in text
     assert "JSON" not in text
     assert "port reste calme" not in text
-    assert not any("nvidia.com" in url for url, _model in seen)
+    assert not any(_url_host_is(url, "nvidia.com") for url, _model in seen)
     assert llm_budget.status()["lastSourceByTier"]["write"] == "nemotron-super"
     assert "lastError" not in llm_budget.status()
 
@@ -1484,7 +1497,7 @@ def test_english_reasoning_falls_back_to_nim(monkeypatch):
     assert good.model == "nvidia/nemotron-3-super-120b-a12b"
     assert good.tier == "write"
     assert llm_budget.last_source_by_tier().get("write") == "nemotron-super"
-    assert not any("nvidia.com" in url for url, _model in seen)
+    assert not any(_url_host_is(url, "nvidia.com") for url, _model in seen)
     assert "lastError" not in llm_budget.status()
 
     leaks = (
@@ -1606,7 +1619,11 @@ def test_lightning_reasoning_content_finish_length_stays_lightning(monkeypatch):
         body = json.loads(request.content.decode())
         url = str(request.url)
         seen.append((url, body.get("model")))
-        if "nvidia.com" in url or "openrouter" in url or "anthropic" in url:
+        if (
+            _url_host_is(url, "nvidia.com")
+            or _url_host_is(url, "openrouter.ai")
+            or _url_host_is(url, "anthropic.com")
+        ):
             return httpx.Response(200, json=_chat_ok("Repli inutile.", model="openai/gpt-oss-20b"))
         data = _empty_reasoning(
             body,
