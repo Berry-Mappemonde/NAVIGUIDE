@@ -302,19 +302,27 @@ test.describe("bureau inchangé", () => {
 
     await setPanel(page, "left", true);
     await setPanel(page, "right", true);
-    // Le glissement dure 300 ms. Attendre x ≥ 300 mesurait la barre
-    // encore sous le panneau de 320 px.
+    // La classe change tout de suite ; la translation dure encore.
+    // On mesure quand le glissement est fini et le bord gauche du tiroir est à 0.
+    await page.locator(".naviguide-sidebar-drawer, .naviguide-sidebar-panel.right-0").evaluateAll(async (els) => {
+      await Promise.all(els.flatMap((el) => el.getAnimations().map((anim) => anim.finished)));
+    });
     await expect.poll(async () => {
       const barBox = await page.getByTestId("film-bar").boundingBox();
       const panelBox = await panelLocator(page, "left").boundingBox();
-      if (!barBox || !panelBox) return false;
-      return barBox.x + 1 >= panelBox.x + panelBox.width && !boxesOverlap(panelBox, barBox);
+      const rightBox = await panelLocator(page, "right").boundingBox();
+      if (!barBox || !panelBox || !rightBox) return false;
+      if (panelBox.x < -1) return false;
+      const leftClear = barBox.x + 1 >= panelBox.x + panelBox.width && !boxesOverlap(panelBox, barBox);
+      const rightClear = barBox.x + barBox.width <= rightBox.x + 1 && !boxesOverlap(rightBox, barBox);
+      return leftClear && rightClear;
     }).toBe(true);
+    const panel = await leftDrawerBox(page);
     const bar = await page.getByTestId("film-bar").boundingBox();
     expect(bar.x).toBeGreaterThanOrEqual(300);
     expect(bar.x + bar.width).toBeLessThanOrEqual(1280 - 300);
-    const panel = await leftDrawerBox(page);
     expect(panel.height).toBeGreaterThan(700);
+    expect(panel.x).toBeGreaterThanOrEqual(-1);
     expect(boxesOverlap(panel, bar)).toBe(false);
     await shot(page, "04-bureau.webp");
   });

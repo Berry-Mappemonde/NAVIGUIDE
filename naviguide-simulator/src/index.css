@@ -704,3 +704,28 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
     outline-offset: 1px;
   }
 }
+
+/*
+ * Bureau, 600 px et plus. Le tiroir reste large de --sidebar-width (320 px) :
+ * son contenu ne peut pas l'élargir par-dessus la barre. La barre prend
+ * --film-bar-left / --film-bar-right, le même 320 quand le panneau est ouvert.
+ */
+@media (min-width: 600px) {
+  .naviguide-sidebar-drawer,
+  .naviguide-sidebar-panel.right-0 {
+    box-sizing: border-box !important;
+    width: var(--sidebar-width, 320px) !important;
+    min-width: 0 !important;
+    max-width: var(--sidebar-width, 320px) !important;
+  }
+  [data-testid="film-bar"],
+  [data-testid="sim-root"] > .absolute:has(> [data-testid="show-film-bar"]) {
+    box-sizing: border-box;
+    left: var(--film-bar-left, 8px) !important;
+    right: var(--film-bar-right, 8px) !important;
+    width: calc(100% - var(--film-bar-left, 8px) - var(--film-bar-right, 8px)) !important;
+    min-width: 0 !important;
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
