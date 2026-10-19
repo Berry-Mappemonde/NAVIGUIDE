@@ -75,6 +75,12 @@ export function drawerFilmBarInsets({
   return filmBarInsets({ sidebarOpen, toolsOpen, width, gutter });
 }
 
+/** `left` / `right` de la barre, en pixels. Au bureau : le tiroir. Sous 600 : la gouttière. */
+export function filmBarEdgeStyle(options) {
+  const box = drawerFilmBarInsets(options);
+  return { left: `${box.left}px`, right: `${box.right}px` };
+}
+
 /**
  * Espace réel du bas de la carte jusqu’au haut de la barre film (ou du
  * bouton « Afficher »). Inclut le `bottom-5` : c’est cette mesure, pas la
@@ -120,6 +126,7 @@ export function mapInsetVars({
     bottom = occupied + ATTRIBUTION_FILM_GAP_PX;
   }
   return {
+    "--sidebar-width": `${SIDEBAR_WIDTH_PX}px`,
     "--sim-inset-left": `${insets.left}px`,
     "--sim-inset-right": `${toolsOpen ? insets.right : 0}px`,
     "--sim-inset-bottom": `${bottom}px`,

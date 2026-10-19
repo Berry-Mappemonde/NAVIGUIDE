@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { Clapperboard, Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
-import { filmBarInsets } from "../utils/filmBarLayout.js";
+import { filmBarEdgeStyle, readViewportWidth } from "../utils/filmBarLayout.js";
 import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
 import { SAINT_MAUR_LAND_HOURS } from "../engine/voyageClock.js";
 import { isLandLegNames } from "../utils/berryLegs.js";
@@ -111,7 +111,11 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
 }) {
   const rootRef = ref || barRef;
   const { t, lang } = useLang();
-  const insets = filmBarInsets({ sidebarOpen, toolsOpen });
+  const edge = filmBarEdgeStyle({
+    sidebarOpen,
+    toolsOpen,
+    viewportWidth: readViewportWidth(),
+  });
   const regimeTitle = [
     t("regimeTooltipHindcast"),
     t("regimeTooltipForecast"),
@@ -171,7 +175,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
       <div
         ref={rootRef}
         className="absolute bottom-5 z-[2020] pointer-events-auto"
-        style={{ left: insets.left, right: insets.right }}
+        style={edge}
       >
         <button
           type="button"
@@ -193,7 +197,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
       data-testid="film-bar"
       data-drawing={drawing ? "1" : undefined}
       className="absolute bottom-5 z-[2020] pointer-events-auto"
-      style={{ left: insets.left, right: insets.right }}
+      style={edge}
     >
         <div className={`naviguide-film-bar overflow-hidden rounded-xl border ${drawing ? "border-emerald-400/30" : "border-white/15"} bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm`}>
         <div className="flex items-center justify-between gap-2">

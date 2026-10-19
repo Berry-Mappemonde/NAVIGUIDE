@@ -1,5 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   ATTRIBUTION_FILM_GAP_PX,
   FILM_BAR_BOTTOM_GAP_PX,
@@ -7,6 +10,7 @@ import {
   NARROW_LAYOUT_MAX_PX,
   SIDEBAR_WIDTH_PX,
   drawerFilmBarInsets,
+  filmBarEdgeStyle,
   filmBarInsets,
   isNarrowLayout,
   mapInsetVars,
@@ -118,11 +122,35 @@ describe("tiroir sous 600 px — la barre ne réserve plus la colonne", () => {
     });
     assert.equal(desk["--sim-inset-left"], `${SIDEBAR_WIDTH_PX}px`);
     assert.equal(desk["--sim-inset-right"], "0px");
+    assert.equal(desk["--sidebar-width"], `${SIDEBAR_WIDTH_PX}px`);
     assert.equal(desk["--film-bar-left"], `${SIDEBAR_WIDTH_PX}px`);
     assert.equal(desk["--film-bar-right"], "8px");
     assert.equal(
       desk["--sim-inset-bottom"],
       `${FILM_BAR_HEIGHT_PX.compact + FILM_BAR_BOTTOM_GAP_PX + ATTRIBUTION_FILM_GAP_PX}px`,
     );
+  });
+
+  it("à 1280 px la barre part au bord du tiroir, sous 600 elle reste en gouttière", () => {
+    assert.deepEqual(
+      filmBarEdgeStyle({ sidebarOpen: true, toolsOpen: true, viewportWidth: 1280 }),
+      { left: `${SIDEBAR_WIDTH_PX}px`, right: `${SIDEBAR_WIDTH_PX}px` },
+    );
+    assert.deepEqual(
+      filmBarEdgeStyle({ sidebarOpen: true, toolsOpen: true, viewportWidth: 390 }),
+      { left: "8px", right: "8px" },
+    );
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../index.css"), "utf8");
+    const deskAt = css.indexOf("@media (min-width: 600px)");
+    assert.ok(deskAt > css.indexOf("@media (max-width: 599px)"));
+    const desk = css.slice(deskAt);
+    assert.match(desk, /width:\s*var\(--sidebar-width,\s*320px\)\s*!important/);
+    assert.match(desk, /max-width:\s*var\(--sidebar-width,\s*320px\)\s*!important/);
+    assert.match(desk, /min-width:\s*0\s*!important/);
+    assert.match(desk, /left:\s*var\(--film-bar-left,\s*8px\)\s*!important/);
+    assert.match(desk, /right:\s*var\(--film-bar-right,\s*8px\)\s*!important/);
+    assert.match(desk, /width:\s*calc\(100% - var\(--film-bar-left,\s*8px\) - var\(--film-bar-right,\s*8px\)\)\s*!important/);
+    assert.match(desk, /flex-wrap:\s*nowrap/);
+    assert.match(desk, /\.naviguide-film-bar button \{\s*padding-left:\s*3px;\s*padding-right:\s*3px;\s*\}/);
   });
 });
