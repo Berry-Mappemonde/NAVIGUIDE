@@ -182,14 +182,17 @@ test("tous les calques tiennent un zoom sans longtask d'une seconde", async ({ p
       const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
       return Boolean(top && el.contains(top));
     }));
-  const flag = page.locator("[data-testid='waypoint-flag']").nth(Math.max(freeIdx, 0));
-  if (freeIdx < 0 || !(await flag.count())) {
+  const flags = page.locator("[data-testid='waypoint-flag']");
+  if (!(await flags.count())) {
     test.info().annotations.push({
       type: "api",
       description: "parcours officiel sans drapeau cliquable : fiche d'escale non jouée",
     });
     return;
   }
+  // Des drapeaux existent : au moins un doit être dégagé, sinon c'est un défaut.
+  expect(freeIdx, "aucun drapeau dégagé (tous sous un panneau)").toBeGreaterThanOrEqual(0);
+  const flag = flags.nth(freeIdx);
   await flag.click({ force: true });
   const sheet = page.getByTestId("escale-sheet");
   await expect(sheet).toBeVisible({ timeout: 20_000 });
