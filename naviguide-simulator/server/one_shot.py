@@ -94,6 +94,8 @@ class Job:
     name: str
     plan: Callable[[], list[PlannedCall]]
     execute: Callable[[PlannedCall], Any]
+    # Lignes ajoutées après l'estimation. Hors empreinte : le plan ne change pas.
+    estimate_extra: Callable[[], str] | None = None
 
 
 REGISTRY: dict[str, Job] = {}
@@ -458,7 +460,15 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         if args.estimate:
-            sys.stdout.write(format_estimate(build_estimate(args.job)))
+            est = build_estimate(args.job)
+            text = format_estimate(est)
+            extra_fn = _require(args.job).estimate_extra
+            if extra_fn is not None:
+                extra = extra_fn() or ""
+                if extra and not extra.endswith("\n"):
+                    extra += "\n"
+                text += extra
+            sys.stdout.write(text)
             return 0
         result = run(args.job, args.fingerprint or "")
     except StoppedAtCap as exc:

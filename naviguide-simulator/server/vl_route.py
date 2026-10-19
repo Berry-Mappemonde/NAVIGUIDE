@@ -590,6 +590,13 @@ def parse_response(text: str, allowed: set[str] | list[str]) -> list[dict]:
     return out
 
 
+def _science_is_buoy(item: dict) -> bool:
+    """Même type que le film : une bouée du sac, pas un titre de jeu."""
+    from ici_engine import science_type_key  # noqa: PLC0415
+
+    return science_type_key(item) == "buoy"
+
+
 def ids_from_ici_bag(bag: dict | None) -> list[str]:
     """Familles réellement présentes dans le sac du point, ids du film."""
     if not isinstance(bag, dict):
@@ -610,6 +617,11 @@ def ids_from_ici_bag(bag: dict | None) -> list[str]:
             continue
         add("amp")
         break
+    science = bag.get("science") if isinstance(bag.get("science"), dict) else {}
+    for item in science.get("nearby") or []:
+        if isinstance(item, dict) and _science_is_buoy(item):
+            add("buoy")
+            break
     poe = bag.get("poe") if isinstance(bag.get("poe"), list) else []
     if any(isinstance(row, dict) and (row.get("name") or row.get("title")) for row in poe):
         add("poe")
@@ -851,6 +863,19 @@ def execute_call(call: Any) -> dict[str, Any]:
     return {"id": call.call_id, "ids": [row["id"] for row in rows]}
 
 
+def estimate_extra() -> str:
+    """Points, images, tuiles non téléchargées. Déjà hors de l'empreinte."""
+    info = describe()
+    roles = " ".join(f"{key}={info['roles'][key]}" for key in sorted(info["roles"]))
+    lines = [
+        f"points: {info['points']}",
+        f"images: {info['images']}",
+        f"tiles_fetched: {info['tilesFetched']}",
+        f"roles: {roles}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def plan_calls() -> list[Any]:
     import one_shot  # noqa: PLC0415
 
@@ -865,4 +890,4 @@ def register_job() -> None:
 
     if JOB in one_shot.REGISTRY:
         return
-    one_shot.register(one_shot.Job(JOB, plan_calls, execute_call))
+    one_shot.register(one_shot.Job(JOB, plan_calls, execute_call, estimate_extra))
