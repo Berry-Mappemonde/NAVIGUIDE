@@ -3,7 +3,7 @@
  * Provides useLang() hook with t(key, vars) translation function.
  * Language is persisted in localStorage. Opening language: DEFAULT_LANG.
  */
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useLayoutEffect, useState } from "react";
 import en from "./en";
 import fr from "./fr";
 import { LEGACY_STORAGE_KEY, STORAGE_KEY, VALID_LANGS, readStoredLang } from "./langStorage";
@@ -15,12 +15,13 @@ const LangContext = createContext(null);
 export function LangProvider({ children }) {
   const [lang, setLang] = useState(() => readStoredLang());
 
-  useEffect(() => {
-    document.documentElement.lang = lang;
+  useLayoutEffect(() => {
+    if (typeof document !== "undefined") document.documentElement.lang = lang;
   }, [lang]);
 
   const switchLang = useCallback((l) => {
     if (!VALID_LANGS.has(l)) return;
+    if (typeof document !== "undefined") document.documentElement.lang = l;
     setLang(l);
     localStorage.setItem(STORAGE_KEY, l);
     localStorage.removeItem(LEGACY_STORAGE_KEY);

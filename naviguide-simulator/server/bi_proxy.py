@@ -35,6 +35,8 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
+from bi_upstream import bi_base
+
 router = APIRouter()
 
 _SIM_ROOT = Path(__file__).resolve().parent.parent
@@ -57,10 +59,6 @@ CACHE_CONTROL = f"public, max-age={TTL_S}"
 _dead_until: dict[str, float] = {}      # repos par point d'accès : une couche lente ne bloque pas les points
 _locks: dict[str, asyncio.Lock] = {}
 _sem: asyncio.Semaphore | None = None
-
-
-def bi_base() -> str:
-    return (os.getenv("BI_API_URL") or "https://blueintelligence.online/api").rstrip("/")
 
 
 def cache_dir() -> Path:
@@ -187,6 +185,10 @@ async def bi_climatology(rest: str, request: Request):
         return _json_response(b'{"kind":"unavailable","status":"unavailable"}', "OFFLINE")
     if is_dead(rest):
         return _stale_or_unavailable(path)
+    base = bi_base()
+    if not base:
+        # BI_API_URL absente (#27) : erreur de configuration, aucun appel amont.
+        raise HTTPException(502, "atlas unavailable (BI disabled)")
 
     lock = _locks.setdefault(key, asyncio.Lock())
     async with lock:
@@ -198,7 +200,7 @@ async def bi_climatology(rest: str, request: Request):
         params = request.query_params.multi_items()
         try:
             async with _sem_get():
-                status, body = await fetch_upstream(f"{bi_base()}/climatology/{rest}", params)
+                status, body = await fetch_upstream(f"{base}/climatology/{rest}", params)
         except Exception:  # réseau, timeout, refus de connexion — ce point d'accès seulement
             mark_dead(rest)
             return _stale_or_unavailable(path)

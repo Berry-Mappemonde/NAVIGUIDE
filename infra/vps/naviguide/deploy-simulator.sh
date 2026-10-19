@@ -77,6 +77,12 @@ if ! grep -qE '^NAVIGUIDE_ADMIN_SECRET=.+' "$CONF_DIR/simulator.env"; then
   echo "   Sur ton Mac : ouvre https://simulator.naviguide.fr/?admin=<la clé> une fois."
 fi
 
+# ── Blue Intelligence : sans BI_API_URL, aucun appel BI (pas de défaut dans le code)
+if ! grep -qE '^BI_API_URL=.+' "$CONF_DIR/simulator.env"; then
+  echo "⚠  BI_API_URL absente de $CONF_DIR/simulator.env : Blue Intelligence désactivée." >&2
+  echo "   Voir infra/vps/naviguide/simulator.env.example." >&2
+fi
+
 # ── Frontend: dist/ already built on the Mac / GitHub preferably ───────────
 if [ "$SKIP_FRONTEND_BUILD" = "1" ]; then
   if [ ! -f "$SIM/dist/index.html" ]; then

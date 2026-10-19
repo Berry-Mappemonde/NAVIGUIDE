@@ -74,8 +74,9 @@ export const EXPERT_FIELDS = Object.freeze({
 });
 export const EXPERT_IDS = Object.freeze(Object.keys(EXPERT_FIELDS));
 export const DEFAULT_BOAT = Object.freeze({ name: null, loaM: 14, draftM: 1.4 });
-export const SMALL_BOAT_LOA_M = 11;
+export const SMALL_BOAT_LOA_M = 12;
 export const SMALL_BOAT_DRAFT_M = 1.1;
+export const COASTAL_SUGGEST_RULE = "Côtier conseillé pour < 12 m";
 /** Boat overrides typed by the skipper (Paramètres avancés), bounds keep the engine sane. */
 export const BOAT_FIELDS = Object.freeze({
   loaM: Object.freeze({ min: 5, max: 60, step: 0.5 }),

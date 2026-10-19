@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import {
   buildGeoJSON,
@@ -137,6 +140,76 @@ describe("routeExport", () => {
     assert.equal(canExportRoute([], []), false);
     assert.equal(canExportRoute([seaSeg], []), true);
     assert.equal(canExportRoute([], [LR]), true);
+  });
+
+  it("rejette une position hors bornes et échappe le XML", () => {
+    const wild = {
+      from: { name: "A & B <C>", lat: 46, lon: -1 },
+      to: { name: "D", lat: 47, lon: -2 },
+      coords: [[-1, 46], [600, 10], [-2, 47]],
+    };
+    const fc = buildGeoJSON([wild], [], "n");
+    const line = fc.features.find((f) => f.geometry.type === "LineString");
+    assert.deepEqual(line.geometry.coordinates, [[-1, 46], [-2, 47]]);
+    // Copies du monde (±540°) : une longitude déroulée reste valide et revient dans [−180, 180].
+    const unwrapped = { from: { name: "E", lat: 10, lon: 170 }, to: { name: "F", lat: 11, lon: -170 }, coords: [[170, 10], [190, 11]] };
+    const out = buildGeoJSON([unwrapped], [], "n");
+    for (const f of out.features.filter((x) => x.geometry.type !== "Point")) {
+      const lines = f.geometry.type === "MultiLineString" ? f.geometry.coordinates : [f.geometry.coordinates];
+      for (const l of lines) for (const [lon] of l) assert.ok(lon >= -180 && lon <= 180);
+    }
+    assert.ok(out.features.some((f) => f.geometry.type !== "Point"));
+    const xml = buildKML([wild], [{ name: "A & B <C>", lat: 46, lon: -1, flag: true }], "n");
+    assert.match(xml, /A &amp; B &lt;C&gt;/);
+    assert.doesNotMatch(xml, /A & B/);
+    parseKml(xml);
+  });
+
+  it("la route officielle donne un GeoJSON et un KML valides", () => {
+    const fc = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../public/route.geojson"), "utf8"));
+    const segments = [];
+    const stops = [];
+    for (const f of fc.features || []) {
+      const g = f.geometry;
+      const p = f.properties || {};
+      if (g?.type === "LineString" && g.coordinates?.length >= 2) {
+        segments.push({
+          from: { name: p.from || "" },
+          to: { name: p.to || "" },
+          coords: g.coordinates,
+          nonMaritime: p.type === "overland",
+          air: p.type === "air",
+        });
+      } else if (g?.type === "Point") {
+        stops.push({
+          name: p.name || "",
+          lon: g.coordinates[0],
+          lat: g.coordinates[1],
+          flag: p.point_type === "escale",
+        });
+      }
+    }
+    assert.equal(canExportRoute(segments, stops), true);
+    const out = buildGeoJSON(segments, stops, "naviguide-suivre");
+    assert.equal(out.type, "FeatureCollection");
+    assert.ok(Array.isArray(out.features) && out.features.length > 0);
+    for (const feature of out.features) {
+      assert.equal(feature.type, "Feature");
+      assert.ok(feature.geometry.type === "LineString" || feature.geometry.type === "Point");
+      const coords = feature.geometry.type === "Point" ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+      assert.ok(coords.length >= (feature.geometry.type === "Point" ? 1 : 2));
+      for (const [lon, lat] of coords) {
+        assert.equal(typeof lon, "number");
+        assert.equal(typeof lat, "number");
+        assert.ok(lon >= -180 && lon <= 180 && lat >= -90 && lat <= 90);
+      }
+    }
+    const xml = buildKML(segments, stops, "naviguide-suivre");
+    const doc = parseKml(xml);
+    assert.ok(doc.getElementsByTagName("kml").length >= 1);
+    assert.ok(doc.getElementsByTagName("Document").length >= 1);
+    assert.ok(doc.getElementsByTagName("Placemark").length >= 1);
+    assert.match(xml, /<\?xml version="1\.0" encoding="UTF-8"\?>/);
   });
 
   it("downloadFile clique un <a download>", () => {

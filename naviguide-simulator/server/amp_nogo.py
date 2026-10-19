@@ -7,22 +7,18 @@ Un parc qui contient déjà le départ ou l'arrivée n'est pas bloqué : on peut
 from __future__ import annotations
 
 import logging
-import os
 import time
 from typing import Any, Callable, Iterable
 
 import httpx
 
 from amp_traffic import geom_bbox, is_forbidden_pleasure, point_in_geom
+from bi_upstream import BiDisabled, bi_base as _bi_base
 
 log = logging.getLogger("naviguide-simulator.amp_nogo")
 
 _NOGO_TTL = 3600.0
 _nogo_cache: dict[str, Any] = {"ts": 0.0, "items": None}
-
-
-def _bi_base() -> str:
-    return (os.getenv("BI_API_URL") or "https://blueintelligence.online/api").rstrip("/")
 
 
 def _item_from_feature(feat: dict) -> dict | None:
@@ -63,7 +59,10 @@ def load_forbidden_nogo(*, fetch_fn=None, ttl: float = _NOGO_TTL) -> list[dict]:
 
 
 def _fetch_nogo() -> dict:
-    url = f"{_bi_base()}/amp/nogo"
+    base = _bi_base()
+    if not base:
+        raise BiDisabled("BI disabled: BI_API_URL is not set")
+    url = f"{base}/amp/nogo"
     r = httpx.get(url, timeout=20.0, headers={"Accept": "application/json"})
     r.raise_for_status()
     data = r.json()

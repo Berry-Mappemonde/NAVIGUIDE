@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-import os
 import re
 import time
 from typing import Any
@@ -41,6 +40,7 @@ from ici_layers import (
     reset_rtofs_cache,
     snapshot_ici_weather,
 )
+from bi_upstream import BiDisabled, bi_base
 from weather_pipeline import bind_weather_transport, get_pipeline
 
 log = logging.getLogger("naviguide-simulator.ici")
@@ -465,13 +465,6 @@ def reset_caches() -> None:
     reset_gebco_cache()
     reset_rtofs_cache()
     get_pipeline().clear()
-
-
-BI_LIVE_API = "https://blueintelligence.online/api"
-
-
-def bi_base() -> str:
-    return (os.getenv("BI_API_URL") or BI_LIVE_API).rstrip("/")
 
 
 def empty_dossier(lat: float, lon: float, radius_nm: float = ICI_RADIUS_NM) -> dict:
@@ -1274,15 +1267,132 @@ def _ashore_from_records(records: list) -> dict | None:
     return None
 
 
+# One process-wide cap for every BI HTTP call this module makes (the gather
+# fan-outs included). Recreated if the running loop changes so tests that
+# each open a loop do not share a bound semaphore.
+_BI_PARALLEL = 6
+_bi_sem: asyncio.Semaphore | None = None
+_bi_lock: asyncio.Lock | None = None
+_bi_loop: asyncio.AbstractEventLoop | None = None
+_bi_inflight: dict[tuple, asyncio.Task] = {}
+
+
+def _bi_limits() -> tuple[asyncio.Lock, asyncio.Semaphore]:
+    global _bi_sem, _bi_lock, _bi_loop
+    loop = asyncio.get_running_loop()
+    if _bi_sem is None or _bi_loop is not loop:
+        _bi_sem = asyncio.Semaphore(_BI_PARALLEL)
+        _bi_lock = asyncio.Lock()
+        _bi_loop = loop
+        _bi_inflight.clear()
+    return _bi_lock, _bi_sem
+
+
+def _norm_params(params) -> tuple:
+    if not params:
+        return ()
+    try:
+        items = params.items() if isinstance(params, dict) else list(params)
+        return tuple(sorted((str(k), "" if v is None else str(v)) for k, v in items))
+    except Exception:
+        return (repr(params),)
+
+
+def _raw_client(client: httpx.AsyncClient) -> httpx.AsyncClient:
+    return client._inner if isinstance(client, _BiClient) else client
+
+
+class _BiClient:
+    """Delegates to an AsyncClient. BI URLs share one in-flight call under the semaphore."""
+
+    def __init__(self, inner: httpx.AsyncClient):
+        self._inner = inner
+
+    @property
+    def _transport(self):
+        return getattr(self._inner, "_transport", None)
+
+    async def get(self, url, **kwargs):
+        base = bi_base()
+        text = str(url)
+        if base and (text == base or text.startswith(base + "/")):
+            return await _bi_send(
+                self._inner,
+                "GET",
+                text,
+                params=kwargs.get("params"),
+                timeout=kwargs.get("timeout", 4.0),
+                headers=kwargs.get("headers"),
+            )
+        if base is None and not (text.startswith("http://") or text.startswith("https://")):
+            raise BiDisabled("BI disabled: BI_API_URL is not set")
+        return await self._inner.get(url, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+async def _bi_send(
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    *,
+    params=None,
+    timeout: float | None = 4.0,
+    headers: dict | None = None,
+) -> httpx.Response:
+    """One upstream call per method+URL+params while that call is in flight.
+
+    The slot is dropped when the call finishes. A transport error is raised
+    for every waiter and is not stored.
+    """
+    if bi_base() is None:
+        raise BiDisabled("BI disabled: BI_API_URL is not set")
+    if isinstance(params, dict):
+        params = dict(params)
+    elif isinstance(params, list):
+        params = list(params)
+    key = (method.upper(), str(url), _norm_params(params))
+    lock, sem = _bi_limits()
+
+    async def _run() -> httpx.Response:
+        try:
+            async with sem:
+                kwargs: dict[str, Any] = {}
+                if params is not None:
+                    kwargs["params"] = params
+                if headers is not None:
+                    kwargs["headers"] = headers
+                if timeout is not None:
+                    kwargs["timeout"] = timeout
+                send = getattr(client, method.lower())
+                return await send(url, **kwargs)
+        finally:
+            async with lock:
+                if _bi_inflight.get(key) is asyncio.current_task():
+                    _bi_inflight.pop(key, None)
+
+    async with lock:
+        task = _bi_inflight.get(key)
+        if task is None:
+            task = asyncio.get_running_loop().create_task(_run())
+            _bi_inflight[key] = task
+    return await task
+
+
 async def _get_json(client: httpx.AsyncClient, url: str, timeout: float = 4.0, params: dict | None = None) -> Any:
-    r = await client.get(
-        url,
+    if bi_base() is None:
+        raise BiDisabled("BI disabled: BI_API_URL is not set")
+    response = await _bi_send(
+        _raw_client(client),
+        "GET",
+        str(url),
         params=params,
-        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
         timeout=timeout,
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
     )
-    r.raise_for_status()
-    return r.json()
+    response.raise_for_status()
+    return response.json()
 
 
 async def _cached_fc(client: httpx.AsyncClient, url: str) -> list:
@@ -1558,8 +1668,9 @@ async def _fill_dossier(
         d["pearl"] = "rich" if rich else "thin"
 
     own = client is None
-    http = client or httpx.AsyncClient()
-    bind_weather_transport(getattr(http, "_transport", None))  # MockTransport only
+    raw = client or httpx.AsyncClient()
+    http = _BiClient(raw)
+    bind_weather_transport(getattr(raw, "_transport", None))  # MockTransport only
 
     async def poe_task(mrgid: int) -> list[dict]:
         data = await _get_json(http, f"{bi}/poe/ports?mrgid={int(mrgid)}", timeout=4.0)

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  COASTAL_SUGGEST_RULE,
   COMFORTS,
   COMFORT_TABLE,
   COMFORT_WIND_CAP_KT,
@@ -28,6 +29,7 @@ import {
   resolveOrders,
   sanitizeSaved,
   skipperSnapshot,
+  SMALL_BOAT_LOA_M,
   suggestProfileForBoat,
   thresholdValues,
   thresholdsForEvent,
@@ -557,5 +559,32 @@ describe("S7 — Expert drawer: a few numbers, clamped, cited as expert", () => 
   it("without expert the numbers are the profile's and thresholdValues stays E1 for cruise", () => {
     assert.deepEqual(resolveOrders({ profile: "cruise", expert: {} }).expert, {});
     assert.equal(thresholdValues(resolveOrders({ profile: "cruise", expert: { nope: 3 } })).galePct, 15);
+  });
+});
+
+describe("coastal phrase, Hs and depth, advice under 12 m", () => {
+  it("keeps the coastal phrase and the Hs 2,5 m · fond 8 m line", () => {
+    assert.equal(PROFILE_TABLE.coastal.phrase.fr, "Je parle tôt.");
+    assert.equal(PROFILE_TABLE.coastal.phrase.en, "I speak early.");
+    assert.equal(PROFILE_TABLE.coastal.hsAlertM, 2.5);
+    assert.equal(PROFILE_TABLE.coastal.depthAlertM, 8);
+    const line = ordersLine(resolveOrders({ profile: "coastal" }), "fr");
+    assert.match(line, /Hs 2,5 m · fond 8 m/);
+    const panel = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "components", "SkipperOrdersPanel.jsx"), "utf8");
+    assert.match(panel, /data-testid="skipper-phrase"/);
+    assert.match(panel, /orders\.phrase\.fr/);
+    assert.match(panel, /fond \$\{T\.depthAlertM\} m/);
+    assert.match(panel, /data-testid="skipper-orders-line"/);
+  });
+
+  it("advises coastal for a polar shorter than 12 m", () => {
+    assert.equal(SMALL_BOAT_LOA_M, 12);
+    assert.equal(COASTAL_SUGGEST_RULE, "Côtier conseillé pour < 12 m");
+    const under = readBoat({ boat_name: "First 36", loa_m: 11.5, draft_m: 1.9 });
+    assert.deepEqual(suggestProfileForBoat(under), { profile: "coastal", reason: "small_loa" });
+    const atLimit = readBoat({ boat_name: "Twelve", loa_m: 12, draft_m: 1.9 });
+    assert.equal(suggestProfileForBoat(atLimit), null);
+    const fr = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "i18n", "fr.js"), "utf8");
+    assert.match(fr, /skipperCoastalRule:\s*"Côtier conseillé pour < 12 m"/);
   });
 });
