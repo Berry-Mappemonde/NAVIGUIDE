@@ -1081,6 +1081,60 @@ describe("jamais « haute mer » près d'un port ni hors de l'eau", () => {
     assert.match(app, /momentHighSeasRuledOut=\{momentHighSeasRuled\}/);
     assert.match(read("../components/Sidebar.jsx"), /highSeasRuledOut=\{momentHighSeasRuledOut\}/);
   });
+
+  it("Tracer J0, curseur à 0 : départ de Saint-Maur, transfert routier, jamais haute mer", () => {
+    // Cast Tracer : interpolateCast laisse vehicle « main » sur la jambe
+    // terrestre. Le drapeau Suivre n'est pas sur le dossier. drawTip annule
+    // le véhicule du moment. ZEE « High seas » / « Haute mer », ou le nom
+    // anglais « Ashore » sans le booléen ashore.
+    const at = { lat: SAINT_MAUR.lat, lon: SAINT_MAUR.lon };
+    const nearby = { marinas: [], capitaineries: [], wpi: [] };
+    const sources = { zee: "marineregions" };
+    const marks = [{
+      kind: "leg",
+      from: "Saint-Maur (Berry, Indre)",
+      to: "La Rochelle",
+      vehicle: "main",
+    }];
+    const cases = [
+      ["en", { name: "High seas", mrgid: null }, /high seas/i, /Departure: Saint-Maur \(Indre\), road transfer to La Rochelle/],
+      ["fr", { name: "Haute mer", mrgid: null }, /haute mer/i, /Départ : Saint-Maur \(Indre\), transfert routier vers La Rochelle/],
+      ["en", { name: "Ashore (France)", mrgid: null }, /high seas/i, /Departure: Saint-Maur \(Indre\), road transfer to La Rochelle/],
+      ["fr", { name: "Ashore (France)", mrgid: null }, /haute mer/i, /Départ : Saint-Maur \(Indre\), transfert routier vers La Rochelle/],
+    ];
+    for (const [lang, zee, forbidden, expected] of cases) {
+      const text = narrateIci({ at, zee, sources, nearby, marks }, lang);
+      assert.doesNotMatch(text, forbidden);
+      assert.match(text, expected);
+    }
+    // Véhicule du tracé annulé, escales pas encore là : la phrase serveur
+    // « high seas » ne reste pas sur ce départ terrestre.
+    const ruledOut = highSeasRuledOut({
+      vehicle: null,
+      nearStopNm: null,
+      fromStop: "Saint-Maur (Berry, Indre)",
+      toStop: "La Rochelle",
+    });
+    assert.equal(ruledOut, true);
+    const frame = { zee: { name: "High seas", mrgid: null }, sentences: [HIGH_SEAS_EN, HIGH_SEAS_FR] };
+    assert.deepEqual(hereWithoutFalseHighSeas(frame, { ruledOut }).sentences, []);
+    const app = readFileSync(join(here, "../App.jsx"), "utf8");
+    assert.match(app, /fromStop: jambe\?\.fromStop/);
+    assert.match(app, /toStop: jambe\?\.toStop/);
+  });
+
+  it("jambe en mer, ZEE anglaise « Ashore (France) » sans le booléen ashore : pas de haute mer", () => {
+    const dossier = {
+      at: { lat: 46.0, lon: -4.5 },
+      zee: { name: "Ashore (France)", mrgid: null },
+      sources: { zee: "marineregions" },
+      nearby: { marinas: [], capitaineries: [], wpi: [] },
+      marks: [{ kind: "leg", from: "La Rochelle", to: "Horta (Açores)", vehicle: "main" }],
+    };
+    assert.equal(highSeasClaimAllowed(dossier), false);
+    assert.doesNotMatch(narrateIci(dossier, "en"), /high seas/i);
+    assert.doesNotMatch(narrateIci(dossier, "fr"), /haute mer/i);
+  });
 });
 
 describe("fiche Ici — position rejouée", () => {
@@ -1157,6 +1211,33 @@ describe("fiche Ici — position rejouée", () => {
     assert.equal(at.highSeas, false);
     assert.doesNotMatch(at.statusText, /haute mer/i);
     assert.equal(at.leg.from, "Europa (TAAF)");
+  });
+
+  it("Revoir à J0, à Saint-Maur : départ et transfert routier, jamais haute mer", () => {
+    const SAINT_MAUR = { name: "Saint-Maur (Berry, Indre)", lat: 46.8075, lon: 1.6358 };
+    const LA_ROCHELLE = { name: "La Rochelle", lat: 46.1541, lon: -1.167 };
+    const logLeg = { from: "Saint-Maur (Berry, Indre)", to: "La Rochelle" };
+    for (const [lang, zee, forbidden, expected] of [
+      ["fr", HIGH, /haute mer/i, /Départ : Saint-Maur \(Indre\), transfert routier vers La Rochelle/],
+      ["en", { name: "High seas", mrgid: null }, /high seas/i, /Departure: Saint-Maur \(Indre\), road transfer to La Rochelle/],
+      ["en", { name: "Ashore (France)", mrgid: null }, /high seas/i, /Departure: Saint-Maur \(Indre\), road transfer to La Rochelle/],
+    ]) {
+      const frame = replayHereFrame({
+        lat: SAINT_MAUR.lat, lon: SAINT_MAUR.lon, marks: [SAINT_MAUR, LA_ROCHELLE], zee, logLeg, lang,
+      });
+      assert.equal(frame.stop?.name, SAINT_MAUR.name);
+      assert.equal(frame.highSeas, false);
+      assert.doesNotMatch(frame.statusText, forbidden);
+      assert.match(frame.statusText, expected);
+    }
+    // Sur la route, loin des deux escales : toujours pas de haute mer.
+    const road = replayHereFrame({
+      lat: 46.465, lon: 0.168, marks: [SAINT_MAUR, LA_ROCHELLE],
+      zee: { name: "High seas", mrgid: null }, logLeg, lang: "en",
+    });
+    assert.equal(road.stop, null);
+    assert.equal(road.highSeas, false);
+    assert.doesNotMatch(road.statusText, /high seas/i);
   });
 
   it("en-tête et statut viennent de la même position ; l'étape est celle du Log", () => {

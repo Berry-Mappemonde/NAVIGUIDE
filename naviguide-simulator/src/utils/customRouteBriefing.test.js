@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { buildLocalCustomBriefing, coastNameNear } from "./customRouteBriefing.js";
+import { featuresToSegments, legsDistanceNm } from "./geo.js";
 
 const laRochelleBrest = {
   type: "FeatureCollection",
@@ -84,5 +85,36 @@ describe("buildLocalCustomBriefing", () => {
     }, "fr");
     assert.match(plan.executive_briefing, /Mauritanie/);
     assert.ok(!/Bourgenay|Saint-Maur|La Rochelle/i.test(plan.executive_briefing));
+  });
+});
+
+describe("briefing local : jambes et distance", () => {
+  const many = Array.from({ length: 185 }, (_, i) => [-1.14 - i * 0.02, 44.63 + i * 0.02]);
+  const twoPoints = {
+    type: "FeatureCollection",
+    features: [
+      { type: "Feature", properties: { nm: 6461.4 }, geometry: { type: "LineString", coordinates: many } },
+      { type: "Feature", properties: { name: "A" }, geometry: { type: "Point", coordinates: many[0] } },
+      { type: "Feature", properties: { name: "B" }, geometry: { type: "Point", coordinates: many.at(-1) } },
+    ],
+  };
+
+  it("2 points donnent 1 segment, pas un par sommet", () => {
+    const plan = buildLocalCustomBriefing(twoPoints, "fr");
+    assert.match(plan.summary, /2 points, 1 segment,/);
+    assert.doesNotMatch(plan.summary, /184 segments/);
+    assert.match(buildLocalCustomBriefing(twoPoints, "en").summary, /2 points, 1 segment,/);
+  });
+
+  it("la distance est celle du cadre de tracé (longueur de chaque jambe)", () => {
+    const plan = buildLocalCustomBriefing(twoPoints, "fr");
+    assert.match(plan.summary, /environ 6461 NM/);
+    assert.equal(Math.round(legsDistanceNm(featuresToSegments(twoPoints))), 6461);
+  });
+
+  it("sans longueur de jambe, la distance suit les sommets", () => {
+    const legs = featuresToSegments(laRochelleBrest);
+    assert.equal(legs[0].nm, undefined);
+    assert.ok(legsDistanceNm(legs) > 200 && legsDistanceNm(legs) < 300);
   });
 });

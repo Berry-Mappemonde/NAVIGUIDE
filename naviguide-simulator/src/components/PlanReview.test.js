@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { adviceApplyDisabled } from "../engine/planReview.js";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,6 +55,16 @@ describe("PlanReview — conseil", () => {
     assert.match(src, /formatAdvicePills/);
     assert.doesNotMatch(src, /alternatives/);
     assert.doesNotMatch(src, /six routes/);
+  });
+
+  it("désactive Appliquer quand la date proposée est passée", () => {
+    assert.match(src, /adviceApplyDisabled/);
+    assert.match(src, /disabled=\{applyOff\}/);
+    const now = Date.parse("2026-10-18T12:00:00Z");
+    const past = { facts: ["départ 2026-05-01 → 2026-05-15"], shiftDays: 0 };
+    assert.equal(adviceApplyDisabled(past, now), true);
+    const future = { departIso: "2026-12-01T08:00:00Z", shiftDays: 7 };
+    assert.equal(adviceApplyDisabled(future, now), false);
   });
 
   it("ne rend pas le commentaire LLM à la place de la phrase du conseil", () => {
