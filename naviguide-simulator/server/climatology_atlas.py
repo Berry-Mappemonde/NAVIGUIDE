@@ -210,12 +210,18 @@ def _point_provider(month: int, day, dest_lat, dest_lon) -> str:
 
 
 def _via_pipeline(provider: str, lat: float, lon: float, loader) -> Optional[dict]:
-    from weather_pipeline import get_async_weather_queue, route_snapshot
+    """Une panne de BI n'est jamais mise en cache : la pause `_mark_dead` suffit,
+    et l'appel suivant après la pause retente vraiment l'API."""
+    from weather_pipeline import forget_failed_layer, get_async_weather_queue, route_snapshot
 
+    forget_failed_layer(provider, float(lat), float(lon))
     route_snapshot(provider, float(lat), float(lon), loader)
-    return get_async_weather_queue().wait_layer(
+    view = get_async_weather_queue().wait_layer(
         provider, float(lat), float(lon), timeout=TIMEOUT_S + 0.5,
     )
+    if not view or view.get("status") != "ready":
+        forget_failed_layer(provider, float(lat), float(lon))
+    return view
 
 
 def fetch_atlas_point(

@@ -256,6 +256,13 @@ class WeatherPipeline:
                 self._inflight.pop(key, None)
         done.set()
 
+    def forget_failure(self, provider: str, lat: float, lon: float, when=None) -> None:
+        key = cache_key(provider, lat, lon, when)
+        with self._lock:
+            hit = self._cache.get(key)
+            if hit and hit.get("status") == "error":
+                self._cache.pop(key, None)
+
     def _mirror_record(self, key: tuple, record: dict) -> None:
         with self._lock:
             _lru_set(self._cache, key, record)
@@ -627,6 +634,18 @@ class AsyncWeatherQueue:
         since = hit.get("since")
         return since is not None and time.monotonic() - float(since) > self._pending_max_age
 
+    def forget_failure(self, provider: str, lat: float, lon: float, when=None) -> bool:
+        """Oublie un échec (unavailable) déjà terminé. Un succès ou un travail en cours reste."""
+        key = layer_cache_key(provider, lat, lon, when)
+        with self._lock:
+            if key in self._inflight:
+                return False
+            hit = self._cache.get(key)
+            if hit and hit.get("status") == "unavailable":
+                self._cache.pop(key, None)
+                return True
+        return False
+
     def cached_status(self, provider: str, lat: float, lon: float, when=None) -> Optional[str]:
         """ready / unavailable d'abord ; un pending trop vieux devient unavailable."""
         key = layer_cache_key(provider, lat, lon, when)
@@ -907,6 +926,13 @@ def route_snapshot(
 ) -> dict:
     """Seul chemin : la file asyncio. Le pipeline à fils ne sert plus ces fournisseurs."""
     return get_pipeline().snapshot_via_async(provider, lat, lon, loader, when=when, force=force)
+
+
+def forget_failed_layer(provider: str, lat: float, lon: float, *, when=None) -> None:
+    """Pour un amont qui gère lui-même sa panne (Blue Intelligence : pause de l'atlas),
+    l'échec ne doit pas rester en cache jusqu'à l'heure suivante."""
+    if get_async_weather_queue().forget_failure(provider, lat, lon, when):
+        get_pipeline().forget_failure(provider, lat, lon, when)
 
 
 def route_snapshot_group(

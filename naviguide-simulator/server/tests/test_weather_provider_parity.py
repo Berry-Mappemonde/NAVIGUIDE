@@ -169,3 +169,34 @@ def test_climatology_point_parity_keeps_public_bi_api(monkeypatch):
     assert url_off == url_on
     assert url_on.endswith("/climatology/point")
     assert get_async_weather_queue().cached_status("bi-climatology-m6", 46.15, -1.16) == "ready"
+
+
+def test_bi_outage_is_not_cached(monkeypatch):
+    """Une panne de BI ne reste pas en cache : après la pause, l'API est vraiment rappelée."""
+    monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "on")
+    climatology_atlas.reset_atlas_cache()
+    get_pipeline().clear()
+    get_async_weather_queue().clear()
+    calls = []
+
+    def down(url, params, client=None):
+        calls.append(url)
+        raise RuntimeError("bi 503")
+
+    monkeypatch.setattr(climatology_atlas, "_get_json", down)
+    assert climatology_atlas.fetch_atlas_point(46.15, -1.16, 6) is None
+    assert len(calls) == 1
+    assert get_async_weather_queue().cached_status("bi-climatology-m6", 46.15, -1.16) != "unavailable"
+    # Pendant la pause : aucun appel.
+    assert climatology_atlas.fetch_atlas_point(46.15, -1.16, 6) is None
+    assert len(calls) == 1
+
+    climatology_atlas.reset_atlas_cache()  # fin de la pause
+    def up(url, params, client=None):
+        calls.append(url)
+        return dict(CLIMO_POINT)
+
+    monkeypatch.setattr(climatology_atlas, "_get_json", up)
+    assert climatology_atlas.fetch_atlas_point(46.15, -1.16, 6) == CLIMO_POINT
+    assert len(calls) == 2
+    assert get_async_weather_queue().cached_status("bi-climatology-m6", 46.15, -1.16) == "ready"
