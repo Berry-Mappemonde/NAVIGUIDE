@@ -1235,52 +1235,302 @@ def compute_moments(voy: dict, now: datetime) -> Optional[dict]:
     return payload
 
 
-def compute_film(voy: dict, now: datetime) -> Optional[dict]:
+def film_variant_timeout_s() -> float:
+    """Délai maximum d'une variante. Au-delà, on passe à la suivante.
+
+    Le remplisseur calculait les six d'un coup et ne rangeait rien tant que
+    la plus lente n'avait pas fini (19 oct. : des heures, 0 chapitre).
+    """
+    try:
+        raw = float(os.environ.get("NAVIGUIDE_FILM_VARIANT_TIMEOUT_S") or 600)
+    except (TypeError, ValueError):
+        raw = 600.0
+    return max(0.05, raw)
+
+
+def _film_say(msg: str) -> None:
+    log.info("%s", msg)
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}", flush=True)
+
+
+def _film_variant_sequence() -> list[tuple[str, int]]:
+    """150 d'abord (le GET public), puis 180, puis l'intégral. Une à la fois."""
+    raw = (os.environ.get("NAVIGUIDE_FILM_ONLY") or "").strip().lower()
+    if raw:
+        lang, sep, secs = raw.partition(":")
+        if sep == ":" and lang in {"fr", "en"}:
+            try:
+                n = int(secs)
+            except ValueError:
+                n = -1
+            if n in FILM_VARIANT_SECONDS:
+                return [(lang, n)]
+        log.warning("film : NAVIGUIDE_FILM_ONLY ignoré (%s)", raw)
+    return [(lang, int(secs)) for secs in FILM_VARIANT_SECONDS for lang in ("fr", "en")]
+
+
+def _existing_film_variants(voy: dict, now: datetime) -> dict:
+    """Variantes déjà rangées pour cette clé. Un échec ne les efface pas."""
+    try:
+        st = get_store()
+        hit = st.get("film", st.family_key("film", voy, now))
+    except Exception:
+        return {}
+    body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+    raw = body.get("variants") if isinstance(body, dict) else None
+    if not isinstance(raw, dict):
+        return {}
+    out: dict = {}
+    for lang, by_secs in raw.items():
+        if isinstance(by_secs, dict):
+            out[str(lang)] = dict(by_secs)
+    return out
+
+
+def _film_payload_from_variants(variants: dict) -> Optional[dict]:
+    frozen = {
+        str(lang): dict(by)
+        for lang, by in variants.items()
+        if isinstance(by, dict)
+    }
+    fr = (frozen.get("fr") or {}).get(str(FILM_VARIANT_SECONDS[0]))
+    if not isinstance(fr, dict) or not (fr.get("chapters") or []):
+        return None
+    out = {
+        "fr": fr,
+        "default": fr,
+        "variants": frozen,
+        "estimates": _variants_estimates(frozen),
+        "film_script_rev": FILM_SCRIPT_REV,
+    }
+    en = (frozen.get("en") or {}).get(str(FILM_VARIANT_SECONDS[0]))
+    if isinstance(en, dict) and (en.get("chapters") or []):
+        out["en"] = en
+    return out
+
+
+def _store_film_progress(voy: dict, now: datetime, payload: dict) -> None:
+    """Range au fur et à mesure. Sous pytest, seulement si le test l'ouvre :
+    un test ne doit pas écrire le stock du poste."""
+    if os.environ.get("PYTEST_CURRENT_TEST") and os.environ.get("NAVIGUIDE_FILM_PROGRESS_PUT") != "1":
+        return
+    try:
+        st = get_store()
+        st.put("film", payload, st.family_key("film", voy, now))
+    except Exception as exc:
+        log.warning("film : non rangé (%s)", exc)
+
+
+# Calcul local lancé avant ce correctif. Ce lot ne lui envoie aucun signal.
+_PROTECTED_FILM_PIDS = frozenset({46246, 46268})
+
+
+def _stop_spawned(proc) -> None:
+    pid = getattr(proc, "pid", None)
+    if pid in _PROTECTED_FILM_PIDS:
+        log.warning("film : pid %s protégé — aucun signal", pid)
+        return
+    if not proc.is_alive():
+        return
+    proc.terminate()
+    proc.join(2)
+    if proc.is_alive() and proc.pid not in _PROTECTED_FILM_PIDS:
+        proc.kill()
+        proc.join(2)
+
+
+def _bounded_sleep_worker(seconds: float, queue) -> None:
+    """Cible de test : un calcul qui ne rend pas la main."""
+    import time as _time  # noqa: PLC0415
+    _time.sleep(float(seconds))
+    queue.put("done")
+
+
+def _bounded_blob_worker(nbytes: int, queue) -> None:
+    """Cible de test : un plan déjà prêt, plus gros que le tampon du tube."""
+    queue.put(("ok", {"chapters": [{"text": "x" * int(nbytes)}]}))
+
+
+def _film_variant_worker(lang: str, seconds: int, timeout_s: float, queue) -> None:
+    """Un processus neuf, sans la boucle du parent. Une variante, un délai."""
+    os.environ["NAVIGUIDE_OFFICIAL_WORKER"] = "0"
+    try:
+        import asyncio  # noqa: PLC0415
+        from film_script import official_film  # noqa: PLC0415
+        plan = asyncio.run(asyncio.wait_for(
+            official_film(lang=str(lang), seconds=int(seconds), style="raw"),
+            timeout=max(0.05, float(timeout_s)),
+        ))
+        queue.put(("ok", plan if isinstance(plan, dict) else None))
+    except TimeoutError:
+        queue.put(("timeout", None))
+    except Exception as exc:
+        queue.put(("error", f"{type(exc).__name__}: {exc}"[:400]))
+
+
+def run_bounded_process(target, args: tuple, timeout_s: float):
+    """Lance `target` hors de ce processus et l'arrête au délai.
+
+    Retourne `(fini, valeur)`. `fini` est faux si le délai a coupé le processus.
+    Le pid protégé du calcul déjà en cours n'est jamais signalé.
+
+    La file est lue pendant que le fils vit. L'attendre d'abord bloque :
+    un plan déjà calculé plus gros que le tampon du tube (~65 Ko) empêche
+    le fils de quitter, le délai le tue, et les chapitres sont perdus.
+    """
+    import multiprocessing  # noqa: PLC0415
+    import queue as queue_mod  # noqa: PLC0415
+
+    server = str(Path(__file__).resolve().parent)
+    old_path = os.environ.get("PYTHONPATH")
+    old_worker = os.environ.get("NAVIGUIDE_OFFICIAL_WORKER")
+    os.environ["PYTHONPATH"] = server if not old_path else server + os.pathsep + old_path
+    os.environ["NAVIGUIDE_OFFICIAL_WORKER"] = "0"
+    ctx = multiprocessing.get_context("spawn")
+    pipe = ctx.Queue()
+    proc = ctx.Process(target=target, args=(*args, pipe), daemon=True)
+    try:
+        proc.start()
+    finally:
+        if old_path is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = old_path
+        if old_worker is None:
+            os.environ.pop("NAVIGUIDE_OFFICIAL_WORKER", None)
+        else:
+            os.environ["NAVIGUIDE_OFFICIAL_WORKER"] = old_worker
+    try:
+        deadline = time.monotonic() + float(timeout_s)
+        value = None
+        got = False
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                value = pipe.get(timeout=min(0.2, remaining))
+                got = True
+                break
+            except queue_mod.Empty:
+                if not proc.is_alive():
+                    break
+        if not got:
+            try:
+                value = pipe.get(timeout=0.2)
+                got = True
+            except queue_mod.Empty:
+                got = False
+        if not got:
+            if proc.is_alive():
+                return False, None
+            return True, None
+        proc.join(2)
+        return True, value
+    finally:
+        if proc.is_alive():
+            _stop_spawned(proc)
+        try:
+            pipe.close()
+            pipe.cancel_join_thread()
+        except Exception:
+            pass
+
+
+def _await_official_film(lang: str, seconds: int, timeout_s: float):
+    """Même processus (tests, fonction simulée). Hors de la boucle courante."""
     import asyncio  # noqa: PLC0415
     from film_script import official_film  # noqa: PLC0415
 
-    if not voy.get("clock"):
-        return None
+    async def _bounded():
+        return await asyncio.wait_for(
+            official_film(lang=lang, seconds=int(seconds), style="raw"),
+            timeout_s,
+        )
 
-    # Trois variantes par priorité (2:30 / 3:00 / intégral). Plus les mêmes candidats
-    # sous deux plafonds — les pilules choisissent un texte différent.
-    async def _variants():
-        out: dict[str, dict[str, dict]] = {}
-        for lang in ("fr", "en"):
-            for secs in FILM_VARIANT_SECONDS:
-                try:
-                    plan = await official_film(lang=lang, seconds=secs, style="raw")
-                except Exception as exc:
-                    if lang == "fr":
-                        raise
-                    log.warning("film %s %ss : %s", lang, secs, exc)
-                    continue
-                if isinstance(plan, dict) and (plan.get("chapters") or []):
-                    out.setdefault(lang, {})[str(secs)] = plan
-        return out
+    def _run():
+        try:
+            return "ok", asyncio.run(_bounded())
+        except TimeoutError:
+            return "timeout", None
+        except Exception as exc:
+            return "error", f"{type(exc).__name__}: {exc}"[:400]
 
     try:
         asyncio.get_running_loop()
+        in_loop = True
     except RuntimeError:
-        variants = asyncio.run(_variants())
+        in_loop = False
+    if not in_loop:
+        return _run()
+    box: dict = {}
+
+    def _thread():
+        box["value"] = _run()
+
+    thread = threading.Thread(target=_thread, name="compute-film-variant", daemon=True)
+    thread.start()
+    thread.join(timeout_s + 2.0)
+    if thread.is_alive():
+        return "timeout", None
+    return box.get("value", ("error", "fil sans résultat"))
+
+
+def _compute_one_variant(lang: str, seconds: int, timeout_s: float):
+    """Une variante, hors de la boucle d'événements, avec un délai maximum."""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        kind, payload = _await_official_film(lang, seconds, timeout_s)
     else:
+        # Grâce courte pour que le fils puisse rendre un résultat déjà fini.
+        finished, value = run_bounded_process(
+            _film_variant_worker,
+            (lang, int(seconds), float(timeout_s)),
+            float(timeout_s) + 5.0,
+        )
+        if not finished:
+            kind, payload = "timeout", None
+        elif isinstance(value, tuple) and len(value) == 2:
+            kind, payload = value
+        else:
+            kind, payload = "error", value
+    if kind == "ok" and isinstance(payload, dict) and (payload.get("chapters") or []):
+        return payload
+    if kind == "timeout":
+        _film_say(f"film {lang} {seconds}s : délai maximum {timeout_s:.0f}s dépassé")
+    elif kind == "error":
+        _film_say(f"film {lang} {seconds}s : {payload}")
+    else:
+        _film_say(f"film {lang} {seconds}s : sans chapitre")
+    return None
+
+
+def compute_film(voy: dict, now: datetime) -> Optional[dict]:
+    """Une variante à la fois, hors de la boucle, chacune sous un délai maximum.
+
+    La 2:30 française est rangée dès qu'elle a des chapitres : les suivantes
+    peuvent expirer sans effacer ce qui est déjà en stock.
+    """
+    if not voy.get("clock"):
         return None
-    fr = (variants.get("fr") or {}).get(str(FILM_VARIANT_SECONDS[0]))
-    if not isinstance(fr, dict) or not (fr.get("chapters") or []):
-        return None
-    for lang, by_secs in variants.items():
-        for secs, plan in list(by_secs.items()):
-            by_secs[secs] = _with_film_estimate(_apply_air_sentences(plan, lang, voy))
-    fr = variants["fr"][str(FILM_VARIANT_SECONDS[0])]
-    out = {
-        "fr": fr, "default": fr, "variants": variants,
-        "estimates": _variants_estimates(variants),
-    }
-    en = (variants.get("en") or {}).get(str(FILM_VARIANT_SECONDS[0]))
-    if isinstance(en, dict) and (en.get("chapters") or []):
-        out["en"] = en
-    out["film_script_rev"] = FILM_SCRIPT_REV
-    return out
+    timeout_s = film_variant_timeout_s()
+    variants = _existing_film_variants(voy, now)
+    for lang, secs in _film_variant_sequence():
+        _film_say(f"REFRESH film {lang} {secs}s")
+        plan = _compute_one_variant(lang, secs, timeout_s)
+        if not isinstance(plan, dict) or not (plan.get("chapters") or []):
+            continue
+        annotated = _with_film_estimate(_apply_air_sentences(plan, lang, voy))
+        variants.setdefault(lang, {})[str(secs)] = annotated
+        payload = _film_payload_from_variants(variants)
+        if payload is None:
+            continue
+        _store_film_progress(voy, now, payload)
+        _film_say(
+            f"STORED film {lang} {secs}s chapitres={len(annotated.get('chapters') or [])}"
+        )
+    return _film_payload_from_variants(variants)
 
 
 def _stored_eta_stop(name: str) -> Optional[dict]:
@@ -1553,6 +1803,7 @@ def refresh_missing(
     store: Optional[OfficialStore] = None,
     computes: Optional[dict] = None,
     should_stop: Optional[Callable[[], bool]] = None,
+    skip: tuple[str, ...] = (),
 ) -> dict:
     """Remplit ce qui manque ou a vieilli — hors chemin HTTP. `should_stop` (remplisseur) : vérifié entre deux
     familles, pour qu'un SIGTERM prenne effet en secondes et non à la fin d'un passage de plusieurs heures."""
@@ -1575,7 +1826,10 @@ def refresh_missing(
         st = store or get_store()
         when = now or st._now()
         fns = computes or COMPUTE
+        skipped = set(skip or ())
         for family in COMPUTE_ORDER:
+            if family in skipped:
+                continue
             if should_stop and should_stop():
                 log.warning("stock : arrêt demandé — passage interrompu avant %s", family)
                 break

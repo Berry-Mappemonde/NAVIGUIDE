@@ -1,6 +1,7 @@
 """Stock officiel : une interface, deux dos, aucun calcul sur la requête."""
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -966,6 +967,219 @@ def test_rg8_three_variants_stored_and_served(tmp_path, monkeypatch):
     assert short["estimatedSeconds"] == fr["150"]["estimatedSeconds"]
     assert "150" in (full.get("estimates") or {})
     assert full["estimates"]["0"]["chars"] == fr["0"]["chars"]
+
+
+def _film_voy():
+    return {
+        "t0": T0,
+        "clock": {"t0": T0, "vertices": [{"lat": 1, "lon": 2, "iso": T0}]},
+        "marks": [],
+    }
+
+
+def _film_plan(lang, seconds):
+    return {
+        "chapters": [{"id": "c0", "text": f"{lang}-{int(seconds)} Berry-Mappemonde"}],
+        "chars": 20 + int(seconds or 0),
+        "source": "rules",
+        "targetSeconds": int(seconds or 0),
+    }
+
+
+def test_compute_film_runs_outside_a_live_loop(tmp_path, monkeypatch):
+    """Une boucle déjà ouverte ne fait plus renvoyer None sans calculer."""
+    import asyncio
+    import film_script
+
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    voy = _film_voy()
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+
+    async def fake(*, lang="fr", seconds=150, **_k):
+        return _film_plan(lang, seconds)
+
+    monkeypatch.setattr(film_script, "official_film", fake)
+
+    async def inside():
+        assert asyncio.get_running_loop() is not None
+        return official_store.compute_film(voy, NOW)
+
+    payload = asyncio.run(inside())
+    assert payload is not None
+    assert payload["variants"]["fr"]["150"]["chapters"]
+    assert payload["variants"]["en"]["0"]["chapters"]
+
+
+def test_compute_film_one_variant_at_a_time_with_timeout(tmp_path, monkeypatch):
+    """La variante qui dépasse le délai est sautée ; la 2:30 déjà faite reste."""
+    import asyncio
+    import time
+    import film_script
+
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    voy = _film_voy()
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_FILM_VARIANT_TIMEOUT_S", "0.25")
+    monkeypatch.setenv("NAVIGUIDE_FILM_PROGRESS_PUT", "1")
+    order = []
+    state = {"n": 0, "max": 0}
+
+    async def fake(*, lang="fr", seconds=150, **_k):
+        state["n"] += 1
+        state["max"] = max(state["max"], state["n"])
+        order.append((lang, int(seconds or 0)))
+        try:
+            if lang == "fr" and int(seconds or 0) == 0:
+                await asyncio.sleep(30)
+            return _film_plan(lang, seconds)
+        finally:
+            state["n"] -= 1
+
+    monkeypatch.setattr(film_script, "official_film", fake)
+    t0 = time.monotonic()
+    payload = official_store.compute_film(voy, NOW)
+    elapsed = time.monotonic() - t0
+    assert elapsed < 5, elapsed
+    assert state["max"] == 1
+    assert order[0] == ("fr", 150)
+    assert order.index(("fr", 0)) > order.index(("fr", 150))
+    assert payload is not None
+    assert "150" in payload["variants"]["fr"]
+    assert "0" not in payload["variants"]["fr"]
+    assert "0" in payload["variants"]["en"]
+    hit = store.get("film", store.family_key("film", voy, NOW))
+    stored = (hit or {}).get("payload") or {}
+    assert "150" in (stored.get("variants") or {}).get("fr", {})
+    assert "0" not in (stored.get("variants") or {}).get("fr", {})
+
+
+def test_compute_film_keeps_stored_variant_when_the_only_one_times_out(tmp_path, monkeypatch):
+    import asyncio
+    import film_script
+
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    voy = _film_voy()
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_FILM_ONLY", "fr:0")
+    monkeypatch.setenv("NAVIGUIDE_FILM_VARIANT_TIMEOUT_S", "0.2")
+    kept = _film_plan("fr", 150)
+    variants = {"fr": {"150": kept, "180": _film_plan("fr", 180)}}
+    payload = official_store._film_payload_from_variants(variants)
+    store.put("film", payload, store.family_key("film", voy, NOW))
+
+    async def hang(*, lang="fr", seconds=0, **_k):
+        await asyncio.sleep(30)
+        return _film_plan(lang, seconds)
+
+    monkeypatch.setattr(film_script, "official_film", hang)
+    out = official_store.compute_film(voy, NOW)
+    assert out is not None
+    assert out["variants"]["fr"]["150"]["chapters"]
+    assert out["variants"]["fr"]["180"]["chapters"]
+    hit = store.get("film", store.family_key("film", voy, NOW))
+    assert (hit or {}).get("payload", {}).get("variants", {}).get("fr", {}).get("150")
+
+
+def test_compute_one_variant_uses_a_process_outside_pytest(monkeypatch):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    seen = {}
+
+    def fake_run(target, args, timeout_s):
+        seen["target"] = target
+        seen["args"] = args
+        seen["timeout"] = timeout_s
+        return True, ("ok", _film_plan("fr", 150))
+
+    monkeypatch.setattr(official_store, "run_bounded_process", fake_run)
+    plan = official_store._compute_one_variant("fr", 150, 12)
+    assert seen["target"] is official_store._film_variant_worker
+    assert seen["args"][0] == "fr"
+    assert seen["args"][1] == 150
+    assert seen["timeout"] == 17
+    assert plan["chapters"]
+
+
+def test_run_bounded_process_stops_a_hung_variant():
+    import time
+
+    t0 = time.monotonic()
+    finished, value = official_store.run_bounded_process(
+        official_store._bounded_sleep_worker, (30,), 0.6,
+    )
+    assert finished is False
+    assert value is None
+    assert time.monotonic() - t0 < 8
+
+
+def test_run_bounded_process_returns_a_plan_bigger_than_the_pipe():
+    """Un plan déjà calculé, plus gros que le tampon du tube, doit être lu.
+
+    L'ancienne attente du fils avant la file tuait ce plan au délai
+    (un 150 s du stock dépasse déjà ~70 Ko une fois sérialisé).
+    """
+    import time
+
+    t0 = time.monotonic()
+    finished, value = official_store.run_bounded_process(
+        official_store._bounded_blob_worker, (80_000,), 3.0,
+    )
+    assert finished is True
+    assert time.monotonic() - t0 < 3
+    assert isinstance(value, tuple) and value[0] == "ok"
+    assert len(value[1]["chapters"][0]["text"]) == 80_000
+
+
+def test_prepare_forces_film_once_and_accepts_one_variant(tmp_path, monkeypatch):
+    import importlib.util
+    import sys
+
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_STORE_DIR", str(tmp_path / "store"))
+    monkeypatch.delenv("NAVIGUIDE_FILM_ONLY", raising=False)
+    worker_before = os.environ.get("NAVIGUIDE_OFFICIAL_WORKER")
+    path = Path(__file__).resolve().parents[2] / "scripts" / "prepare_official_store.py"
+    spec = importlib.util.spec_from_file_location("prepare_official_store_film", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    if worker_before is None:
+        os.environ.pop("NAVIGUIDE_OFFICIAL_WORKER", None)
+    else:
+        os.environ["NAVIGUIDE_OFFICIAL_WORKER"] = worker_before
+    calls = []
+
+    def refresh_missing(**kwargs):
+        calls.append(("missing", kwargs.get("skip")))
+        return {"families": {}}
+
+    def refresh_family(*_a, **kwargs):
+        calls.append(("film", kwargs.get("force")))
+        return official_store.READY
+
+    monkeypatch.setattr(official_store, "refresh_missing", refresh_missing)
+    monkeypatch.setattr(official_store, "refresh_family", refresh_family)
+    monkeypatch.setattr(official_store, "family_status", lambda: {"families": {}})
+    monkeypatch.setattr(
+        "ici_engine.ensure_pearl_amp_layer_sig", lambda *_a, **_k: "x",
+    )
+    mod.one_pass(force_film=True)
+    assert calls[0] == ("missing", ("film",))
+    assert ("film", True) in calls
+
+    monkeypatch.setattr(mod.signal, "signal", lambda *_a, **_k: None)
+    monkeypatch.setattr(mod, "_arm_parent_watch", lambda: None)
+    monkeypatch.setattr(mod, "one_pass", lambda **_k: 0)
+    monkeypatch.setattr(official_store, "reset_store", lambda: None)
+    monkeypatch.setattr(sys, "argv", ["prepare_official_store.py", "--film-only", "en:150", "--nice", "0"])
+    try:
+        assert mod.main() == 0
+        assert os.environ["NAVIGUIDE_FILM_ONLY"] == "en:150"
+    finally:
+        os.environ.pop("NAVIGUIDE_FILM_ONLY", None)
+    monkeypatch.setattr(sys, "argv", ["prepare_official_store.py", "--film-only", "de:10", "--nice", "0"])
+    with pytest.raises(SystemExit):
+        mod.main()
 
 
 def _rg17_voy():
