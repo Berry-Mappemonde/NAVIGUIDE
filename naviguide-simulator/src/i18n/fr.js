@@ -633,7 +633,7 @@ export default {
   layerFicheClose: "Fermer la fiche",
 
   // LY1 — Clément Filisetti
-  climatologyUnavailable: "climatologie indisponible",
+  climatologyUnavailable: "atlas indisponible",
   // DR1 — Tracer à J0 : départ à terre, jamais « haute mer ».
   iciDepartureRoadTransfer: "Départ : Saint-Maur (Indre), transfert routier vers La Rochelle",
   // FV2

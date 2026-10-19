@@ -939,8 +939,17 @@ def test_facts_cache_key_changes_with_the_utc_day():
     b = logbook_chat.facts_cache_key(datetime(2026, 10, 19, 0, 5, tzinfo=timezone.utc), "fr")
     c = logbook_chat.facts_cache_key(datetime(2026, 10, 18, 1, 0, tzinfo=timezone.utc), "en")
     assert a != b
-    assert a.startswith("2026-10-18|fr|")
-    assert c.startswith("2026-10-18|en|")
+    assert a.startswith("2026-10-18T23|fr|")
+    assert c.startswith("2026-10-18T01|en|")
+
+
+def test_facts_cache_key_changes_within_the_utc_day():
+    """À 20 h, le chat ne redonne pas la position du bateau de 8 h."""
+    morning = logbook_chat.facts_cache_key(datetime(2026, 10, 18, 8, 0, tzinfo=timezone.utc), "fr")
+    evening = logbook_chat.facts_cache_key(datetime(2026, 10, 18, 20, 0, tzinfo=timezone.utc), "fr")
+    same_hour = logbook_chat.facts_cache_key(datetime(2026, 10, 18, 8, 59, tzinfo=timezone.utc), "fr")
+    assert morning != evening
+    assert morning == same_hour
 
 
 def test_logbook_facts_second_call_reuses_the_day_cache(client, monkeypatch):

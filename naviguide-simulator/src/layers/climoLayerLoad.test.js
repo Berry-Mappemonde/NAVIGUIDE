@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { allTilesErrored, loadClimoLayerFeatures } from "./climoLayerLoad.js";
+import { allTilesErrored, fetchJson, loadClimoLayerFeatures } from "./climoLayerLoad.js";
 
 const TILE_A = { z: 4, x: 8, y: 5 };
 const TILE_B = { z: 4, x: 8, y: 6 };
@@ -143,5 +143,46 @@ describe("loadClimoLayerFeatures", () => {
     assert.equal(second.features.length, 2);
     const geoAfter = urls.filter((u) => u.includes("wave.geojson")).length;
     assert.equal(geoAfter, 1);
+  });
+});
+
+describe("fetchJson — atlas coupé (200 « unavailable »)", () => {
+  it("lève une erreur au lieu de rendre une tuile vide", async () => {
+    const real = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ kind: "unavailable", status: "unavailable" }) });
+    try {
+      await assert.rejects(() => fetchJson("/bi/climatology/wind/tiles/3/1/1.json"), /atlas unavailable/);
+    } finally {
+      globalThis.fetch = real;
+    }
+  });
+
+  it("une tuile « unavailable » n'entre pas dans le cache de session", async () => {
+    const real = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ status: "unavailable" }) });
+    const cache = new Map();
+    try {
+      await loadClimoLayerFeatures({
+        kind: "wind",
+        month: 5,
+        tiles: [{ z: 3, x: 1, y: 1 }],
+        cache,
+        fetchJson,
+      });
+    } finally {
+      globalThis.fetch = real;
+    }
+    assert.equal(cache.size, 0);
+  });
+
+  it("une vraie réponse passe telle quelle", async () => {
+    const real = globalThis.fetch;
+    const body = { type: "FeatureCollection", features: [] };
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => body });
+    try {
+      assert.deepEqual(await fetchJson("/bi/climatology/wind/tiles/3/1/1.json"), body);
+    } finally {
+      globalThis.fetch = real;
+    }
   });
 });

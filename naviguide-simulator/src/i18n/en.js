@@ -633,7 +633,7 @@ export default {
   layerFicheClose: "Close the card",
 
   // LY1 — Clément Filisetti
-  climatologyUnavailable: "climatology unavailable",
+  climatologyUnavailable: "atlas unavailable",
   // DR1 — Tracer at J0: land departure, never "high seas".
   iciDepartureRoadTransfer: "Departure: Saint-Maur (Indre), road transfer to La Rochelle",
   // FV2

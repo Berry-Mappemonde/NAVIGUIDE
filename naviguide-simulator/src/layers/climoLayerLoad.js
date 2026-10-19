@@ -3,7 +3,11 @@ import { atlasLayerUrl, atlasTileUrl } from "../utils/atlasPoint.js";
 export async function fetchJson(url, signal) {
   const r = await fetch(url, { signal });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
+  const body = await r.json();
+  // Le proxy répond 200 « unavailable » quand l'atlas est coupé : c'est un échec,
+  // pas une tuile vide à garder en cache pour toute la session.
+  if (body?.status === "unavailable") throw new Error("atlas unavailable");
+  return body;
 }
 
 /** True only when every tile failed with an error. Abort or any success → no fallback. */

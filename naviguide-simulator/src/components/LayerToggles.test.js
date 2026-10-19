@@ -24,3 +24,15 @@ describe("Capitainerie vide", () => {
     assert.match(src, /ALL_LAYER_CONFIG\.map/);
   });
 });
+
+describe("Badge atlas coupé", () => {
+  it("ne redit pas « climatologie » : l'écran la nomme déjà (régime de vitesse)", async () => {
+    const fr = (await import("../i18n/fr.js")).default;
+    const en = (await import("../i18n/en.js")).default;
+    assert.match(src, /t\("climatologyUnavailable"\)/);
+    assert.doesNotMatch(fr.climatologyUnavailable, /climatolog/i);
+    assert.doesNotMatch(en.climatologyUnavailable, /climatolog/i);
+    assert.match(fr.climatologyUnavailable, /indisponible/);
+    assert.match(en.climatologyUnavailable, /unavailable/);
+  });
+});

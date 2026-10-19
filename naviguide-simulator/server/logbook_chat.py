@@ -1783,7 +1783,8 @@ def _facts_view(ctx: dict | None) -> dict[str, Any]:
     return {k: ctx.get(k) for k in keys if ctx.get(k) is not None}
 
 
-# Paquet /logbook/facts du jour UTC. Le chat (POST) recalcule ; seul ce GET est mis en cache.
+# Paquet /logbook/facts de l'heure UTC (la position du bateau change dans la journée).
+# Le chat (POST) recalcule ; seul ce GET est mis en cache.
 _FACTS_CACHE: dict[str, dict] = {}
 _FACTS_LOCKS: dict[str, asyncio.Lock] = {}
 
@@ -1794,8 +1795,8 @@ def reset_facts_cache() -> None:
 
 
 def facts_cache_key(now: datetime, lang: str | None) -> str:
-    """Jour UTC + langue + fonction de contexte (un monkeypatch de test ne réutilise pas la prod)."""
-    day = now.astimezone(timezone.utc).strftime("%Y-%m-%d")
+    """Heure UTC + langue + fonction de contexte (un monkeypatch de test ne réutilise pas la prod)."""
+    day = now.astimezone(timezone.utc).strftime("%Y-%m-%dT%H")
     return f"{day}|{(lang or 'fr')[:2]}|{id(build_context)}"
 
 

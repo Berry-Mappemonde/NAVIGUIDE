@@ -496,10 +496,14 @@ def test_second_open_same_day_is_cached_without_recompute(monkeypatch):
     assert second.json()["cached"] is True
     assert second.json()["paragraph"]["text"] == "Un quai."
     assert calls == [1]
-    assert escale_api.escale_key("Cachejour", 1.23, 4.56, "fr").endswith("|2026-10-18|tf3")
+    key = escale_api.escale_key("Cachejour", 1.23, 4.56, "fr")
+    assert key.endswith("|tf3")
+    assert "2026-10-18" not in key  # la fiche n'est pas clefée au jour : gardée ESCALE_TTL_S
 
 
-def test_escale_cache_misses_on_the_next_utc_day(monkeypatch):
+def test_escale_cache_survives_the_next_utc_day_until_its_ttl(monkeypatch):
+    """La fiche (et son paragraphe LLM payant) tient ESCALE_TTL_S, pas un jour ;
+    au-delà de la durée de vie, elle est bien recalculée."""
     escale_api.reset_escale_hot_cache()
     days = {"d": "2026-10-18"}
     monkeypatch.setattr(escale_api, "escale_day_token", lambda: days["d"])
@@ -517,8 +521,30 @@ def test_escale_cache_misses_on_the_next_utc_day(monkeypatch):
     assert client.get(url).json()["cached"] is False
     assert client.get(url).json()["cached"] is True
     days["d"] = "2026-10-19"
+    escale_api.reset_escale_hot_cache()  # le lendemain : seul le stock répond
+    assert client.get(url).json()["cached"] is True
+    assert calls == ["2026-10-18"]
+    # Durée de vie dépassée (simulée) : nouveau calcul.
+    days["d"] = "2026-10-26"
+    escale_api.reset_escale_hot_cache()
+    monkeypatch.setattr(escale_api, "ESCALE_TTL_S", -1.0)
     assert client.get(url).json()["cached"] is False
-    assert calls == ["2026-10-18", "2026-10-19"]
+    assert calls == ["2026-10-18", "2026-10-26"]
+
+
+def test_escale_day_memory_is_keyed_by_utc_day(monkeypatch):
+    """Le secours mémoire reste au jour : le lendemain il ne sert plus une fiche d'hier."""
+    escale_api.reset_escale_hot_cache()
+    days = {"d": "2026-10-18"}
+    monkeypatch.setattr(escale_api, "escale_day_token", lambda: days["d"])
+    key = escale_api.escale_key("Memjour", 1.0, 2.0, "fr")
+    escale_api._remember_escale(key, _ready_fiche("Memjour", 1.0, 2.0))
+    assert escale_api._DAY_MEM.get(f"{key}|2026-10-18")
+    days["d"] = "2026-10-19"
+    assert escale_api._DAY_MEM.get(f"{key}|2026-10-19") is None
+    days["d"] = "2026-10-18"
+    escale_api._forget_escale(key)
+    assert escale_api._DAY_MEM.get(f"{key}|2026-10-18") is None
 
 
 def test_escale_memory_serves_when_the_store_misses(monkeypatch):

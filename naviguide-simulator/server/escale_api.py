@@ -270,20 +270,24 @@ async def write_paragraph(name: str, sections: dict, lang: str, client: httpx.As
 
 
 def escale_day_token() -> str:
-    """Jour UTC : la même escale ne se recalcule pas dans la journée."""
+    """Jour UTC : ne clefe que le cache mémoire de secours, pas la fiche (gardée ESCALE_TTL_S)."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
 def escale_key(name: str, lat: float, lon: float, lang: str) -> str:
-    day = escale_day_token()
+    """Sans le jour : la fiche et son paragraphe LLM payant restent ESCALE_TTL_S (7 j)."""
     return (
         f"{name.strip().lower()[:60]}|{lat:.2f}|{lon:.2f}|{(lang or 'fr')[:2]}"
-        f"|{day}|{ESCALE_CACHE_REV}"
+        f"|{ESCALE_CACHE_REV}"
     )
 
 
 # Fiche du jour déjà calculée, si SQLite n'a pas répondu. Pas le chauffeur de perles.
 _DAY_MEM: dict[str, dict] = {}
+
+
+def _day_mem_key(key: str) -> str:
+    return f"{key}|{escale_day_token()}"
 _BUILDING: dict[str, asyncio.Task] = {}
 _build_thread = threading.Lock()
 
@@ -310,11 +314,11 @@ async def _build_escale_once(key: str, name: str, lat: float, lon: float, lang: 
 
 def _remember_escale(key: str, fiche: dict) -> None:
     if isinstance(fiche, dict) and fiche.get("sections") and not nim_paragraph(fiche):
-        _DAY_MEM[key] = fiche
+        _DAY_MEM[_day_mem_key(key)] = fiche
 
 
 def _forget_escale(key: str) -> None:
-    _DAY_MEM.pop(key, None)
+    _DAY_MEM.pop(_day_mem_key(key), None)
 
 
 def nim_paragraph(fiche: dict | None) -> bool:
@@ -552,7 +556,7 @@ async def get_escale(
                         pearl_store.kv_put("escale", key, sanitized)
                     _remember_escale(key, sanitized)
                     return {**sanitized, "cached": True}
-        remembered = _DAY_MEM.get(key)
+        remembered = _DAY_MEM.get(_day_mem_key(key))
         if isinstance(remembered, dict) and not nim_paragraph(remembered):
             return {**remembered, "cached": True}
     else:
