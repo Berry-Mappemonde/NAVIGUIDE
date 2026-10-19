@@ -171,13 +171,14 @@ test("la pilule 2:30 joue le texte de cette durée", async ({ page }) => {
   expect(opened.hop).toBe(served.s150.hop);
   expect(opened.hop).not.toMatch(VOYAGE_MILES);
 
-  await page.waitForFunction(() => {
+  const matched = await page.waitForFunction(() => {
     const f = window.__naviguideFilm;
-    const sub = document.querySelector("[data-testid='film-subtitle']")?.textContent || "";
+    const sub = (document.querySelector("[data-testid='film-subtitle']")?.textContent || "").replace(/\s+/g, " ").trim();
     const ch = f?.chapterText || "";
-    return /Halifax/.test(ch) && /Saint-Pierre/.test(ch) && /milles|miles/i.test(sub);
+    if (/Halifax/.test(ch) && /Saint-Pierre/.test(ch) && /milles|miles/i.test(sub)) return sub;
+    return null;
   }, null, { timeout: 180_000 });
-  const subtitle = (await page.getByTestId("film-subtitle").innerText()).replace(/\s+/g, " ").trim();
+  const subtitle = await matched.jsonValue();
   expect(subtitle).not.toMatch(VOYAGE_MILES);
   expect(subtitle).toMatch(/milles|miles/);
   test.info().annotations.push({ type: "sous-titre", description: subtitle });
