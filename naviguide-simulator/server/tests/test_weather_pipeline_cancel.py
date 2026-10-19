@@ -195,22 +195,28 @@ def test_flagged_get_never_forces_and_skips_fresh_data(monkeypatch):
     assert spy.calls[-1]["force"] is True
 
 
-def test_flag_off_keeps_the_forced_threaded_refresh(monkeypatch):
+def test_flag_off_still_uses_the_async_grib_job(monkeypatch):
+    # L'ancien chemin à fils est retiré : off ne relance pas un kick forcé.
     import voyage_api
+    from weather_pipeline import ProcessJob
 
     monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "off")
+    monkeypatch.setattr(voyage_api, "load_latest", lambda *_a, **_k: None)
     seen = []
 
-    class _Pipe:
-        def kick(self, *args, **kwargs):
-            seen.append(kwargs)
+    class _Queue:
+        def submit(self, provider, _lat, _lon, loader, **kwargs):
+            seen.append((provider, loader, kwargs))
             return True
 
-    monkeypatch.setattr(voyage_api, "get_pipeline", lambda: _Pipe())
+    monkeypatch.setattr(voyage_api, "get_async_weather_queue", lambda: _Queue())
     assert voyage_api._kick_official_grib(dict(AROUND)) is True
-    assert seen[-1]["force"] is True
-    voyage_api._kick_official_grib(dict(AROUND), force=False)
-    assert seen[-1]["force"] is False
+    assert seen[-1][0] == "grib-wind"
+    assert isinstance(seen[-1][1], ProcessJob)
+    assert seen[-1][1].target == "weather_jobs:refresh_official_grib"
+    assert seen[-1][2]["force"] is False
+    assert voyage_api._kick_official_grib(dict(AROUND), force=True) is True
+    assert seen[-1][2]["force"] is True
 
 
 def test_unavailable_wins_over_refreshing(monkeypatch):

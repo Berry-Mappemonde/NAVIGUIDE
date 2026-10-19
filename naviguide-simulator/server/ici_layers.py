@@ -854,8 +854,8 @@ def compose_ici_weather(group: dict) -> dict:
 
 
 def snapshot_ici_weather(lat: float, lon: float, *, when=None) -> dict:
-    from weather_pipeline import get_pipeline
-    group = get_pipeline().snapshot_group(
+    from weather_pipeline import route_snapshot_group
+    group = route_snapshot_group(
         (
             ("wind", "openmeteo-gfs", lambda: load_openmeteo_gfs(lat, lon)),
             ("wave", "openmeteo-gfs-wave", lambda: load_openmeteo_gfs_wave(lat, lon)),

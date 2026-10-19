@@ -95,3 +95,22 @@ describe("climatologyPaint", () => {
     assert.doesNotMatch(pointFr, /kind:/);
   });
 });
+
+describe("pointPopupHtml — atlas coupé", () => {
+  it("affiche le vent de zone, signalé comme repli, au lieu d'une case vide", () => {
+    const where = { lat: 46.15, lon: -1.16, month: 10 };
+    for (const data of [{ kind: "unavailable" }, null]) {
+      const html = pointPopupHtml(data, tFr, where);
+      assert.match(html, /vent \d+ kn \/ \d+°/);
+      assert.match(html, /data-testid="climatology-zone-fallback"/);
+      assert.match(html, /vent de zone en repli/);
+    }
+  });
+
+  it("ne remplace jamais une vraie valeur d'atlas par le repli", () => {
+    const html = pointPopupHtml({ kind: "climatology", wave: { hs_p50_m: 1.4 } }, tFr, { lat: 46, lon: -1, month: 10 });
+    assert.match(html, /Hs P50 1.4 m/);
+    assert.doesNotMatch(html, /climatology-zone-fallback/);
+    assert.doesNotMatch(pointPopupHtml({ kind: "unavailable" }, tFr), /climatology-zone-fallback/);
+  });
+});

@@ -165,6 +165,64 @@ def _get_json(url: str, params: dict, client: httpx.Client | None = None) -> Any
             http.close()
 
 
+def _atlas_params(lat: float, lon: float, month: int, dest_lat, dest_lon, day) -> dict:
+    params: dict[str, Any] = {"lat": lat, "lon": lon, "month": int(month)}
+    if dest_lat is not None and dest_lon is not None:
+        params["dest_lat"] = dest_lat
+        params["dest_lon"] = dest_lon
+    if day is not None:
+        params["day"] = day
+    return params
+
+
+def _read_atlas_point(params: dict, client: httpx.Client | None) -> tuple[Optional[dict], float]:
+    """GET {BI}/climatology/point. Retourne (payload, durée en secondes)."""
+    started = time.monotonic()
+    try:
+        base = bi_base()
+        if not base:
+            raise BiDisabled("BI disabled: BI_API_URL is not set")
+        payload = _get_json(f"{base}/climatology/point", params, client)
+    except Exception as exc:
+        log.info("atlas point down: %s", exc)
+        return None, 0.0
+    return payload, time.monotonic() - started
+
+
+def _finish_point(payload: Optional[dict], elapsed: float) -> Optional[dict]:
+    if payload is None:
+        _mark_dead()
+        return None
+    if elapsed > SLOW_S:
+        log.info("atlas point slow (%.1fs): zone fallback for %ss", elapsed, DEAD_S)
+        _mark_dead()
+    return payload
+
+
+def _point_provider(month: int, day, dest_lat, dest_lon) -> str:
+    name = f"bi-climatology-m{int(month)}"
+    if day is not None:
+        name += f"-d{int(day)}"
+    if dest_lat is not None and dest_lon is not None:
+        name += f"-to-{float(dest_lat):.4f},{float(dest_lon):.4f}"
+    return name
+
+
+def _via_pipeline(provider: str, lat: float, lon: float, loader) -> Optional[dict]:
+    """Une panne de BI n'est jamais mise en cache : la pause `_mark_dead` suffit,
+    et l'appel suivant après la pause retente vraiment l'API."""
+    from weather_pipeline import forget_failed_layer, get_async_weather_queue, route_snapshot
+
+    forget_failed_layer(provider, float(lat), float(lon))
+    route_snapshot(provider, float(lat), float(lon), loader)
+    view = get_async_weather_queue().wait_layer(
+        provider, float(lat), float(lon), timeout=TIMEOUT_S + 0.5,
+    )
+    if not view or view.get("status") != "ready":
+        forget_failed_layer(provider, float(lat), float(lon))
+    return view
+
+
 def fetch_atlas_point(
     lat: float,
     lon: float,
@@ -176,26 +234,20 @@ def fetch_atlas_point(
 ) -> Optional[dict]:
     if atlas_is_dead():
         return None
-    params: dict[str, Any] = {"lat": lat, "lon": lon, "month": int(month)}
-    if dest_lat is not None and dest_lon is not None:
-        params["dest_lat"] = dest_lat
-        params["dest_lon"] = dest_lon
-    if day is not None:
-        params["day"] = day
-    started = time.monotonic()
-    try:
-        base = bi_base()
-        if not base:
-            raise BiDisabled("BI disabled: BI_API_URL is not set")
-        payload = _get_json(f"{base}/climatology/point", params, client)
-    except Exception as exc:
-        log.info("atlas point down: %s", exc)
+    params = _atlas_params(lat, lon, month, dest_lat, dest_lon, day)
+
+    def loader():
+        payload, elapsed = _read_atlas_point(params, client)
+        if payload is None:
+            raise RuntimeError("atlas_down")
+        # Pause de lenteur au vrai appel seulement : une relecture en cache ne la relance pas.
+        return {"payload": _finish_point(payload, elapsed)}
+
+    view = _via_pipeline(_point_provider(month, day, dest_lat, dest_lon), lat, lon, loader)
+    if not view or view.get("status") != "ready" or not isinstance(view.get("payload"), dict):
         _mark_dead()
         return None
-    if time.monotonic() - started > SLOW_S:
-        log.info("atlas point slow (%.1fs): zone fallback for %ss", time.monotonic() - started, DEAD_S)
-        _mark_dead()
-    return payload
+    return view["payload"]
 
 
 def fetch_atlas_crossings(
@@ -210,14 +262,27 @@ def fetch_atlas_crossings(
     }
     if day is not None:
         params["day"] = day
-    try:
-        base = bi_base()
-        if not base:
-            raise BiDisabled("BI disabled: BI_API_URL is not set")
-        return _get_json(f"{base}/climatology/crossings", params, client)
-    except Exception as exc:
-        log.info("atlas crossings down: %s", exc)
+    provider = f"bi-climatology-crossings-m{int(month)}"
+    if day is not None:
+        provider += f"-d{int(day)}"
+
+    def loader():
+        try:
+            base = bi_base()
+            if not base:
+                raise BiDisabled("BI disabled: BI_API_URL is not set")
+            payload = _get_json(f"{base}/climatology/crossings", params, client)
+        except Exception as exc:
+            log.info("atlas crossings down: %s", exc)
+            raise
+        if not isinstance(payload, dict):
+            raise RuntimeError("atlas_down")
+        return {"payload": payload}
+
+    view = _via_pipeline(provider, lat1, lon1, loader)
+    if not view or view.get("status") != "ready" or not isinstance(view.get("payload"), dict):
         return None
+    return view["payload"]
 
 
 def atlas_wind_at(
