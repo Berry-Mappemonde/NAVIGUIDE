@@ -241,13 +241,14 @@ def fetch_atlas_point(
         payload, elapsed = _read_atlas_point(params, client)
         if payload is None:
             raise RuntimeError("atlas_down")
-        return {"payload": payload, "elapsed": elapsed}
+        # Pause de lenteur au vrai appel seulement : une relecture en cache ne la relance pas.
+        return {"payload": _finish_point(payload, elapsed)}
 
     view = _via_pipeline(_point_provider(month, day, dest_lat, dest_lon), lat, lon, loader)
     if not view or view.get("status") != "ready" or not isinstance(view.get("payload"), dict):
         _mark_dead()
         return None
-    return _finish_point(view["payload"], float(view.get("elapsed") or 0.0))
+    return view["payload"]
 
 
 def fetch_atlas_crossings(

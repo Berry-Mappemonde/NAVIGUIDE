@@ -200,3 +200,56 @@ def test_bi_outage_is_not_cached(monkeypatch):
     assert climatology_atlas.fetch_atlas_point(46.15, -1.16, 6) == CLIMO_POINT
     assert len(calls) == 2
     assert get_async_weather_queue().cached_status("bi-climatology-m6", 46.15, -1.16) == "ready"
+
+
+def test_slow_answer_pauses_once_not_from_cache(monkeypatch):
+    """Une case lente met l'atlas en pause une fois ; relue en cache, elle ne relance pas la pause."""
+    import time as _time
+    monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "on")
+    climatology_atlas.reset_atlas_cache()
+    get_pipeline().clear()
+    get_async_weather_queue().clear()
+    monkeypatch.setattr(climatology_atlas, "SLOW_S", 0.05)
+    monkeypatch.setattr(climatology_atlas, "DEAD_S", 0.2)
+    calls = []
+
+    def slow(url, params, client=None):
+        calls.append(url)
+        _time.sleep(0.1)
+        return dict(CLIMO_POINT)
+
+    monkeypatch.setattr(climatology_atlas, "_get_json", slow)
+    assert climatology_atlas.fetch_atlas_point(46.15, -1.16, 6) == CLIMO_POINT
+    assert climatology_atlas.atlas_is_dead()
+    _time.sleep(0.25)
+    assert not climatology_atlas.atlas_is_dead()
+    # Relecture de la même case : servie par le cache, sans nouvel appel ni nouvelle pause.
+    assert climatology_atlas.fetch_atlas_point(46.15, -1.16, 6) == CLIMO_POINT
+    assert len(calls) == 1
+    assert not climatology_atlas.atlas_is_dead()
+
+
+def test_bi_answers_after_the_wait_then_recovers(monkeypatch):
+    """BI répond après la fin de l'attente (travail encore en cours) : rien ne reste collé ensuite."""
+    import time as _time
+    monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "on")
+    climatology_atlas.reset_atlas_cache()
+    get_pipeline().clear()
+    get_async_weather_queue().clear()
+    monkeypatch.setattr(climatology_atlas, "TIMEOUT_S", 0.1)
+    monkeypatch.setattr(climatology_atlas, "DEAD_S", 0.3)
+    state = {"up": False, "delay": 1.0}
+
+    def bi(url, params, client=None):
+        _time.sleep(state["delay"])
+        if not state["up"]:
+            raise RuntimeError("bi 503")
+        return dict(CLIMO_POINT)
+
+    monkeypatch.setattr(climatology_atlas, "_get_json", bi)
+    assert climatology_atlas.fetch_atlas_point(46.15, -1.16, 6) is None
+    _time.sleep(1.2)  # le travail finit en échec après l'attente
+    state.update(up=True, delay=0.0)
+    _time.sleep(0.35)
+    assert not climatology_atlas.atlas_is_dead()
+    assert climatology_atlas.fetch_atlas_point(46.15, -1.16, 6) == CLIMO_POINT
