@@ -262,7 +262,7 @@ jobs:
       - name: Sonde des files produit + plan de déploiement
         run: python3 infra/vps/ci/test_prod_jobs_busy.py
       - name: Scripts de déploiement (chemins, mode sans certificat)
-        run: python3 -m unittest infra/vps/ci/test_deploy_simulator_tls.py infra/vps/ci/test_simulator_deploy_manifest.py
+        run: python3 -m unittest infra/vps/ci/test_deploy_simulator_tls.py infra/vps/ci/test_deploy_simulator_nginx_limits.py infra/vps/ci/test_simulator_deploy_manifest.py
       - name: Syntaxe bash des scripts VPS
         run: |
           bash -n infra/vps/naviguide/deploy-naviguide.sh

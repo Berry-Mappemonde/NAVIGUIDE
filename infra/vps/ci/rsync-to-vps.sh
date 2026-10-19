@@ -43,6 +43,8 @@ case "$SITE" in
       "$ROOT/naviguide-simulator/" "$VPS:$REMOTE/naviguide-simulator/"
     rsync_to \
       "$ROOT/infra/vps/naviguide/nginx-simulator.conf" \
+      "$ROOT/infra/vps/naviguide/nginx-simulator-limits.conf" \
+      "$ROOT/infra/vps/naviguide/nginx-simulator-443-redirects.conf" \
       "$ROOT/infra/vps/naviguide/naviguide-simulator.service" \
       "$ROOT/infra/vps/naviguide/naviguide-film-front.service" \
       "$ROOT/infra/vps/naviguide/deploy-simulator.sh" \
