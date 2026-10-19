@@ -5512,3 +5512,285 @@ def test_vb1_suffix_does_not_rerun_vl_select(monkeypatch):
     assert calls["select"] == 1
     assert calls["trim"] == 2
     assert src != "cache"
+
+
+def _reread_pacific_stops():
+    return [
+        {"name": "Cayenne (Guyane)", "nm": 4000},
+        {"name": "Halifax (Nouvelle-Écosse)", "nm": 4100},
+        {"name": "Papeete (Polynésie française)", "nm": 16205},
+        {"name": "Mata-Utu (Wallis-et-Futuna)", "nm": 17847},
+        {"name": "Nouméa (Nouvelle-Calédonie)", "nm": 19177},
+        {"name": "Dzaoudzi (Mayotte)", "nm": 28329},
+        {"name": "Tromelin (TAAF)", "nm": 28729},
+        {"name": "Saint-Gilles (La Réunion)", "nm": 29575},
+        {"name": "Europa (TAAF)", "nm": 31032},
+        {"name": "La Rochelle", "nm": 122},
+    ]
+
+
+def test_reread_refuses_papeete_skip_and_the_short_upcoming_list():
+    """Papeete → Dzaoudzi, 12 124 milles, liste sans Mata-Utu ni Nouméa : refusé."""
+    from film_script import nemotron_reread_report
+
+    text = (
+        "Berry-Mappemonde leaves Papeete (French Polynesia), heading west for "
+        "Dzaoudzi (Mayotte). 12,124 miles, 63 days at sea. "
+        "Stops still to come: Dzaoudzi, Tromelin, Saint-Gilles, Europa, La Rochelle."
+    )
+    report = nemotron_reread_report(text, _reread_pacific_stops(), lang="en")
+    assert report["ok"] is False
+    assert report["source"] == "simulate"
+    assert "skip" in report["faults"]
+    assert "upcoming" in report["faults"]
+    assert "distance" in report["faults"]
+
+
+def test_reread_refuses_cap_sur_a_stop_that_is_not_next():
+    from film_script import nemotron_reread_report
+
+    jumped = nemotron_reread_report(
+        "",
+        _reread_pacific_stops(),
+        lang="fr",
+        chapters=[{
+            "fromName": "Papeete (Polynésie française)",
+            "toName": "Dzaoudzi (Mayotte)",
+            "text": "Le 5 octobre, cap sur Dzaoudzi : 12 124 milles, 63 jours de mer.",
+        }],
+    )
+    assert jumped["ok"] is False
+    assert "skip" in jumped["faults"]
+    assert "distance" in jumped["faults"]
+
+    direct = nemotron_reread_report(
+        "",
+        [{"name": "La Rochelle", "nm": 122}, {"name": "Ajaccio (Corse)", "nm": 1942}],
+        lang="fr",
+        chapters=[{
+            "fromName": "La Rochelle",
+            "toName": "Ajaccio (Corse)",
+            "text": "Le 15 mai, cap sur Ajaccio : 1 820 milles, une dizaine de jours de mer.",
+        }],
+    )
+    assert direct["ok"] is True
+
+
+def test_reread_refuses_monaco_and_keeps_halifax():
+    from film_script import nemotron_reread_report
+
+    stops = _reread_pacific_stops()
+    monaco = nemotron_reread_report(
+        "On 6 June, entry formalities go through Monaco - Port de la Condamine (Port Hercule).",
+        stops,
+        lang="en",
+    )
+    assert monaco["ok"] is False
+    assert monaco["faults"] == ["absent"]
+
+    halifax = nemotron_reread_report(
+        "The crew flies from Cayenne to Halifax. Arrival at Halifax on 2 July.",
+        stops,
+        lang="en",
+    )
+    assert halifax["ok"] is True
+    assert halifax["faults"] == []
+
+
+def test_reread_refuses_a_date_that_goes_backward():
+    from film_script import nemotron_reread_report
+
+    stops = _reread_pacific_stops()
+    back = nemotron_reread_report(
+        "On 27 August, the boat is at sea. On 24 August, the boat skirts Halifax.",
+        stops,
+        lang="en",
+    )
+    assert back["ok"] is False
+    assert "date" in back["faults"]
+
+    forward = nemotron_reread_report(
+        "On 24 August, the boat skirts Halifax. On 27 August, the boat is at sea.",
+        stops,
+        lang="en",
+    )
+    assert forward["ok"] is True
+
+    same_day = nemotron_reread_report(
+        "On 15 May, Berry-Mappemonde leaves Saint-Maur by road for La Rochelle. "
+        "Arrival at La Rochelle on 15 May.",
+        [{"name": "Saint-Maur (Berry, Indre)"}, {"name": "La Rochelle"}],
+        lang="en",
+    )
+    assert "date" not in same_day["faults"]
+    assert same_day["ok"] is True
+
+    bar = nemotron_reread_report(
+        "",
+        stops,
+        lang="en",
+        chapters=[{
+            "fromName": "Cayenne (Guyane)",
+            "toName": "Papeete (Polynésie française)",
+            "text": "On 29 September, the boat is at sea.",
+            "anchors": [{"charIdx": 0, "t": "2026-10-01T00:00:00Z"}],
+        }],
+    )
+    assert "date" in bar["faults"]
+
+
+def test_reread_refuses_a_later_stop_announced_on_the_wrong_leg():
+    from film_script import nemotron_reread_report
+
+    stops = _reread_pacific_stops()
+    mata = nemotron_reread_report(
+        "",
+        stops,
+        lang="en",
+        chapters=[{
+            "fromName": "Cayenne (Guyane)",
+            "toName": "Papeete (Polynésie française)",
+            "text": "On 5 October, the approach is by Mata-Utu.",
+        }],
+    )
+    assert mata["ok"] is False
+    assert "offleg" in mata["faults"]
+
+    noumea = nemotron_reread_report(
+        "",
+        stops,
+        lang="en",
+        chapters=[{
+            "fromName": "Papeete (Polynésie française)",
+            "toName": "Mata-Utu (Wallis-et-Futuna)",
+            "text": "On 14 October, the approach is by Nouméa. The boat skirts Noumea.",
+        }],
+    )
+    assert "offleg" in noumea["faults"]
+
+
+def test_upcoming_keeps_stops_a_review_leg_skipped():
+    review = {
+        "legs": [
+            {"from": "Cayenne", "to": "Papeete", "legNm": 8000},
+            {"from": "Papeete", "to": "Dzaoudzi", "legNm": 12124},
+            {"from": "Dzaoudzi", "to": "Tromelin", "legNm": 400},
+            {"from": "Tromelin", "to": "Saint-Gilles", "legNm": 500},
+        ]
+    }
+    route = _reread_pacific_stops()
+    skipped = upcoming_stop_names(review, "Papeete", arrived=True)
+    assert skipped[:1] == ["Dzaoudzi"]
+    assert "Mata-Utu" not in skipped
+    names = upcoming_stop_names(review, "Papeete", arrived=True, route_stops=route)
+    assert names.index("Mata-Utu") < names.index("Nouméa") < names.index("Dzaoudzi")
+    assert "Halifax" not in names
+
+
+def test_pacific_chapter_does_not_announce_mata_utu_or_noumea():
+    marks = [
+        {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0,
+         "iso": "2026-05-15T08:00:00Z", "holdHours": 0, "lat": 46.8, "lon": 1.6},
+        {"name": "La Rochelle", "nm": 122, "filmNm": 122,
+         "iso": "2026-05-15T12:00:00Z", "holdHours": 72, "lat": 46.15, "lon": -1.16},
+        {"name": "Cayenne (Guyane)", "nm": 4000, "filmNm": 4000,
+         "iso": "2026-08-01T00:00:00Z", "holdHours": 24, "lat": 4.9, "lon": -52.3},
+        {"name": "Halifax (Nouvelle-Écosse)", "nm": 4100, "filmNm": 4100,
+         "iso": "2026-08-02T00:00:00Z", "holdHours": 24, "lat": 44.6, "lon": -63.6},
+        {"name": "Papeete (Polynésie française)", "nm": 16205, "filmNm": 16205,
+         "iso": "2026-10-01T00:00:00Z", "holdHours": 72, "lat": -17.5, "lon": -149.5},
+        {"name": "Mata-Utu (Wallis-et-Futuna)", "nm": 17847, "filmNm": 17847,
+         "iso": "2026-10-14T00:00:00Z", "holdHours": 48, "lat": -13.28, "lon": -176.17},
+        {"name": "Nouméa (Nouvelle-Calédonie)", "nm": 19177, "filmNm": 19177,
+         "iso": "2026-10-22T00:00:00Z", "holdHours": 72, "lat": -22.2, "lon": 166.4},
+    ]
+    clock = {"t0": "2026-05-15T08:00:00Z", "marks": marks}
+    journal = {"moments": [
+        {"seq": 1, "t": "2026-09-20T00:00:00Z", "signature": "ap-mata", "changes": [
+            {"kind": "approche", "score": 3, "title": "Mata-Utu", "fact": "Mata-Utu"},
+        ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Papeete (Polynésie française)"}}},
+        {"seq": 2, "t": "2026-10-05T00:00:00Z", "signature": "ap-nou", "changes": [
+            {"kind": "approche", "score": 3, "title": "Nouméa", "fact": "Nouméa"},
+        ], "moment": {"leg": {"from": "Papeete (Polynésie française)", "to": "Mata-Utu (Wallis-et-Futuna)"}}},
+    ]}
+    now = int(datetime(2026, 10, 25, tzinfo=timezone.utc).timestamp() * 1000)
+    live = {"filmNm": 19200, "sailNm": 19200, "iso": "2026-10-25T00:00:00Z", "status": "live"}
+    plan = build_raw_script(clock, marks, live, journal, lang="en", seconds=0, now_ms=now)
+    blob = _script_blob(plan)
+    assert "approach is by Mata-Utu" not in blob
+    assert "approach is by Nouméa" not in blob
+    assert "leaves Papeete" in blob and "Mata-Utu" in blob
+
+
+def test_write_chain_does_not_store_a_skipped_stop(monkeypatch):
+    """Le contrôle local refuse avant l'appel de relecture."""
+    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    from film_script import nemotron_reread_report
+
+    plan = {
+        "chapters": [{
+            "id": "c0",
+            "text": "Berry-Mappemonde quitte Papeete pour Dzaoudzi. 12 124 milles.",
+            "tA": "2026-10-02T00:00:00Z",
+            "tB": "2026-12-04T00:00:00Z",
+            "fromName": "Papeete (Polynésie française)",
+            "toName": "Dzaoudzi (Mayotte)",
+        }],
+        "targetSeconds": 0,
+        "routeStops": _reread_pacific_stops(),
+    }
+    calls = {"reread": 0}
+
+    async def echo(system, user, **_kw):
+        if "real stops" in (system or ""):
+            calls["reread"] += 1
+            return '{"ok": true}', "nemotron-super"
+        sents = _sentences_from_user(user)
+        if sents:
+            return " ".join(sents), "nemotron-super"
+        return "", "rules"
+
+    fr, en, stats = asyncio.run(write_film_chain(plan, seconds=0, cascade=echo))
+    assert fr is None and en is None
+    assert calls["reread"] == 0
+    assert "skip" in (stats.get("faults") or [])
+    preview = nemotron_reread_report(plan["chapters"][0]["text"], plan["routeStops"], lang="fr")
+    assert preview["ok"] is False
+
+
+def test_write_chain_stores_nothing_when_the_reread_says_no(monkeypatch):
+    """Texte honnête, relecture simulée qui refuse : rien en stock, aucun appel réseau."""
+    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    plan = {
+        "chapters": [{
+            "id": "c0",
+            "text": "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Arrivée à Ajaccio le 26 mai.",
+            "tA": "2026-05-15T08:00:00Z",
+            "tB": "2026-05-26T12:00:00Z",
+            "fromName": "La Rochelle",
+            "toName": "Ajaccio (Corse)",
+            "anchors": [{"charIdx": 0, "t": "2026-05-15T08:00:00Z"}],
+        }],
+        "targetSeconds": 150,
+        "routeStops": [
+            {"name": "La Rochelle"},
+            {"name": "Ajaccio (Corse)"},
+        ],
+    }
+
+    async def fake(system, user, **_kw):
+        if "real stops" in (system or ""):
+            return '{"ok": false, "faults": ["skip"]}', "nemotron-super"
+        sents = _sentences_from_user(user)
+        if sents:
+            return " ".join(
+                s.replace("quitte", "laisse", 1) if "quitte" in s else s for s in sents
+            ), "nemotron-super"
+        return "", "rules"
+
+    fr, en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=fake))
+    assert fr is None and en is None
+    assert stats.get("faults") == ["nemotron"]
+    assert stats.get("reread") == "fail"
