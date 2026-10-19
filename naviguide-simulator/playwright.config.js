@@ -39,7 +39,8 @@ export default defineConfig({
   globalSetup: "./e2e/global-setup.js",
   timeout: 30_000,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 2 : 4,
+  // Un seul navigateur en CI : le runner a deux cœurs, déjà pris par Vite et l'API.
+  workers: process.env.CI ? 1 : 4,
   globalTimeout: 12 * 60 * 1000,
   reporter: process.env.CI
     ? [

@@ -246,7 +246,16 @@ test("a point kept across a zoom takes the new radius", async ({ page }) => {
   await releaseCamera(page, 56, -18);
   await expect.poll(() => radiusAt(56, -18), { timeout: 10_000 }).not.toBeNull();
   const before = await radiusAt(56, -18);
-  await page.evaluate(() => { window.__naviguideScene.map.setView([56, -18], 12, { animate: false }); });
+  await page.evaluate(() => new Promise((resolve) => {
+    const map = window.__naviguideScene.map;
+    const done = () => resolve(true);
+    map.once("zoomend", done);
+    map.setView([56, -18], 12, { animate: false });
+    if (map.getZoom() === 12) {
+      map.off("zoomend", done);
+      resolve(true);
+    }
+  }));
   await expect.poll(() => radiusAt(56, -18), { timeout: 15_000 }).toBeGreaterThan(before);
 });
 
