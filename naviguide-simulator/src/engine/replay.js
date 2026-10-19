@@ -817,7 +817,7 @@ export function sentenceStartsFromText(text) {
   return starts;
 }
 
-export function filmPlan({ chapters, targetSeconds = FILM_TARGET_SECONDS } = {}) {
+export function filmPlan({ chapters, targetSeconds = FILM_TARGET_SECONDS, keepChapters = false } = {}) {
   const target = Number(targetSeconds);
   const seconds = Number.isFinite(target) && target > 0 ? target : FILM_TARGET_SECONDS;
   const list = (chapters || []).filter((c) => c && (ms(c.tA) != null) && (ms(c.tB) != null) && ms(c.tB) > ms(c.tA));
@@ -844,7 +844,7 @@ export function filmPlan({ chapters, targetSeconds = FILM_TARGET_SECONDS } = {})
     startWall += share;
     return row;
   });
-  const merged = mergeShortChapters(planned, FILM_MIN_CHAPTER_SECONDS)
+  const merged = (keepChapters ? planned : mergeShortChapters(planned, FILM_MIN_CHAPTER_SECONDS))
     .map((c) => {
       const anchors = chapterAnchors(c);
       return {

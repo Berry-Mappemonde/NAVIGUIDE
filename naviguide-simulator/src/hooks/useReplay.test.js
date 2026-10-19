@@ -100,8 +100,8 @@ describe("useReplay contract", () => {
     assert.equal(shouldHoldFilmForBudget({ userBudget: 0, wallElapsed: 80, lastChapter: true }), false);
     assert.match(hook, /shouldHoldFilmForBudget/);
     assert.match(hook, /budgetSeconds/);
-    assert.match(hook, /resolveFilmTargetSeconds/);
-    assert.match(hook, /userBudget > 0 \? userBudget : FILM_TARGET_SECONDS/);
+    assert.match(hook, /resolveFilmTargetSeconds\(userBudget, chapters\)/);
+    assert.match(hook, /keepChapters: userBudget <= 0/);
   });
 
   it("Durée estimée = caractères ÷ 15, sans recalibrer la voix", () => {

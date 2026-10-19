@@ -136,6 +136,15 @@ describe("replay — filmPlan", () => {
     });
     assert.equal(squeezed.chapters.length, 1, "un chapitre trop court est fusionné");
     assert.ok(squeezed.chapters[0].seconds >= 12);
+    const integral = filmPlan({
+      chapters: [
+        { text: "Arrival at Ajaccio.", tA: 1_000, tB: 2_000 },
+        { text: "On 6 June, heading for Fort-de-France.", tA: 2_000, tB: 3_000 },
+      ],
+      targetSeconds: 40,
+      keepChapters: true,
+    });
+    assert.equal(integral.chapters.length, 2, "le film intégral garde chaque chapitre du texte");
   });
 
   it("calibrage du rate borné dans [0,9 ; 1,25]", () => {
