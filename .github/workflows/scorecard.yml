@@ -1,8 +1,8 @@
 name: Scorecard
 
-# OpenSSF Scorecard. publish_results n'est vrai que sur main : l'API
-# Scorecard ne publie pas un résultat de pull request. Le check lui-même
-# tourne aussi sur les pull requests. Workflow séparé, non requis.
+# OpenSSF Scorecard. Score privé (décision du 18 oct. 2026) : publish_results
+# vaut false, rien n'est publié chez OpenSSF. Le SARIF va seulement vers
+# l'onglet sécurité du dépôt. Workflow séparé, non requis.
 # La protection de branche reste un réglage du dépôt, pas de ce fichier.
 
 on:
@@ -33,11 +33,11 @@ jobs:
           persist-credentials: false
 
       - name: Run analysis
-        uses: ossf/scorecard-action@v2
+        uses: ossf/scorecard-action@v2.5.0
         with:
           results_file: results.sarif
           results_format: sarif
-          publish_results: ${{ github.ref == 'refs/heads/main' }}
+          publish_results: false
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
