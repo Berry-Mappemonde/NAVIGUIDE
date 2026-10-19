@@ -19,6 +19,7 @@
 
 import { getCardinalDirection } from "../utils/getCardinalDirection.js";
 import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
+import { withoutForeignRegion } from "../utils/stopLabels.js";
 import fr from "../i18n/fr.js";
 import enDict from "../i18n/en.js";
 import { cardFromJournalEntry } from "./momentCard.js";
@@ -179,7 +180,8 @@ function dayWord(n, lang) {
 
 function shortName(name) {
   // "Fort-de-France (Martinique)" stays; "Saint-Maur (Berry, Indre)" → "Saint-Maur".
-  return String(name || "").replace(/\s*\(Berry, Indre\)\s*/, "").trim();
+  // "Açores (Corse)" perd le suffixe d'une autre escale.
+  return withoutForeignRegion(name).replace(/\s*\(Berry, Indre\)\s*/, "").trim();
 }
 
 /** Same stopover: « Ajaccio » ≡ « Ajaccio (Corse) ». Berry does not call twice. */
