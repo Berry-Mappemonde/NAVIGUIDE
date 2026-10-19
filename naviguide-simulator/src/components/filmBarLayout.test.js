@@ -129,6 +129,7 @@ describe("film bar", () => {
     assert.match(bar, /unitKm/);
     assert.match(bar, /byRoad/);
     assert.match(bar, /unitRoadHours/);
+    assert.match(bar, /filmClockWithoutRoadNm\(clockLine\)/);
   });
 });
 

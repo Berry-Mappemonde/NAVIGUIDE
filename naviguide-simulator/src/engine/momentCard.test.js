@@ -266,7 +266,7 @@ describe("cartes", () => {
     assert.match(escaleCard({ fromStop: "Ajaccio", toStop: "FdF", holdDays: 3 }, "en").text, /^Stopover Ajaccio — 3 days in port\. Departure: heading for FdF\.$/);
   });
 
-  it("escaleCard à Saint-Maur : km par la route, pas de nm", () => {
+  it("escaleCard à Saint-Maur : km et heures, pas de nm", () => {
     const km = Math.round(122 * NM_TO_KM);
     const c = escaleCard({
       fromStop: "Saint-Maur (Berry, Indre)",
@@ -277,12 +277,22 @@ describe("cartes", () => {
       kind: "land",
     }, "fr");
     const text = c.text.replace(/[\u202f\u00a0]/g, " ");
-    assert.match(text, new RegExp(`${km} km par la route`));
-    assert.match(text, /4 h de route/);
+    assert.equal(text, `Escale Saint-Maur (Indre). Départ : cap sur La Rochelle, ${km} km, ≈ 4 h.`);
+    assert.doesNotMatch(text, /par la route|de route|by road|on the road/);
     assert.doesNotMatch(text, /\bnm\b/);
+    const en = escaleCard({
+      fromStop: "Saint-Maur (Berry)",
+      toStop: "La Rochelle",
+      legNm: 122,
+      roadHours: 4,
+      kind: "land",
+    }, "en");
+    const enText = en.text.replace(/[\u202f\u00a0]/g, " ");
+    assert.equal(enText, `Stopover Saint-Maur (Indre). Departure: heading for La Rochelle, ${km} km, ≈ 4 h.`);
+    assert.doesNotMatch(enText, /by road|on the road|\bnm\b/);
     const short = escaleCard({ fromStop: "Saint-Maur", toStop: "La Rochelle", legNm: 122, roadHours: 4 }, "fr");
-    assert.match(short.text.replace(/[\u202f\u00a0]/g, " "), /km par la route/);
-    assert.doesNotMatch(short.text, /\bnm\b/);
+    assert.match(short.text.replace(/[\u202f\u00a0]/g, " "), new RegExp(`${km} km, ≈ 4 h`));
+    assert.doesNotMatch(short.text, /\bnm\b|par la route/);
   });
 
   it("isStaleCard : en Simulation seulement, au-delà de STALE_CARD_NM derrière la tête", () => {
@@ -375,7 +385,8 @@ describe("advanceMoments — file, expiration, moment libre", () => {
       leg: { fromStop: "Saint-Maur", toStop: "La Rochelle", legNm: 122, kind: "land" },
     });
     assert.equal(firstLand.now.kind, "escale");
-    assert.match(firstLand.now.text.replace(/[\u202f\u00a0]/g, " "), /km par la route/);
+    assert.match(firstLand.now.text.replace(/[\u202f\u00a0]/g, " "), /\d+ km/);
+    assert.doesNotMatch(firstLand.now.text, /\bnm\b|par la route|by road/);
     const firstSea = advanceMoments(emptyMoments(), {
       events: [], filmCum: 0, nowMs: 0, legId: "A",
       leg: { fromStop: "La Rochelle", toStop: "Ajaccio", legNm: 1820 },

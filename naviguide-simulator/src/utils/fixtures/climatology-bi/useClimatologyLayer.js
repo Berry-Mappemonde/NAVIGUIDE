@@ -59,6 +59,15 @@ function waveColor(hs, stat) {
   return "#5eead4";
 }
 
+function climoMonthCaption(t, month) {
+  const n = Math.round(Number(month));
+  const known = Number.isFinite(Number(month)) && n >= 1 && n <= 12;
+  const label = known
+    ? t("fv2ClimoCaption", { month: t(`fv2Month${n}`) })
+    : String(t("fv2ClimoCaption", { month: "" })).replace(/\s*\(\s*\)/g, "").replace(/\s{2,}/g, " ").trim();
+  return `<div data-testid="climatology-caption" style="font-family:system-ui,sans-serif;font-size:13px;line-height:1.35;color:#e2e8f0;margin:4px 0;">${esc(label)}</div>`;
+}
+
 function popupHtml(kind, p, t) {
   const rows = [];
   if (kind === "wind") {
@@ -86,7 +95,7 @@ function popupHtml(kind, p, t) {
   }
   return `<div style="min-width:200px;max-width:280px;" data-testid="climatology-popup">
     <div style="font-weight:700;color:#fff;font-size:12px;">${esc(t("modeClimatologyFull"))}</div>
-    <div data-testid="climatology-caption" style="font-family:system-ui,sans-serif;font-size:13px;line-height:1.35;color:#e2e8f0;margin:4px 0;">${esc(t("fv2ClimoCaption", { month: t("fv2Month" + Math.max(1, Math.min(12, Math.round(Number(p.month) || 1)))) }))}</div>
+    ${climoMonthCaption(t, p.month)}
     ${rows.map((r) => `<div style="font-size:11px;color:#e2e8f0;margin-top:3px;">${r}</div>`).join("")}
     <div style="font-size:10px;color:#94a3b8;margin-top:8px;">${esc(t("climoDisclaimer"))}</div>
   </div>`;
@@ -232,7 +241,7 @@ export default function useClimatologyLayer({
           if (onPoint) onPoint(data);
           const html = `<div data-testid="climatology-map-popup" style="min-width:210px;">
             <div style="font-weight:700;color:#fff;">${esc(tRef.current("modeClimatologyFull"))}</div>
-            <div data-testid="climatology-caption" style="font-family:system-ui,sans-serif;font-size:13px;line-height:1.35;color:#e2e8f0;margin:4px 0;">${esc(tRef.current("fv2ClimoCaption", { month: tRef.current("fv2Month" + Math.max(1, Math.min(12, Math.round(Number(data.month) || 1)))) }))}</div>
+            ${climoMonthCaption(tRef.current, data.month)}
             <div style="font-size:11px;color:#e2e8f0;">${esc(data.coordinates?.cell_selection)}</div>
             <div style="font-size:10px;color:#fde68a;margin-top:8px;">${esc(tRef.current("climoDisclaimer"))}</div>
           </div>`;

@@ -95,7 +95,8 @@ describe("narrateIci", () => {
       }],
       sources: { zee: "error" },
     }, "fr");
-    assert.match(text, /Étape terrestre de Saint-Maur \(Berry, Indre\) vers La Rochelle/);
+    assert.match(text, /Étape terrestre de Saint-Maur \(Indre\) vers La Rochelle/);
+    assert.doesNotMatch(text, /Berry|Corse/);
     assert.match(text, /encore 4 h de route/);
     assert.match(text, /pas encore en mer/);
     assert.doesNotMatch(text, /encore 4 h de mer/);
@@ -120,7 +121,8 @@ describe("narrateIci", () => {
       },
       sources: { zee: "marineregions", bi: "ok" },
     }, "fr");
-    assert.match(text, /Étape terrestre de Saint-Maur \(Berry, Indre\) vers La Rochelle/);
+    assert.match(text, /Étape terrestre de Saint-Maur \(Indre\) vers La Rochelle/);
+    assert.doesNotMatch(text, /Berry/);
     assert.match(text, /encore 4 h de route/);
     assert.match(text, /pas encore en mer/);
     assert.doesNotMatch(text, /encore 4 h de mer/);

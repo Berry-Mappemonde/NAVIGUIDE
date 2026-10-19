@@ -321,7 +321,7 @@ export default {
   layerClimoCyclones: "Cyclones",
   layerClimoCyclonesTitle: "Traces IBTrACS du mois",
   climatologyStub: "Atlas CMEMS — roses, Hs P50/P90, courant, cyclones.",
-  climatologyOn: "Atlas CMEMS · {month} · {maps} · kind climatology",
+  climatologyOn: "Atlas CMEMS · {month} · {maps}",
   climatologyAtlasDown: "Atlas muet — vent de zone en repli.",
   climatologySourceGlobal: "maille 4°",
   modeClimatologyFull: "Climatologie",
