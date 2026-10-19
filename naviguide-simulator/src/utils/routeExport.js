@@ -28,7 +28,7 @@ function lonLat(coord) {
   const lon = Number(coord[0]);
   const lat = Number(coord[1]);
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 540) return null;
   return [lon, lat];
 }
 

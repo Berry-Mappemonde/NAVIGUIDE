@@ -146,11 +146,19 @@ describe("routeExport", () => {
     const wild = {
       from: { name: "A & B <C>", lat: 46, lon: -1 },
       to: { name: "D", lat: 47, lon: -2 },
-      coords: [[-1, 46], [200, 10], [-2, 47]],
+      coords: [[-1, 46], [600, 10], [-2, 47]],
     };
     const fc = buildGeoJSON([wild], [], "n");
     const line = fc.features.find((f) => f.geometry.type === "LineString");
     assert.deepEqual(line.geometry.coordinates, [[-1, 46], [-2, 47]]);
+    // Copies du monde (±540°) : une longitude déroulée reste valide et revient dans [−180, 180].
+    const unwrapped = { from: { name: "E", lat: 10, lon: 170 }, to: { name: "F", lat: 11, lon: -170 }, coords: [[170, 10], [190, 11]] };
+    const out = buildGeoJSON([unwrapped], [], "n");
+    for (const f of out.features.filter((x) => x.geometry.type !== "Point")) {
+      const lines = f.geometry.type === "MultiLineString" ? f.geometry.coordinates : [f.geometry.coordinates];
+      for (const l of lines) for (const [lon] of l) assert.ok(lon >= -180 && lon <= 180);
+    }
+    assert.ok(out.features.some((f) => f.geometry.type !== "Point"));
     const xml = buildKML([wild], [{ name: "A & B <C>", lat: 46, lon: -1, flag: true }], "n");
     assert.match(xml, /A &amp; B &lt;C&gt;/);
     assert.doesNotMatch(xml, /A & B/);
