@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
-import { featuresToSegments } from "../utils/geo.js";
+import { featuresToSegments, wrapLon } from "../utils/geo.js";
 import { useToggleLayers } from "../layers/useToggleLayers.js";
 import { useClimatologyLayer } from "../layers/useClimatologyLayer.js";
 import { useGribCorridorLayer } from "../layers/useGribCorridorLayer.js";
@@ -69,9 +69,16 @@ export function MapScene({
     mapRef.current = controller.map;
     // Recette / e2e : le contrôleur de scène est exposé (zoom, carte).
     if (typeof window !== "undefined") window.__naviguideScene = controller;
+    // La capture du film attend ce marqueur : la carte a sa première vue.
+    const markAppReady = () => {
+      containerRef.current?.setAttribute("data-testid", "app-ready");
+    };
+    if (typeof controller.map?.whenReady === "function") controller.map.whenReady(markAppReady);
+    else markAppReady();
     setMapReady(1);
     callbacksRef.current.onReady?.(controller.api);
     return () => {
+      containerRef.current?.removeAttribute("data-testid");
       callbacksRef.current.onReady?.(null);
       if (typeof window !== "undefined" && window.__naviguideScene === controller) {
         delete window.__naviguideScene;
@@ -156,7 +163,7 @@ export function MapScene({
     const onContextMenu = (event) => {
       L.DomEvent.preventDefault(event);
       callbacksRef.current.onCoordinatesCopied?.(
-        `${event.latlng.lat.toFixed(6)}, ${event.latlng.lng.toFixed(6)}`,
+        `${event.latlng.lat.toFixed(6)}, ${wrapLon(event.latlng.lng).toFixed(6)}`,
       );
     };
     map.on("click", onClick);

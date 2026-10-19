@@ -61,20 +61,18 @@ def _clock_gap_days(dep: datetime, arr: datetime) -> float:
     return (arr - dep).total_seconds() / 86400.0
 
 
-def sea_days_between(dep: datetime, arr: datetime, leg_nm: float, *, from_clock: bool) -> float:
+def sea_days_between(dep: datetime | None, arr: datetime | None, leg_nm: float, *, from_clock: bool) -> float:
     """Jours de mer affichés.
 
-    Horloge présente : écart des dates (départ d'une escale → arrivée suivante)
-    lorsqu'il reste dans les 10 % de la durée à 8 kn. Au-delà, l'horloge est
-    comprimée : on garde le repli 8 kn. Sans horloge : uniquement ce repli.
+    Horloge présente et écart des dates positif (départ d'une escale →
+    arrivée suivante) : cet écart, sans seuil. Repli milles ÷ 8 kn seulement
+    si les dates manquent, sont égales ou dans le désordre.
     """
     planned = planned_sea_days(leg_nm)
-    if not from_clock:
+    if not from_clock or dep is None or arr is None:
         return planned
     span = _clock_gap_days(dep, arr)
-    if span <= 0 or planned <= 0:
-        return planned
-    if abs(span - planned) > max(0.15, 0.10 * planned):
+    if span <= 0:
         return planned
     return round(span, 1)
 
@@ -221,10 +219,6 @@ def _leg_distance_nm(a: dict, b: dict, from_nm: float, to_nm: float) -> float:
 # recale tHours / sailNm sur les milles d'itinéraire, qui sont justes.
 SNAP_SAIL_NM_EXACT = 1.0
 SNAP_SAIL_NM_NEAR = 50.0
-# Écart d'horloge vs milles ÷ 8 kn : au-delà de ce rapport l'horloge est
-# comprimée (Nouméa → La Rochelle : 3 j affichés contre ~105 j). On aligne
-# alors l'arrivée sur le repli. En deçà, daysAtSea reste l'écart d'horloge.
-DATE_SEA_DAYS_FACTOR = 10.0
 
 
 def _t_hours_at_sail_nm(clock: dict, sail_nm: float) -> tuple[float, float] | None:
@@ -281,7 +275,7 @@ def _snap_mark_to_itinerary_nm(clock: dict, mark: dict) -> dict:
 
 
 def _align_dates_to_sea_days(dep: datetime, arr: datetime, days_at_sea: float) -> tuple[datetime, datetime]:
-    """Si l'écart d'horloge et les jours de mer se contredisent d'un facteur dix, l'arrivée suit les jours de mer."""
+    """Dates égales ou dans le désordre : l'arrivée suit le repli milles ÷ 8 kn. Sinon, dates inchangées."""
     try:
         days = float(days_at_sea)
     except (TypeError, ValueError):
@@ -290,9 +284,6 @@ def _align_dates_to_sea_days(dep: datetime, arr: datetime, days_at_sea: float) -
         return dep, arr
     span = (arr - dep).total_seconds() / 86400.0
     if span <= 0:
-        return dep, dep + timedelta(days=days)
-    lo, hi = (span, days) if span < days else (days, span)
-    if hi / max(lo, 1e-9) >= DATE_SEA_DAYS_FACTOR:
         return dep, dep + timedelta(days=days)
     return dep, arr
 
@@ -493,8 +484,8 @@ def legs_from_voyage(voy: dict) -> list[dict]:
             elapsed_h = (arr - t0).total_seconds() / 3600.0 + hold_b
         if dep is None or arr is None:
             continue
-        days = planned_sea_days(leg_nm)
-        dep, arr = _align_dates_to_sea_days(dep, arr, days)
+        dep, arr = _align_dates_to_sea_days(dep, arr, planned_sea_days(leg_nm))
+        days = sea_days_between(dep, arr, leg_nm, from_clock=True)
         legs.append({
             "from": a["name"], "to": b["name"],
             "departIso": to_iso(dep), "arriveIso": to_iso(arr),

@@ -719,6 +719,171 @@ describe("narrateIci", () => {
     const legacy = phraseForEvent({ type: "depth-alert", payload: { depthM: 9, source: "emodnet" } }, "fr");
     assert.match(legacy, /^Haut-fond 9 m/);
   });
+
+  const NC = {
+    zee: {
+      name: "New Caledonia Exclusive Economic Zone",
+      mrgid: 8312,
+      territory: "nouvelle_caledonie",
+      gold: true,
+    },
+    poe: [],
+    sources: { zee: "marineregions", bi: "ok" },
+  };
+  const NC_FILM = {
+    fr: "Le 12 octobre, les eaux de Nouvelle-Calédonie.",
+    en: "On 12 October, the waters of New Caledonia.",
+  };
+
+  it("ouvre sur la phrase film de la ZEE, en français et en anglais", () => {
+    const bag = { ...NC, filmPhrases: { "zee-enter": NC_FILM } };
+    const fr = narrateIci(bag, "fr");
+    assert.match(fr, /^Le 12 octobre, les eaux de Nouvelle-Calédonie\./);
+    assert.match(fr, /Les formalités d’entrée passent par des ports officiels, listés ci-dessous\./);
+    assert.equal((fr.match(/formalités/gi) || []).length, 1);
+    assert.doesNotMatch(fr, /Le bateau navigue dans/);
+    const en = narrateIci(bag, "en");
+    assert.match(en, /^On 12 October, the waters of New Caledonia\./);
+    assert.match(en, /Entry formalities go through official ports of entry, listed below\./);
+    assert.equal((en.match(/formalit/gi) || []).length, 1);
+    assert.doesNotMatch(en, /The boat is sailing in/);
+  });
+
+  it("sans filmPhrases, la fiche reste sur la phrase actuelle", () => {
+    const fr = narrateIci(NC, "fr");
+    assert.match(fr, /Le bateau navigue dans/);
+    assert.match(fr, /formalités d’entrée passent par des ports officiels/);
+    const en = narrateIci(NC, "en");
+    assert.match(en, /The boat is sailing in/);
+    assert.match(en, /Entry formalities go through official ports of entry/);
+  });
+
+  it("n'ajoute pas les formalités déjà dites par la phrase film", () => {
+    const bag = {
+      ...NC,
+      filmPhrases: {
+        "zee-enter": {
+          fr: "Le 12 octobre, les eaux de Nouvelle-Calédonie. Les formalités d’entrée passent par Nouméa.",
+          en: "On 12 October, the waters of New Caledonia. Entry formalities go through Nouméa.",
+        },
+      },
+    };
+    const fr = narrateIci(bag, "fr");
+    assert.equal((fr.match(/formalités/gi) || []).length, 1);
+    assert.doesNotMatch(fr, /listés ci-dessous/);
+    const en = narrateIci(bag, "en");
+    assert.equal((en.match(/formalit/gi) || []).length, 1);
+    assert.doesNotMatch(en, /listed below/);
+  });
+
+  it("préfère zee-enter à zee-ahead et à zee-exit", () => {
+    const fr = narrateIci({
+      ...NC,
+      filmPhrases: {
+        "zee-exit": { fr: "Retour en haute mer — plus de ZEE à déclarer.", en: "Back on the high seas." },
+        "zee-ahead": { fr: "Devant : les eaux fidjiennes.", en: "Ahead: Fijian waters." },
+        "zee-enter": NC_FILM,
+      },
+    }, "fr");
+    assert.match(fr, /^Le 12 octobre, les eaux de Nouvelle-Calédonie\./);
+    assert.doesNotMatch(fr, /eaux fidjiennes|haute mer/);
+  });
+
+  it("ne recolle pas la ligne d'événement du même type", () => {
+    const text = narrateIci({
+      ...NC,
+      filmPhrases: { "zee-enter": NC_FILM },
+      event: {
+        type: "zee-enter",
+        name: "New Caledonia Exclusive Economic Zone",
+        mrgid: 8312,
+        filmPhrase: NC_FILM.fr,
+      },
+    }, "fr");
+    assert.equal((text.match(/les eaux de Nouvelle-Calédonie/g) || []).length, 1);
+    assert.doesNotMatch(text, /On vient d’entrer/);
+    const other = narrateIci({
+      ...NC,
+      filmPhrases: { "zee-enter": NC_FILM },
+      event: {
+        type: "wind-shift",
+        payload: { tws: 18, twd: 240, dTws: 10, kind: "forecast", source: "GFS" },
+      },
+    }, "fr");
+    assert.match(other, /^Le 12 octobre, les eaux de Nouvelle-Calédonie\./);
+    assert.match(other, /Vent 18 kn \/ 240°/);
+  });
+
+  it("prend la phrase film du port nommé, en français et en anglais", () => {
+    const bag = {
+      zee: {
+        name: "New Caledonia Exclusive Economic Zone",
+        mrgid: 8312,
+        territory: "nouvelle_caledonie",
+        gold: true,
+      },
+      poe: [{ name: "Nouméa", nm: 12 }],
+      filmPhrases: {
+        "poe-ahead:Nouméa": {
+          fr: "Le 12 octobre, devant Nouméa.",
+          en: "On 12 October, off Nouméa.",
+        },
+      },
+      event: { type: "poe-ahead", name: "Nouméa", payload: { poe: { name: "Nouméa", nm: 12 } } },
+      sources: { zee: "marineregions", bi: "ok" },
+    };
+    const fr = narrateIci(bag, "fr");
+    assert.match(fr, /Le 12 octobre, devant Nouméa\./);
+    assert.equal((fr.match(/devant Nouméa/g) || []).length, 1);
+    assert.doesNotMatch(fr, /Port d’entrée officiel devant/);
+    assert.doesNotMatch(fr, /Aucun port d’entrée officiel/);
+    assert.doesNotMatch(fr, /Ports d’entrée officiels les plus proches/);
+    const en = narrateIci(bag, "en");
+    assert.match(en, /On 12 October, off Nouméa\./);
+    assert.doesNotMatch(en, /Nearest official ports of entry/);
+    assert.doesNotMatch(en, /No official port of entry is known/);
+  });
+
+  it("dit la phrase film du port d'entrée une seule fois", () => {
+    const absence = "Aucun port d’entrée officiel n’est connu pour cette ZEE.";
+    const absenceEn = "No official port of entry is known for this EEZ.";
+    const bag = {
+      zee: { name: "Spanish Exclusive Economic Zone", mrgid: 5693, gold: false },
+      poe: [],
+      filmPhrases: { "poe-ahead": { fr: absence, en: absenceEn } },
+      event: { type: "poe-ahead", filmPhrase: absence },
+      sources: { zee: "marineregions", bi: "ok" },
+    };
+    const fr = narrateIci(bag, "fr");
+    assert.equal((fr.match(/Aucun port d’entrée officiel/g) || []).length, 1);
+    const en = narrateIci(bag, "en");
+    assert.equal((en.match(/No official port of entry is known/g) || []).length, 1);
+  });
+
+  it("en haute mer, seule une phrase zee-exit remplace la phrase actuelle", () => {
+    const high = {
+      zee: { name: "Haute mer", mrgid: null, gold: false },
+      poe: [],
+      sources: { zee: "marineregions", bi: "ok" },
+    };
+    assert.match(narrateIci(high, "fr"), /haute mer/i);
+    const stale = narrateIci({
+      ...high,
+      filmPhrases: { "zee-enter": NC_FILM },
+    }, "fr");
+    assert.match(stale, /Le bateau est en haute mer/);
+    assert.doesNotMatch(stale, /Nouvelle-Calédonie/);
+    const exit = narrateIci({
+      ...high,
+      filmPhrases: {
+        "zee-exit": {
+          fr: "Retour en haute mer — plus de ZEE à déclarer.",
+          en: "The boat is back on the high seas — no EEZ to clear.",
+        },
+      },
+    }, "fr");
+    assert.match(exit, /^Retour en haute mer — plus de ZEE à déclarer\./);
+  });
 });
 
 const FULL_BAG = {
@@ -916,6 +1081,60 @@ describe("jamais « haute mer » près d'un port ni hors de l'eau", () => {
     assert.match(app, /momentHighSeasRuledOut=\{momentHighSeasRuled\}/);
     assert.match(read("../components/Sidebar.jsx"), /highSeasRuledOut=\{momentHighSeasRuledOut\}/);
   });
+
+  it("Tracer J0, curseur à 0 : départ de Saint-Maur, transfert routier, jamais haute mer", () => {
+    // Cast Tracer : interpolateCast laisse vehicle « main » sur la jambe
+    // terrestre. Le drapeau Suivre n'est pas sur le dossier. drawTip annule
+    // le véhicule du moment. ZEE « High seas » / « Haute mer », ou le nom
+    // anglais « Ashore » sans le booléen ashore.
+    const at = { lat: SAINT_MAUR.lat, lon: SAINT_MAUR.lon };
+    const nearby = { marinas: [], capitaineries: [], wpi: [] };
+    const sources = { zee: "marineregions" };
+    const marks = [{
+      kind: "leg",
+      from: "Saint-Maur (Berry, Indre)",
+      to: "La Rochelle",
+      vehicle: "main",
+    }];
+    const cases = [
+      ["en", { name: "High seas", mrgid: null }, /high seas/i, /Departure: Saint-Maur \(Indre\), road transfer to La Rochelle/],
+      ["fr", { name: "Haute mer", mrgid: null }, /haute mer/i, /Départ : Saint-Maur \(Indre\), transfert routier vers La Rochelle/],
+      ["en", { name: "Ashore (France)", mrgid: null }, /high seas/i, /Departure: Saint-Maur \(Indre\), road transfer to La Rochelle/],
+      ["fr", { name: "Ashore (France)", mrgid: null }, /haute mer/i, /Départ : Saint-Maur \(Indre\), transfert routier vers La Rochelle/],
+    ];
+    for (const [lang, zee, forbidden, expected] of cases) {
+      const text = narrateIci({ at, zee, sources, nearby, marks }, lang);
+      assert.doesNotMatch(text, forbidden);
+      assert.match(text, expected);
+    }
+    // Véhicule du tracé annulé, escales pas encore là : la phrase serveur
+    // « high seas » ne reste pas sur ce départ terrestre.
+    const ruledOut = highSeasRuledOut({
+      vehicle: null,
+      nearStopNm: null,
+      fromStop: "Saint-Maur (Berry, Indre)",
+      toStop: "La Rochelle",
+    });
+    assert.equal(ruledOut, true);
+    const frame = { zee: { name: "High seas", mrgid: null }, sentences: [HIGH_SEAS_EN, HIGH_SEAS_FR] };
+    assert.deepEqual(hereWithoutFalseHighSeas(frame, { ruledOut }).sentences, []);
+    const app = readFileSync(join(here, "../App.jsx"), "utf8");
+    assert.match(app, /fromStop: jambe\?\.fromStop/);
+    assert.match(app, /toStop: jambe\?\.toStop/);
+  });
+
+  it("jambe en mer, ZEE anglaise « Ashore (France) » sans le booléen ashore : pas de haute mer", () => {
+    const dossier = {
+      at: { lat: 46.0, lon: -4.5 },
+      zee: { name: "Ashore (France)", mrgid: null },
+      sources: { zee: "marineregions" },
+      nearby: { marinas: [], capitaineries: [], wpi: [] },
+      marks: [{ kind: "leg", from: "La Rochelle", to: "Horta (Açores)", vehicle: "main" }],
+    };
+    assert.equal(highSeasClaimAllowed(dossier), false);
+    assert.doesNotMatch(narrateIci(dossier, "en"), /high seas/i);
+    assert.doesNotMatch(narrateIci(dossier, "fr"), /haute mer/i);
+  });
 });
 
 describe("fiche Ici — position rejouée", () => {
@@ -992,6 +1211,33 @@ describe("fiche Ici — position rejouée", () => {
     assert.equal(at.highSeas, false);
     assert.doesNotMatch(at.statusText, /haute mer/i);
     assert.equal(at.leg.from, "Europa (TAAF)");
+  });
+
+  it("Revoir à J0, à Saint-Maur : départ et transfert routier, jamais haute mer", () => {
+    const SAINT_MAUR = { name: "Saint-Maur (Berry, Indre)", lat: 46.8075, lon: 1.6358 };
+    const LA_ROCHELLE = { name: "La Rochelle", lat: 46.1541, lon: -1.167 };
+    const logLeg = { from: "Saint-Maur (Berry, Indre)", to: "La Rochelle" };
+    for (const [lang, zee, forbidden, expected] of [
+      ["fr", HIGH, /haute mer/i, /Départ : Saint-Maur \(Indre\), transfert routier vers La Rochelle/],
+      ["en", { name: "High seas", mrgid: null }, /high seas/i, /Departure: Saint-Maur \(Indre\), road transfer to La Rochelle/],
+      ["en", { name: "Ashore (France)", mrgid: null }, /high seas/i, /Departure: Saint-Maur \(Indre\), road transfer to La Rochelle/],
+    ]) {
+      const frame = replayHereFrame({
+        lat: SAINT_MAUR.lat, lon: SAINT_MAUR.lon, marks: [SAINT_MAUR, LA_ROCHELLE], zee, logLeg, lang,
+      });
+      assert.equal(frame.stop?.name, SAINT_MAUR.name);
+      assert.equal(frame.highSeas, false);
+      assert.doesNotMatch(frame.statusText, forbidden);
+      assert.match(frame.statusText, expected);
+    }
+    // Sur la route, loin des deux escales : toujours pas de haute mer.
+    const road = replayHereFrame({
+      lat: 46.465, lon: 0.168, marks: [SAINT_MAUR, LA_ROCHELLE],
+      zee: { name: "High seas", mrgid: null }, logLeg, lang: "en",
+    });
+    assert.equal(road.stop, null);
+    assert.equal(road.highSeas, false);
+    assert.doesNotMatch(road.statusText, /high seas/i);
   });
 
   it("en-tête et statut viennent de la même position ; l'étape est celle du Log", () => {
