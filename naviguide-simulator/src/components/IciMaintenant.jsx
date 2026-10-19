@@ -370,7 +370,7 @@ export function IciMaintenant({
                   data-high-seas={replayFrame.highSeas ? "1" : "0"}
                   className="flex flex-col gap-0.5"
                 >
-                  {replayFrame.stop ? (
+                  {replayFrame.stop && !replayFrame.highSeas ? (
                     <div data-testid="ici-replay-header" className="min-w-0">
                       <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200 leading-snug">{t("escaleSheetTitle")}</div>
                       <div className="text-[12px] font-semibold text-white leading-snug truncate">{replayFrame.stop.name}</div>

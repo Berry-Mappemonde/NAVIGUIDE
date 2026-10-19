@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TERRITORIAL_SEA_NM, cleanStoryText, hereWithoutFalseHighSeas, highSeasRuledOut, nearestStop, nearestStopNm, replayHereFrame, climatologySentence, climatologyShownOnBanner, highSeasClaimAllowed, narrateIci, narrateIciSegments, phraseForEvent, pickFilmPhrase } from "./iciBriefing.js";
+import { filmZeeBucket } from "./filmZeeStep.js";
 import { KNOWN_SOURCES, SOURCE_URLS, segmentSources } from "./briefingLinks.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -1240,22 +1241,103 @@ describe("fiche Ici — position rejouée", () => {
     assert.doesNotMatch(road.statusText, /high seas/i);
   });
 
-  it("en-tête et statut viennent de la même position ; l'étape est celle du Log", () => {
+  it("une ZEE d'un autre pas (Adelaide) ne s'affiche pas à Nouméa", () => {
     const frame = replayHereFrame({
       lat: -22.27,
       lon: 166.44,
       marks: [NOUMEA],
-      zee: { name: "Adelaide Exclusive Economic Zone", mrgid: 8323 },
-      logLeg: { from: "Marigot", to: "Cayenne (Guyane)" },
+      zee: {
+        name: "Adelaide Exclusive Economic Zone",
+        mrgid: 8323,
+        bucket: filmZeeBucket(-35.0, 138.6),
+      },
+      logLeg: { from: "Port Vila", to: "Nouméa (Nouvelle-Calédonie)" },
       lang: "en",
     });
-    // The sheet follows the Log step even when a stale EEZ name is handed in:
-    // the header is the stop at THIS position, and high seas is impossible there.
-    assert.equal(frame.leg.from, "Marigot");
-    assert.equal(frame.leg.to, "Cayenne (Guyane)");
     assert.equal(frame.stop?.name, NOUMEA.name);
     assert.equal(frame.highSeas, false);
-    assert.doesNotMatch(frame.statusText, /high seas/i);
+    assert.equal(frame.zee, null);
+    assert.doesNotMatch(frame.statusText, /Adelaide|high seas/i);
+    assert.equal(frame.leg.to, "Nouméa (Nouvelle-Calédonie)");
+    const fresh = replayHereFrame({
+      lat: -22.27,
+      lon: 166.44,
+      marks: [NOUMEA],
+      zee: { ...NC, bucket: filmZeeBucket(-22.27, 166.44) },
+      logLeg: { from: "Port Vila", to: "Nouméa (Nouvelle-Calédonie)" },
+      lang: "en",
+    });
+    assert.match(fresh.statusText, /New Caledonia/);
+    assert.doesNotMatch(fresh.statusText, /Adelaide|high seas/i);
+  });
+
+  it("haute mer d'un pas précédent ne reste pas à Nouméa", () => {
+    const frame = replayHereFrame({
+      lat: -22.27,
+      lon: 166.44,
+      marks: [NOUMEA],
+      zee: { name: "Haute mer", mrgid: null, bucket: filmZeeBucket(0, -30) },
+      logLeg: { from: "Port Vila", to: "Nouméa (Nouvelle-Calédonie)" },
+      lang: "en",
+    });
+    assert.equal(frame.stop?.name, NOUMEA.name);
+    assert.equal(frame.highSeas, false);
+    assert.doesNotMatch(frame.statusText, /high seas|haute mer/i);
+  });
+
+  it("le Log Marigot → Cayenne ne garde pas la fiche de Port-de-Paix", () => {
+    const portDePaix = { name: "Port-de-Paix (Haïti)", lat: 19.94, lon: -72.83 };
+    const frame = replayHereFrame({
+      lat: portDePaix.lat,
+      lon: portDePaix.lon,
+      marks: [portDePaix, { name: "Marigot (Saint-Martin)", lat: 18.07, lon: -63.08 }],
+      zee: { name: "Haitian Exclusive Economic Zone", mrgid: 8408, bucket: filmZeeBucket(19.94, -72.83) },
+      logLeg: { from: "Marigot (Saint-Martin)", to: "Cayenne (Guyane)" },
+      lang: "en",
+    });
+    assert.equal(frame.stop, null);
+    assert.equal(frame.highSeas, false);
+    assert.doesNotMatch(frame.statusText, /high seas|Port-de-Paix|Port de Paix/i);
+    assert.equal(frame.leg.from, "Marigot (Saint-Martin)");
+    assert.equal(frame.leg.to, "Cayenne (Guyane)");
+    const onStep = replayHereFrame({
+      lat: 18.07,
+      lon: -63.08,
+      marks: [portDePaix, { name: "Marigot (Saint-Martin)", lat: 18.07, lon: -63.08 }],
+      zee: { name: "Haute mer", mrgid: null },
+      logLeg: { from: "Marigot (Saint-Martin)", to: "Cayenne (Guyane)" },
+      lang: "en",
+    });
+    assert.equal(onStep.stop?.name, "Marigot (Saint-Martin)");
+    assert.equal(onStep.highSeas, false);
+    assert.doesNotMatch(onStep.statusText, /high seas/i);
+  });
+
+  it("en-tête et statut viennent de la même position ; l'étape est celle du Log", () => {
+    const frame = replayHereFrame({
+      lat: -22.27,
+      lon: 166.44,
+      marks: [NOUMEA, TROMELIN],
+      zee: { name: "Haute mer", mrgid: null },
+      logLeg: { from: "Port Vila", to: "Nouméa (Nouvelle-Calédonie)" },
+      lang: "en",
+    });
+    assert.equal(frame.leg.from, "Port Vila");
+    assert.equal(frame.leg.to, "Nouméa (Nouvelle-Calédonie)");
+    assert.equal(frame.stop?.name, NOUMEA.name);
+    assert.equal(frame.highSeas, false);
+    assert.doesNotMatch(frame.statusText, /high seas|TAAF|Tromelin/i);
+    const offshore = replayHereFrame({
+      lat: -14.5,
+      lon: 54.524,
+      marks: [TROMELIN],
+      zee: { name: "Haute mer", mrgid: null },
+      logLeg: { from: "Europa (TAAF)", to: "Tromelin (TAAF)" },
+      lang: "en",
+    });
+    assert.equal(offshore.stop, null);
+    assert.equal(offshore.highSeas, true);
+    assert.match(offshore.statusText, /high seas/i);
     const app = read("../App.jsx");
     assert.match(app, /replayHereFrame\(/);
     assert.match(app, /useFilmZee\(/);
@@ -1265,6 +1347,7 @@ describe("fiche Ici — position rejouée", () => {
     assert.match(app, /replayFrame=\{replayFrame\}/);
     assert.match(read("../components/IciMaintenant.jsx"), /data-testid="ici-replay-status"/);
     assert.match(read("../components/IciMaintenant.jsx"), /data-testid="ici-replay-here"/);
+    assert.match(read("../components/IciMaintenant.jsx"), /replayFrame\.stop && !replayFrame\.highSeas/);
     assert.match(read("../components/IciMaintenant.jsx"), /data-testid="ici-replay-header"/);
     assert.match(read("../components/SimulationFilmBar.jsx"), /data-testid="film-leg"/);
   });

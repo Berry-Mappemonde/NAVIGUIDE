@@ -11,6 +11,7 @@ import { originName, spokenZeeName, watersLabel } from "./toponyms.js";
 import { getCardinalDirection } from "../utils/getCardinalDirection.js";
 import { haversineNm } from "../utils/geo.js";
 import { localizePlaceName } from "../utils/placeNames.js";
+import { filmZeeBucket, filmZeeForBucket } from "./filmZeeStep.js";
 
 const TERRITORY = {
   fr: {
@@ -388,12 +389,63 @@ function zeeSentence(dossier, lang) {
     : `Le bateau navigue dans ${where}. ${formalities}`;
 }
 
+function stopKey(name) {
+  return String(name || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/œ/g, "oe")
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function sameStopName(a, b) {
+  const ka = stopKey(a);
+  const kb = stopKey(b);
+  if (!ka || !kb) return false;
+  return ka === kb || ka.startsWith(`${kb} `) || kb.startsWith(`${ka} `);
+}
+
+/** Port header only for a stop of the step the Log is showing. */
+function stopOnLogStep(stop, logLeg) {
+  if (!stop) return null;
+  const from = logLeg?.from || logLeg?.fromStop || "";
+  const to = logLeg?.to || logLeg?.toStop || "";
+  if (!from && !to) return stop;
+  if (sameStopName(stop.name, from) || sameStopName(stop.name, to)) return stop;
+  return null;
+}
+
+function withoutHighSeasSentences(text) {
+  return String(text || "")
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => sentence && !HIGH_SEAS_SENTENCE.test(sentence))
+    .join(" ")
+    .trim();
+}
+
+/**
+ * EEZ sentence for this film step only. An answer tagged for another
+ * bucket (the boat was in Adelaide, the step is now Nouméa) is unknown —
+ * never spoken here. An untagged answer is the caller's own lookup.
+ */
+function zeeAtReplay(zee, lat, lon) {
+  if (!zee || typeof zee !== "object") return null;
+  if (typeof zee.bucket === "string" && zee.bucket) {
+    return filmZeeForBucket(zee, filmZeeBucket(lat, lon));
+  }
+  return zee;
+}
+
 /**
  * Here sheet for the boat at the replayed position.
  * Header (port of call) and status (high seas / EEZ) come from that one
- * position. Within TERRITORIAL_SEA_NM of a stop: the sheet of that stop,
- * and never « high seas ». Farther: no port-of-call sheet. The leg is the
- * step the Log is showing, not a leftover live leg.
+ * position. Within TERRITORIAL_SEA_NM of a stop: never « high seas ».
+ * The header names that stop only when it is an end of the Log step
+ * (a leftover Port-de-Paix sheet does not stay on Marigot → Cayenne).
+ * Farther from every stop: no port-of-call sheet. The leg is the step
+ * the Log is showing, not a leftover live leg.
  */
 export function replayHereFrame({
   lat,
@@ -404,15 +456,16 @@ export function replayHereFrame({
   lang = "fr",
   nearNm = TERRITORIAL_SEA_NM,
 } = {}) {
-  const stop = nearestStop(lat, lon, marks, nearNm);
-  const named = zee && typeof zee === "object" ? zee : null;
+  const alongside = nearestStop(lat, lon, marks, nearNm);
+  const onStep = stopOnLogStep(alongside, logLeg);
+  const named = zeeAtReplay(zee, lat, lon);
   const from = logLeg?.from || logLeg?.fromStop || "";
   const to = logLeg?.to || logLeg?.toStop || "";
   // The Log step and the position go on the dossier, so the Saint-Maur road
   // transfer reads as in Tracer: departure sentence at J0, never high seas.
   const dossier = {
     zee: named,
-    highSeasRuledOut: Boolean(stop),
+    highSeasRuledOut: Boolean(alongside),
     sources: !named || named.unknown ? { zee: "unavailable" } : { zee: "vliz-local" },
     poe: [],
     nearby: {},
@@ -420,11 +473,15 @@ export function replayHereFrame({
     marks: from || to ? [{ kind: "leg", from, to }] : [],
   };
   const highSeas = highSeasClaimAllowed(dossier);
+  let statusText = zeeSentence(dossier, lang);
+  if (alongside) statusText = withoutHighSeasSentences(statusText);
+  // Header and « high seas » cannot both be true: same position, one claim.
+  const header = !highSeas && onStep ? onStep : null;
   return {
-    stop: stop ? { name: stop.name, lat: stop.lat, lon: stop.lon } : null,
-    highSeas,
+    stop: header ? { name: header.name, lat: header.lat, lon: header.lon } : null,
+    highSeas: header ? false : highSeas,
     zee: named,
-    statusText: zeeSentence(dossier, lang),
+    statusText,
     leg: from || to ? { from, to } : null,
   };
 }

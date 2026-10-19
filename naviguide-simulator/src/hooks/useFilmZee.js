@@ -1,23 +1,14 @@
 import { useEffect, useState } from "react";
-import { wrapLon } from "../utils/geo.js";
+import { FILM_ZEE_STEP_DEG, filmZeeBucket, filmZeeForBucket } from "../engine/filmZeeStep.js";
+
+export { FILM_ZEE_STEP_DEG, filmZeeBucket, filmZeeForBucket };
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
 
-/** One lookup per film step: 0.2° (~12 nm), not one request per frame. */
-export const FILM_ZEE_STEP_DEG = 0.2;
-
-export function filmZeeBucket(lat, lon, stepDeg = FILM_ZEE_STEP_DEG) {
-  const la = Number(lat);
-  const lo = Number(lon);
-  if (!Number.isFinite(la) || !Number.isFinite(lo)) return "";
-  const q = (n) => (Math.round(n / stepDeg) * stepDeg).toFixed(1);
-  return `${q(la)}:${q(wrapLon(lo))}`;
-}
-
 /**
  * EEZ at the replayed position, refreshed when the film boat changes bucket.
- * GET /zee/at is local polygons only. A missing answer stays null (unknown),
- * never a high-seas claim.
+ * GET /zee/at is local polygons only. A missing or stale answer stays null
+ * (unknown), never the previous zone and never a high-seas claim.
  */
 export function useFilmZee({ enabled = false, lat = null, lon = null } = {}) {
   const [zee, setZee] = useState(null);
@@ -28,6 +19,9 @@ export function useFilmZee({ enabled = false, lat = null, lon = null } = {}) {
       setZee(null);
       return undefined;
     }
+    // Drop the previous step before the new lookup lands. A failed
+    // request leaves null, not Adelaide or « high seas » from earlier.
+    setZee(null);
     const [la, lo] = bucket.split(":").map(Number);
     const ctrl = new AbortController();
     let cancelled = false;
@@ -36,7 +30,8 @@ export function useFilmZee({ enabled = false, lat = null, lon = null } = {}) {
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (!cancelled && data && typeof data === "object") setZee(data);
+        if (cancelled || !data || typeof data !== "object") return;
+        setZee({ ...data, bucket });
       })
       .catch(() => {});
     return () => {
@@ -45,5 +40,5 @@ export function useFilmZee({ enabled = false, lat = null, lon = null } = {}) {
     };
   }, [bucket]);
 
-  return enabled ? zee : null;
+  return filmZeeForBucket(zee, bucket);
 }

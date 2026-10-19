@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { FILM_ZEE_STEP_DEG, filmZeeBucket } from "./useFilmZee.js";
+import { FILM_ZEE_STEP_DEG, filmZeeBucket, filmZeeForBucket } from "./useFilmZee.js";
 
 const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "useFilmZee.js"), "utf8");
 
@@ -21,9 +21,17 @@ describe("useFilmZee — pas de temps du film", () => {
     assert.equal(filmZeeBucket(-22.27, 166.44 + 360), filmZeeBucket(-22.27, 166.44));
   });
 
-  it("le hook lit GET /zee/at et ne dit rien tant que la réponse manque", () => {
+  it("le hook lit GET /zee/at et ne garde pas la ZEE du pas précédent", () => {
     assert.match(src, /\/zee\/at\?lat=/);
-    assert.match(src, /enabled \? zee : null/);
+    assert.match(src, /setZee\(null\)/);
+    assert.match(src, /filmZeeForBucket\(zee, bucket\)/);
     assert.doesNotMatch(src, /Tavily|Nebius|Nemotron/);
+    const adelaide = { name: "Adelaide Exclusive Economic Zone", mrgid: 8323, bucket: filmZeeBucket(-35, 138.6) };
+    const noumea = filmZeeBucket(-22.27, 166.44);
+    assert.equal(filmZeeForBucket(adelaide, noumea), null);
+    assert.equal(filmZeeForBucket(null, noumea), null);
+    assert.equal(filmZeeForBucket(adelaide, ""), null);
+    const fresh = { name: "French Exclusive Economic Zone (New Caledonia)", mrgid: 8312, bucket: noumea };
+    assert.equal(filmZeeForBucket(fresh, noumea), fresh);
   });
 });
