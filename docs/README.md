@@ -6,7 +6,7 @@ Quoi lire pour quoi.
 
 | Document | Langue | Rôle |
 |----------|--------|------|
-| [../README.md](../README.md) | EN | 5 minutes : quoi, où, comment lancer |
+| [README.md](https://github.com/Berry-Mappemonde/NAVIGUIDE/blob/main/README.md) | EN | 5 minutes : quoi, où, comment lancer |
 | [MANUEL_UTILISATEUR.md](MANUEL_UTILISATEUR.md) | FR | Chaque bouton, écran par écran |
 | [USER_MANUAL.md](USER_MANUAL.md) | EN | Same, in English |
 | [ESPRIT_DE_L_APPLICATION.md](ESPRIT_DE_L_APPLICATION.md) | FR | Chaîne sources → écran, pour un lecteur technique |
