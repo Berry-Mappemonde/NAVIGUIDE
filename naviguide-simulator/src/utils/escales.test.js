@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { nextEscaleIndex, nextEscaleStop } from "./escales.js";
+import { dropRepeatedStops, nextEscaleIndex, nextEscaleStop } from "./escales.js";
 
 const stops = [
   { name: "La Rochelle", flag: "fr" },
@@ -22,5 +22,22 @@ describe("nextEscaleIndex", () => {
 
   it("stays on the last intermediate if there is no further stopover", () => {
     assert.equal(nextEscaleIndex(stops, 3), 3);
+  });
+
+  it("retire Cayenne en double et garde le retour à La Rochelle", () => {
+    const marks = [
+      { name: "La Rochelle" },
+      { name: "Cayenne (Guyane)" },
+      { name: "Cayenne (Guyane)" },
+      { name: "Papeete (Polynésie française)" },
+      { name: "La Rochelle" },
+    ];
+    const names = dropRepeatedStops(marks).map((m) => m.name);
+    assert.deepEqual(names, [
+      "La Rochelle",
+      "Cayenne (Guyane)",
+      "Papeete (Polynésie française)",
+      "La Rochelle",
+    ]);
   });
 });

@@ -185,6 +185,27 @@ function nearKnownPort(dossier) {
 // Not at sea: on the road, in the air, alongside.
 const OFF_SEA_VEHICLES = new Set(["land", "plane", "quay"]);
 
+/** The nearest stop within `maxNm`, or null. Same position for the sheet and the status. */
+export function nearestStop(lat, lon, marks, maxNm = TERRITORIAL_SEA_NM) {
+  const la = Number(lat);
+  const lo = Number(lon);
+  if (lat == null || lon == null || !Number.isFinite(la) || !Number.isFinite(lo)) return null;
+  let best = null;
+  let bestD = Infinity;
+  for (const m of Array.isArray(marks) ? marks : []) {
+    const mLat = Number(m?.lat);
+    const mLon = Number(m?.lon);
+    if (m?.lat == null || m?.lon == null || !Number.isFinite(mLat) || !Number.isFinite(mLon)) continue;
+    const d = haversineNm(la, lo, mLat, mLon);
+    if (d < bestD) {
+      bestD = d;
+      best = m;
+    }
+  }
+  if (!best || !(bestD <= maxNm)) return null;
+  return { name: best.name, lat: Number(best.lat), lon: Number(best.lon), nm: bestD };
+}
+
 /** Distance (nm) from a position to the nearest stop of the route, or null. */
 export function nearestStopNm(lat, lon, marks) {
   const la = Number(lat);
@@ -201,9 +222,21 @@ export function nearestStopNm(lat, lon, marks) {
   return best;
 }
 
+/** Saint-Maur, before the road transfer. Cursor 0 sits on this point. */
+const SAINT_MAUR_DEPARTURE = { lat: 46.8075, lon: 1.6358 };
+const DEPARTURE_TOWN_NM = 1;
+
 /** The boat is not on the high seas, whatever an EEZ lookup says: not at sea
- * (road, plane, alongside) or within the territorial sea of a stop. */
-export function highSeasRuledOut({ vehicle = null, nearStopNm: near = null } = {}) {
+ * (road, plane, alongside), on the Saint-Maur → La Rochelle road transfer,
+ * or within the territorial sea of a stop. `fromStop` / `toStop` cover Tracer,
+ * where the cast says "main" and a drawn tip clears the vehicle. */
+export function highSeasRuledOut({
+  vehicle = null,
+  nearStopNm: near = null,
+  fromStop = null,
+  toStop = null,
+} = {}) {
+  if (isOverlandLeg(null, { from: fromStop, to: toStop })) return true;
   if (vehicle && OFF_SEA_VEHICLES.has(vehicle)) return true;
   const nm = Number(near);
   return near != null && Number.isFinite(nm) && nm <= TERRITORIAL_SEA_NM;
@@ -228,13 +261,35 @@ export function hereWithoutFalseHighSeas(here, { ruledOut = false } = {}) {
   return kept.length === sentences.length ? here : { ...here, sentences: kept };
 }
 
+function ashoreName(zee) {
+  const name = String(zee?.name || "");
+  if (zee?.ashore || name.startsWith("À terre")) return { ashore: true, extra: name.startsWith("À terre") ? name.slice("À terre".length).trim() : "" };
+  if (/^Ashore\b/i.test(name)) return { ashore: true, extra: name.replace(/^Ashore/i, "").trim() };
+  return { ashore: false, extra: "" };
+}
+
+/** Cursor at 0: still in Saint-Maur, the road transfer to La Rochelle has not started. */
+function roadDepartureSentence(dossier, lang) {
+  const mark = (dossier?.marks || []).find((m) => m.kind === "leg");
+  if (!isOverlandLeg(dossier, mark)) return "";
+  const la = Number(dossier?.at?.lat);
+  const lo = Number(dossier?.at?.lon);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return "";
+  if (haversineNm(la, lo, SAINT_MAUR_DEPARTURE.lat, SAINT_MAUR_DEPARTURE.lon) > DEPARTURE_TOWN_NM) return "";
+  return (isEn(lang) ? enDict : frDict).iciDepartureRoadTransfer;
+}
+
 /** « High seas » only when an EEZ lookup answered « none », away from any
- * known port. Missing or failed EEZ data never reads as high seas. */
+ * known port. Missing or failed EEZ data never reads as high seas.
+ * The Saint-Maur road transfer is not the high seas, even when Tracer leaves
+ * the vehicle as "main" and does not set `highSeasRuledOut`. */
 export function highSeasClaimAllowed(dossier) {
   if (dossier?.highSeasRuledOut) return false;
+  const leg = (dossier?.marks || []).find((m) => m.kind === "leg");
+  if (isOverlandLeg(dossier, leg)) return false;
   const zee = dossier?.zee;
   if (!zee || typeof zee !== "object" || zee.unknown) return false;
-  if (zee.mrgid || zee.ashore || String(zee.name || "").startsWith("À terre")) return false;
+  if (zee.mrgid || ashoreName(zee).ashore) return false;
   const src = dossier?.sources?.zee;
   if (src === "error" || src === "unavailable") return false;
   return !nearKnownPort(dossier);
@@ -242,6 +297,8 @@ export function highSeasClaimAllowed(dossier) {
 
 function zeeSentence(dossier, lang) {
   const en = isEn(lang);
+  const departure = roadDepartureSentence(dossier, lang);
+  if (departure) return departure;
   const zee = dossier?.zee;
   const highSeas = highSeasClaimAllowed(dossier)
     ? (en
@@ -249,10 +306,9 @@ function zeeSentence(dossier, lang) {
       : "Le bateau est en haute mer : aucune ZEE, pas de formalités d’entrée à prévoir.")
     : "";
   if (!zee || zee.unknown) return "";
-  if (zee.ashore || String(zee.name || "").startsWith("À terre")) {
-    const extra = String(zee.name || "").startsWith("À terre")
-      ? zee.name.slice("À terre".length).trim()
-      : "";
+  const ashore = ashoreName(zee);
+  if (ashore.ashore) {
+    const extra = ashore.extra;
     return en
       ? `The boat is ashore${extra ? ` ${extra}` : ""}, outside any EEZ.`
       : `Le bateau est à terre${extra ? ` ${extra}` : ""}, hors de toute ZEE.`;
@@ -279,6 +335,47 @@ function zeeSentence(dossier, lang) {
   return en
     ? `The boat is sailing in ${where}. ${formalities}`
     : `Le bateau navigue dans ${where}. ${formalities}`;
+}
+
+/**
+ * Here sheet for the boat at the replayed position.
+ * Header (port of call) and status (high seas / EEZ) come from that one
+ * position. Within TERRITORIAL_SEA_NM of a stop: the sheet of that stop,
+ * and never « high seas ». Farther: no port-of-call sheet. The leg is the
+ * step the Log is showing, not a leftover live leg.
+ */
+export function replayHereFrame({
+  lat,
+  lon,
+  marks,
+  zee = null,
+  logLeg = null,
+  lang = "fr",
+  nearNm = TERRITORIAL_SEA_NM,
+} = {}) {
+  const stop = nearestStop(lat, lon, marks, nearNm);
+  const named = zee && typeof zee === "object" ? zee : null;
+  const from = logLeg?.from || logLeg?.fromStop || "";
+  const to = logLeg?.to || logLeg?.toStop || "";
+  // The Log step and the position go on the dossier, so the Saint-Maur road
+  // transfer reads as in Tracer: departure sentence at J0, never high seas.
+  const dossier = {
+    zee: named,
+    highSeasRuledOut: Boolean(stop),
+    sources: !named || named.unknown ? { zee: "unavailable" } : { zee: "vliz-local" },
+    poe: [],
+    nearby: {},
+    at: { lat: Number(lat), lon: Number(lon) },
+    marks: from || to ? [{ kind: "leg", from, to }] : [],
+  };
+  const highSeas = highSeasClaimAllowed(dossier);
+  return {
+    stop: stop ? { name: stop.name, lat: stop.lat, lon: stop.lon } : null,
+    highSeas,
+    zee: named,
+    statusText: zeeSentence(dossier, lang),
+    leg: from || to ? { from, to } : null,
+  };
 }
 
 function poeSentence(dossier, lang) {

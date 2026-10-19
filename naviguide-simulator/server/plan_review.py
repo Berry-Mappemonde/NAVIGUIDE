@@ -31,8 +31,8 @@ from voyage_clock import PARK_STOP_NAME, parse_iso, to_iso
 
 log = logging.getLogger("naviguide-simulator.plan-review")
 
-# Vitesse de programme Berry-Mappemonde (, recette R11 : 8 kn).
-# daysAtSea = distance ÷ cette vitesse ÷ 24 — pas l'écart d'horloge.
+# Vitesse de programme : repli sans horloge (milles ÷ 8 kn ÷ 24).
+# Avec une horloge, daysAtSea est l'écart départ d'escale → arrivée suivante.
 PLANNED_KNOTS = 8.0
 # Même plancher que voyage_clock.PLANNING_MIN_KN ; plafond « quelques jours ».
 ETA_MIN_KN = 3.0
@@ -51,10 +51,30 @@ def eta_span_days(p10_iso: str | None, p90_iso: str | None) -> float | None:
 
 
 def planned_sea_days(leg_nm: float, knots: float = PLANNED_KNOTS) -> float:
-    """Jours de mer d'une jambe : milles ÷ nœuds planifiés ÷ 24."""
+    """Repli sans horloge : milles ÷ nœuds planifiés ÷ 24."""
     kn = float(knots) if knots and float(knots) > 0 else PLANNED_KNOTS
     nm = max(0.0, float(leg_nm) or 0.0)
     return round(nm / kn / 24.0, 1)
+
+
+def _clock_gap_days(dep: datetime, arr: datetime) -> float:
+    return (arr - dep).total_seconds() / 86400.0
+
+
+def sea_days_between(dep: datetime | None, arr: datetime | None, leg_nm: float, *, from_clock: bool) -> float:
+    """Jours de mer affichés.
+
+    Horloge présente et écart des dates positif (départ d'une escale →
+    arrivée suivante) : cet écart, sans seuil. Repli milles ÷ 8 kn seulement
+    si les dates manquent, sont égales ou dans le désordre.
+    """
+    planned = planned_sea_days(leg_nm)
+    if not from_clock or dep is None or arr is None:
+        return planned
+    span = _clock_gap_days(dep, arr)
+    if span <= 0:
+        return planned
+    return round(span, 1)
 
 COMMENT_NS = "plan-comment"
 COMMENT_TTL_S = 7 * 86400.0
@@ -199,10 +219,6 @@ def _leg_distance_nm(a: dict, b: dict, from_nm: float, to_nm: float) -> float:
 # recale tHours / sailNm sur les milles d'itinéraire, qui sont justes.
 SNAP_SAIL_NM_EXACT = 1.0
 SNAP_SAIL_NM_NEAR = 50.0
-# Jours de mer (milles ÷ 8 kn) vs écart d'horloge : au-delà de ce rapport,
-# on aligne l'arrivée sur les jours de mer (Nouméa → La Rochelle : 3 j
-# affichés contre 105,5 j de mer).
-DATE_SEA_DAYS_FACTOR = 10.0
 
 
 def _t_hours_at_sail_nm(clock: dict, sail_nm: float) -> tuple[float, float] | None:
@@ -259,7 +275,7 @@ def _snap_mark_to_itinerary_nm(clock: dict, mark: dict) -> dict:
 
 
 def _align_dates_to_sea_days(dep: datetime, arr: datetime, days_at_sea: float) -> tuple[datetime, datetime]:
-    """Si l'écart d'horloge et les jours de mer se contredisent d'un facteur dix, l'arrivée suit les jours de mer."""
+    """Dates égales ou dans le désordre : l'arrivée suit le repli milles ÷ 8 kn. Sinon, dates inchangées."""
     try:
         days = float(days_at_sea)
     except (TypeError, ValueError):
@@ -268,9 +284,6 @@ def _align_dates_to_sea_days(dep: datetime, arr: datetime, days_at_sea: float) -
         return dep, arr
     span = (arr - dep).total_seconds() / 86400.0
     if span <= 0:
-        return dep, dep + timedelta(days=days)
-    lo, hi = (span, days) if span < days else (days, span)
-    if hi / max(lo, 1e-9) >= DATE_SEA_DAYS_FACTOR:
         return dep, dep + timedelta(days=days)
     return dep, arr
 
@@ -322,8 +335,9 @@ def legs_from_clock(clock: dict, start_name: str | None = None) -> list[dict]:
         leg_nm = round(_leg_distance_nm(a, b, from_nm, to_nm))
         if leg_nm <= 0:
             continue
-        days = planned_sea_days(leg_nm)
-        dep, arr = _align_dates_to_sea_days(dep, arr, days)
+        planned = planned_sea_days(leg_nm)
+        dep, arr = _align_dates_to_sea_days(dep, arr, planned)
+        days = sea_days_between(dep, arr, leg_nm, from_clock=True)
         to_nm_out = from_nm + leg_nm if to_nm <= from_nm + 0.5 else to_nm
         legs.append({
             "from": origin_name, "to": b["name"],
@@ -421,8 +435,9 @@ def _parse_mark_iso(mark: dict):
 def legs_from_voyage(voy: dict) -> list[dict]:
     """Jambes depuis marks + t0 + points — sans clock, sans build_voyage_clock.
 
-    from/to et fromNm/toNm viennent de `nm` / `filmNm` ; les dates, de `iso`
-    ou de t0 + milles ÷ 8 kn. Une jambe terre ou un saut avion est sautée.
+    from/to et fromNm/toNm viennent de `nm` / `filmNm`. Sans horloge,
+    daysAtSea est le repli milles ÷ 8 kn ; les dates viennent de `iso`
+    ou de t0 + ce repli. Une jambe terre ou un saut avion est sautée.
     """
     marks = [m for m in (voy.get("marks") or []) if isinstance(m, dict) and m.get("name")]
     if len(marks) < 2:
@@ -469,8 +484,8 @@ def legs_from_voyage(voy: dict) -> list[dict]:
             elapsed_h = (arr - t0).total_seconds() / 3600.0 + hold_b
         if dep is None or arr is None:
             continue
-        days = planned_sea_days(leg_nm)
-        dep, arr = _align_dates_to_sea_days(dep, arr, days)
+        dep, arr = _align_dates_to_sea_days(dep, arr, planned_sea_days(leg_nm))
+        days = sea_days_between(dep, arr, leg_nm, from_clock=True)
         legs.append({
             "from": a["name"], "to": b["name"],
             "departIso": to_iso(dep), "arriveIso": to_iso(arr),
