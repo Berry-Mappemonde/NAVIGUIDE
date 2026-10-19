@@ -88,7 +88,7 @@ export default {
   importRoute:        "Import",
   importRouteReplace: "Replace the current route?",
   importRouteError:   "Unreadable file",
-  importRouteTruncated: "60 points maximum",
+  importRouteTruncated: "{max} points maximum",
   drawOwnRoute:       "Draw your own route",
   backToBerry:        "Back to Berry-Mappemonde route", // pragma: allowlist secret
   berry:              "Berry",
@@ -108,7 +108,6 @@ export default {
   gettingStarted:     "🧭 Getting Started",
   gettingStartedText: "Two buttons: Follow the Berry-Mappemonde expedition (the boat now) or Plot (play the Berry-Mappemonde route or your own: departure date, calculations).",
   searouteUnavailable: "Official route (searoute unavailable).",
-  searouteDrawFailed: "searoute failed — temporary rhumb line.",
   berryLocalBriefing: "Berry-Mappemonde expedition: departure from La Rochelle on 15 May 2026, 08:00 UTC. The briefing tells the pack around the boat — which EEZ, which ports of entry, what sits inside 30 nm — not the whole chart.", // pragma: allowlist secret
   cockpitDossier: "Cockpit dossier",
   iciBriefingLoading: "Filling the pack around the boat…",
@@ -252,7 +251,6 @@ export default {
   recomputeConstraintsDefault: "Without skipper's orders: only a sea ≥ {hs} is avoided.",
   drawingInProgress: "Drawing in progress",
   drawingPoints: "points placed",
-  drawingFailedSegments: "segment(s) without a sea route",
   drawingRouting: "routing…",
   drawPointLabel: "Point",
   drawingUndoLast: "Undo the last point",
@@ -578,6 +576,14 @@ export default {
   skipperExpertAlongAmp:       "MPA along the track",
   skipperExpertAmpAhead:       "MPA ahead, at least",
 
+  pointOnLand:        "Point on land: not added",
+  rhumbCrossesLand:   "Straight line crosses land",
+  drawPointLimitReached: "{max}-point limit reached",
+  routeServerBusy:    "Server busy, try again",
+  routeServerError:   "Route server error: leg not computed, try again",
+  routeNetworkError:  "Network unavailable: leg not computed, try again",
+  drawPointLimit:     "{max} points maximum",
+
   // AI transparency
   aiActGeneratedLabel: "AI-generated content (model: {model})",
   aiActChatNotice: "You are interacting with artificial intelligence. Replies are generated automatically and may contain errors.",
@@ -631,6 +637,8 @@ export default {
   carnetJournal: "Log",
   carnetOpen: "Logbook",
   carnetBack: "Back to the map",
+  // DR1 — Tracer at J0: land departure, never "high seas".
+  iciDepartureRoadTransfer: "Departure: Saint-Maur (Indre), road transfer to La Rochelle",
   // FV2
   fv2ClimoCaption: "Climatology — monthly average ({month}), not a forecast",
   fv2Month1: "January",
@@ -649,4 +657,12 @@ export default {
   fv2NmToPort: "{nm} nm to destination port",
   fv2StopSaintMaur: "Saint-Maur (Indre)",
   fv2StopAzores: "Azores (Portugal)",
+
+  // ED2
+  ed2WritingNemotron: "Writing…",
+  ed2BrandLine: "NVIDIA · Nebius",
+
+  // Lot NB1 — Nemotron via Token Factory, badge en texte seul
+  llmBrandNvidia: "NVIDIA",
+  llmBrandNebius: "Nebius",
 };

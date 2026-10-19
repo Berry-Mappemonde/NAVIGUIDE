@@ -166,7 +166,8 @@ describe("film bar", () => {
     assert.doesNotMatch(bar, /filmStorySource/);
     assert.doesNotMatch(bar, /Récit :/);
     assert.match(bar, /data-testid="film-source"/);
-    assert.match(bar, /data-testid="film-source" hidden/);
+    assert.match(bar, /testId="film-source"/);
+    assert.match(bar, /hidden=\{\(replay\.style \|\| "raw"\) !== "written" \|\| !replay\.hasWritten\}/);
     assert.doesNotMatch(bar, /className="sr-only"/);
     assert.match(bar, /data-testid="replay-departure"/);
     assert.match(bar, /w-max/);
