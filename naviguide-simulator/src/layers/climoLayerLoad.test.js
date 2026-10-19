@@ -22,6 +22,8 @@ describe("allTilesErrored", () => {
     assert.equal(allTilesErrored(["error", "ok"]), false);
     assert.equal(allTilesErrored(["error", "abort"]), false);
     assert.equal(allTilesErrored(["abort", "abort"]), false);
+    assert.equal(allTilesErrored(["unavailable", "unavailable"]), false);
+    assert.equal(allTilesErrored(["error", "unavailable"]), false);
     assert.equal(allTilesErrored([]), false);
   });
 });
@@ -209,16 +211,17 @@ describe("fetchJson — atlas coupé (200 « unavailable »)", () => {
     });
     try {
       const down = await load();
-      assert.equal(calls, 3); // deux tuiles + le repli global
-      assert.equal(down.source, null);
+      assert.equal(calls, 2);
+      assert.equal(down.source, "tiles");
+      assert.equal(down.features.length, 0);
       assert.equal(cache.size, 0);
       t += UNAVAILABLE_RETRY_MS - 1;
       await load();
-      assert.equal(calls, 3);
+      assert.equal(calls, 2);
       up = true;
       t += 1;
       const back = await load();
-      assert.equal(calls, 5);
+      assert.equal(calls, 4);
       assert.equal(back.source, "tiles");
       assert.equal(back.features.length, 2);
     } finally {
