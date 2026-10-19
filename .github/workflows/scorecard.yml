@@ -1,0 +1,52 @@
+name: Scorecard
+
+# OpenSSF Scorecard. Score publié (décision du 18 oct. 2026, 21 h 15) :
+# publish_results vaut true, d'où id-token: write sur ce seul job. Le SARIF va
+# aussi vers l'onglet sécurité du dépôt. Workflow séparé, non requis.
+# La protection de branche reste un réglage du dépôt, pas de ce fichier.
+
+on:
+  branch_protection_rule:
+  schedule:
+    - cron: "20 7 * * 2"
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: scorecard-sarif
+          path: results.sarif
+          retention-days: 5
+
+      - name: Upload to code-scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif

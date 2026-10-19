@@ -668,6 +668,8 @@ export default {
   ed2WritingNemotron: "Writing…",
   ed2BrandLine: "NVIDIA · Nebius",
 
+  // FM1
+  fm1VariantAbsent: "This cut is not ready yet",
   // Lot NB1 — Nemotron via Token Factory, badge en texte seul
   llmBrandNvidia: "NVIDIA",
   llmBrandNebius: "Nebius",
