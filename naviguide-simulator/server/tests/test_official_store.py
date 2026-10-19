@@ -1182,6 +1182,165 @@ def test_prepare_forces_film_once_and_accepts_one_variant(tmp_path, monkeypatch)
         mod.main()
 
 
+def _load_prepare_script(monkeypatch, tmp_path, name: str):
+    import importlib.util
+
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_STORE_DIR", str(tmp_path / "store"))
+    monkeypatch.delenv("SIMULATOR_MONGO_URL", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_FILM_ONLY", raising=False)
+    worker_before = os.environ.get("NAVIGUIDE_OFFICIAL_WORKER")
+    path = Path(__file__).resolve().parents[2] / "scripts" / "prepare_official_store.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    if worker_before is None:
+        os.environ.pop("NAVIGUIDE_OFFICIAL_WORKER", None)
+    else:
+        os.environ["NAVIGUIDE_OFFICIAL_WORKER"] = worker_before
+    monkeypatch.setattr(mod.signal, "signal", lambda *_a, **_k: None)
+    monkeypatch.setattr(mod, "_arm_parent_watch", lambda: None)
+    monkeypatch.setattr(
+        "ici_engine.ensure_pearl_amp_layer_sig", lambda *_a, **_k: "3769",
+    )
+    return mod
+
+
+def test_rebuild_film_journal_shows_variant_nemotron_and_store(tmp_path, monkeypatch):
+    """Une variante : le journal dit la variante, l'appel Nemotron, l'écriture. Pas d'appel réseau."""
+    import sys
+    import film_script
+
+    mod = _load_prepare_script(monkeypatch, tmp_path, "prepare_rebuild_journal")
+    official_store.reset_film_journal()
+    official_store.reset_store()
+    monkeypatch.setenv("NAVIGUIDE_FILM_PROGRESS_PUT", "1")
+    monkeypatch.setenv("NAVIGUIDE_FILM_VARIANT_TIMEOUT_S", "2")
+    monkeypatch.setattr(official_store, "_load_official", lambda: _film_voy())
+    paid = {"n": 0}
+    seen = []
+
+    async def no_network(*_a, **_k):
+        paid["n"] += 1
+        raise AssertionError("appel Nemotron réel")
+
+    def compute(lang, seconds, timeout_s):
+        seen.append((lang, int(seconds)))
+        return _film_plan(lang, seconds)
+
+    monkeypatch.setattr(film_script, "write_with_llm", no_network)
+    monkeypatch.setattr(official_store, "_compute_one_variant", compute)
+    monkeypatch.setattr(sys, "argv", [
+        "prepare_official_store.py", "--rebuild-film", "fr:150", "--nice", "0",
+    ])
+    try:
+        assert mod.main() == 0
+    finally:
+        os.environ.pop("NAVIGUIDE_FILM_ONLY", None)
+    assert seen == [("fr", 150)]
+    assert paid["n"] == 0
+    blob = "\n".join(official_store.film_journal())
+    variant_at = blob.index("variante fr 150s")
+    nemotron_at = blob.index("appel Nemotron fr 150s")
+    stored_at = blob.index("écriture stock fr 150s chapitres=1")
+    assert variant_at < nemotron_at < stored_at
+    assert "arrêt" not in blob
+    assert "non rangée" not in blob
+    hit = official_store.get("film")
+    chapters = (((hit or {}).get("payload") or {}).get("variants") or {}).get("fr", {}).get("150", {}).get("chapters")
+    assert chapters and "Berry-Mappemonde" in chapters[0]["text"]
+
+
+def test_rebuild_film_stall_fails_the_command(tmp_path, monkeypatch):
+    """Sans ligne de progrès avant le délai, la commande s'arrête avec une erreur lisible."""
+    import sys
+    import time
+
+    mod = _load_prepare_script(monkeypatch, tmp_path, "prepare_rebuild_stall")
+    official_store.reset_film_journal()
+    monkeypatch.setenv("NAVIGUIDE_FILM_VARIANT_TIMEOUT_S", "0.25")
+    monkeypatch.setattr(official_store, "_load_official", lambda: _film_voy())
+    called = {"nemotron": 0}
+
+    def hang(lang, seconds, timeout_s):
+        official_store._STEP_CANCEL.wait(2)
+        return _film_plan(lang, seconds)
+
+    def nemotron(*_a, **_k):
+        called["nemotron"] += 1
+        return None
+
+    monkeypatch.setattr(official_store, "_compute_one_variant", hang)
+    monkeypatch.setattr(official_store, "_nemotron_for_variant", nemotron)
+    monkeypatch.setattr(sys, "argv", [
+        "prepare_official_store.py", "--rebuild-film", "en:180", "--nice", "0",
+    ])
+    t0 = time.monotonic()
+    try:
+        code = mod.main()
+    finally:
+        os.environ.pop("NAVIGUIDE_FILM_ONLY", None)
+    elapsed = time.monotonic() - t0
+    assert code == 1
+    assert elapsed < 3, elapsed
+    blob = "\n".join(official_store.film_journal())
+    assert "variante en 180s" in blob
+    assert "aucun progrès avant le délai maximum" in blob
+    assert "arrêt" in blob
+    assert "écriture stock" not in blob
+    assert "appel Nemotron" not in blob
+    assert called["nemotron"] == 0
+
+
+def test_rebuild_film_rejects_anything_but_one_variant(tmp_path, monkeypatch):
+    import sys
+
+    mod = _load_prepare_script(monkeypatch, tmp_path, "prepare_rebuild_reject")
+    monkeypatch.setattr(mod, "one_pass", lambda **_k: (_ for _ in ()).throw(AssertionError("passe entière")))
+    monkeypatch.setattr(sys, "argv", [
+        "prepare_official_store.py", "--rebuild-film", "de:10", "--nice", "0",
+    ])
+    with pytest.raises(SystemExit):
+        mod.main()
+    monkeypatch.setattr(sys, "argv", [
+        "prepare_official_store.py", "--rebuild-film", "fr:150,en:180", "--nice", "0",
+    ])
+    with pytest.raises(SystemExit):
+        mod.main()
+    monkeypatch.setattr(sys, "argv", [
+        "prepare_official_store.py", "--rebuild-film", "fr:150", "--film-only", "en:180", "--nice", "0",
+    ])
+    with pytest.raises(SystemExit):
+        mod.main()
+
+
+def test_film_progress_line_resets_the_silence_deadline(tmp_path, monkeypatch):
+    """Une ligne au milieu remet le délai : deux silences courts ne sont pas un blocage."""
+    import time
+
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setenv("NAVIGUIDE_FILM_VARIANT_TIMEOUT_S", "1.5")
+    monkeypatch.setenv("NAVIGUIDE_FILM_PROGRESS_PUT", "1")
+    official_store.reset_film_journal()
+
+    def slow(lang, seconds, _timeout_s):
+        time.sleep(1.0)
+        official_store._film_say(f"calcul {lang} {int(seconds)}s")
+        time.sleep(1.0)
+        return _film_plan(lang, seconds)
+
+    monkeypatch.setattr(official_store, "_compute_one_variant", slow)
+    t0 = time.monotonic()
+    payload = official_store.rebuild_film_variant("fr", 150, voy=_film_voy(), now=NOW)
+    assert time.monotonic() - t0 < 4
+    assert payload["variants"]["fr"]["150"]["chapters"]
+    blob = "\n".join(official_store.film_journal())
+    assert "calcul fr 150s" in blob
+    assert "appel Nemotron fr 150s" in blob
+    assert "écriture stock fr 150s" in blob
+    assert "arrêt" not in blob
+
+
 def _rg17_voy():
     return {
         "t0": T0,

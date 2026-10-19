@@ -1248,11 +1248,143 @@ def film_variant_timeout_s() -> float:
     return max(0.05, raw)
 
 
+_FILM_JOURNAL: list[str] = []
+_FILM_PROGRESS_N = 0
+_FILM_JOURNAL_LOCK = threading.Lock()
+_FILM_JOURNAL_MAX = 400
+# Un blocage simulé attend cet événement pour quitter, au lieu de dormir jusqu'au bout.
+_STEP_CANCEL = threading.Event()
+
+
+class FilmProgressStalled(RuntimeError):
+    """Aucun progrès de fabrication écrit avant le délai maximum."""
+
+
+def film_journal() -> list[str]:
+    """Lignes d'avancement (variante, appel Nemotron, écriture). Le test les lit."""
+    with _FILM_JOURNAL_LOCK:
+        return list(_FILM_JOURNAL)
+
+
+def reset_film_journal() -> None:
+    with _FILM_JOURNAL_LOCK:
+        _FILM_JOURNAL.clear()
+
+
+def _film_progress_mark() -> int:
+    with _FILM_JOURNAL_LOCK:
+        return _FILM_PROGRESS_N
+
+
+def _delay_label(seconds: float) -> str:
+    value = float(seconds)
+    if value >= 10:
+        return f"{value:.0f} s"
+    text = f"{value:.2f}".rstrip("0").rstrip(".")
+    return f"{text} s"
+
+
 def _film_say(msg: str) -> None:
+    """Une ligne d'avancement. Elle remet le délai de silence à zéro."""
+    global _FILM_PROGRESS_N
+    line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
+    with _FILM_JOURNAL_LOCK:
+        _FILM_PROGRESS_N += 1
+        _FILM_JOURNAL.append(line)
+        if len(_FILM_JOURNAL) > _FILM_JOURNAL_MAX:
+            del _FILM_JOURNAL[: len(_FILM_JOURNAL) - _FILM_JOURNAL_MAX]
     log.info("%s", msg)
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return
-    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}", flush=True)
+    print(line, flush=True)
+    try:
+        path = fill_logfile()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        pass
+
+
+def _logging_cascade(lang: str, seconds: int):
+    """Journalise l'appel que le film fait déjà. N'en ajoute pas."""
+
+    async def _call(*args, **kwargs):
+        _film_say(f"appel Nemotron {lang} {int(seconds)}s")
+        from story_cascade import cascade_text  # noqa: PLC0415
+        return await cascade_text(*args, **kwargs)
+
+    return _call
+
+
+def _run_until_progress_or_stall(fn: Callable, timeout_s: float, label: str):
+    """Exécute `fn`. Sans ligne nouvelle pendant le délai, lève FilmProgressStalled.
+
+    Une ligne nouvelle remet le délai à zéro : le silence compte, pas la durée totale.
+    """
+    _STEP_CANCEL.clear()
+    mark = _film_progress_mark()
+    started = time.monotonic()
+    limit = max(0.05, float(timeout_s))
+    box: dict = {}
+
+    def _run() -> None:
+        try:
+            box["value"] = fn()
+        except Exception as exc:  # le parent relance
+            box["error"] = exc
+        finally:
+            box["done"] = True
+
+    thread = threading.Thread(target=_run, name="film-progress", daemon=True)
+    thread.start()
+    while not box.get("done"):
+        if _film_progress_mark() > mark:
+            mark = _film_progress_mark()
+            started = time.monotonic()
+        if time.monotonic() - started > limit:
+            _STEP_CANCEL.set()
+            msg = (
+                f"{label} : aucun progrès avant le délai maximum "
+                f"({_delay_label(limit)}) — arrêt"
+            )
+            _film_say(msg)
+            raise FilmProgressStalled(msg)
+        thread.join(0.05)
+    if box.get("error"):
+        raise box["error"]
+    return box.get("value")
+
+
+def _nemotron_for_variant(lang: str, seconds: int, plan: dict):
+    """Rédige cette variante. Sous pytest : aucun appel réseau."""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return None
+    import asyncio  # noqa: PLC0415
+    import llm_budget  # noqa: PLC0415
+
+    if llm_budget.mode() == "off" or not llm_budget.llm_allowed_here("write"):
+        _film_say(f"appel Nemotron {lang} {int(seconds)}s : non effectué (mode)")
+        return None
+    if not llm_budget.allow("write"):
+        _film_say(f"appel Nemotron {lang} {int(seconds)}s : non effectué (plafond)")
+        return None
+    from film_script import write_with_llm  # noqa: PLC0415
+    from story_cascade import cascade_text  # noqa: PLC0415
+
+    async def _run():
+        return await write_with_llm(plan, [], lang=lang, cascade=cascade_text)
+
+    try:
+        written, source = asyncio.run(_run())
+    except Exception as exc:
+        _film_say(f"appel Nemotron {lang} {int(seconds)}s : {type(exc).__name__}")
+        return None
+    if not isinstance(written, dict) or not (written.get("chapters") or []):
+        _film_say(f"appel Nemotron {lang} {int(seconds)}s : sans chapitre ({source})")
+        return None
+    _film_say(f"appel Nemotron {lang} {int(seconds)}s : {source}")
+    return written
 
 
 def _film_variant_sequence() -> list[tuple[str, int]]:
@@ -1311,16 +1443,18 @@ def _film_payload_from_variants(variants: dict) -> Optional[dict]:
     return out
 
 
-def _store_film_progress(voy: dict, now: datetime, payload: dict) -> None:
+def _store_film_progress(voy: dict, now: datetime, payload: dict) -> bool:
     """Range au fur et à mesure. Sous pytest, seulement si le test l'ouvre :
     un test ne doit pas écrire le stock du poste."""
     if os.environ.get("PYTEST_CURRENT_TEST") and os.environ.get("NAVIGUIDE_FILM_PROGRESS_PUT") != "1":
-        return
+        return False
     try:
         st = get_store()
         st.put("film", payload, st.family_key("film", voy, now))
     except Exception as exc:
         log.warning("film : non rangé (%s)", exc)
+        return False
+    return True
 
 
 # Calcul local lancé avant ce correctif. Ce lot ne lui envoie aucun signal.
@@ -1360,7 +1494,10 @@ def _film_variant_worker(lang: str, seconds: int, timeout_s: float, queue) -> No
         import asyncio  # noqa: PLC0415
         from film_script import official_film  # noqa: PLC0415
         plan = asyncio.run(asyncio.wait_for(
-            official_film(lang=str(lang), seconds=int(seconds), style="raw"),
+            official_film(
+                lang=str(lang), seconds=int(seconds), style="raw",
+                cascade=_logging_cascade(str(lang), int(seconds)),
+            ),
             timeout=max(0.05, float(timeout_s)),
         ))
         queue.put(("ok", plan if isinstance(plan, dict) else None))
@@ -1446,7 +1583,10 @@ def _await_official_film(lang: str, seconds: int, timeout_s: float):
 
     async def _bounded():
         return await asyncio.wait_for(
-            official_film(lang=lang, seconds=int(seconds), style="raw"),
+            official_film(
+                lang=lang, seconds=int(seconds), style="raw",
+                cascade=_logging_cascade(lang, int(seconds)),
+            ),
             timeout_s,
         )
 
@@ -1498,7 +1638,9 @@ def _compute_one_variant(lang: str, seconds: int, timeout_s: float):
     if kind == "ok" and isinstance(payload, dict) and (payload.get("chapters") or []):
         return payload
     if kind == "timeout":
-        _film_say(f"film {lang} {seconds}s : délai maximum {timeout_s:.0f}s dépassé")
+        _film_say(
+            f"film {lang} {seconds}s : délai maximum {_delay_label(timeout_s)} dépassé"
+        )
     elif kind == "error":
         _film_say(f"film {lang} {seconds}s : {payload}")
     else:
@@ -1517,6 +1659,7 @@ def compute_film(voy: dict, now: datetime) -> Optional[dict]:
     timeout_s = film_variant_timeout_s()
     variants = _existing_film_variants(voy, now)
     for lang, secs in _film_variant_sequence():
+        _film_say(f"variante {lang} {secs}s")
         _film_say(f"REFRESH film {lang} {secs}s")
         plan = _compute_one_variant(lang, secs, timeout_s)
         if not isinstance(plan, dict) or not (plan.get("chapters") or []):
@@ -1526,11 +1669,90 @@ def compute_film(voy: dict, now: datetime) -> Optional[dict]:
         payload = _film_payload_from_variants(variants)
         if payload is None:
             continue
-        _store_film_progress(voy, now, payload)
-        _film_say(
-            f"STORED film {lang} {secs}s chapitres={len(annotated.get('chapters') or [])}"
-        )
+        n = len(annotated.get("chapters") or [])
+        if _store_film_progress(voy, now, payload):
+            _film_say(f"écriture stock {lang} {secs}s chapitres={n} STORED")
+        else:
+            _film_say(f"écriture stock {lang} {secs}s chapitres={n} non rangée")
     return _film_payload_from_variants(variants)
+
+
+def _payload_keeping_variant(variants: dict) -> dict:
+    """Garde la variante calculée même si le français 2:30 n'est pas encore là."""
+    payload = _film_payload_from_variants(variants)
+    if payload is not None:
+        return payload
+    frozen = {
+        str(lang): dict(by)
+        for lang, by in variants.items()
+        if isinstance(by, dict)
+    }
+    return {
+        "variants": frozen,
+        "estimates": _variants_estimates(frozen),
+        "film_script_rev": FILM_SCRIPT_REV,
+    }
+
+
+def rebuild_film_variant(
+    lang: str,
+    seconds: int,
+    *,
+    voy: Optional[dict] = None,
+    now: Optional[datetime] = None,
+) -> dict:
+    """Une variante : journal, appel Nemotron, écriture. Silence = erreur.
+
+    Le remplisseur de fond, lui, saute une variante en retard et continue.
+    Ici la commande s'arrête : c'est une fabrication demandée, pas la boucle.
+    """
+    lg = (lang or "").strip().lower()
+    try:
+        secs = int(seconds)
+    except (TypeError, ValueError):
+        secs = -1
+    if lg not in {"fr", "en"} or secs not in FILM_VARIANT_SECONDS:
+        raise ValueError(f"variante invalide : {lang}:{seconds}")
+    timeout_s = film_variant_timeout_s()
+    current = voy if voy is not None else _load_official()
+    when = now or _utc_now()
+    if not current or not current.get("clock"):
+        msg = "film : horloge absente — arrêt"
+        _film_say(msg)
+        raise FilmProgressStalled(msg)
+    _film_say(f"variante {lg} {secs}s")
+    plan = _run_until_progress_or_stall(
+        lambda: _compute_one_variant(lg, secs, timeout_s),
+        timeout_s,
+        f"variante {lg} {secs}s",
+    )
+    if not isinstance(plan, dict) or not (plan.get("chapters") or []):
+        msg = (
+            f"film {lg} {secs}s : aucun progrès avant le délai maximum "
+            f"({_delay_label(timeout_s)}) — arrêt"
+        )
+        _film_say(msg)
+        raise FilmProgressStalled(msg)
+    _film_say(f"appel Nemotron {lg} {secs}s")
+    written = _run_until_progress_or_stall(
+        lambda: _nemotron_for_variant(lg, secs, plan),
+        timeout_s,
+        f"appel Nemotron {lg} {secs}s",
+    )
+    annotated = _with_film_estimate(_apply_air_sentences(plan, lg, current))
+    variants = _existing_film_variants(current, when)
+    variants.setdefault(lg, {})[str(secs)] = annotated
+    payload = _payload_keeping_variant(variants)
+    if isinstance(written, dict) and (written.get("chapters") or []):
+        payload = _put_written_variant(
+            payload, lg, secs, written, when, _stored_last_stop(),
+        )
+    n = len(annotated.get("chapters") or [])
+    if _store_film_progress(current, when, payload):
+        _film_say(f"écriture stock {lg} {secs}s chapitres={n} STORED")
+    else:
+        _film_say(f"écriture stock {lg} {secs}s chapitres={n} non rangée")
+    return payload
 
 
 def _stored_eta_stop(name: str) -> Optional[dict]:
