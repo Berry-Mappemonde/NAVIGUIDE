@@ -5420,7 +5420,105 @@ def _side_boat_spoken(
     return "a second sailing boat" if _en(lang) else "un second voilier"
 
 
-def _side_opening_sentence(w: dict, *, lang: str, display_t0: str | None = None) -> str:
+def _window_span_days(w: dict) -> Optional[float]:
+    """Jours de la fenêtre du chapitre (tA → tB), pas le cumul du voyage."""
+    def as_ms(v: Any) -> Optional[float]:
+        if isinstance(v, bool):
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        parsed = _ms(v)
+        return float(parsed) if parsed is not None else None
+
+    a, b = as_ms(w.get("tA")), as_ms(w.get("tB"))
+    if a is None or b is None or b <= a:
+        return None
+    return (b - a) / 86_400_000.0
+
+
+def _hop_nm_cap(window_days: Optional[float]) -> float:
+    """Au-delà de 1,5 × (8 kn sur la fenêtre), c'est l'odomètre du voyage."""
+    if isinstance(window_days, (int, float)) and not isinstance(window_days, bool) and window_days > 0:
+        return float(window_days) * 8.0 * 24.0 * 1.5
+    return 1500.0
+
+
+def _same_odometer(nm: float, row: dict | None) -> bool:
+    for key in ("nm", "filmNm"):
+        val = (row or {}).get(key)
+        if isinstance(val, (int, float)) and not isinstance(val, bool):
+            if abs(float(val) - nm) <= max(1.0, abs(nm) * 0.01):
+                return True
+    return False
+
+
+def _side_scale_gap(w: dict) -> Optional[float]:
+    """Écart de la jambe sur une seule échelle. filmNm et nm ne se soustraient pas."""
+    frm = w.get("from") or {}
+    dest = w.get("to") or {}
+
+    def num(row: dict | None, key: str) -> Optional[float]:
+        val = (row or {}).get(key)
+        if isinstance(val, (int, float)) and not isinstance(val, bool):
+            return float(val)
+        return None
+
+    def gap(a: Optional[float], b: Optional[float]) -> Optional[float]:
+        if a is None or b is None:
+            return None
+        d = b - a
+        return d if d > 1 else None
+
+    a_nm, b_nm = num(frm, "nm"), num(dest, "nm")
+    a_film, b_film = num(frm, "filmNm"), num(dest, "filmNm")
+    sail, film = gap(a_nm, b_nm), gap(a_film, b_film)
+
+    def copied(nm: Optional[float], filmv: Optional[float]) -> bool:
+        return nm is not None and filmv is not None and abs(nm - filmv) < 0.2
+
+    if sail is not None and film is not None and copied(a_nm, a_film) != copied(b_nm, b_film):
+        return film if film < sail else sail
+    return sail if sail is not None else film
+
+
+def _side_hop_metrics(w: dict, review: dict | None) -> dict[str, Any]:
+    """Milles et jours de Halifax ↔ Saint-Pierre. Jamais le cumul du voyage."""
+    metrics = dict(chapter_metrics(w, review if isinstance(review, dict) else None))
+    window_days = _window_span_days(w)
+    cap = _hop_nm_cap(window_days)
+    nm = metrics.get("legNm")
+    dest = w.get("to") if isinstance(w.get("to"), dict) else {}
+    voyage = isinstance(nm, (int, float)) and not isinstance(nm, bool) and (
+        float(nm) > cap or (_same_odometer(float(nm), dest) and float(nm) > 1500)
+    )
+    if voyage or not isinstance(nm, (int, float)) or isinstance(nm, bool):
+        hop = _side_scale_gap(w)
+        if hop is None or hop > cap:
+            hop = _nm_between(
+                (w.get("from") or {}).get("lat"), (w.get("from") or {}).get("lon"),
+                (dest or {}).get("lat"), (dest or {}).get("lon"),
+            )
+            if hop is not None and hop > cap:
+                hop = None
+        metrics["legNm"] = hop
+        metrics["daysAtSea"] = None
+    days = metrics.get("daysAtSea")
+    if window_days and (
+        not isinstance(days, (int, float)) or isinstance(days, bool)
+        or float(days) > max(window_days * 1.5, window_days + 2)
+    ):
+        metrics["daysAtSea"] = window_days
+    elif (
+        not isinstance(days, (int, float)) or isinstance(days, bool)
+    ) and isinstance(metrics.get("legNm"), (int, float)) and not isinstance(metrics.get("legNm"), bool):
+        from plan_review import PLANNED_KNOTS, planned_sea_days  # noqa: PLC0415
+        metrics["daysAtSea"] = planned_sea_days(float(metrics["legNm"]), float(PLANNED_KNOTS))
+    return metrics
+
+
+def _side_opening_sentence(
+    w: dict, *, lang: str, display_t0: str | None = None, review: dict | None = None,
+) -> str:
     """Ouverture Halifax → Saint-Pierre (et retour) à bord du second bateau."""
     en = _en(lang)
     origin = short_name(w.get("fromName") or (w.get("from") or {}).get("name") or "")
@@ -5430,7 +5528,10 @@ def _side_opening_sentence(w: dict, *, lang: str, display_t0: str | None = None)
     boat = w.get("sideBoat") or (
         "a second sailing boat" if en else "un second voilier"
     )
-    metrics = chapter_metrics(w, w.get("review") if isinstance(w.get("review"), dict) else None)
+    chosen = review if isinstance(review, dict) else (
+        w.get("review") if isinstance(w.get("review"), dict) else None
+    )
+    metrics = _side_hop_metrics(w, chosen)
     nm = _opening_nm_label(metrics.get("legNm"), lang)
     days = spoken_sea_days(metrics.get("daysAtSea"), lang) if metrics.get("daysAtSea") is not None else ""
     stats = ", ".join(x for x in (nm, days) if x)
@@ -5767,7 +5868,7 @@ def _opening_sentence(
     if _is_air_window(w):
         return _air_window_sentence(w, lang=lang, display_t0=display_t0)
     if _is_side_window(w):
-        return _side_opening_sentence(w, lang=lang, display_t0=display_t0)
+        return _side_opening_sentence(w, lang=lang, display_t0=display_t0, review=review)
     if w.get("resumeAfterAir"):
         return _resume_after_episode(w, lang=lang, display_t0=display_t0)
     if not dest_name:

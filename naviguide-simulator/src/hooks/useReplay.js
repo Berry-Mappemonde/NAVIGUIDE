@@ -681,12 +681,32 @@ export function briefingForReplayPosition({
   return { view: "suivre", briefing: text, follows: true, lat: place.lat, lon: place.lon };
 }
 
-/** Même langue / t0 / style : garder le plan ready si seule la durée change. */
+/** Même requête seulement. Une autre durée (seconds) recharge le texte. */
 export function filmQueryKeepsReady(prev, next) {
   if (!prev || !next) return false;
-  if (prev === next) return true;
-  const strip = (q) => String(q).replace(/seconds=[^&]*/, "seconds=");
-  return strip(prev) === strip(next);
+  return String(prev) === String(next);
+}
+
+/**
+ * Durée cochée : refuser un texte dont la lecture dépasse 1,5 × le budget.
+ * Aucune durée cochée (0) : le journal intégral peut partir.
+ */
+export function filmBudgetCanPlay({
+  chars = 0, budgetSeconds = 0, cps = FILM_ESTIMATE_CPS,
+} = {}) {
+  const budget = Number(budgetSeconds) || 0;
+  if (budget <= 0) return true;
+  const n = Number(chars) || 0;
+  if (n <= 0) return true;
+  const rate = Number(cps) > 0 ? Number(cps) : FILM_ESTIMATE_CPS;
+  return n / rate <= budget * 1.5;
+}
+
+function filmPayloadChars(data) {
+  const chapters = Array.isArray(data?.chapters) ? data.chapters : [];
+  const fromText = chapters.reduce((n, c) => n + String(c?.text || "").length, 0);
+  if (fromText > 0) return fromText;
+  return Number(data?.chars) || 0;
 }
 
 /** Durée cochée → budget ; aucune → le temps que prend le journal. */
@@ -1272,6 +1292,17 @@ export function useReplay({
       }
       const resolved = applyResolvedMeta(data, requestedStyle);
       const isProbe = requestedStyle === "written" && filmStyle !== "written";
+      if (!isProbe && !filmBudgetCanPlay({
+        chars: filmPayloadChars(data),
+        budgetSeconds: targetSeconds,
+      })) {
+        applyEstimates(data);
+        remotePlanRef.current = null;
+        remotePlanKeyRef.current = "";
+        setFilmParagraphs([]);
+        setFilmStatus("pending");
+        return "over-budget";
+      }
       if (isReadyRemoteFilm(data, { official })) {
         if (!isProbe) applyPlan(data, resolved);
         if (!isProbe) setFilmStatus("ready");
@@ -1333,6 +1364,7 @@ export function useReplay({
             return;
           }
           const applied = applyData(pack.data);
+          if (applied === "over-budget") return;
           if (applied === "preparing") {
             const now = Date.now();
             if (!prepareStarted) prepareStarted = now;
@@ -1491,6 +1523,8 @@ export function useReplay({
     setFilmSource(picked.source || local.source || "rules");
     setFilmReviewedBy("");
     const userBudget = Number(targetSeconds) > 0 ? Number(targetSeconds) : 0;
+    const playedChars = chapters.reduce((n, c) => n + String(c?.text || "").length, 0);
+    if (!filmBudgetCanPlay({ chars: playedChars, budgetSeconds: userBudget })) return false;
     budgetRef.current = userBudget;
     // Durée cochée ou non : un chapitre du texte reste un chapitre joué.
     // 2:30 fusionnait les chapitres courts (15 → 5) dès que le budget était 150.
