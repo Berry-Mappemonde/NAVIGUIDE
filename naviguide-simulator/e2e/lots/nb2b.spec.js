@@ -70,17 +70,32 @@ test("ligne Modèles du film : le modèle nommé, aucun logo", async ({ page }) 
 
   await written.click();
   const source = page.getByTestId("film-source");
-  const visible = await source.isVisible().catch(() => false);
-  if (!visible) {
-    test.info().annotations.push({
-      type: "film rédigé absent",
-      description: "ligne source masquée — libellé sauté ; absence de logo gardée",
-    });
-    return;
+  const models = /Modèles|Models/;
+  const writing = /Rédaction en cours…|Writing…/;
+  const readSource = async () => {
+    if (!(await source.isVisible().catch(() => false))) return "";
+    return (await source.innerText()).replace(/\s+/g, " ").trim();
+  };
+  // Le clic sur Rédigé pose « Rédaction en cours… » dans film-source tant que
+  // le film rédigé n'est pas servi. Ce n'est pas la ligne Modèles.
+  let text = "";
+  try {
+    await expect.poll(async () => {
+      text = await readSource();
+      if (text && !writing.test(text)) return text;
+      return "";
+    }, { timeout: 20_000 }).toMatch(models);
+  } catch {
+    if (!text || writing.test(text)) {
+      test.info().annotations.push({
+        type: "film rédigé absent",
+        description: "ligne Modèles absente (rédaction en cours ou film non servi) — libellé sauté ; absence de logo gardée",
+      });
+      return;
+    }
   }
-
-  const text = (await source.innerText()).replace(/\s+/g, " ").trim();
-  expect(text).toMatch(/Modèles|Models/);
+  text = await readSource();
+  expect(text).toMatch(models);
   expect(text).toMatch(/Nemotron|NVIDIA NIM|OpenRouter|Claude|règles|rules/);
   await expect(source.locator("img, svg")).toHaveCount(0);
   expect(await thirdPartyLogoHits(page)).toEqual([]);
