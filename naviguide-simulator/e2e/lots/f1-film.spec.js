@@ -9,7 +9,7 @@ const shot = (page, name) => page.screenshot({
   fullPage: false,
 });
 
-test("Film 150 s, zoom fixe, sous-titre Saint-Maur", async ({ page }) => {
+test("Film intégral, zoom fixe, sous-titre Saint-Maur", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/");
   await dismissNotForNav(page);
@@ -65,9 +65,32 @@ test("Film 150 s, zoom fixe, sous-titre Saint-Maur", async ({ page }) => {
   }, { timeout: 80_000 }).catch(() => {});
   await shot(page, "02-atlantique");
 
-  const budget = await page.evaluate(() => window.__naviguideFilm?.targetSeconds ?? 150);
-  expect(budget, "budget 2:30").toBeGreaterThanOrEqual(140);
-  expect(budget, "budget 2:30").toBeLessThanOrEqual(160);
+  // Sans durée cochée : plus de calage sur 2:30. La cible est le temps de parole
+  // (filmSpeakSeconds, 16 car./s) et chaque chapitre servi reste un chapitre.
+  const film = await page.evaluate(() => {
+    const f = window.__naviguideFilm || {};
+    const chapters = Array.isArray(f.chapters) ? f.chapters : [];
+    const chars = chapters.reduce((s, c) => s + String(c?.text || "").length, 0);
+    return {
+      target: f.targetSeconds,
+      budget: f.budgetSeconds,
+      count: f.chapterCount || 0,
+      n: chapters.length,
+      chars,
+    };
+  });
+  expect(film.budget, "aucune durée cochée").toBe(0);
+  expect(film.n, "chapitres publiés").toBeGreaterThan(0);
+  expect(film.count, "aucun chapitre fusionné").toBe(film.n);
+  expect(film.target, "durée naturelle du texte").toBe(Math.max(1, Math.round(film.chars / 16)));
+  if (apiUp) {
+    const free = await page.request.get("/voyage/official/film?lang=fr&seconds=0", { timeout: 8000 })
+      .then((r) => (r.ok() ? r.json() : null))
+      .catch(() => null);
+    const servedN = Array.isArray(free?.chapters) ? free.chapters.length : 0;
+    expect(servedN, "intégral servi").toBeGreaterThan(0);
+    expect(film.count, "le lecteur garde chaque chapitre servi").toBe(servedN);
+  }
   const stop = page.getByTestId("replay-stop");
   if (await stop.isVisible().catch(() => false)) await stop.click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
