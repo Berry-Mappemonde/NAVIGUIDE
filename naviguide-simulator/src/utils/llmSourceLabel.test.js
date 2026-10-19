@@ -1,8 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import en from "../i18n/en.js";
 import fr from "../i18n/fr.js";
 import { isAiGeneratedSource, llmSourceI18nKey, llmSourceLabel, llmSourceShowsBrands } from "./llmSourceLabel.js";
@@ -12,11 +13,29 @@ const badge = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../com
 
 const tEn = (key) => en[key];
 
+async function loadLabelModule() {
+  const stripped = src
+    .replace(/^import .+\.svg";\n/gm, "")
+    .replace(
+      /export const LLM_BRAND_LOGOS = Object\.freeze\(\{[\s\S]*?\}\);/,
+      "export const LLM_BRAND_LOGOS = Object.freeze({});",
+    );
+  const dir = mkdtempSync(join(tmpdir(), "llm-label-"));
+  const file = join(dir, "llmSourceLabel.js");
+  writeFileSync(file, stripped);
+  try {
+    return await import(pathToFileURL(file).href);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 describe("AI transparency — source helpers", () => {
   it("exports isAiGeneratedSource and maps legacy film ids", () => {
     assert.match(src, /export function isAiGeneratedSource/);
     assert.match(src, /export function isLlmWrittenSource/);
     assert.match(src, /storySourceSuperReviewed/);
+    assert.match(src, /reviewedBy/);
     assert.match(src, /nemotron-super-token-factory/);
     assert.match(src, /s === "rules" \|\| s === "budget"/);
     assert.match(src, /\+local/);
@@ -35,6 +54,19 @@ describe("llmSourceI18nKey", () => {
     const nimIdx = src.indexOf("storySourceNim");
     const rulesReturn = src.lastIndexOf('return "storySourceRules"');
     assert.ok(nimIdx > 0 && nimIdx < rulesReturn, "NIM avant le repli rules");
+    assert.match(src, /lower === "nemotron" \|\| lower\.includes\("super"\)/);
+  });
+
+  it("Lightning relu par Ultra ne devient pas Super relu par Ultra", async () => {
+    const { llmSourceI18nKey } = await loadLabelModule();
+    const lightning = llmSourceI18nKey("nemotron-lightning", "nemotron-ultra");
+    assert.equal(lightning, "storySourceLightning");
+    assert.equal(llmSourceI18nKey("nemotron-lightning", null), "storySourceLightning");
+    assert.doesNotMatch(en[lightning], /reviewed by Ultra/i);
+    assert.doesNotMatch(fr[lightning], /relu par Ultra/i);
+    assert.equal(llmSourceI18nKey("nemotron-super", "nemotron-ultra"), "storySourceSuperReviewed");
+    assert.equal(llmSourceI18nKey("nemotron", "nemotron-ultra"), "storySourceSuperReviewed");
+    assert.match(fr.storySourceSuperReviewed, /relu par Ultra/);
   });
 
   it("names each Token Factory tier exactly, and never a fallback", () => {
