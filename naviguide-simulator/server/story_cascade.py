@@ -429,6 +429,56 @@ _META_RE = re.compile(
     re.IGNORECASE,
 )
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
+_WORD_RE = re.compile(r"[0-9A-Za-zÀ-ÿ]+")
+# Marqueurs de raisonnement. Une phrase douteuse ne devient pas le texte visiteur.
+_REASON_MARK_RE = re.compile(
+    r"\bthe\s+user\b"
+    r"|\bwe\s+need\b"
+    r"|\blet['’]?s\b"
+    r"|\bokay\b"
+    r"|\bok\b"
+    r"|\bi\s+should\b"
+    r"|\bmaybe\b"
+    r"|\bjson\b"
+    r"|l['’]utilisateur"
+    r"|l['’]utilisatrice"
+    r"|\busager\b"
+    r"|nous\s+devons"
+    r"|il\s+nous\s+faut"
+    r"|il\s+faut\b"
+    r"|on\s+a\s+besoin"
+    r"|on\s+doit\b"
+    r"|on\s+me\s+demande"
+    r"|\ballons\b"
+    r"|\bvoyons\b"
+    r"|d['’]accord"
+    r"|je\s+dois"
+    r"|je\s+devrais"
+    r"|je\s+vais\s+écrire"
+    r"|i\s+will\s+write"
+    r"|i\s+am\s+asked"
+    r"|final\s+answer"
+    r"|r[ée]ponse\s+finale"
+    r"|\btranslation\b"
+    r"|\btraduction\b"
+    r"|here\s+is\s+the\s+translation"
+    r"|voici\s+la\s+traduction"
+    r"|une\s+ou\s+deux\s+phrases"
+    r"|one\s+or\s+two\s+plain\s+sentences"
+    r"|phrases?\s+simples"
+    r"|peut[- ]être",
+    re.IGNORECASE,
+)
+_FR_WORD_RE = re.compile(
+    r"\b(?:le|la|les|un|une|des|du|au|aux|est|sont|dans|pour|avec|que|qui|"
+    r"cette|ces|pas|plus|par|vers|chez|où|ou|de)\b",
+    re.IGNORECASE,
+)
+_FR_ACCENT_RE = re.compile(r"[àâäéèêëïîôùûüçœæ]")
+_EN_WORD_RE = re.compile(
+    r"\b(?:the|a|an|is|are|of|and|to|for|with|about|from|this|that|was|were|off)\b",
+    re.IGNORECASE,
+)
 _MD_RE = re.compile(r"[*_#>`]+")
 _EN_EMPHASIS_RE = re.compile(r"\*{2,}|_{2,}")
 MAX_SENTENCES = 2
@@ -596,22 +646,96 @@ def _message_parts(raw: Any) -> list[tuple[str, str]]:
     return []
 
 
-def _parts_text(parts: list[tuple[str, str]]) -> str:
-    """Visitor text. Reasoning and thinking parts stay out."""
-    return "".join(
-        text for kind, text in parts if kind.lower() not in {"reasoning", "thinking"}
-    )
+def _parts_text(parts: list[tuple[str, str]], *, reasoning: bool = False) -> str:
+    """Visitor text, or the reasoning parts when `reasoning` is set."""
+    chunks: list[str] = []
+    for kind, text in parts:
+        k = kind.lower()
+        if reasoning:
+            if k in {"reasoning", "thinking"}:
+                chunks.append(text)
+        elif k not in {"reasoning", "thinking"}:
+            chunks.append(text)
+    return "".join(chunks)
+
+
+def _words(text: str) -> list[str]:
+    return [w.lower() for w in _WORD_RE.findall(text or "")]
+
+
+def _shares_prompt_span(sentence: str, prompt: str, n: int = 6) -> bool:
+    """True when `n` consecutive words of the sentence are copied from the prompt."""
+    sw = _words(sentence)
+    pw = _words(prompt)
+    if len(sw) < n or len(pw) < n:
+        return False
+    grams = {tuple(pw[i:i + n]) for i in range(len(pw) - n + 1)}
+    return any(tuple(sw[i:i + n]) in grams for i in range(len(sw) - n + 1))
+
+
+def _sentence_matches_lang(text: str, *, en: bool) -> bool:
+    """Keep the sentence only when it is clearly the requested language.
+
+    A tie, or no signal at all, is a doubt: reject.
+    """
+    fr = len(_FR_WORD_RE.findall(text or "")) + len(_FR_ACCENT_RE.findall(text or ""))
+    en_n = len(_EN_WORD_RE.findall(text or ""))
+    if fr <= 0 and en_n <= 0:
+        return False
+    if fr == en_n:
+        return False
+    return (en_n > fr) if en else (fr > en_n)
+
+
+def _recover_reasoning_text(raw: Any, *, prompt: str = "", lang: str = "fr") -> str:
+    """A plain sentence left beside an empty `content`.
+
+    Lightning (and Ultra) often spend `max_tokens` on the trace and return
+    `finish_reason=length` with an empty `content`. The answer then sits in
+    `message.reasoning` or `reasoning_content`. The trace itself is never
+    returned. A sentence is kept only when it has no reasoning marker, no
+    6-word copy of the prompt, and it is in the requested language. Anything
+    doubtful stays empty so the cascade can retry Super or fall back with an
+    honest label.
+    """
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        blob = raw
+    else:
+        parts = _message_parts(raw)
+        blob = _parts_text(parts, reasoning=True) or _parts_text(parts, reasoning=False)
+    stripped = _strip_preamble(_strip_think(_FENCE_RE.sub("", blob or "")))
+    want_en = _is_en(lang)
+    kept: list[str] = []
+    for sentence in _SENT_SPLIT_RE.split(stripped):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        piece = _clean_text(sentence)
+        if not piece or _PROMPT_LEAK_RE.search(piece) or _META_RE.search(piece):
+            continue
+        if _REASON_MARK_RE.search(piece):
+            continue
+        if _shares_prompt_span(piece, prompt):
+            continue
+        if not _sentence_matches_lang(piece, en=want_en):
+            continue
+        kept.append(piece)
+        if len(kept) >= MAX_SENTENCES:
+            break
+    return " ".join(kept).strip()
 
 
 def _openai_text(data: dict[str, Any] | None, *, prompt: str = "", lang: str = "fr") -> str:
-    """Visitor text from a chat completion: `content` only.
+    """Visitor text from a chat completion.
 
-    Empty content stays empty. A reasoning trace (`message.reasoning`,
-    `reasoning_content`, a reasoning part) is never the visitor text, so the
-    cascade can fall back with an honest label. `prompt` and `lang` are
-    accepted and ignored: they used to filter a recovered sentence.
+    `content` wins. When it is empty, Nemotron on Token Factory often spent
+    the token budget on the trace (`finish_reason=length`, `max_tokens`
+    covering thinking plus the answer) and left the sentence in
+    `message.reasoning` (vLLM / Ultra) or `reasoning_content`. Only a sentence
+    that passes `_recover_reasoning_text` may leave that field.
     """
-    del prompt, lang
     choice = ((data or {}).get("choices") or [{}])[0] or {}
     if not isinstance(choice, dict):
         choice = {}
@@ -619,9 +743,16 @@ def _openai_text(data: dict[str, Any] | None, *, prompt: str = "", lang: str = "
     if not isinstance(msg, dict):
         msg = {}
     content_parts = _message_parts(msg.get("content"))
-    content = _clean_text(_parts_text(content_parts))
+    content = _clean_text(_parts_text(content_parts, reasoning=False))
     if content:
         return content
+    for raw in (msg.get("reasoning"), msg.get("reasoning_content"), choice.get("reasoning")):
+        recovered = _recover_reasoning_text(raw, prompt=prompt, lang=lang)
+        if recovered:
+            return recovered
+    typed = _parts_text(content_parts, reasoning=True)
+    if typed:
+        return _recover_reasoning_text(typed, prompt=prompt, lang=lang)
     return ""
 
 
