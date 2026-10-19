@@ -70,6 +70,72 @@ async function muteVoice(page) {
   }
 }
 
+const JOURNAL_MORNING = [
+  {
+    t: "2026-10-18T08:00:00Z",
+    signature: "dep",
+    seq: 0,
+    pos: { lat: 46.15, lon: -1.16 },
+    changes: [{ kind: "regime", score: 1, title: "vents d'ouest", fact: "" }],
+  },
+  {
+    t: "2026-10-18T11:00:00Z",
+    signature: "h11",
+    seq: 1,
+    pos: { lat: 46.1, lon: -1.3 },
+    changes: [{ kind: "regime", score: 1, title: "allure stable", fact: "" }],
+  },
+];
+
+const JOURNAL_CROSSING = [
+  ...JOURNAL_MORNING,
+  {
+    t: "2026-12-02T08:00:00Z",
+    signature: "eaux",
+    seq: 2,
+    pos: { lat: 36.0, lon: -20.0 },
+    changes: [{ kind: "zee-enter", score: 2, title: "eaux espagnoles", fact: "" }],
+  },
+  {
+    t: "2027-01-15T08:00:00Z",
+    signature: "arrivee",
+    seq: 3,
+    pos: { lat: 45.9, lon: -1.55 },
+    changes: [{ kind: "escale", score: 3, title: "Arrivée à Pertuis", fact: "" }],
+  },
+];
+
+async function stubCustomMoments(page) {
+  let gets = 0;
+  await page.route(/\/voyage\/[^/]+\/moments(?:\?|$)/, async (route) => {
+    const url = route.request().url();
+    if (/\/voyage\/official\/moments/.test(url)) {
+      await route.continue();
+      return;
+    }
+    gets += 1;
+    const preparing = gets === 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(preparing
+        ? { status: "preparing", moments: JOURNAL_MORNING, coverageNm: 30, totalNm: 3200 }
+        : { status: "ready", moments: JOURNAL_CROSSING, coverageNm: 3200, totalNm: 3200 }),
+    });
+  });
+}
+
+async function expectJournalCrossing(page) {
+  await openJournalTab(page);
+  const entries = page.getByTestId("ici-journal-entry");
+  await expect(entries.first()).toBeVisible({ timeout: 20_000 });
+  expect(await entries.count()).toBeGreaterThan(0);
+  await expect.poll(async () => {
+    const text = (await entries.allInnerTexts()).join("\n");
+    return /arriv|eaux|mer\b|zee|\beez\b|exclusive|côte|coast/i.test(text);
+  }, { timeout: 20_000 }).toBe(true);
+}
+
 test("Suivre × ma route : Revoir, Journal, Revue ; Berry intact", async ({ page }) => {
   test.setTimeout(180_000);
   const errors = [];
@@ -85,6 +151,7 @@ test("Suivre × ma route : Revoir, Journal, Revue ; Berry intact", async ({ page
   });
 
   await stubRoute(page);
+  await stubCustomMoments(page);
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
@@ -144,7 +211,7 @@ test("Suivre × ma route : Revoir, Journal, Revue ; Berry intact", async ({ page
       description: "GET /voyage/{id}/film encore preparing après 2 min — Revoir actif non exigé",
     });
     await shot(page, "01-revoir-ma-route");
-    await openJournalTab(page);
+    await expectJournalCrossing(page);
     await shot(page, "02-journal");
     expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);
     return;
@@ -156,10 +223,7 @@ test("Suivre × ma route : Revoir, Journal, Revue ; Berry intact", async ({ page
   await expect(page.getByTestId("film-subtitle")).toContainText(/La Rochelle/, { timeout: 15_000 });
   await shot(page, "01-revoir-ma-route");
 
-  await openJournalTab(page);
-  const entries = page.getByTestId("ici-journal-entry");
-  await expect(entries.first()).toBeVisible({ timeout: 20_000 });
-  expect(await entries.count()).toBeGreaterThan(0);
+  await expectJournalCrossing(page);
   await shot(page, "02-journal");
 
   const officialBefore = officialFilms.length;

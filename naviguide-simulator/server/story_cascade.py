@@ -487,11 +487,14 @@ async def translate(
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
     if not cleaned:
         return _as_result(_clean_text(src) or "", "rules", tier="fast")
-    return _as_result(
+    res = _as_result(
         cleaned, source,
         model=str(getattr(result, "model", "") or ""),
         tier=str(getattr(result, "tier", "") or "fast"),
     )
+    if getattr(result, "cache_hit", False):
+        res.cache_hit = True
+    return res
 
 
 def _is_title(line: str) -> bool:
@@ -825,6 +828,19 @@ async def _call_claude(
     return _as_result(text, "claude", model=answered, tier=tier)
 
 
+class _OriginHit(CascadeResult):
+    """Prompt-cache hit: `source` is the provider that wrote the text; flag `cache_hit`."""
+
+    cache_hit = True
+
+
+def _stored_origin(raw: Any) -> str:
+    src = str(raw or "").strip()
+    if not src or src == "cache":
+        return ""
+    return src
+
+
 def _cache_get(key: str) -> tuple[str, str] | None:
     import pearl_store  # noqa: PLC0415
 
@@ -842,21 +858,22 @@ def _cache_get(key: str) -> tuple[str, str] | None:
     if not cleaned:
         pearl_store.kv_delete(CACHE_NS, key)
         return None
+    origin = _stored_origin(val.get("source"))
+    if not origin:
+        return None
     stored_model = str(val.get("model") or "")
     if cleaned != text:
-        pearl_store.kv_put(
-            CACHE_NS, key,
-            {"text": cleaned, "source": val.get("source") or "cache", "model": stored_model},
-        )
-    return _as_result(cleaned, "cache", model=stored_model)
+        pearl_store.kv_put(CACHE_NS, key, {"text": cleaned, "source": origin, "model": stored_model})
+    return _OriginHit(cleaned, origin, model=stored_model)
 
 
 def _cache_put(key: str, text: str, source: str, model: str = "") -> None:
     import pearl_store  # noqa: PLC0415
 
-    if not text or source in {"budget", "rules"}:
+    origin = _stored_origin(source)
+    if not text or not origin or source in {"budget", "rules"}:
         return
-    pearl_store.kv_put(CACHE_NS, key, {"text": text, "source": source, "model": model or ""})
+    pearl_store.kv_put(CACHE_NS, key, {"text": text, "source": origin, "model": model or ""})
 
 
 async def _cascade_once(
@@ -1063,6 +1080,7 @@ async def write_story(
         text, source = drafted
         model = str(getattr(drafted, "model", "") or "")
         tier_name = str(getattr(drafted, "tier", "") or story_tier(body))
+        cache_hit = bool(getattr(drafted, "cache_hit", False))
     except Exception as exc:
         return {
             "status": "failed",
@@ -1073,6 +1091,7 @@ async def write_story(
             "text": None,
             "source": "rules",
             "engine": None,
+            "cache_hit": False,
         }
     tidy = tidy_story(text, fallback)
     if not tidy:
@@ -1085,6 +1104,7 @@ async def write_story(
             "text": None,
             "source": source,
             "engine": source,
+            "cache_hit": cache_hit,
         }
     used_local = tidy == (fallback or "").strip() and tidy != _clean_text(text).strip()
     if want_en and tidy and not used_local:
@@ -1094,6 +1114,7 @@ async def write_story(
             model = str(translated.model)
         if getattr(translated, "tier", ""):
             tier_name = str(translated.tier)
+        cache_hit = bool(getattr(translated, "cache_hit", False))
         if not tidy:
             return {
                 "status": "failed",
@@ -1104,6 +1125,7 @@ async def write_story(
                 "text": None,
                 "source": source,
                 "engine": source,
+                "cache_hit": cache_hit,
             }
     engine = source
     if used_local:
@@ -1117,6 +1139,7 @@ async def write_story(
         "cascade": "tokenfactory-openrouter-claude",
         "tavily": None,
         "nvidia": source if source.startswith("nemotron-") else engine,
+        "cache_hit": cache_hit,
     }
     # Exact model id of the call that produced the text. A local phrase and
     # rules/budget/cache do not borrow a Nemotron id.

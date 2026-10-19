@@ -653,6 +653,10 @@ export default {
   fv2StopSaintMaur: "Saint-Maur (Indre)",
   fv2StopAzores: "Açores",
 
+  // ED2
+  ed2WritingNemotron: "Rédaction en cours…",
+  ed2BrandLine: "NVIDIA · Nebius",
+
   // Lot NB1 — Nemotron via Token Factory, badge en texte seul
   llmBrandNvidia: "NVIDIA",
   llmBrandNebius: "Nebius",

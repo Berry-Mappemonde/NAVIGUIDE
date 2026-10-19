@@ -90,7 +90,6 @@ from film_script import (
     station_spoken_label,
     speak_film_text,
     written_is_valid,
-    REVIEWED_SOURCE,
     write_stored_plan,
     WRITTEN_SOURCE,
     apply_written_guard,
@@ -4885,6 +4884,7 @@ def test_ed1_judge_closed_serves_super_without_ultra(monkeypatch):
     assert stats["ultra_judge"] == 0
     assert stats["source"] == WRITTEN_SOURCE
     assert fr["source"] == WRITTEN_SOURCE
+    assert fr["model"]
     assert "laisse" in (fr["chapters"][0]["text"] or "")
     assert all(tier != "judge" for tier, _sys in hops)
 
@@ -4924,7 +4924,10 @@ def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
     assert stats["ultra_edit"] == 1
     assert stats["ultra_judge"] == 1
     assert stats["reviewed"] is True
-    assert fr["source"] == REVIEWED_SOURCE
+    assert stats["source"] == WRITTEN_SOURCE
+    assert fr["source"] == WRITTEN_SOURCE
+    assert fr["reviewedBy"] == "nemotron-ultra"
+    assert fr["model"]
     assert hops.count("You judge an already") == 1
     assert hops.count("You edit an already-") == 1
 
@@ -4949,7 +4952,119 @@ def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
     assert stats2["ultra_judge"] == 1
     assert stats2["reviewed"] is False
     assert fr2["source"] == WRITTEN_SOURCE
+    assert not fr2.get("reviewedBy")
     assert "laisse" in (fr2["chapters"][0]["text"] or "")
+
+
+def test_ed2_mixed_nim_chapters_keep_nim_when_last_is_super(monkeypatch):
+    """Deux chapitres NIM puis un Super : la source servie reste le repli, pas nemotron-super."""
+    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    assert film_ultra_open() is False
+    plan = {
+        "chapters": [
+            {
+                "id": "c0",
+                "text": "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Arrivée à Ajaccio le 26 mai.",
+                "tA": "2026-05-15T08:00:00Z",
+                "tB": "2026-05-26T12:00:00Z",
+                "fromName": "La Rochelle",
+                "toName": "Ajaccio (Corse)",
+                "anchors": [{"charIdx": 0, "t": "2026-05-15T08:00:00Z"}],
+            },
+            {
+                "id": "c1",
+                "text": "Le 27 mai, Berry-Mappemonde quitte Ajaccio. Arrivée à Fort-de-France le 23 juin.",
+                "tA": "2026-05-27T08:00:00Z",
+                "tB": "2026-06-23T12:00:00Z",
+                "fromName": "Ajaccio (Corse)",
+                "toName": "Fort-de-France (Martinique)",
+                "anchors": [{"charIdx": 0, "t": "2026-05-27T08:00:00Z"}],
+            },
+            {
+                "id": "c2",
+                "text": "Le 26 juin, Berry-Mappemonde quitte Fort-de-France. Arrivée à Nouméa le 17 septembre.",
+                "tA": "2026-06-26T08:00:00Z",
+                "tB": "2026-09-17T12:00:00Z",
+                "fromName": "Fort-de-France (Martinique)",
+                "toName": "Nouméa (Nouvelle-Calédonie)",
+                "anchors": [{"charIdx": 0, "t": "2026-06-26T08:00:00Z"}],
+            },
+        ],
+        "targetSeconds": 150,
+    }
+    seen = []
+
+    async def mixed(system, user, **kw):
+        if kw.get("tier") != "write":
+            return "", "rules"
+        n = len(seen) + 1
+        seen.append(n)
+        sents = _sentences_from_user(user)
+        src = "nemotron-super" if n == 3 else "nvidia-gpt-oss-20b"
+        text = " ".join(
+            s.replace("quitte", "laisse", 1) if "quitte" in s else s for s in sents
+        )
+        return text, src
+
+    fr, _en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=mixed))
+    assert seen == [1, 2, 3]
+    assert fr is not None
+    assert stats["source"] == "nvidia-gpt-oss-20b"
+    assert fr["source"] == "nvidia-gpt-oss-20b"
+    assert fr["source"] != "nemotron-super"
+    assert fr["source"] != WRITTEN_SOURCE
+    assert fr["model"] == "openai/gpt-oss-20b"
+    assert fr["model"] != "nvidia-gpt-oss-20b"
+    assert not fr.get("reviewedBy")
+    assert all("laisse" in (ch.get("text") or "") for ch in fr["chapters"])
+
+
+def test_ed2_ultra_open_nim_edit_is_not_reviewed_by_ultra(monkeypatch):
+    """Ultra ouvert, mais l'édition et le juge viennent de NIM : pas de reviewedBy Ultra."""
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "80000")
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_BACKGROUND", raising=False)
+    assert film_ultra_open() is True
+    plan = {
+        "chapters": [{
+            "id": "c0",
+            "text": "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Arrivée à Ajaccio le 26 mai.",
+            "tA": "2026-05-15T08:00:00Z",
+            "tB": "2026-05-26T12:00:00Z",
+            "fromName": "La Rochelle",
+            "toName": "Ajaccio (Corse)",
+            "anchors": [{"charIdx": 0, "t": "2026-05-15T08:00:00Z"}],
+        }],
+        "targetSeconds": 150,
+    }
+    hops = []
+
+    async def nim_fallback(system, user, **kw):
+        hops.append(system[:24])
+        if "judge an already-written" in system:
+            return '{"ok": true, "reason": "ok"}', "nvidia-gpt-oss-20b"
+        if "edit an already-written" in system:
+            blob = (user or "").split("text=", 1)[-1]
+            edited = blob.replace("laisse", "abandonne", 1) if "laisse" in blob else blob
+            return edited, "nvidia-gpt-oss-20b"
+        sents = _sentences_from_user(user)
+        if sents:
+            return " ".join(
+                s.replace("quitte", "laisse", 1) if "quitte" in s else s for s in sents
+            ), "nemotron-super"
+        return "", "rules"
+
+    fr, _en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=nim_fallback))
+    assert stats["ultra_edit"] == 1
+    assert stats["ultra_judge"] == 0
+    assert stats["reviewed"] is False
+    assert fr["source"] == WRITTEN_SOURCE
+    assert not fr.get("reviewedBy")
+    text = fr["chapters"][0]["text"] or ""
+    assert "laisse" in text
+    assert "abandonne" not in text
+    assert not any(h.startswith("You judge an already") for h in hops)
 
 
 # ── VS1 : VL propose des ids, Lightning retire, le repli s'arrête au budget ──
@@ -5226,7 +5341,7 @@ def test_vb1_absent_cache_matches_today(monkeypatch):
     import vl_route
     from official_store import FILM_SCRIPT_REV
 
-    assert FILM_SCRIPT_REV == "vs1-vb1"
+    assert FILM_SCRIPT_REV == "vs1-ed2"
     assert vl_route.load() is None
     bag = _vs1_full_bag()
     calls = []
@@ -5254,7 +5369,7 @@ def test_vb1_cache_adds_only_bag_ids_and_keeps_budget(monkeypatch):
     import vl_route
     from official_store import FILM_SCRIPT_REV
 
-    assert FILM_SCRIPT_REV == "vs1-vb1"
+    assert FILM_SCRIPT_REV == "vs1-ed2"
     assert film_char_budget(150) == 2250
     bag = _vs1_full_bag()
     by_id = {c["id"]: c for c in bag}
