@@ -79,3 +79,5 @@ To display (already in the footer, the map and the modal):
 | EMODnet (bathy / seabed / cables) | CC-BY — WMS attribution |
 | GEBCO (offshore sounding in the bag) | GEBCO Compilation Group — OpenTopoData point lookup (GEBCO 2020), `null` within 20 M of a port |
 | Leopard 46 polar | ORC file loaded by the user / local default |
+
+Per-source URL, the licence string actually written in the repo, the credit on screen, and the survey date (or « à vérifier »): [DATA_SOURCES.md](DATA_SOURCES.md). Model ids, cascade, budgets, and the AI disclosure: [docs/AI_GOVERNANCE.md](docs/AI_GOVERNANCE.md).

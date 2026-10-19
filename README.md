@@ -158,7 +158,7 @@ CI mirrors: `npm test`, `npm run build`, `pytest`, Playwright shards ([`.github/
 - **Server:** FastAPI, httpx, searoute, shapely, geographiclib, Copernicus Marine client, pandas/numpy/xarray for GRIB/climatology paths, pymongo only where tests or tooling expect it—not a simulator production MongoDB.
 - **External APIs (when keys are set):** Nebius Token Factory (Nemotron), NVIDIA NIM, OpenRouter, Anthropic, Tavily, Copernicus, Blue Intelligence HTTP API.
 
-Attributions for map tiles and data layers: [`naviguide-simulator/README.md`](naviguide-simulator/README.md#licences-and-attributions).
+Attributions for map tiles and data layers: [`naviguide-simulator/README.md`](naviguide-simulator/README.md#licences-and-attributions). Source sheet (URL, licence as written in the repo, on-screen credit, survey date): [`naviguide-simulator/DATA_SOURCES.md`](naviguide-simulator/DATA_SOURCES.md). Model governance: [`naviguide-simulator/docs/AI_GOVERNANCE.md`](naviguide-simulator/docs/AI_GOVERNANCE.md).
 
 ---
 
@@ -265,9 +265,11 @@ Full API and MongoDB live in the **[Berry-Mappemonde/Blue-Intelligence](https://
 | Hackathon | [https://nebiusglobalaihackathon.devpost.com/](https://nebiusglobalaihackathon.devpost.com/) |
 | Nebius Token Factory docs | [https://docs.tokenfactory.nebius.com/](https://docs.tokenfactory.nebius.com/) |
 | Docs index | [`docs/README.md`](docs/README.md) |
+| Simulator data sources | [`naviguide-simulator/DATA_SOURCES.md`](naviguide-simulator/DATA_SOURCES.md) |
+| Model governance | [`naviguide-simulator/docs/AI_GOVERNANCE.md`](naviguide-simulator/docs/AI_GOVERNANCE.md) |
 
 ---
 
 ### Résumé (français)
 
-**NAVIGUIDE** est en ligne sur [https://naviguide.fr](https://naviguide.fr). Chaque merge sur `main` déploie cette version. Le dépôt contient le simulateur (carte Leaflet, moteur d’escale, film, journal) et son serveur FastAPI ; l’API **Blue Intelligence** reste sur [blueintelligence.online](https://blueintelligence.online/api) (autre dépôt). Les textes générés passent d’abord par **Nebius Token Factory** avec les modèles **NVIDIA Nemotron** (Nano / Lightning / Super / Ultra / Super VL), puis des replis documentés dans le code. Installation et variables d’environnement : voir les sections ci-dessus et [`naviguide-simulator/server/.env.example`](naviguide-simulator/server/.env.example).
+**NAVIGUIDE** est en ligne sur [https://naviguide.fr](https://naviguide.fr). Chaque merge sur `main` déploie cette version. Le dépôt contient le simulateur (carte Leaflet, moteur d’escale, film, journal) et son serveur FastAPI ; l’API **Blue Intelligence** reste sur [blueintelligence.online](https://blueintelligence.online/api) (autre dépôt). Les textes générés passent d’abord par **Nebius Token Factory** avec les modèles **NVIDIA Nemotron** (Nano / Lightning / Super / Ultra / Super VL), puis des replis documentés dans le code. Fiche des sources : [`naviguide-simulator/DATA_SOURCES.md`](naviguide-simulator/DATA_SOURCES.md). Gouvernance des modèles : [`naviguide-simulator/docs/AI_GOVERNANCE.md`](naviguide-simulator/docs/AI_GOVERNANCE.md). Installation et variables d’environnement : voir les sections ci-dessus et [`naviguide-simulator/server/.env.example`](naviguide-simulator/server/.env.example).
