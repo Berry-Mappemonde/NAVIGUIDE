@@ -10074,7 +10074,7 @@ async def select_with_llm(
     user = json.dumps(payload, ensure_ascii=False)
     if len(user) > 8000:
         user = user[:8000]
-    text, source = await cascade(SELECT_SYSTEM, user, tier="fast", fallback="", facts=user, max_tokens=256)
+    text, source = await cascade(SELECT_SYSTEM, user, tier="nano", fallback="", facts=user, max_tokens=256)
     parsed = _parse_selection(text, {str(c["id"]) for c in slim})
     if parsed:
         return parsed, source
@@ -10088,7 +10088,7 @@ async def select_ids_with_vl(
     cascade: Callable = cascade_text,
     seconds: Any = 150,
 ) -> tuple[list[str], str]:
-    """VL : JSON d'ids du sac. Un id absent est jeté. Aucune prose gardée."""
+    """Nano : JSON d'ids du sac. Un id absent est jeté. Aucune prose gardée."""
     fallback = fallback_choose_ids(bag, seconds)
     slim = [c for c in bag if isinstance(c, dict) and c.get("id")]
     payload: dict[str, Any] = {"candidates": [
@@ -10100,7 +10100,7 @@ async def select_ids_with_vl(
     user = json.dumps(payload, ensure_ascii=False)
     if len(user) > 8000:
         user = user[:8000]
-    text, source = await cascade(SELECT_SYSTEM, user, tier="fast", fallback="", facts=user, max_tokens=256)
+    text, source = await cascade(SELECT_SYSTEM, user, tier="nano", fallback="", facts=user, max_tokens=256)
     parsed = parse_choice_ids(text, {str(c["id"]) for c in slim})
     if parsed is not None:
         return parsed, source
@@ -10114,7 +10114,7 @@ async def trim_ids_with_lightning(
     *,
     cascade: Callable = cascade_text,
 ) -> tuple[list[str], str]:
-    """Lightning ne peut que retirer. Un id ajouté est jeté. Puis film_char_budget."""
+    """Nano ne peut que retirer (repli Lightning, puis NIM). Un id ajouté est jeté. Puis film_char_budget."""
     allowed = [str(i) for i in ids]
     allowed_set = set(allowed)
     budget = film_char_budget(seconds)
@@ -10123,7 +10123,7 @@ async def trim_ids_with_lightning(
         ensure_ascii=False,
     )
     text, source = await cascade(
-        TRIM_SYSTEM, user, tier="fast", fallback="", facts=user, max_tokens=256,
+        TRIM_SYSTEM, user, tier="nano", fallback="", facts=user, max_tokens=256,
     )
     parsed = parse_choice_ids(text, allowed_set)
     if parsed is None:
@@ -10176,9 +10176,9 @@ async def choose_film_ids(
     """Un choix par film (empreinte du stock), pas par chapitre ni par visite.
 
     Cache de route absent : même empreinte, mêmes ids. Présent : ids du sac
-    ajoutés après le choix VL ou le repli. Le suffixe de ce cache n'entre
-    que dans la clef de coupe, pas dans celle du choix VL. Lightning puis
-    le budget tranchent.
+    ajoutés après le choix ou le repli. Le suffixe de ce cache n'entre
+    que dans la clef de coupe, pas dans celle du choix. Nano (JSON d'ids),
+    puis le budget, tranchent.
     """
     import llm_budget  # noqa: PLC0415
     import pearl_store  # noqa: PLC0415
@@ -10196,7 +10196,7 @@ async def choose_film_ids(
         return [str(i) for i in cached["ids"]], "cache"
 
     if allow_llm is None:
-        allow_llm = llm_budget.allow("fast")
+        allow_llm = llm_budget.allow("nano")
 
     if not allow_llm:
         ids = fallback_choose_ids(bag, seconds)
@@ -10655,7 +10655,7 @@ async def build_film_response(
     choose: bool = False,
 ) -> dict[str, Any]:
     """Assemble the API payload. `want_write` triggers Nemotron (tier write).
-    `choose` : VL/Lightning ou repli, au remplissage du stock seulement."""
+    `choose` : Nano (ids) ou repli, au remplissage du stock seulement."""
     from story_cache import film_cache_key, get_film_cached, put_film_cached  # noqa: PLC0415
 
     shown = resolve_film_t0(display_t0)

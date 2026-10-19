@@ -14,6 +14,7 @@ def test_is_ai_generated_source():
     assert is_ai_generated_source("nemotron-super+local") is False
     assert is_ai_generated_source("nemotron-super") is True
     assert is_ai_generated_source("nemotron-lightning") is True
+    assert is_ai_generated_source("nemotron-nano") is True
     assert is_ai_generated_source("nemotron-super-token-factory") is True
     assert is_ai_generated_source("cache") is True
     assert is_ai_generated_source("openrouter") is True

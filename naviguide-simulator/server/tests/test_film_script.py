@@ -5116,6 +5116,7 @@ def test_vs1_vl_keeps_only_bag_ids_drops_prose():
     allowed = {c["id"] for c in bag}
 
     async def fake(system, user, **_kw):
+        assert _kw.get("tier") == "nano"
         assert "tour" in user or "image" in user
         return json.dumps({
             "ids": ["dc:buoy", "invented-id", "dc:watch"],
@@ -5138,6 +5139,7 @@ def test_vs1_lightning_can_only_remove():
     proposed = ["dc:amp", "dc:buoy", "dc:poe", TV1_WATCH_ID]
 
     async def fake(system, user, **_kw):
+        assert _kw.get("tier") == "nano"
         assert "remove" in system.lower() or "Do not add" in system
         return json.dumps({
             "ids": ["dc:amp", "dc:buoy", "dc:aton", "invented"],

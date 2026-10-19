@@ -34,6 +34,11 @@ TOKENFACTORY_BASE = (
     os.environ.get("NAVIGUIDE_TF_BASE") or "https://api.tokenfactory.nebius.com/v1"
 ).rstrip("/")
 TOKENFACTORY_URL = f"{TOKENFACTORY_BASE}/chat/completions"
+# Nano stays on the EU host even if NAVIGUIDE_TF_BASE points elsewhere.
+TOKENFACTORY_EU_BASE = (
+    os.environ.get("NAVIGUIDE_TF_BASE_EU")
+    or "https://api.tokenfactory.nebius.com/v1"
+).rstrip("/")
 # Cookbook Ultra: https://api.tokenfactory.us-central1.nebius.com/v1/
 TOKENFACTORY_ULTRA_BASE = (
     os.environ.get("NAVIGUIDE_TF_BASE_ULTRA")
@@ -53,7 +58,7 @@ CACHE_NS = "llm-cache"
 CACHE_TTL_S = 24 * 3600.0
 TF_PARALLEL_DEFAULT = 4
 KNOWN_SOURCES = frozenset({
-    "nemotron-lightning", "nemotron-super", "nemotron-ultra",
+    "nemotron-nano", "nemotron-lightning", "nemotron-super", "nemotron-ultra",
     "openrouter", "claude", "rules", "budget", "cache",
 })
 
@@ -579,13 +584,17 @@ def tidy_story(
 
 
 def _tf_url(tier: str) -> str:
-    """Lightning / Super stay on the default TF host. Ultra uses us-central1
-    (Nebius cookbook) unless NAVIGUIDE_TF_BASE_ULTRA is set."""
+    """Nano is pinned to the EU host. Lightning / Super stay on the default
+    TF host. Ultra uses us-central1 (Nebius cookbook) unless
+    NAVIGUIDE_TF_BASE_ULTRA is set."""
     t = llm_budget.normalize_tier(tier)
     if t in {"deep", "judge"}:
         base = (
             _env("NAVIGUIDE_TF_BASE_ULTRA") or TOKENFACTORY_ULTRA_BASE
         ).rstrip("/")
+        return f"{base}/chat/completions"
+    if t == "nano":
+        base = (_env("NAVIGUIDE_TF_BASE_EU") or TOKENFACTORY_EU_BASE).rstrip("/")
         return f"{base}/chat/completions"
     return TOKENFACTORY_URL
 
@@ -594,7 +603,7 @@ class CascadeResult(tuple):
     """`(text, source)` plus the model id and tier that actually answered.
 
     Unpacking stays `text, source = result`. `model` is the id the server
-    ran (or the one we sent). `tier` is fast / write / deep / judge.
+    ran (or the one we sent). `tier` is nano / fast / write / deep / judge.
     """
 
     model: str
@@ -1039,6 +1048,16 @@ async def _cascade_once(
                 lang=asked_lang,
             )
         except Exception as exc:
+            if norm_tier == "nano":
+                # Repli étiqueté : Lightning (source nemotron-lightning), puis
+                # le maillon NIM du tour de providers si Lightning échoue aussi.
+                if not llm_budget.allow("fast"):
+                    raise
+                log.warning("cascade nano: %s — repli Lightning", exc)
+                return await _call_tokenfactory(
+                    system, user, "fast", http, max_tokens=max_tokens, cascade_tier=norm_tier,
+                    lang=asked_lang,
+                )
             if norm_tier != "fast" or not _tf_fast_super_retry(exc):
                 raise
             llm_budget.record_retry_super()

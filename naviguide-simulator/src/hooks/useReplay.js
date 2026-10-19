@@ -127,6 +127,7 @@ export function isWrittenFilmSource(source) {
 }
 
 const FILM_SOURCE_I18N = Object.freeze({
+  "nemotron-nano": "storySourceNano",
   "nemotron-lightning": "storySourceLightning",
   "nemotron-super": "storySourceSuper",
   "nemotron-super-token-factory": "storySourceSuper",
@@ -148,6 +149,7 @@ export function filmSourceKey(source, reviewedBy) {
   if (s === "openrouter" || s.startsWith("openrouter")) return "storySourceOpenrouter";
   if (s === "claude" || s.startsWith("claude")) return "storySourceClaude";
   if (/gpt-oss|nvidia-gpt|\bnim\b/.test(s) || s.startsWith("nvidia-")) return "storySourceNim";
+  if (s.endsWith("-nano") || s.includes("-nano")) return "storySourceNano";
   if (isWrittenFilmSource(source)) return "storySourceSuper";
   return FILM_SOURCE_I18N[s] || "storySourceRules";
 }

@@ -82,7 +82,7 @@ def test_remember_cascade_error_is_in_status():
 
 def test_mode_off_forbids_every_call(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
-    for tier in ("fast", "write", "deep", "judge"):
+    for tier in ("nano", "fast", "write", "deep", "judge"):
         assert llm_budget.allow(tier) is False
 
 
@@ -247,10 +247,38 @@ def test_deferred_demand_allows_write_in_on_demand_background(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_LLM_BACKGROUND", "1")
     assert llm_budget.allow("write") is False
     assert llm_budget.allow("fast") is False
+    assert llm_budget.allow("nano") is False
     with llm_budget.deferred_demand():
         assert llm_budget.allow("write") is True
         assert llm_budget.allow("fast") is False
+        assert llm_budget.allow("nano") is False
     assert llm_budget.allow("write") is False
     monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
     with llm_budget.deferred_demand():
         assert llm_budget.allow("write") is False
+
+
+def test_nano_tier_uses_exact_catalog_id(monkeypatch):
+    """Palier nano : id catalogue exact, source, prix, plafond, surcharge d'env."""
+    assert "nano" in llm_budget.TIERS
+    assert llm_budget.DEFAULT_MODELS["nano"] == "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+    assert llm_budget.model_for("nano") == "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+    assert llm_budget.source_for("nano") == "nemotron-nano"
+    assert llm_budget.PRICES_PER_M["nano"] == (0.06, 0.24)
+    assert llm_budget.estimate_usd("nano", 1_000_000, 0) == 0.06
+    assert llm_budget.estimate_usd("nano", 0, 1_000_000) == 0.24
+    assert llm_budget.DEFAULT_CAPS["nano"] == 100_000
+    assert llm_budget.daily_cap("nano") == 100_000
+    assert llm_budget.max_tokens_for("nano") == 256
+    monkeypatch.setenv("NAVIGUIDE_TF_MODEL_NANO", "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B")
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_NANO", "42")
+    assert llm_budget.model_for("nano") == "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+    assert llm_budget.daily_cap("nano") == 42
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    assert llm_budget.allow("nano") is True
+    llm_budget.record("nano", 40, 2)
+    assert llm_budget.get_usage("nano")["tokens"] == 42
+    assert llm_budget.allow("nano") is False
+    st = llm_budget.status()
+    assert st["nano"]["tokens"] == 42
+    assert st["nano"]["calls"] == 1

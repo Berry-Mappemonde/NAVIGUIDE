@@ -222,8 +222,8 @@ def test_hard_question_with_judge_calls_ultra_once(monkeypatch):
 
     async def fake_cascade(system, user, client=None, **kw):
         seen.append(kw.get("tier"))
-        if kw.get("tier") == "fast":
-            return '{"intent":"reason","quantity":"speed","place":null,"when":null,"layer":null}', "nemotron-lightning"
+        if kw.get("tier") == "nano":
+            return '{"intent":"reason","quantity":"speed","place":null,"when":null,"layer":null}', "nemotron-nano"
         return "Stay at the quay: speed is 0 kn.", "nemotron-ultra"
 
     async def fake_ctx(*_a, **_k):
@@ -872,7 +872,7 @@ def test_understand_uses_keywords_when_fast_denied(monkeypatch):
 
     async def fake_cascade(system, user, client=None, **kw):
         seen.append(kw.get("tier"))
-        raise AssertionError("Lightning must stay silent when allow(fast) is false")
+        raise AssertionError("Nano must stay silent when allow(nano) is false")
 
     monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
     import llm_budget
@@ -883,18 +883,18 @@ def test_understand_uses_keywords_when_fast_denied(monkeypatch):
     assert seen == []
 
 
-def test_understand_uses_lightning_when_fast_allowed(monkeypatch):
+def test_understand_uses_nano_when_allowed(monkeypatch):
     seen = []
 
     async def fake_cascade(system, user, client=None, **kw):
         seen.append(kw.get("tier"))
-        return '{"intent":"fact","quantity":"wind","place":null,"when":null,"layer":null}', "nemotron-lightning"
+        return '{"intent":"fact","quantity":"wind","place":null,"when":null,"layer":null}', "nemotron-nano"
 
     monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
     import llm_budget
-    monkeypatch.setattr(llm_budget, "allow", lambda tier: tier == "fast")
+    monkeypatch.setattr(llm_budget, "allow", lambda tier: tier == "nano")
     parsed = asyncio.run(logbook_chat.understand_question("Quel vent au bateau ?", "fr"))
-    assert seen == ["fast"]
+    assert seen == ["nano"]
     assert parsed["intent"] == "fact"
     assert parsed["quantity"] == "wind"
 

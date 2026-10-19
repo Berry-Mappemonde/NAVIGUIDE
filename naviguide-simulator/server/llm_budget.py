@@ -1,6 +1,6 @@
 """Budget journalier des appels LLM (plan Nemotron § 0 / § 3).
 
-Compteurs par niveau (`fast` / `write` / `judge`) dans `pearl_store.kv`,
+Compteurs par niveau (`nano` / `fast` / `write` / `judge`) dans `pearl_store.kv`,
 clé logique `llm-budget:<date>:<tier>`. Au plafond : aucun appel réseau
 (la cascade rend `source=budget`). L’USD est une estimation d’après la
 grille Token Factory du 20 sept. 2026, jamais un chiffre produit par un modèle.
@@ -23,13 +23,16 @@ LAST_ERRORS_BY_TIER_KEY = "last-errors-by-tier"
 LAST_ERROR_AT_KEY = "last-error-at"
 FALLBACK_PROVIDERS = ("nim", "openrouter", "claude")
 
-TIERS = ("fast", "write", "deep", "judge")
+TIERS = ("nano", "fast", "write", "deep", "judge")
 
 # Tokens / jour — resserrés le 28 sept. (facture Nebius du mois : 6,58 $ sur 60 $ de crédits, dont 5,19 $ de
 # Nemotron Ultra pour un badge que personne ne voyait) : fast ≈ 0,05 $/j, write ≈ 0,08 $/j.
 # Ultra (palier judge) a 60 000 tokens/jour dans les défauts ; le mode
 # `NAVIGUIDE_LLM_MODE=off` (CI, tests automatisés) bloque encore tout appel, plafond ou pas.
 DEFAULT_CAPS = {
+    # JSON courts (intention, ids). Même prix unitaire que Lightning : le plafond
+    # reste sous le palier fast, les appels tiennent en quelques centaines de tokens.
+    "nano": 100_000,
     "fast": 200_000,
     "write": 150_000,
     "deep": 80_000,
@@ -85,7 +88,7 @@ def deferred_demand():
     """Écriture du rédigé par le remplisseur : étape « sur demande différée ».
 
     Autorise le palier *write* même si le processus est marqué arrière-plan,
-    tant que le mode n'est pas `off`. Les paliers fast / judge restent bloqués.
+    tant que le mode n'est pas `off`. Les paliers nano / fast / judge restent bloqués.
     """
     token = _DEFERRED.set(True)
     try:
@@ -107,6 +110,8 @@ def llm_allowed_here(tier: str | None = None) -> bool:
 
 # $/million tokens (entrée, sortie) — plan § 0.
 PRICES_PER_M = {
+    # Nano : grille du 20 sept. (même ordre que Lightning ; id catalogue confirmé ensuite).
+    "nano": (0.06, 0.24),
     "fast": (0.06, 0.24),
     "write": (0.30, 0.90),
     "deep": (1.00, 3.00),
@@ -114,6 +119,7 @@ PRICES_PER_M = {
 }
 
 DEFAULT_MODELS = {
+    "nano": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
     "fast": "nvidia/Nemotron-3_5-Lightning",
     "write": "nvidia/nemotron-3-super-120b-a12b",
     "deep": "nvidia/Nemotron-3-Ultra-550b-a55b",
@@ -121,6 +127,7 @@ DEFAULT_MODELS = {
 }
 
 DEFAULT_MAX_TOKENS = {
+    "nano": 256,
     "fast": 1024,
     "write": 400,
     # NVIDIA Ultra Day-0: max_tokens caps thinking + answer; 512 is too small
@@ -130,6 +137,7 @@ DEFAULT_MAX_TOKENS = {
 }
 
 SOURCE_FOR_TIER = {
+    "nano": "nemotron-nano",
     "fast": "nemotron-lightning",
     "write": "nemotron-super",
     "deep": "nemotron-ultra",
@@ -137,12 +145,14 @@ SOURCE_FOR_TIER = {
 }
 
 _ENV_CAP = {
+    "nano": "NAVIGUIDE_LLM_DAILY_TOKENS_NANO",
     "fast": "NAVIGUIDE_LLM_DAILY_TOKENS_FAST",
     "write": "NAVIGUIDE_LLM_DAILY_TOKENS_WRITE",
     "deep": "NAVIGUIDE_LLM_DAILY_TOKENS_DEEP",
     "judge": "NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE",
 }
 _ENV_MODEL = {
+    "nano": "NAVIGUIDE_TF_MODEL_NANO",
     "fast": "NAVIGUIDE_TF_MODEL_FAST",
     "write": "NAVIGUIDE_TF_MODEL_WRITE",
     "deep": "NAVIGUIDE_TF_MODEL_DEEP",
