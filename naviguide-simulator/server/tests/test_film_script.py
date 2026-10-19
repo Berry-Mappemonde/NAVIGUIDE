@@ -3208,6 +3208,38 @@ def test_rc30_one_named_argo_per_leg():
     assert re.search(r"\d{5,9}", label)
 
 
+def test_english_heading_after_arrival_is_dropped():
+    from film_script import polish_english_chapters
+
+    chapters = polish_english_chapters([
+        {"id": "a", "text": "Arrival on 15 August, at Saint-Pierre."},
+        {"id": "b", "text": "On 16 August, heading for Saint-Pierre. Then the high seas."},
+        {"id": "c", "text": "Arrival at Halifax. On 22 August, course set for Halifax: 577 miles."},
+    ])
+    text = " ".join(c["text"] for c in chapters)
+    assert "heading for Saint-Pierre" not in text
+    assert "course set for Halifax" not in text
+    assert "Then the high seas." in text
+    assert "Arrival on 15 August, at Saint-Pierre." in text
+
+
+def test_english_discourse_uses_english_place_names():
+    from film_script import english_place_names
+
+    raw = (
+        "In Halifax (Nouvelle-Écosse), the crew boards a second boat. "
+        "Departure for Papeete (Polynésie française). "
+        "Arrival at de Papetoai marina."
+    )
+    text = english_place_names(raw)
+    assert "Nouvelle-Écosse" not in text
+    assert "Nova Scotia" in text
+    assert "Polynésie française" not in text
+    assert "French Polynesia" in text
+    assert "de Papetoai marina" not in text
+    assert "Papetoai marina" in text
+
+
 def test_rg11a_invented_number_falls_back_sentence_by_sentence():
     raw_text = (
         "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest. "

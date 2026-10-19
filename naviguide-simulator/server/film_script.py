@@ -7182,6 +7182,67 @@ def _is_arrival_sentence(text: str) -> bool:
     return bool(re.match(r"^(Arrivée à|Arrivée le|Arrival at|Arrival on)\b", text or "", re.I))
 
 
+_EN_PLACE_NAMES = (
+    ("Nouvelle-Écosse", "Nova Scotia"),
+    ("Nouvelle-Ecosse", "Nova Scotia"),
+    ("Polynésie française", "French Polynesia"),
+    ("Polynesie francaise", "French Polynesia"),
+    ("de Papetoai marina", "Papetoai marina"),
+    ("marina de Papetoai", "Papetoai marina"),
+)
+_HEADING_FOR_RE = re.compile(
+    r"\b(?:heading for|course set for|departure for)\s+([^:.,]+)",
+    re.I,
+)
+_ARRIVAL_AT_RE = re.compile(r"\bArrival\b.*?\bat\s+([^.]+)", re.I)
+
+
+def _place_key(name: str) -> str:
+    raw = re.sub(r"\s*\([^)]*\)", "", name or "")
+    raw = raw.split(",")[0]
+    return re.sub(r"[^a-z0-9]+", "", raw.casefold())
+
+
+def english_place_names(text: str) -> str:
+    """Noms anglais dans un discours anglais. Le français du film 2:30 n'y passe pas."""
+    out = text or ""
+    for src, dst in _EN_PLACE_NAMES:
+        out = out.replace(src, dst)
+    return out
+
+
+def heading_repeats_arrival(previous: str, sentence: str) -> bool:
+    """« heading for X » juste après une arrivée à X : la phrase ne se rejoue pas."""
+    headed = _HEADING_FOR_RE.search(sentence or "")
+    arrived = _ARRIVAL_AT_RE.search(previous or "")
+    if not headed or not arrived:
+        return False
+    dest = _place_key(headed.group(1))
+    place = _place_key(arrived.group(1))
+    if not dest or not place:
+        return False
+    return dest == place or dest in place or place in dest
+
+
+def polish_english_chapters(chapters: list[dict]) -> list[dict]:
+    out: list[dict] = []
+    prev = ""
+    for ch in chapters:
+        if not isinstance(ch, dict):
+            continue
+        kept: list[str] = []
+        for sent in _sentences(english_place_names(ch.get("text") or "")):
+            before = kept[-1] if kept else prev
+            if heading_repeats_arrival(before, sent):
+                continue
+            kept.append(sent)
+        prev = kept[-1] if kept else prev
+        if not kept:
+            continue
+        out.append({**ch, "text": " ".join(kept)})
+    return out
+
+
 _DEPART_SENT_RE = re.compile(
     r"\bquitte\b|\bquitté\b|\bdépart vers\b|\bleaves\b|\bleft\b|\bdeparture for\b|"
     r"\bmet le cap\b|\bsails for\b|\bprend la route\b|\btakes the road\b|\bby road\b|"
@@ -8838,6 +8899,18 @@ def _sentence_starts(text: str, sents: list[str]) -> list[int]:
     return starts
 
 
+def _english_candidate_is_french(text: str) -> bool:
+    """Une phrase française ne compte pas comme une rédaction anglaise."""
+    low = f" {(text or '').lower()} "
+    return any(
+        w in low
+        for w in (
+            " le ", " la ", " les ", " des ", " du ", " au ", " aux ", " puis ",
+            " milles ", " jours ", " vers ", " arrivée ", " départ ",
+        )
+    )
+
+
 def apply_written_guard(
     raw_text: str, written_text: str, facts: Any, *, lang: str = "fr",
 ) -> tuple[str, int, int]:
@@ -8856,6 +8929,7 @@ def apply_written_guard(
             not dropped
             and bool((filtered or "").strip())
             and written_names_subset(cand, facts)
+            and not ((lang or "fr").lower().startswith("en") and _english_candidate_is_french(cand))
         )
         if ok:
             kept.append(cand if cand.endswith((".", "!", "?", "…")) else f"{cand}.")
@@ -9390,6 +9464,8 @@ async def write_stored_plan(
         chapters_out.append({**ch, "text": guarded, "anchors": anchors})
         stats["rewritten"] += rw
         stats["fallen"] += fb
+    if _en(lang):
+        chapters_out = polish_english_chapters(chapters_out)
     stats["source"] = source_last
     if not any_llm or stats["rewritten"] <= 0:
         return None, stats
@@ -9568,20 +9644,40 @@ async def translate_written_plan(
         raw_ch = raw_chapters[i] if i < len(raw_chapters) else ch
         src = ch.get("text") or ""
         facts = chapter_structured_facts(raw_ch, lang="fr")
+        cap = min(1200, max(256, (len(src) // 2) + 80))
         text, source = await cascade(
             TRANSLATE_SYSTEM,
             f"French text:\n{src}",
             tier="fast",
             fallback="",
             facts=facts,
-            max_tokens=min(1200, max(256, (len(src) // 2) + 80)),
+            max_tokens=cap,
         )
+        # Un cache français (content vide ou phrase gardée telle quelle) ne compte pas.
+        # Second appel, consigne anglaise : nouvelle clé de cache, donc un vrai appel.
+        if (
+            not (text or "").strip()
+            or source in {"rules", "budget"}
+            or _english_candidate_is_french(text)
+        ):
+            text, source = await cascade(
+                TRANSLATE_SYSTEM + " Write the whole answer in English.",
+                f"French text:\n{src}",
+                tier="fast",
+                fallback="",
+                facts=facts,
+                max_tokens=cap,
+                lang="en",
+            )
+        raw_en = raw_ch.get("text") or ""
         if not (text or "").strip() or source in {"rules", "budget"}:
-            return None
-        guarded, rw, _fb = apply_written_guard(raw_ch.get("text") or src, text, facts, lang="en")
-        if rw <= 0:
-            return None
-        any_ok = True
+            guarded, rw = raw_en, 0
+        else:
+            guarded, rw, _fb = apply_written_guard(raw_en or src, text, facts, lang="en")
+            if rw <= 0 or _english_candidate_is_french(guarded):
+                guarded, rw = raw_en, 0
+        if rw > 0:
+            any_ok = True
         anchors = reanchor_written_chapter(raw_ch, guarded, "en")
         out.append({**raw_ch, "text": guarded, "anchors": anchors})
     if not any_ok:
