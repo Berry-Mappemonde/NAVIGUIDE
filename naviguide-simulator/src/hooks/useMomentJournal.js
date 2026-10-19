@@ -233,8 +233,33 @@ async function defaultMomentsFetch({ signal, voyageId = "official" } = {}) {
 }
 
 /**
- * Relance GET /moments tant que la liste est vide ou que le fetch a échoué.
- * Même recul que pollOfficialEta / nextEtaRetryMs. S'arrête dès qu'il y a des lignes.
+ * Route perso encore en cours : le serveur rend `preparing` avec un premier
+ * morceau tant que coverageNm n'a pas rattrapé totalNm. Le journal officiel
+ * est déjà `ready` : un seul GET dès que des lignes sont là.
+ */
+export function momentsStillPartial(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+  const status = String(body.status || "").toLowerCase();
+  if (!status || status === "ready") return false;
+  const coverage = Number(body.coverageNm);
+  const total = Number(body.totalNm);
+  return Number.isFinite(coverage) && Number.isFinite(total) && coverage < total;
+}
+
+/**
+ * Berry (Suivre) ne montre que le passé du tour. Suivre × ma route part
+ * aujourd'hui : la liste suit toute la traversée. `null` = pas de coupe.
+ */
+export function journalListUntil({ mode, until, suivreCustom = false } = {}) {
+  if (mode !== "follow" || suivreCustom) return null;
+  return until ?? null;
+}
+
+/**
+ * Relance GET /moments tant que la liste est vide, que le fetch a échoué,
+ * ou que la route perso est encore partielle (status ≠ ready et
+ * coverageNm < totalNm). Les lignes déjà reçues restent affichées.
+ * Même recul que pollOfficialEta / nextEtaRetryMs.
  */
 export async function pollOfficialMoments({
   fetchFn = defaultMomentsFetch,
@@ -243,6 +268,7 @@ export async function pollOfficialMoments({
   onUpdate,
 } = {}) {
   let attempt = 0;
+  let shown = [];
   while (!signal?.aborted) {
     let body = null;
     let errMsg = null;
@@ -253,20 +279,23 @@ export async function pollOfficialMoments({
       body = null;
       errMsg = err?.message || "error";
     }
+    const failed = body == null;
     const entries = parseOfficialMoments(body);
-    if (entries.length) {
-      onUpdate?.({ entries, error: null, source: "api" });
-      return entries;
+    if (entries.length) shown = entries;
+    const partial = !failed && momentsStillPartial(body);
+    if (shown.length && !failed && !partial) {
+      onUpdate?.({ entries: shown, error: null, source: "api" });
+      return shown;
     }
     onUpdate?.({
-      entries: [],
-      error: errMsg,
-      source: "none",
+      entries: shown,
+      error: shown.length ? null : errMsg,
+      source: shown.length ? "api" : "none",
     });
     await sleep(nextEtaRetryMs(attempt), signal);
     attempt += 1;
   }
-  return [];
+  return shown;
 }
 
 /**
@@ -279,6 +308,7 @@ export function useMomentJournal({
   incomingMoment = null,
   until = null,
   enabled = true,
+  suivreCustom = false,
 } = {}) {
   const local = mode === "simulation" || mode === "drawn";
   const [state, setState] = useState(() => ({
@@ -344,8 +374,10 @@ export function useMomentJournal({
   }, [enabled, local, routeId, incomingMoment]);
 
   const entries = useMemo(
-    () => visibleJournalEntries(state.entries, { until: mode === "follow" ? until : null }),
-    [state.entries, mode, until],
+    () => visibleJournalEntries(state.entries, {
+      until: journalListUntil({ mode, until, suivreCustom }),
+    }),
+    [state.entries, mode, until, suivreCustom],
   );
   const nowMoment = useMemo(
     () => (mode === "follow" ? momentAtOrBefore(state.entries, until) : null),
