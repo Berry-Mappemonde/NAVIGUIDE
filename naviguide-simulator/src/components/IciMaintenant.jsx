@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
+import { carnetPageHref, followCarnetLink } from "./CarnetDeBord.jsx";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
 import { hereWithoutFalseHighSeas } from "../engine/iciBriefing.js";
 import { EscaleSheet } from "./EscaleSheet.jsx";
@@ -493,6 +494,14 @@ export function IciMaintenant({
         hidden={view !== "journal"}
         className="mt-1 min-h-0 overflow-auto"
       >
+        <a
+          href={carnetPageHref(typeof window !== "undefined" ? window.location.search : "")}
+          onClick={(e) => followCarnetLink(e, carnetPageHref(window.location.search))}
+          data-testid="carnet-open"
+          className="inline-block text-[11px] leading-snug text-sky-300 hover:text-sky-100 no-underline mb-1"
+        >
+          {t("carnetOpen")}
+        </a>
         {Array.isArray(journalEntries) ? (
           <JournalList entries={journalEntries} onSeek={onSeek} lang={lang} days={journalDays} />
         ) : journal}

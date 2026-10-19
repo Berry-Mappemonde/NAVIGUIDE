@@ -288,6 +288,17 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
             testPrefix="skipper-profile"
             render={(p) => t(PROFILE_KEY[p])}
           />
+          <p className="mt-1 text-[10px] text-sky-200 italic leading-snug" data-testid="skipper-phrase">
+            {lang === "en" ? orders.phrase.en : orders.phrase.fr}
+          </p>
+          <p className="text-[10px] text-slate-300 leading-snug" data-testid="skipper-orders-line">
+            {lang === "en"
+              ? `Hs ${num(T.hsAlertM, lang, 1)} m · depth ${T.depthAlertM} m`
+              : `Hs ${num(T.hsAlertM, lang, 1)} m · fond ${T.depthAlertM} m`}
+          </p>
+          <p className="text-[10px] text-slate-400 leading-snug" data-testid="skipper-coastal-rule">
+            {t("skipperCoastalRule")}
+          </p>
         </div>
         <div data-testid="skipper-comfort">
           <div className="flex items-center justify-between mb-1">

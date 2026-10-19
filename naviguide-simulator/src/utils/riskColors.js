@@ -21,6 +21,13 @@ export const riskHex = {
   UNKNOWN:  "#94a3b8",
 };
 
+/** Pastilles de la légende des régimes (même teinte que le trait parcouru). */
+export const regimeLegendHex = Object.freeze({
+  hindcast: "#2dd4bf",
+  forecast: "#38bdf8",
+  climatology: "#c084fc",
+});
+
 /**
  * MapLibre step expression: colour route lines by anti_shipping_score.
  * score ≥ 0.80 → green (optimal)

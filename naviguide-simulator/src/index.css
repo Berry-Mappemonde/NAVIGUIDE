@@ -211,14 +211,28 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 }
 .catamaran-divicon--draw svg { filter: drop-shadow(0 0 5px rgba(250, 204, 21, 0.85)); }
 
+.light-mode {
+  --ng-light-fg: #0f172a;
+  --ng-light-muted: #334155;
+  --ng-light-bg: #f8fafc;
+  --ng-light-surface: #ffffff;
+  --ng-light-accent: #1d4ed8;
+  --ng-light-on-accent: #ffffff;
+  --ng-light-ok: #047857;
+  --ng-light-warn: #9a3412;
+  --ng-light-danger: #b91c1c;
+  --ng-light-link: #075985;
+  --ng-light-teal: #0f766e;
+  color: var(--ng-light-fg);
+}
 .light-mode .naviguide-sidebar-panel {
   background-color: rgb(248 250 252 / 0.98) !important;
-  color: rgb(15 23 42);
+  color: var(--ng-light-fg);
   border-color: rgb(191 219 254) !important;
 }
 .light-mode .naviguide-sidebar-toggle {
-  background-color: rgb(255 255 255 / 0.97) !important;
-  color: rgb(15 23 42) !important;
+  background-color: var(--ng-light-surface) !important;
+  color: var(--ng-light-fg) !important;
   border-color: rgb(148 163 184) !important;
 }
 .light-mode .naviguide-sidebar-panel [class*="bg-slate-950"],
@@ -244,13 +258,52 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 .light-mode .naviguide-sidebar-panel .text-white,
 .light-mode .naviguide-sidebar-panel [class*="text-slate-200"],
 .light-mode .naviguide-sidebar-panel [class*="text-slate-300"] {
-  color: rgb(15 23 42) !important;
+  color: var(--ng-light-fg) !important;
 }
 .light-mode .naviguide-sidebar-panel [class*="text-white/"],
 .light-mode .naviguide-sidebar-panel [class*="text-slate-400"],
 .light-mode .naviguide-sidebar-panel [class*="text-slate-500"],
 .light-mode .naviguide-sidebar-panel [class*="text-slate-600"] {
-  color: rgb(71 85 105) !important;
+  color: var(--ng-light-muted) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="bg-blue-600"],
+.light-mode .naviguide-sidebar-panel [class*="bg-sky-600"] {
+  background-color: var(--ng-light-accent) !important;
+  color: var(--ng-light-on-accent) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="bg-teal-700"] {
+  background-color: var(--ng-light-teal) !important;
+  color: var(--ng-light-on-accent) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="bg-blue-600"].text-white,
+.light-mode .naviguide-sidebar-panel [class*="bg-sky-600"].text-white,
+.light-mode .naviguide-sidebar-panel [class*="bg-teal-700"].text-white,
+.light-mode .naviguide-sidebar-panel [class*="bg-blue-600"] .text-white,
+.light-mode .naviguide-sidebar-panel [class*="bg-sky-600"] .text-white,
+.light-mode .naviguide-sidebar-panel [class*="bg-teal-700"] .text-white {
+  color: var(--ng-light-on-accent) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="text-green-"],
+.light-mode .naviguide-sidebar-panel [class*="text-emerald-"] {
+  color: var(--ng-light-ok) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="text-teal-"] {
+  color: var(--ng-light-teal) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="text-red-"],
+.light-mode .naviguide-sidebar-panel [class*="text-rose-"] {
+  color: var(--ng-light-danger) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="text-orange-"] {
+  color: var(--ng-light-warn) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="text-blue-4"],
+.light-mode .naviguide-sidebar-panel [class*="text-blue-5"] {
+  color: var(--ng-light-link) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="bg-teal-900"],
+.light-mode .naviguide-sidebar-panel [class*="bg-teal-800"] {
+  background-color: rgb(240 253 250 / 0.95) !important;
 }
 .light-mode .naviguide-departure-field input {
   background-color: rgb(255 255 255) !important;
@@ -296,8 +349,12 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 .light-mode .naviguide-sidebar-panel [class*="text-amber-"],
 .light-mode .naviguide-film-bar [class*="text-amber-"],
 .light-mode .naviguide-floating-card [class*="text-amber-"] { color: rgb(180 83 9) !important; }
+.light-mode .naviguide-sidebar-panel [class*="text-blue-1"],
 .light-mode .naviguide-sidebar-panel [class*="text-blue-2"],
-.light-mode .naviguide-sidebar-panel [class*="text-blue-3"] { color: rgb(29 78 216) !important; }
+.light-mode .naviguide-sidebar-panel [class*="text-blue-3"],
+.light-mode .naviguide-film-bar [class*="text-blue-1"],
+.light-mode .naviguide-film-bar [class*="text-blue-2"],
+.light-mode .naviguide-film-bar [class*="text-blue-3"] { color: rgb(29 78 216) !important; }
 .light-mode .naviguide-sidebar-panel [class*="bg-emerald-950"],
 .light-mode .naviguide-sidebar-panel [class*="bg-emerald-900"] { background-color: rgb(236 253 245 / 0.95) !important; }
 .light-mode .naviguide-sidebar-panel [class*="bg-sky-950"],
@@ -312,7 +369,31 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   color: rgb(15 23 42) !important;
   border-color: rgb(148 163 184) !important;
 }
-.light-mode .naviguide-sidebar-panel input::placeholder { color: rgb(100 116 139) !important; }
+.light-mode .naviguide-sidebar-panel input::placeholder { color: var(--ng-light-muted) !important; }
+.light-mode .naviguide-sidebar-panel [class*="bg-blue-600"],
+.light-mode .naviguide-sidebar-panel [class*="bg-sky-600"],
+.light-mode .naviguide-sidebar-panel button[class*="bg-cyan-6"],
+.light-mode .naviguide-sidebar-panel button[class*="bg-cyan-7"],
+.light-mode .naviguide-film-bar [class*="bg-cyan-6"],
+.light-mode .naviguide-film-bar [class*="bg-cyan-7"],
+.light-mode .naviguide-film-bar [class*="bg-sky-6"],
+.light-mode .naviguide-film-bar [class*="bg-sky-7"] {
+  background-color: var(--ng-light-accent) !important;
+  color: var(--ng-light-on-accent) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="bg-teal-700"] {
+  background-color: var(--ng-light-teal) !important;
+  color: var(--ng-light-on-accent) !important;
+}
+.light-mode .naviguide-film-bar [class*="bg-rose-6"],
+.light-mode .naviguide-film-bar [class*="bg-rose-7"] {
+  background-color: var(--ng-light-danger) !important;
+  color: var(--ng-light-on-accent) !important;
+}
+.light-mode .naviguide-film-bar [class*="bg-amber-6"] {
+  background-color: var(--ng-light-warn) !important;
+  color: var(--ng-light-on-accent) !important;
+}
 .light-mode .naviguide-film-bar [class*="bg-slate-950"] { background-color: rgb(255 255 255 / 0.96) !important; }
 
 .sidebar-scroll { scrollbar-width: thin; scrollbar-color: rgb(71 85 105) transparent; }

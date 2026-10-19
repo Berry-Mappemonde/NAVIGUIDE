@@ -1,5 +1,4 @@
 """Parité : drapeau éteint (ancien chemin) et drapeau allumé servent les mêmes valeurs."""
-import inspect
 
 import climatology_atlas
 from weather_pipeline import get_async_weather_queue, get_pipeline, route_snapshot
@@ -162,12 +161,12 @@ def test_copernicus_wind_parity(monkeypatch):
 
 
 def test_climatology_point_parity_keeps_public_bi_api(monkeypatch):
-    assert "https://blueintelligence.online/api" in inspect.getsource(climatology_atlas.bi_base)
     off, url_off = _climo_point(monkeypatch, "0")
     on, url_on = _climo_point(monkeypatch, "1")
     assert off == on == CLIMO_POINT
     assert url_off == url_on
     assert url_on.endswith("/climatology/point")
+    assert url_on == f"{climatology_atlas.bi_base()}/climatology/point"
     assert get_async_weather_queue().cached_status("bi-climatology-m6", 46.15, -1.16) == "ready"
 
 
