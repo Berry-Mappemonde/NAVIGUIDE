@@ -142,8 +142,11 @@ export function filmSourceKey(source, reviewedBy) {
   if ((s.includes("reviewed") && s.includes("ultra")) || (reviewed.includes("ultra") && isWrittenFilmSource(source))) {
     return "storySourceSuperReviewed";
   }
+  if (s === "openrouter" || s.startsWith("openrouter")) return "storySourceOpenrouter";
+  if (s === "claude" || s.startsWith("claude")) return "storySourceClaude";
+  if (/gpt-oss|nvidia-gpt|\bnim\b/.test(s) || s.startsWith("nvidia-")) return "storySourceNim";
   if (isWrittenFilmSource(source)) return "storySourceSuper";
-  return FILM_SOURCE_I18N[source] || "storySourceRules";
+  return FILM_SOURCE_I18N[s] || "storySourceRules";
 }
 
 /**
@@ -162,6 +165,8 @@ export function resolveServedFilm(data, requestedStyle) {
         hasWritten: true,
         effectiveStyle: "written",
         source: data?.source || WRITTEN_FILM_SOURCE,
+        reviewedBy: data?.reviewedBy || "",
+        model: data?.model || "",
         applyPlan: true,
       };
     }
@@ -170,6 +175,8 @@ export function resolveServedFilm(data, requestedStyle) {
       hasWritten: false,
       effectiveStyle: "raw",
       source: "rules",
+      reviewedBy: "",
+      model: "",
       applyPlan: true,
     };
   }
@@ -177,6 +184,8 @@ export function resolveServedFilm(data, requestedStyle) {
     updateHasWritten: false,
     hasWritten: null,
     effectiveStyle: "raw",
+    reviewedBy: "",
+    model: "",
     source: data?.source || "rules",
     applyPlan: true,
   };
@@ -1001,6 +1010,8 @@ export function useReplay({
   const [voiceRate, setVoiceRate] = useState(1);
   const [progress, setProgress] = useState(0);
   const [filmSource, setFilmSource] = useState("rules");
+  const [filmReviewedBy, setFilmReviewedBy] = useState("");
+  const [filmWriting, setFilmWriting] = useState(false);
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
   const [estimatedSeconds, setEstimatedSeconds] = useState(0);
@@ -1221,6 +1232,7 @@ export function useReplay({
       remotePlanRef.current = data;
       remotePlanKeyRef.current = q;
       setFilmSource(resolved.source);
+      setFilmReviewedBy(resolved.reviewedBy || "");
       applyEstimates(data);
       applyStory(data);
     };
@@ -1254,6 +1266,8 @@ export function useReplay({
       remotePlanRef.current = null;
       setHasWritten(false);
       setFilmSource("rules");
+      setFilmReviewedBy("");
+      setFilmWriting(false);
       setEstimatedSeconds(0);
       setVariantEstimates(null);
       setFilmParagraphs([]);
@@ -1450,6 +1464,7 @@ export function useReplay({
     );
     const chapters = picked.chapters;
     setFilmSource(picked.source || local.source || "rules");
+    setFilmReviewedBy("");
     const userBudget = Number(targetSeconds) > 0 ? Number(targetSeconds) : 0;
     budgetRef.current = userBudget;
     // Case décochée : pas de budget imposé, mais le plan tient 2:30.
@@ -1513,6 +1528,10 @@ export function useReplay({
           text: c.text || "",
           fromName: c.fromName || "",
           toName: c.toName || "",
+          fromLat: c.fromLat,
+          fromLon: c.fromLon,
+          toLat: c.toLat,
+          toLon: c.toLon,
           tA: c.tA,
           tB: c.tB,
         })),
@@ -2073,16 +2092,19 @@ export function useReplay({
 
   const chooseFilmStyle = useCallback((next) => {
     if (next !== "written") {
+      setFilmWriting(false);
       setFilmStyle("raw");
       return;
     }
     if (hasWritten) {
+      setFilmWriting(false);
       setFilmStyle("written");
       return;
     }
     if (!isOfficialFilmVoyage(voyageId)) return;
     const path = filmRequestPath(voyageId);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
+    setFilmWriting(true);
     fetch(`${API}${path}?${q}`, { method: "POST" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -2092,9 +2114,11 @@ export function useReplay({
           setHasWritten(true);
           setFilmStyle("written");
           setFilmSource(resolved.source);
+          setFilmReviewedBy(resolved.reviewedBy || "");
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setFilmWriting(false));
   }, [hasWritten, lang, targetSeconds, t0, voyageId]);
 
   return {
@@ -2134,6 +2158,8 @@ export function useReplay({
     onSentenceEnd,
     isVoiceHeld,
     filmSource,
+    filmReviewedBy,
+    filmWriting,
     filmStyle,
     setFilmStyle: chooseFilmStyle,
     hasWritten,

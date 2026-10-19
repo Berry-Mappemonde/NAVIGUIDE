@@ -1,9 +1,13 @@
 name: ZAP baseline — simulateur (mensuel)
 
 # Sécurité P1 : un passage OWASP ZAP « baseline » (passif, sans
-# attaque) sur la prod du simulateur, le 1er de chaque mois et à la demande.
-# Ne bloque rien : le rapport est attaché en artefact et une issue GitHub
-# est ouverte / mise à jour avec les alertes trouvées.
+# attaque) sur https://naviguide.fr, le 1er de chaque mois et à la demande.
+# Ne bloque rien : le rapport est attaché en artefact. Les alertes sont
+# écrites sur l'issue transférée
+# https://github.com/Berry-Mappemonde/NAVIGUIDE/issues/2
+# Le titre d'issue reste « ZAP baseline — simulateur » : l'action met à
+# jour cette issue au lieu d'en ouvrir une autre. Pas de scan actif.
+# Le passage à la main (workflow_dispatch) reste au propriétaire.
 
 on:
   schedule:
@@ -20,7 +24,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: ZAP baseline sur https://naviguide.fr
+      - name: ZAP baseline sur https://naviguide.fr (issue #2)
         uses: zaproxy/action-baseline@v0.15.0
         with:
           target: "https://naviguide.fr"

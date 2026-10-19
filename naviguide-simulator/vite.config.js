@@ -28,6 +28,8 @@ const proxy = {
       "/voyage": { target: API, changeOrigin: true },
       "/escale": { target: API, changeOrigin: true },
       "/logbook": { target: API, changeOrigin: true },
+      // Film « Revoir » : ZEE / haute mer du point (server/main.py GET /zee/at).
+      "/zee": { target: API, changeOrigin: true },
       // Climatologie BI : par le serveur local (server/bi_proxy.py, cache
       // disque, une requête par cellule par machine), jamais la prod en direct.
       // Incident 2026-09-21 : dev Vite + Playwright → 600-800 req/s

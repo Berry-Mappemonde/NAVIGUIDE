@@ -415,6 +415,15 @@ describe("usePlanReview — conseil", () => {
 
   it("prend la jambe la plus chargée et sondé /advice?leg=", () => {
     assert.equal(pickHeaviestLegIdx([{ alertCount: 2 }, { alertCount: 11 }]), 1);
+    const now = Date.parse("2026-07-01T00:00:00Z");
+    const legs = [
+      { alertCount: 2, departIso: "2026-08-01T08:00:00Z" },
+      { alertCount: 11, departIso: "2026-06-01T08:00:00Z" },
+      { alertCount: 5, departIso: "2026-09-01T08:00:00Z" },
+    ];
+    assert.equal(pickHeaviestLegIdx(legs, now), 2, "la jambe déjà partie est ignorée");
+    assert.equal(pickHeaviestLegIdx([{ alertCount: 9, departIso: "2026-06-01T08:00:00Z" }], now), -1);
+    assert.equal(reviewAdviceKey({ legs: [{ from: "A", to: "B" }] }, -1), "");
     assert.equal(isAdviceDone(ADVICE_FIXTURE), true);
     assert.match(src, /\/voyage\/official\/advice\?/);
     assert.match(src, /pollOfficialAdvice/);
