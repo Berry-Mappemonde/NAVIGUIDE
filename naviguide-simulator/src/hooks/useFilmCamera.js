@@ -17,6 +17,61 @@ function unwrapPair(prev, lon) {
   return cameraLngForBoat(lon, prev);
 }
 
+function revealQuietTiles(map) {
+  if (!map || typeof map.eachLayer !== "function") return;
+  map.eachLayer((layer) => {
+    const url = layer?._url || layer?._naviguideUrl;
+    if (!url) return;
+    const tiles = layer._tiles;
+    if (tiles && typeof tiles === "object") {
+      for (const tile of Object.values(tiles)) {
+        const el = tile?.el || tile;
+        if (!el?.style || el.style.visibility !== "hidden") continue;
+        if (el.complete && el.naturalWidth > 0) el.style.visibility = "";
+      }
+    }
+    if (typeof layer.redraw === "function") {
+      try { layer.redraw(); } catch { /* couche déjà retirée */ }
+    }
+  });
+}
+
+function invalidateFilmMap(map) {
+  if (!map || typeof map.invalidateSize !== "function") return;
+  try {
+    map.invalidateSize({ animate: false, pan: false });
+  } catch {
+    try { map.invalidateSize(); } catch { /* carte détruite */ }
+  }
+  revealQuietTiles(map);
+}
+
+/** Après Stop : recalcule la taille et réaffiche les tuiles complètes cachées. */
+export function releaseFilmMap(sceneOrMap) {
+  const map = sceneOrMap?.map && typeof sceneOrMap.map.invalidateSize === "function"
+    ? sceneOrMap.map
+    : sceneOrMap;
+  if (!map || typeof map.invalidateSize !== "function") return false;
+  invalidateFilmMap(map);
+  const raf = typeof requestAnimationFrame === "function" ? requestAnimationFrame : null;
+  if (raf) raf(() => raf(() => invalidateFilmMap(map)));
+  return true;
+}
+
+/** Vue Suivre : on ne recentre pas sur le bateau du film. */
+export function restoreFollowView(sceneOrMap, live) {
+  releaseFilmMap(sceneOrMap);
+  const lat = Number(live?.lat);
+  const lon = Number(live?.lon);
+  return {
+    view: "suivre",
+    follow: true,
+    movedToFilm: false,
+    lat: Number.isFinite(lat) ? lat : null,
+    lon: Number.isFinite(lon) ? lon : null,
+  };
+}
+
 /** Suit le bateau seulement si follow (cinéma). Le zoom utilisateur n’est pas volé. */
 export function useFilmCamera({
   mapRef,

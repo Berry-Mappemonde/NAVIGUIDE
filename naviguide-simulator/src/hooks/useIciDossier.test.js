@@ -7,6 +7,7 @@ import { haversineNm, wrapLon } from "../utils/geo.js";
 import {
   MOVE_NM,
   countIciFetchesAlongTrack,
+  briefingFollowsReplay,
   filmStaleBagDecision,
   iciSearchParams,
   isStaleBag,
@@ -120,5 +121,15 @@ describe("useIciDossier — sac live pendant le film", () => {
     assert.equal(decision.labelToday, false);
     assert.match(src, /filmStaleBagDecision\(\{ playing: true, bag: held\.dossier, boat \}\)/);
     assert.match(src, /todayPosition: decision\.labelToday/);
+    const far = filmStaleBagDecision({ playing: true, bag: fiji, boat: laRochelle });
+    const followed = briefingFollowsReplay({
+      decision: far,
+      replayText: "Le bateau navigue dans les eaux de la Nouvelle-Calédonie.",
+    });
+    assert.equal(followed.briefing.includes("Nouvelle-Calédonie"), true);
+    assert.deepEqual(followed.briefingSegments, []);
+    assert.equal(briefingFollowsReplay({ decision: far, replayText: "" }), null);
+    const near = filmStaleBagDecision({ playing: true, bag: fiji, boat: nearFiji });
+    assert.equal(briefingFollowsReplay({ decision: near, replayText: "ailleurs" }), null);
   });
 });

@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt, sentenceSpan, stepFilmTime } from "../engine/replay.js";
 import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmCharRatesStable, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { briefingForReplayPosition, replayPlace } from "./useReplay.js";
 import { VOICE_LEAD_MS, VOICE_MS_PER_CHAR } from "../utils/speak.js";
 import { shouldStopSpeakingOnChapterChange } from "./useReplayVoice.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
@@ -571,6 +572,40 @@ describe("useReplay — interpolation jusqu'au dernier chapitre", () => {
     assert.match(late.card.title, /Ajaccio/);
     assert.equal(approachStopEvent(chapters[1], { frac: 0.2 }), null);
     assert.equal(approachStopEvent({ idx: 0, toName: "", text: "" }, { frac: 0.99 }), null);
+  });
+});
+
+describe("FM1 — briefing et Stop", () => {
+  it("le briefing suit la position rejouée et Stop rend la vue Suivre", () => {
+    const now = "Le bateau est aujourd’hui à Nouméa.";
+    const stopped = briefingForReplayPosition({ active: false, nowBriefing: now, replayText: "ailleurs" });
+    assert.equal(stopped.view, "suivre");
+    assert.equal(stopped.briefing, now);
+    assert.equal(stopped.follows, false);
+    const live = { lat: -22.27, lon: 166.44 };
+    assert.deepEqual(replayPlace(true, live), { lat: live.lat, lon: live.lon });
+    const playing = briefingForReplayPosition({
+      active: true,
+      live,
+      nowBriefing: now,
+      replayText: "Le bateau navigue dans les eaux de la Nouvelle-Calédonie.",
+    });
+    assert.equal(playing.view, "suivre");
+    assert.equal(playing.follows, true);
+    assert.equal(playing.lat, live.lat);
+    assert.match(playing.briefing, /Nouvelle-Calédonie/);
+    const hidden = briefingForReplayPosition({ active: true, live, nowBriefing: now, replayText: "  " });
+    assert.equal(hidden.hidden, true);
+    assert.equal(hidden.briefing, "");
+    const stopFn = hook.slice(hook.indexOf("const stop = useCallback"));
+    assert.ok(stopFn.indexOf("stoppingRef.current = true") < stopFn.indexOf("applyReplayStop("));
+    assert.ok(stopFn.indexOf("finishedRef.current = true") < stopFn.indexOf("applyReplayStop("));
+    assert.match(stopFn, /exitDocumentFullscreen/);
+    assert.match(stopFn, /restoreFollowView/);
+    assert.match(app, /setFilmFullscreen\(false\)/);
+    assert.match(app, /setCameraFollow\(true\)/);
+    assert.match(app, /VIEW_SUIVRE/);
+    assert.match(app, /replay\.stop\(\)/);
   });
 });
 

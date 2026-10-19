@@ -5463,6 +5463,23 @@ def test_vb1_lightning_can_drop_the_route_id(monkeypatch):
     assert out["chars"] <= film_char_budget(150)
 
 
+def test_fm1_short_variants_fit_char_budget():
+    """2:30 et 3:00 tiennent dans film_char_budget. Une seule révision avec ED2."""
+    from official_store import FILM_SCRIPT_REV
+
+    assert FILM_SCRIPT_REV == "vs1-ed2"
+    short = _rich_raw(150)
+    mid = _rich_raw(180)
+    assert short["chars"] > 0
+    assert mid["chars"] > 0
+    assert short["chars"] <= film_char_budget(150)
+    assert mid["chars"] <= film_char_budget(180)
+    assert short["targetSeconds"] == 150
+    assert mid["targetSeconds"] == 180
+    if mid["chars"] > film_char_budget(150):
+        assert short["chars"] < mid["chars"]
+
+
 def test_vb1_suffix_does_not_rerun_vl_select(monkeypatch):
     """Le suffixe du cache de route change trim_key, pas vl_key."""
     monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
