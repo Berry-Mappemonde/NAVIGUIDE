@@ -71,6 +71,44 @@ async function commandBands(page) {
   });
 }
 
+function panelLocator(page, side) {
+  return page.locator(side === "left"
+    ? ".naviguide-sidebar-drawer"
+    : ".naviguide-sidebar-panel.right-0").first();
+}
+
+async function panelOpen(page, side) {
+  const cls = await panelLocator(page, side).getAttribute("class");
+  if (!cls) return false;
+  return side === "left"
+    ? !cls.includes("-translate-x-full")
+    : !cls.includes("translate-x-full");
+}
+
+// Quitter le cinéma rouvre les deux panneaux (état enregistré au départ).
+// On amène le panneau à l'état voulu au lieu de supposer qu'il est fermé.
+async function setPanel(page, side, open) {
+  const toggle = page.locator(side === "left"
+    ? ".naviguide-sidebar-toggle--left"
+    : ".naviguide-sidebar-toggle--right");
+  if (await panelOpen(page, side) !== open) {
+    await toggle.click();
+    await expect.poll(() => panelOpen(page, side), { timeout: 5_000 }).toBe(open);
+  }
+  if (side === "left") {
+    await expect(toggle).toHaveAttribute("aria-expanded", open ? "true" : "false");
+  }
+}
+
+async function leftDrawerBox(page) {
+  const drawer = panelLocator(page, "left");
+  await expect.poll(async () => {
+    const box = await drawer.boundingBox();
+    return box ? box.x : -999;
+  }).toBeGreaterThanOrEqual(-1);
+  return drawer.boundingBox();
+}
+
 const iphone13 = devices["iPhone 13"];
 
 test.describe("iPhone 13 — tiroir et barre sur deux lignes", () => {
@@ -97,40 +135,40 @@ test.describe("iPhone 13 — tiroir et barre sur deux lignes", () => {
     await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
     await leaveCinema(page);
 
-    const closed = await commandBands(page);
-    expect(closed.overflow, `commande hors écran : ${JSON.stringify(closed)}`).toBe(false);
-    expect(closed.rows, `la barre doit tenir sur deux lignes : ${JSON.stringify(closed)}`).toBe(2);
-    expect(closed.bar.x).toBeLessThanOrEqual(12);
-    expect(closed.bar.x + closed.bar.w).toBeGreaterThanOrEqual(closed.vw - 12);
-    expect(closed.bar.y + closed.bar.h).toBeLessThanOrEqual(closed.vh + 1);
-
     const toggle = page.locator(".naviguide-sidebar-toggle--left");
     await expect(toggle).toBeVisible();
-    await expect(toggle).toHaveAttribute("aria-expanded", "false");
-    const toggleBox = await toggle.boundingBox();
-    expect(toggleBox.x).toBeGreaterThanOrEqual(0);
-    expect(toggleBox.x + toggleBox.width).toBeLessThanOrEqual(390);
-    await shot(page, "01-iphone-barre.webp");
-
-    await toggle.click();
-    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await setPanel(page, "left", true);
+    await setPanel(page, "right", true);
     await expect(page.getByTestId("ici-maintenant")).toBeVisible({ timeout: 10_000 });
-    const panel = await page.locator(".naviguide-sidebar-drawer").boundingBox();
+
+    const openBands = await commandBands(page);
+    expect(openBands.overflow, `commande hors écran tiroir ouvert : ${JSON.stringify(openBands)}`).toBe(false);
+    expect(openBands.rows, `la barre doit tenir sur deux lignes : ${JSON.stringify(openBands)}`).toBe(2);
+    expect(openBands.bar.x).toBeLessThanOrEqual(12);
+    expect(openBands.bar.x + openBands.bar.w).toBeGreaterThanOrEqual(openBands.vw - 12);
+    expect(openBands.bar.y + openBands.bar.h).toBeLessThanOrEqual(openBands.vh + 1);
+    expect(openBands.bar.w).toBeGreaterThan(300);
+
+    const panel = await leftDrawerBox(page);
     const bar = await page.getByTestId("film-bar").boundingBox();
     expect(panel.width).toBeGreaterThan(200);
     expect(panel.x + panel.width).toBeLessThanOrEqual(390);
     expect(panel.y + panel.height, "le tiroir recouvre la barre").toBeLessThanOrEqual(bar.y + 1);
     expect(boxesOverlap(panel, bar), "tiroir et barre se chevauchent").toBe(false);
-    const openBands = await commandBands(page);
-    expect(openBands.overflow, `commande hors écran tiroir ouvert : ${JSON.stringify(openBands)}`).toBe(false);
-    expect(openBands.rows).toBe(2);
-    expect(openBands.bar.w).toBeGreaterThan(300);
-    const openToggle = await toggle.boundingBox();
-    expect(openToggle.x + openToggle.width).toBeLessThanOrEqual(390);
-    expect(openToggle.x).toBeGreaterThanOrEqual(panel.x + panel.width - 2);
+    await expect.poll(async () => {
+      const openToggle = await toggle.boundingBox();
+      const drawer = await panelLocator(page, "left").boundingBox();
+      if (!openToggle || !drawer) return false;
+      return openToggle.x + openToggle.width <= 390
+        && openToggle.x >= drawer.x + drawer.width - 2;
+    }).toBe(true);
     await shot(page, "02-iphone-tiroir.webp");
 
-    await page.locator(".naviguide-sidebar-toggle--right").click();
+    const right = panelLocator(page, "right");
+    await expect.poll(async () => {
+      const box = await right.boundingBox();
+      return Boolean(box && box.x < 200 && box.x + box.width <= 391);
+    }).toBe(true);
     const layers = page.getByTestId("layers-drawer");
     await expect(layers.locator("summary")).toBeVisible({ timeout: 10_000 });
     await layers.locator("summary").scrollIntoViewIfNeeded();
@@ -138,9 +176,9 @@ test.describe("iPhone 13 — tiroir et barre sur deux lignes", () => {
     const zee = layers.getByRole("button", { name: "ZEE", exact: true });
     await expect(zee).toBeVisible({ timeout: 10_000 });
     await zee.scrollIntoViewIfNeeded();
-    const right = await page.locator(".naviguide-sidebar-panel.right-0").boundingBox();
+    const rightBox = await right.boundingBox();
     const bar2 = await page.getByTestId("film-bar").boundingBox();
-    expect(boxesOverlap(right, bar2), "panneau des calques et barre se chevauchent").toBe(false);
+    expect(boxesOverlap(rightBox, bar2), "panneau des calques et barre se chevauchent").toBe(false);
     const zeeBox = await zee.boundingBox();
     expect(zeeBox.x).toBeGreaterThanOrEqual(0);
     expect(zeeBox.x + zeeBox.width).toBeLessThanOrEqual(390);
@@ -148,6 +186,18 @@ test.describe("iPhone 13 — tiroir et barre sur deux lignes", () => {
     expect(zeeBox.y + zeeBox.height).toBeLessThanOrEqual(844);
     expect(boxesOverlap(zeeBox, bar2), "ZEE recouvre la barre").toBe(false);
     await shot(page, "03-iphone-calques.webp");
+
+    await setPanel(page, "left", false);
+    const closedToggle = await toggle.boundingBox();
+    expect(closedToggle.x).toBeGreaterThanOrEqual(0);
+    expect(closedToggle.x + closedToggle.width).toBeLessThanOrEqual(390);
+    const closed = await commandBands(page);
+    expect(closed.overflow, `commande hors écran : ${JSON.stringify(closed)}`).toBe(false);
+    expect(closed.rows, `la barre doit tenir sur deux lignes : ${JSON.stringify(closed)}`).toBe(2);
+    expect(closed.bar.x).toBeLessThanOrEqual(12);
+    expect(closed.bar.x + closed.bar.w).toBeGreaterThanOrEqual(closed.vw - 12);
+    expect(closed.bar.y + closed.bar.h).toBeLessThanOrEqual(closed.vh + 1);
+    await shot(page, "01-iphone-barre.webp");
   });
 
   test("NAV-M-03 : Tab montre le focus, Échap quitte le plein écran", async ({ page }) => {
@@ -237,6 +287,8 @@ test.describe("bureau inchangé", () => {
     await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
     await leaveCinema(page);
 
+    await setPanel(page, "left", false);
+    await setPanel(page, "right", false);
     const commands = page.getByTestId("film-commands");
     await expect(commands).toBeVisible();
     const display = await commands.evaluate((el) => getComputedStyle(el).display);
@@ -245,13 +297,16 @@ test.describe("bureau inchangé", () => {
     expect(resting.rows, `le bureau au repos tient sur une rangée : ${JSON.stringify(resting)}`).toBe(1);
     expect(resting.overflow).toBe(false);
 
-    await page.locator(".naviguide-sidebar-toggle--left").click();
-    await page.locator(".naviguide-sidebar-toggle--right").click();
-    await expect(page.locator(".naviguide-sidebar-toggle--left")).toHaveAttribute("aria-expanded", "true");
+    await setPanel(page, "left", true);
+    await setPanel(page, "right", true);
+    await expect.poll(async () => {
+      const box = await page.getByTestId("film-bar").boundingBox();
+      return box ? box.x : 0;
+    }).toBeGreaterThanOrEqual(300);
     const bar = await page.getByTestId("film-bar").boundingBox();
     expect(bar.x).toBeGreaterThanOrEqual(300);
     expect(bar.x + bar.width).toBeLessThanOrEqual(1280 - 300);
-    const panel = await page.locator(".naviguide-sidebar-drawer").boundingBox();
+    const panel = await leftDrawerBox(page);
     expect(panel.height).toBeGreaterThan(700);
     expect(boxesOverlap(panel, bar)).toBe(false);
     await shot(page, "04-bureau.webp");
