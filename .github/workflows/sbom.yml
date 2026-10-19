@@ -1,0 +1,41 @@
+name: SBOM
+
+# Inventaire CycloneDX du dépôt à chaque push sur main, et sur les pull
+# requests pour que le check soit vert avant le merge. Workflow séparé,
+# non requis. L'artefact téléchargeable s'appelle sbom.cdx.json.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sbom:
+    name: CycloneDX
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-artifact: false
+
+      - name: Upload sbom.cdx.json
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom.cdx.json
+          path: sbom.cdx.json
+          retention-days: 30
+          if-no-files-found: error
