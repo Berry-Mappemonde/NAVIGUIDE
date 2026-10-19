@@ -632,6 +632,15 @@ export default {
   layerFicheKindGlider: "Planeur sous-marin",
   layerFicheClose: "Fermer la fiche",
 
+  // SO1
+  skipperCoastalRule: "Côtier conseillé pour < 12 m",
+  exportNeedsRoute: "Aucune route à exporter",
+  exportKmlFollow: "KML de la route en Suivre",
+  carnetTitle: "Carnet de bord",
+  carnetStory: "Récit",
+  carnetJournal: "Journal",
+  carnetOpen: "Carnet de bord",
+  carnetBack: "Retour à la carte",
   // DR1 — Tracer à J0 : départ à terre, jamais « haute mer ».
   iciDepartureRoadTransfer: "Départ : Saint-Maur (Indre), transfert routier vers La Rochelle",
   // FV2

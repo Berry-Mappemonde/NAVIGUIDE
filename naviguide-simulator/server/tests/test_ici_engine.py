@@ -4,7 +4,6 @@ import math
 import httpx
 
 from ici_engine import (
-    BI_LIVE_API,
     FRENCH_EEZ_MRGID,
     PEARL_REV,
     amp_layer_sig,
@@ -195,8 +194,8 @@ def test_nearest_places_caps_and_prefers_props_latlon():
 def test_bi_base_defaults_to_live(monkeypatch):
     from ici_engine import bi_base
 
-    monkeypatch.delenv("BI_API_URL", raising=False)
-    assert bi_base() == BI_LIVE_API
+    monkeypatch.setenv("BI_API_URL", "https://blueintelligence.online/api")
+    assert bi_base() == "https://blueintelligence.online/api"
     monkeypatch.setenv("BI_API_URL", "http://127.0.0.1:8001/api")
     assert bi_base() == "http://127.0.0.1:8001/api"
 
