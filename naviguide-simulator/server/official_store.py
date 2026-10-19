@@ -1348,6 +1348,11 @@ def _bounded_sleep_worker(seconds: float, queue) -> None:
     queue.put("done")
 
 
+def _bounded_blob_worker(nbytes: int, queue) -> None:
+    """Cible de test : un plan déjà prêt, plus gros que le tampon du tube."""
+    queue.put(("ok", {"chapters": [{"text": "x" * int(nbytes)}]}))
+
+
 def _film_variant_worker(lang: str, seconds: int, timeout_s: float, queue) -> None:
     """Un processus neuf, sans la boucle du parent. Une variante, un délai."""
     os.environ["NAVIGUIDE_OFFICIAL_WORKER"] = "0"
@@ -1370,8 +1375,13 @@ def run_bounded_process(target, args: tuple, timeout_s: float):
 
     Retourne `(fini, valeur)`. `fini` est faux si le délai a coupé le processus.
     Le pid protégé du calcul déjà en cours n'est jamais signalé.
+
+    La file est lue pendant que le fils vit. L'attendre d'abord bloque :
+    un plan déjà calculé plus gros que le tampon du tube (~65 Ko) empêche
+    le fils de quitter, le délai le tue, et les chapitres sont perdus.
     """
     import multiprocessing  # noqa: PLC0415
+    import queue as queue_mod  # noqa: PLC0415
 
     server = str(Path(__file__).resolve().parent)
     old_path = os.environ.get("PYTHONPATH")
@@ -1379,8 +1389,8 @@ def run_bounded_process(target, args: tuple, timeout_s: float):
     os.environ["PYTHONPATH"] = server if not old_path else server + os.pathsep + old_path
     os.environ["NAVIGUIDE_OFFICIAL_WORKER"] = "0"
     ctx = multiprocessing.get_context("spawn")
-    queue = ctx.Queue()
-    proc = ctx.Process(target=target, args=(*args, queue), daemon=True)
+    pipe = ctx.Queue()
+    proc = ctx.Process(target=target, args=(*args, pipe), daemon=True)
     try:
         proc.start()
     finally:
@@ -1393,21 +1403,38 @@ def run_bounded_process(target, args: tuple, timeout_s: float):
         else:
             os.environ["NAVIGUIDE_OFFICIAL_WORKER"] = old_worker
     try:
-        proc.join(timeout_s)
-        if proc.is_alive():
-            _stop_spawned(proc)
-            return False, None
-        try:
-            value = queue.get(timeout=2)
-        except Exception:
-            value = None
+        deadline = time.monotonic() + float(timeout_s)
+        value = None
+        got = False
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                value = pipe.get(timeout=min(0.2, remaining))
+                got = True
+                break
+            except queue_mod.Empty:
+                if not proc.is_alive():
+                    break
+        if not got:
+            try:
+                value = pipe.get(timeout=0.2)
+                got = True
+            except queue_mod.Empty:
+                got = False
+        if not got:
+            if proc.is_alive():
+                return False, None
+            return True, None
+        proc.join(2)
         return True, value
     finally:
         if proc.is_alive():
             _stop_spawned(proc)
         try:
-            queue.close()
-            queue.cancel_join_thread()
+            pipe.close()
+            pipe.cancel_join_thread()
         except Exception:
             pass
 

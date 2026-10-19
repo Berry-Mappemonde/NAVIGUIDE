@@ -1114,6 +1114,24 @@ def test_run_bounded_process_stops_a_hung_variant():
     assert time.monotonic() - t0 < 8
 
 
+def test_run_bounded_process_returns_a_plan_bigger_than_the_pipe():
+    """Un plan déjà calculé, plus gros que le tampon du tube, doit être lu.
+
+    L'ancienne attente du fils avant la file tuait ce plan au délai
+    (un 150 s du stock dépasse déjà ~70 Ko une fois sérialisé).
+    """
+    import time
+
+    t0 = time.monotonic()
+    finished, value = official_store.run_bounded_process(
+        official_store._bounded_blob_worker, (80_000,), 3.0,
+    )
+    assert finished is True
+    assert time.monotonic() - t0 < 3
+    assert isinstance(value, tuple) and value[0] == "ok"
+    assert len(value[1]["chapters"][0]["text"]) == 80_000
+
+
 def test_prepare_forces_film_once_and_accepts_one_variant(tmp_path, monkeypatch):
     import importlib.util
     import sys
