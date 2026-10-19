@@ -425,6 +425,38 @@ def test_empty_reasoning_response_is_still_counted(monkeypatch):
     _assert_write_usage(501, 17)
 
 
+def test_estimate_prints_points_and_images(monkeypatch, capsys, tmp_path):
+    """--estimate affiche points et images. L'empreinte ne les contient pas."""
+    _forbid_network(monkeypatch)
+    monkeypatch.setenv(one_shot.ENV_DIR, str(tmp_path / "one-shot"))
+    code = one_shot.main(["--job", "vl_route_bm", "--estimate"])
+    out = capsys.readouterr().out
+    assert code == 0
+    est = one_shot.build_estimate("vl_route_bm")
+    assert "points" not in est
+    assert "images" not in est
+    assert f"calls: {est['calls']}" in out
+    assert "points: 29" in out
+    assert "images: 29" in out
+    assert "tiles_fetched: 0" in out
+    assert "escale=17" in out
+    assert "leg=12" in out
+    assert f"fingerprint: {est['fingerprint']}" in out
+    assert not (tmp_path / "one-shot").exists()
+
+
+def test_ici_bag_offers_a_buoy_and_ignores_other_stations():
+    assert vl_route.ids_from_ici_bag({
+        "science": {"nearby": [{"name": "Station", "source": "buoy", "kind": "mooring"}]},
+    }) == ["dc:buoy"]
+    assert vl_route.ids_from_ici_bag({
+        "science": {"nearby": [{"name": "Float", "source": "argo", "kind": "argo_float"}]},
+    }) == []
+    assert "dc:buoy" not in vl_route.ids_from_ici_bag({
+        "aton": {"nearby": [{"name": "buoy_lateral"}]},
+    })
+
+
 def test_ici_bag_keeps_present_families_only():
     assert vl_route.ids_from_ici_bag({
         "amp": [
