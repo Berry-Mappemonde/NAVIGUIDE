@@ -58,12 +58,17 @@ def text_is_ai_generated(payload: dict[str, Any]) -> bool:
 
 def _model_name(payload: dict[str, Any]) -> str:
     explicit = str(payload.get("model") or "").strip()
+    source = str(payload.get("source") or "").strip()
+    inner = _unwrap_engine(payload.get("engine"))
     if explicit and is_ai_generated_source(explicit):
         return explicit
-    inner = _unwrap_engine(payload.get("engine"))
+    # OpenRouter's own id (gpt-4o-mini), the same way NIM keeps gpt-oss.
+    if explicit and (
+        source.lower() == "openrouter" or str(inner).lower() == "openrouter"
+    ):
+        return explicit
     if inner and is_ai_generated_source(inner):
         return inner
-    source = str(payload.get("source") or "").strip()
     if source:
         return source
     return inner or source

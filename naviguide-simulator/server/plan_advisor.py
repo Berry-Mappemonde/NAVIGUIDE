@@ -125,38 +125,73 @@ def advice_unavailable(leg_idx: int, reason: str) -> dict:
     }
 
 
+def _depart_dt(leg: dict) -> datetime:
+    return _as_dt(leg.get("departIso") or leg.get("depart"))
+
+
+def departure_after_now(leg: dict, now: Any) -> bool:
+    """La jambe n'a pas commencé : le départ proposé est strictement après maintenant."""
+    try:
+        return _depart_dt(leg) > _now_dt(now)
+    except Exception:
+        return False
+
+
+def _advice_closed_indices(legs: list, now: Any) -> list[int]:
+    now_dt = _now_dt(now)
+    return [i for i, leg in enumerate(legs or []) if isinstance(leg, dict) and not departure_after_now(leg, now_dt)]
+
+
 def resolve_advice_leg(plan: dict, leg_idx: int, *, now: Any = None) -> tuple[dict, int | None, str | None]:
     """Indice de la revue → plan préparé. `reason` si la jambe n'est pas calculable.
 
     Choix RF1 : l'indice client est celui de plan-review. On le traduit vers
     le plan de `prepare_plan` par (from, to). Pas d'invention de jambe.
+    Une date proposée doit être après maintenant, et seulement pour une jambe
+    pas encore commencée. Sinon aucun conseil.
     """
     src = prepare_plan(plan, now=now)
     prepared = src.get("legs") or []
     review = review_legs(plan) if isinstance(plan, dict) else []
     idx = int(leg_idx)
+    closed = set(src.get("_adviceClosed") or [])
+
+    def _gate(mapped: int) -> tuple[dict, int | None, str | None]:
+        if mapped in closed or not (0 <= mapped < len(prepared)) or not departure_after_now(prepared[mapped], now):
+            return src, None, "past"
+        return src, mapped, None
+
     if review:
         if not (0 <= idx < len(review)):
             return src, None, "unknown_leg"
         mapped = _map_review_to_prepared(review[idx], prepared)
         if mapped is not None:
-            return src, mapped, None
+            return _gate(mapped)
         if not prepared:
             return src, None, "no_clock"
         return src, None, "not_computable"
     if not (0 <= idx < len(prepared)):
         return src, None, "no_clock" if not prepared else "unknown_leg"
-    return src, idx, None
+    return _gate(idx)
 
 
 def prepare_plan(plan: dict, *, now: Any = None) -> dict:
     if not isinstance(plan, dict):
         return {"legs": [], "skipper_thresholds": {}}
     if _ready_plan(plan):
-        return plan
-    if plan.get("clock") or plan.get("voyageId") or plan.get("pearls"):
-        return plan_from_voyage(plan, now=now, thresholds=plan.get("skipper_thresholds"))
-    return plan
+        src = plan
+    elif plan.get("clock") or plan.get("voyageId") or plan.get("pearls"):
+        src = plan_from_voyage(plan, now=now, thresholds=plan.get("skipper_thresholds"))
+    else:
+        src = plan
+    if now is None or not isinstance(src, dict):
+        return src
+    closed = _advice_closed_indices(src.get("legs") or [], now)
+    if not closed:
+        return src
+    out = dict(src)
+    out["_adviceClosed"] = closed
+    return out
 
 
 def _now_dt(raw: Any) -> datetime:
@@ -576,9 +611,17 @@ def advise(
     if not (0 <= int(leg_idx) < len(legs)):
         raise ValueError(f"jambe {leg_idx} absente ({len(legs)} jambes)")
     now_dt = _now_dt(now)
-    frozen = _is_frozen(legs[int(leg_idx)], now_dt)
-    shifts = (0,) if frozen else SHIFT_DAYS
-    corridors = (CORRIDOR_REFERENCE,) if frozen else CORRIDORS
+    chosen_leg = legs[int(leg_idx)]
+    frozen = _is_frozen(chosen_leg, now_dt)
+    if frozen or not departure_after_now(chosen_leg, now_dt):
+        shifts = (0,)
+        corridors = (CORRIDOR_REFERENCE,)
+    else:
+        shifts = tuple(
+            d for d in SHIFT_DAYS
+            if _depart_dt(chosen_leg) + timedelta(days=int(d)) > now_dt
+        ) or (0,)
+        corridors = CORRIDORS
     th = src.get("skipper_thresholds") or {}
     gale = _f(th.get("galeKt") if isinstance(th, dict) else None) or _f(wind_max_kt)
     hs = _f(th.get("hsAlertM") if isinstance(th, dict) else None) or _f(hs_max_m)

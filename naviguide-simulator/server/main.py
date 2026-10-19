@@ -59,7 +59,14 @@ from story_cascade import write_story
 from polar_api import router as polar_router
 from escale_api import router as escale_router
 from logbook_chat import router as logbook_router
-from route_engine import searoute_with_exact_end, unwrap_path, wrap_lon
+from route_engine import (
+    RouteBusy,
+    endpoint_on_land,
+    searoute_with_exact_end,
+    segment_crosses_land,
+    unwrap_path,
+    wrap_lon,
+)
 from spatial_catalog import MAX_RENDER_FEATURES, SpatialCatalogIndex, parse_bbox
 from voyage_api import router as voyage_router
 
@@ -574,23 +581,45 @@ async def post_ici_story(body: dict):
     return enrich_llm_payload(out) if isinstance(out, dict) else out
 
 
+# Longitude dépliée tolérée (un tour et demi) ; au-delà, l'appel est absurde.
+ROUTE_LON_LIMIT = 540.0
+
+
 @app.get("/route")
 def get_route(
-    start_lat: float = Query(...),
-    start_lon: float = Query(...),
-    end_lat: float = Query(...),
-    end_lon: float = Query(...),
+    start_lat: float = Query(..., ge=-90, le=90),
+    start_lon: float = Query(..., ge=-ROUTE_LON_LIMIT, le=ROUTE_LON_LIMIT),
+    end_lat: float = Query(..., ge=-90, le=90),
+    end_lon: float = Query(..., ge=-ROUTE_LON_LIMIT, le=ROUTE_LON_LIMIT),
     check_wind: bool = Query(False),
 ):
-    # Searoute attend [−180, 180] ; le client envoie parfois une lon dépliée
-    # (236,84° = SF vue depuis l'Australie). On replie, on calcule, on redéplie
-    # relativement au départ demandé pour que Leaflet peigne le Pacifique.
+    # Searoute attend [−180, 180]. Une longitude dépliée (236,84° = SF vue depuis
+    # l'Australie) est acceptée jusqu'à ±540° et repliée ici ; au-delà, ou non
+    # finie, la validation des paramètres répond 422. On redéplie relativement
+    # au départ.
     orig_start_lon = start_lon
     start = (wrap_lon(start_lon), start_lat)
     end = (wrap_lon(end_lon), end_lat)
+    # `end` says which point is on land (on_land_start / on_land_end), so the
+    # client removes that point and no other.
+    for which, (lon_, lat_) in (("on_land_start", start), ("on_land_end", end)):
+        if endpoint_on_land(lat_, lon_):
+            return JSONResponse(status_code=422, content={"detail": "on_land", "end": which})
+    if abs(start[0] - end[0]) < 1e-4 and abs(start[1] - end[1]) < 1e-4:
+        return {
+            "type": "Feature",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": unwrap_path([[start[0], start[1]], [end[0], end[1]]], orig_start_lon),
+            },
+            "properties": {"length": 0, "units": "km"},
+        }
     try:
         route = searoute_with_exact_end(start, end)
         if route is None:
+            # searoute really answered « no route »: only then is it land.
+            if segment_crosses_land(start[0], start[1], end[0], end[1]):
+                raise HTTPException(status_code=422, detail="crosses_land")
             raise HTTPException(status_code=404, detail="Route non trouvée")
         coords = (route.get("geometry") or {}).get("coordinates") or []
         if coords:
@@ -600,6 +629,9 @@ def get_route(
         return route
     except HTTPException:
         raise
+    except RouteBusy as exc:
+        # Out of time or of searoute slots: not land, just « try again ».
+        raise HTTPException(status_code=503, detail="busy", headers={"Retry-After": "5"}) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

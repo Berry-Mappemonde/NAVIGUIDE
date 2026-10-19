@@ -68,6 +68,15 @@ describe("summarizeRoute", () => {
   it("ignores LineStrings that are too short", () => {
     assert.deepEqual(summarizeRoute([{ coords: [[0, 0]] }]), { nm: 0, segments: 0 });
   });
+
+  it("N points give N-1 segments", () => {
+    const coords = [[-1.15, 46.16], [-5.66, 43.55], [-9.14, 38.72], [-10, 36]];
+    assert.equal(summarizeRoute([{ coords }]).segments, coords.length - 1);
+    assert.equal(summarizeRoute([
+      { coords: [coords[0], coords[1]] },
+      { coords: [coords[1], coords[2]] },
+    ]).segments, 2);
+  });
 });
 
 describe("summarizeLegs", () => {
@@ -99,6 +108,28 @@ describe("summarizeLegs", () => {
     assert.equal(out.sea, 1);
     assert.equal(out.land, 0);
     assert.equal(out.escales, 0);
+  });
+
+  it("3 points sans marques → 2 segments", () => {
+    const out = summarizeLegs([], [
+      { coords: [[-1.15, 46.16], [-5.66, 43.55]], nonMaritime: false },
+      { coords: [[-5.66, 43.55], [-9.14, 38.72]], nonMaritime: false },
+    ]);
+    assert.equal(out.legs, 2);
+    assert.equal(out.sea, 2);
+    assert.equal(out.land, 0);
+  });
+
+  it("route perso : N points posés → N − 1 étapes, pas un compte de sommets", () => {
+    // 3 points, searoute legs with intermediate vertices.
+    const out = summarizeLegs([], [
+      { coords: [[-1.15, 46.16], [-3, 45], [-5.66, 43.55]], nonMaritime: false },
+      { coords: [[-5.66, 43.55], [-8, 42], [-9.3, 40], [-9.14, 38.72]], nonMaritime: false },
+    ]);
+    assert.equal(out.legs, 2);
+    assert.equal(out.sea, 2);
+    assert.equal(out.land, 0);
+    assert.equal(out.points, 7);
   });
 
   it("Cayenne réinséré (HUD aérien) ne crée pas d'escale de plus", () => {
