@@ -561,3 +561,83 @@ def test_execution_lock_releases_when_the_process_is_killed(tmp_path, monkeypatc
     with pytest.raises(one_shot.Refused) as refused:
         one_shot.run("probe", fingerprint)
     assert refused.value.code == "locked"
+
+
+def test_run_stops_when_the_daily_usd_cap_would_be_crossed(monkeypatch, tmp_path):
+    _forbid_network(monkeypatch)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    seen: list[str] = []
+
+    def execute(call):
+        seen.append(call.call_id)
+
+    calls = [
+        one_shot.PlannedCall("a", "fast", 10, 0),
+        one_shot.PlannedCall("b", "fast", 10, 0),
+    ]
+    one_shot.register(one_shot.Job("probe", lambda: list(calls), execute))
+    reserve = llm_budget.estimate_usd("fast", 0, llm_budget.max_tokens_for("fast"))
+    assert reserve > 0
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_USD", str(reserve / 2))
+    fingerprint = one_shot.build_estimate("probe")["fingerprint"]
+    with pytest.raises(one_shot.StoppedAtCap) as stopped:
+        one_shot.run("probe", fingerprint)
+    assert stopped.value.reason == "usd"
+    assert stopped.value.call_id == "a"
+    assert stopped.value.completed == []
+    assert "plafond du jour" in str(stopped.value)
+    assert seen == []
+    progress_path = tmp_path / "one-shot" / "probe" / "progress.json"
+    progress = json.loads(progress_path.read_text(encoding="utf-8"))
+    assert progress["completed"] == []
+    assert "usd" not in progress
+    assert progress_path.stat().st_mode & 0o777 == 0o600
+    assert not one_shot.lock_exists("probe")
+
+
+def test_mode_off_names_the_mode(monkeypatch):
+    _forbid_network(monkeypatch)
+    seen = _watch_execute(monkeypatch)
+    fingerprint = one_shot.build_estimate(one_shot.FIXTURE_JOB)["fingerprint"]
+    with pytest.raises(one_shot.StoppedAtCap) as stopped:
+        one_shot.run(one_shot.FIXTURE_JOB, fingerprint)
+    assert stopped.value.reason == "mode"
+    assert stopped.value.completed == []
+    assert "mode interdit" in str(stopped.value)
+    assert seen == []
+
+
+def test_token_cap_names_the_token_ceiling(monkeypatch):
+    _forbid_network(monkeypatch)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_FAST", "100")
+
+    def execute(call):
+        llm_budget.record(call.tier, call.prompt_tokens, call.completion_tokens)
+
+    calls = [
+        one_shot.PlannedCall("a", "fast", 100, 0),
+        one_shot.PlannedCall("b", "fast", 100, 0),
+    ]
+    one_shot.register(one_shot.Job("probe", lambda: list(calls), execute))
+    fingerprint = one_shot.build_estimate("probe")["fingerprint"]
+    with pytest.raises(one_shot.StoppedAtCap) as stopped:
+        one_shot.run("probe", fingerprint)
+    assert stopped.value.reason == "tokens"
+    assert stopped.value.call_id == "b"
+    assert "plafond de jetons" in str(stopped.value)
+
+
+def test_success_lock_is_private(monkeypatch):
+    _forbid_network(monkeypatch)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    one_shot.register(
+        one_shot.Job(
+            "probe",
+            lambda: [one_shot.PlannedCall("a", "fast", 1, 0)],
+            lambda _call: None,
+        )
+    )
+    fingerprint = one_shot.build_estimate("probe")["fingerprint"]
+    one_shot.run("probe", fingerprint)
+    assert one_shot.lock_path("probe").stat().st_mode & 0o777 == 0o600
