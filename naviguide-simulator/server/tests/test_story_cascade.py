@@ -1765,7 +1765,7 @@ def test_nano_call_stays_on_eu_host(monkeypatch):
 
     monkeypatch.setenv("NAVIGUIDE_TF_BASE_EU", "https://api.tokenfactory.nebius.com/v1")
     url = story_cascade._tf_url("nano")
-    assert "api.tokenfactory.nebius.com" in url
+    assert _url_host_is(url, "api.tokenfactory.nebius.com")
     assert "us-central1" not in url
     assert url.endswith("/chat/completions")
     assert "us-central1" in story_cascade._tf_url("deep")
@@ -1797,7 +1797,7 @@ def test_nano_call_stays_on_eu_host(monkeypatch):
     assert result.tier == "nano"
     assert len(seen) == 1
     assert seen[0][1] == NANO_ID
-    assert "api.tokenfactory.nebius.com" in seen[0][0]
+    assert _url_host_is(seen[0][0], "api.tokenfactory.nebius.com")
     assert "us-central1" not in seen[0][0]
 
 
@@ -1836,7 +1836,7 @@ def test_nano_falls_back_to_lightning_with_its_label(monkeypatch):
     assert result.model == LIGHTNING_ID
     assert [m for _u, m in seen] == [NANO_ID, LIGHTNING_ID]
     assert all("us-central1" not in url for url, _m in seen)
-    assert all("api.tokenfactory.nebius.com" in url for url, _m in seen)
+    assert all(_url_host_is(url, "api.tokenfactory.nebius.com") for url, _m in seen)
     import llm_budget
     assert llm_budget.status()["lastSourceByTier"]["nano"] == "nemotron-lightning"
 
@@ -1851,7 +1851,7 @@ def test_nano_then_lightning_then_nim_keeps_nim_label(monkeypatch):
         seen.append((url, body.get("model")))
         if "tokenfactory" in url:
             return httpx.Response(502, text='{"error":"down"}')
-        if "integrate.api.nvidia.com" in url:
+        if _url_host_is(url, "integrate.api.nvidia.com"):
             return httpx.Response(200, json=_chat_ok("The quay stays calm.", model="openai/gpt-oss-20b"))
         return httpx.Response(500, text="no")
 
@@ -1875,5 +1875,5 @@ def test_nano_then_lightning_then_nim_keeps_nim_label(monkeypatch):
     assert source != "nemotron-lightning"
     models = [m for url, m in seen if "tokenfactory" in url]
     assert models == [NANO_ID, LIGHTNING_ID]
-    assert any("integrate.api.nvidia.com" in url for url, _m in seen)
+    assert any(_url_host_is(url, "integrate.api.nvidia.com") for url, _m in seen)
     assert not any("openrouter" in url or "anthropic" in url for url, _m in seen)
