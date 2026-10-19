@@ -1,6 +1,12 @@
 /** Largeur d’une sidebar (gauche ou droite), en px. */
 export const SIDEBAR_WIDTH_PX = 320;
 
+/**
+ * Sous cette largeur (px), le panneau gauche est un tiroir : il recouvre la
+ * carte au lieu de réserver une colonne. 600 px pile reste le bureau.
+ */
+export const NARROW_LAYOUT_MAX_PX = 599;
+
 /** Décalage Tailwind `bottom-5` de la barre film (1,25 rem = 20 px). */
 export const FILM_BAR_BOTTOM_GAP_PX = 20;
 
@@ -28,7 +34,46 @@ export const FILM_BAR_HEIGHT_PX = Object.freeze({
   hidden: 0,
   compact: 96, // Titre + horloge + piste + une rangée de commandes
   controls: 96, // même rangée compacte en Simulation (pilules text-[9px])
+  narrow: 168, // même contenu, commandes sur deux lignes (largeur < 600)
 });
+
+/**
+ * Largeur d’écran connue. Un argument gagne. Sinon le viewport du navigateur.
+ * Les tests Node n’ont pas de `window` : on reste sur le bureau.
+ */
+export function readViewportWidth(explicit) {
+  if (explicit != null && explicit !== "") {
+    const given = Number(explicit);
+    if (Number.isFinite(given) && given > 0) return given;
+  }
+  if (typeof window !== "undefined" && Number.isFinite(window.innerWidth) && window.innerWidth > 0) {
+    return window.innerWidth;
+  }
+  return null;
+}
+
+/** Vrai seulement pour une largeur connue, strictement sous 600 px. */
+export function isNarrowLayout(viewportWidth) {
+  const width = readViewportWidth(viewportWidth);
+  return width != null && width <= NARROW_LAYOUT_MAX_PX;
+}
+
+/**
+ * Cadre de la barre du film. Au bureau, identique à `filmBarInsets` (entre
+ * les panneaux). Sous 600 px la barre passe sous le tiroir, sur toute la
+ * largeur : elle ne se coince pas dans la colonne restante. Les crédits
+ * Leaflet continuent d’utiliser `filmBarInsets` (colonne visible).
+ */
+export function drawerFilmBarInsets({
+  sidebarOpen = true,
+  toolsOpen = true,
+  width = SIDEBAR_WIDTH_PX,
+  gutter = 8,
+  viewportWidth,
+} = {}) {
+  if (isNarrowLayout(viewportWidth)) return { left: gutter, right: gutter };
+  return filmBarInsets({ sidebarOpen, toolsOpen, width, gutter });
+}
 
 /**
  * Espace réel du bas de la carte jusqu’au haut de la barre film (ou du
@@ -60,12 +105,17 @@ export function mapInsetVars({
   filmBarVisible = true,
   filmBarControls = false,
   filmBarMeasuredPx = null,
+  viewportWidth,
 } = {}) {
   const insets = filmBarInsets({ sidebarOpen, toolsOpen });
+  const narrow = isNarrowLayout(viewportWidth);
+  const bar = drawerFilmBarInsets({ sidebarOpen, toolsOpen, viewportWidth });
   let bottom = FILM_BAR_HEIGHT_PX.hidden;
   if (filmBarVisible) {
-    const fallback = (filmBarControls ? FILM_BAR_HEIGHT_PX.controls : FILM_BAR_HEIGHT_PX.compact)
-      + FILM_BAR_BOTTOM_GAP_PX;
+    const fallbackBase = narrow
+      ? FILM_BAR_HEIGHT_PX.narrow
+      : (filmBarControls ? FILM_BAR_HEIGHT_PX.controls : FILM_BAR_HEIGHT_PX.compact);
+    const fallback = fallbackBase + FILM_BAR_BOTTOM_GAP_PX;
     const occupied = Number.isFinite(filmBarMeasuredPx) ? filmBarMeasuredPx : fallback;
     bottom = occupied + ATTRIBUTION_FILM_GAP_PX;
   }
@@ -73,5 +123,7 @@ export function mapInsetVars({
     "--sim-inset-left": `${insets.left}px`,
     "--sim-inset-right": `${toolsOpen ? insets.right : 0}px`,
     "--sim-inset-bottom": `${bottom}px`,
+    "--film-bar-left": `${bar.left}px`,
+    "--film-bar-right": `${bar.right}px`,
   };
 }

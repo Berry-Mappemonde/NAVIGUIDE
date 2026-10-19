@@ -366,7 +366,9 @@ export const Sidebar = memo(function Sidebar({
   return (
     <>
       <button
+        type="button"
         onClick={onToggle}
+        aria-expanded={open ? "true" : "false"}
         className={`naviguide-sidebar-toggle naviguide-sidebar-toggle--left absolute top-4 z-30 bg-slate-900/95 text-white
           rounded-full flex items-center justify-center shadow-lg
           hover:bg-slate-800 transition-all duration-300
@@ -378,7 +380,7 @@ export const Sidebar = memo(function Sidebar({
       </button>
 
       <div
-        className={`naviguide-sidebar-panel absolute top-0 left-0 h-full z-20 flex flex-col bg-slate-900/97
+        className={`naviguide-sidebar-panel naviguide-sidebar-drawer absolute top-0 left-0 h-full z-20 flex flex-col bg-slate-900/97
           shadow-2xl transition-transform duration-300 border-r border-slate-700/60
           ${open ? "translate-x-0" : "-translate-x-full"}`}
         style={{ width: 320 }}
@@ -413,7 +415,7 @@ export const Sidebar = memo(function Sidebar({
           ) : null}
         </div>
 
-        <div className="flex-1 min-h-0 overflow-hidden flex flex-col px-2.5 py-1.5 gap-1.5">
+        <div className="naviguide-sidebar-drawer-body flex-1 min-h-0 overflow-hidden flex flex-col px-2.5 py-1.5 gap-1.5">
           {!isCockpit && !plan && !briefingLoading && !isDrawing && (
             <div className="rounded-lg border border-blue-700/30 bg-blue-950/20 p-2 shrink-0">
               <div className="text-[10px] font-semibold text-blue-300 mb-1">{t("gettingStarted")}</div>
