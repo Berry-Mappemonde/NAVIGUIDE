@@ -5,12 +5,12 @@
 Cette politique couvre :
 
 - le site [https://naviguide.fr](https://naviguide.fr) ;
-- le dépôt [Berry-Mappemonde/NAVIGUIDE](https://github.com/Berry-Mappemonde/NAVIGUIDE).
+- le code de ce dépôt (NAVIGUIDE).
 
 This policy covers:
 
 - the site [https://naviguide.fr](https://naviguide.fr);
-- the repository [Berry-Mappemonde/NAVIGUIDE](https://github.com/Berry-Mappemonde/NAVIGUIDE).
+- the code in this repository (NAVIGUIDE).
 
 Hors périmètre : les autres sites et les services qui ne sont pas livrés par ce dépôt.
 
@@ -25,15 +25,15 @@ Out of scope: other sites and services that are not shipped from this repository
 
 ## Signaler une vulnérabilité / Reporting a vulnerability
 
-Utilisez le formulaire privé GitHub :
+Écrivez à :
 
-Use the private GitHub form:
+Write to:
 
-https://github.com/Berry-Mappemonde/NAVIGUIDE/security/advisories/new
+clementfilisetti@berrymappemonde.org
 
-N'ouvrez pas d'issue publique, et n'envoyez pas de correctif public avant qu'un avis privé existe.
+N'ouvrez pas d'issue publique, et ne publiez ni détail ni correctif avant notre réponse.
 
-Do not open a public issue, and do not send a public fix before a private advisory exists.
+Do not open a public issue, and do not publish details or a fix before we reply.
 
 Le même contact est publié sur https://naviguide.fr/.well-known/security.txt (RFC 9116) une fois le vhost rechargé.
 
