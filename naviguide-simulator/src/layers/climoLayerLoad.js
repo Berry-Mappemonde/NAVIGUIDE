@@ -23,10 +23,11 @@ export async function fetchJson(url, signal) {
   return body;
 }
 
-/** True only when every tile failed with an error. Abort or any success → no fallback. */
+/** True only when every tile failed with an HTTP error. Abort, a live tile, or an atlas
+ *  that answers « unavailable » does not open the global geojson (26 Mo). */
 export function allTilesErrored(outcomes) {
   if (!outcomes.length) return false;
-  if (outcomes.some((o) => o === "abort")) return false;
+  if (outcomes.some((o) => o === "abort" || o === "unavailable")) return false;
   return outcomes.every((o) => o === "error");
 }
 
@@ -65,7 +66,7 @@ export async function loadClimoLayerFeatures({
       return;
     }
     if (resting(key)) {
-      outcomes.push("error");
+      outcomes.push("unavailable");
       collections.push([]);
       return;
     }
@@ -82,6 +83,11 @@ export async function loadClimoLayerFeatures({
         return;
       }
       rest(key, err);
+      if (err?.atlasUnavailable) {
+        outcomes.push("unavailable");
+        collections.push([]);
+        return;
+      }
       outcomes.push("error");
       collections.push([]);
     }
