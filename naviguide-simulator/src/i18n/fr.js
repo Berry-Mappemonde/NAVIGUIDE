@@ -632,6 +632,10 @@ export default {
   layerFicheKindGlider: "Planeur sous-marin",
   layerFicheClose: "Fermer la fiche",
 
+  // SO1
+  skipperCoastalRule: "Côtier conseillé pour < 12 m",
+  exportNeedsRoute: "Aucune route à exporter",
+  exportKmlFollow: "KML de la route en Suivre",
   carnetTitle: "Carnet de bord",
   carnetStory: "Récit",
   carnetJournal: "Journal",

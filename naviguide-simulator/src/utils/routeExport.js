@@ -28,6 +28,7 @@ function lonLat(coord) {
   const lon = Number(coord[0]);
   const lat = Number(coord[1]);
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 540) return null;
   return [lon, lat];
 }
 
@@ -137,6 +138,7 @@ export function dashChunks(coords, dashNm = 40, gapNm = 24) {
 
 function escapeXml(value) {
   return String(value ?? "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
