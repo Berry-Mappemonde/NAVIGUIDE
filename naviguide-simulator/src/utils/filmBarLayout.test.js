@@ -150,5 +150,7 @@ describe("tiroir sous 600 px — la barre ne réserve plus la colonne", () => {
     assert.match(desk, /left:\s*var\(--film-bar-left,\s*8px\)\s*!important/);
     assert.match(desk, /right:\s*var\(--film-bar-right,\s*8px\)\s*!important/);
     assert.match(desk, /width:\s*calc\(100% - var\(--film-bar-left,\s*8px\) - var\(--film-bar-right,\s*8px\)\)\s*!important/);
+    assert.match(desk, /flex-wrap:\s*nowrap/);
+    assert.match(desk, /\.naviguide-film-bar button \{\s*padding-left:\s*3px;\s*padding-right:\s*3px;\s*\}/);
   });
 });

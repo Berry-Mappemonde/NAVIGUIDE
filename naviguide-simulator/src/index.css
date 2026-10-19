@@ -728,4 +728,25 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
     margin-left: 0;
     margin-right: 0;
   }
+  /* Entre les deux panneaux (640 px à 1280), les commandes restent sur une
+     seule rangée : le bloc Revoir ne passe pas à la ligne, les gouttières
+     se resserrent pour tenir dans la barre. Sous 600 px, le bloc du tiroir
+     garde ses deux lignes. */
+  .naviguide-film-bar {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .naviguide-film-bar > .flex.items-start,
+  .naviguide-film-bar [data-testid="film-commands"] > .flex,
+  .naviguide-film-bar [data-testid="replay-controls"],
+  .naviguide-film-bar [data-testid="replay-controls"] > .flex,
+  .naviguide-film-bar [data-testid="film-style"],
+  .naviguide-film-bar [data-testid="film-view-switch"] {
+    flex-wrap: nowrap;
+    gap: 2px;
+  }
+  .naviguide-film-bar button {
+    padding-left: 3px;
+    padding-right: 3px;
+  }
 }
