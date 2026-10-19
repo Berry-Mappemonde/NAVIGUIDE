@@ -138,6 +138,30 @@ describe("replay — filmPlan", () => {
     assert.ok(squeezed.chapters[0].seconds >= 12);
   });
 
+  it("2:30 ne fusionne plus les 15 chapitres du texte", () => {
+    // Longueurs du film français 2:30 servi le 19 oct. (15 chapitres → 5 si fusion).
+    const lengths = [117, 223, 202, 425, 138, 184, 83, 87, 179, 33, 221, 28, 56, 177, 270];
+    const chapters = lengths.map((n, i) => ({
+      text: "x".repeat(n),
+      tA: 1_000_000 + i * 86_400_000,
+      tB: 1_000_000 + (i + 1) * 86_400_000,
+      fromName: `L${i}`,
+      toName: `L${i + 1}`,
+    }));
+    const squeezed = filmPlan({ chapters, targetSeconds: 150 });
+    assert.equal(squeezed.chapters.length, 5, "sans keepChapters, 2:30 fusionne 15 chapitres en 5");
+    const kept = filmPlan({ chapters, targetSeconds: 150, keepChapters: true });
+    assert.equal(kept.chapters.length, 15, "2:30 garde chaque chapitre du texte");
+    assert.equal(kept.targetSeconds, 150);
+    assert.equal(kept.chapters[0].text.length, 117);
+    assert.equal(kept.chapters[9].text.length, 33);
+    assert.equal(kept.chapters[14].text.length, 270);
+    assert.equal(kept.chapters[0].fromName, "L0");
+    assert.equal(kept.chapters[14].toName, "L15");
+    const integral = filmPlan({ chapters, targetSeconds: 574, keepChapters: true });
+    assert.equal(integral.chapters.length, 15, "l'intégral garde aussi chaque chapitre");
+  });
+
   it("calibrage du rate borné dans [0,9 ; 1,25]", () => {
     assert.equal(calibrateRate({ chapterChars: 100, elapsedSeconds: 1, remainingChars: 10_000, remainingBudgetSeconds: 1 }), FILM_RATE_MAX);
     assert.equal(calibrateRate({ chapterChars: 100, elapsedSeconds: 100, remainingChars: 10, remainingBudgetSeconds: 100 }), FILM_RATE_MIN);

@@ -100,8 +100,54 @@ describe("useReplay contract", () => {
     assert.equal(shouldHoldFilmForBudget({ userBudget: 0, wallElapsed: 80, lastChapter: true }), false);
     assert.match(hook, /shouldHoldFilmForBudget/);
     assert.match(hook, /budgetSeconds/);
-    assert.match(hook, /resolveFilmTargetSeconds/);
-    assert.match(hook, /userBudget > 0 \? userBudget : FILM_TARGET_SECONDS/);
+    assert.match(hook, /resolveFilmTargetSeconds\(userBudget, chapters\)/);
+    assert.match(hook, /keepChapters: true/);
+    assert.doesNotMatch(hook, /userBudget > 0 \? userBudget : FILM_TARGET_SECONDS/);
+    assert.doesNotMatch(hook, /keepChapters: userBudget <= 0/);
+  });
+
+  it("2:30 : les 15 chapitres sont joués et ended seulement au dernier", () => {
+    const lengths = [117, 223, 202, 425, 138, 184, 83, 87, 179, 33, 221, 28, 56, 177, 270];
+    const chapters = lengths.map((n, i) => ({
+      text: "x".repeat(n),
+      tA: 1_000_000 + i * 86_400_000,
+      tB: 1_000_000 + (i + 1) * 86_400_000,
+    }));
+    const plan = filmPlan({
+      chapters,
+      targetSeconds: resolveFilmTargetSeconds(150, chapters),
+      keepChapters: true,
+    });
+    assert.equal(plan.chapters.length, 15);
+    assert.equal(plan.targetSeconds, 150);
+    const speakSec = wallClockSpeakSeconds(plan, FILM_ESTIMATE_CPS);
+    const seen = new Set();
+    let ended = false;
+    let finishAt = null;
+    for (let t = 0; t <= speakSec + 1; t += 0.25) {
+      const at = linearFilmAt(t, plan);
+      seen.add(at.chapterIdx);
+      const done = filmShouldFinish({
+        voiceClock: false,
+        speaking: false,
+        voiceAllDone: false,
+        linearFinish: at.finish,
+        lastReached: at.lastReached,
+        stopping: false,
+      });
+      if (t + 1e-6 < speakSec) assert.equal(done, false, `fini trop tôt à ${t} s`);
+      if (done) {
+        ended = true;
+        finishAt = t;
+        assert.equal(at.chapterIdx, 14);
+        assert.equal(at.lastReached, true);
+        break;
+      }
+    }
+    assert.equal(ended, true);
+    assert.ok(finishAt + 1e-6 >= speakSec);
+    assert.equal(seen.size, 15);
+    for (let i = 0; i < 15; i += 1) assert.ok(seen.has(i), `chapitre ${i} joué`);
   });
 
   it("Durée estimée = caractères ÷ 15, sans recalibrer la voix", () => {
