@@ -6,7 +6,6 @@ Never relabel the pack as forecast.
 from __future__ import annotations
 
 import logging
-import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,11 +13,8 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 
 import httpx
 
+from bi_upstream import BiDisabled, bi_base
 from climatology_zones import zone_wind_at
-
-
-def bi_base() -> str:
-    return (os.getenv("BI_API_URL") or "https://blueintelligence.online/api").rstrip("/")
 
 log = logging.getLogger("naviguide-simulator.atlas")
 
@@ -188,7 +184,10 @@ def fetch_atlas_point(
         params["day"] = day
     started = time.monotonic()
     try:
-        payload = _get_json(f"{bi_base()}/climatology/point", params, client)
+        base = bi_base()
+        if not base:
+            raise BiDisabled("BI disabled: BI_API_URL is not set")
+        payload = _get_json(f"{base}/climatology/point", params, client)
     except Exception as exc:
         log.info("atlas point down: %s", exc)
         _mark_dead()
@@ -212,7 +211,10 @@ def fetch_atlas_crossings(
     if day is not None:
         params["day"] = day
     try:
-        return _get_json(f"{bi_base()}/climatology/crossings", params, client)
+        base = bi_base()
+        if not base:
+            raise BiDisabled("BI disabled: BI_API_URL is not set")
+        return _get_json(f"{base}/climatology/crossings", params, client)
     except Exception as exc:
         log.info("atlas crossings down: %s", exc)
         return None
