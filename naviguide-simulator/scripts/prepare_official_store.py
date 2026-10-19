@@ -5,6 +5,7 @@ Aucune donnée écrite en dur : une famille qui échoue reste « en préparation
 
     prepare_official_store.py                 # une passe (ensure-dev.sh --prod, avant d'ouvrir le navigateur)
     prepare_official_store.py --loop          # le remplisseur de l'API : périodique + réveil par fichier « nudge »
+    prepare_official_store.py --rebuild-film fr:150   # une variante, journal, arrêt si silence
 
 Pourquoi un processus : le calcul tient le GIL ; dans le processus de l'API il l'étouffait (27 sept. : 97 % CPU,
 /clock en 7 s, POST /voyage coupé à 100 s). Ici il tourne en priorité basse, l'API ne fait que lire le stock.
@@ -213,8 +214,22 @@ def main() -> int:
         default="",
         help="une seule variante du film, langue:secondes (fr:150, en:180, fr:0)",
     )
+    ap.add_argument(
+        "--rebuild-film",
+        default="",
+        metavar="LANGUE:DUREE",
+        help="reconstruire une seule variante (fr:150, en:180 ou fr:0) ; arrêt si aucun progrès avant le délai maximum",
+    )
     args = ap.parse_args()
-    if args.film_only:
+    if args.rebuild_film and args.film_only:
+        raise SystemExit("une seule variante : --rebuild-film ou --film-only, pas les deux")
+    if args.rebuild_film and args.loop:
+        raise SystemExit("--rebuild-film construit une variante et s'arrête : pas avec --loop")
+    if args.rebuild_film and args.write_film:
+        raise SystemExit("--rebuild-film inclut l'appel Nemotron : pas avec --write-film")
+    if args.rebuild_film:
+        os.environ["NAVIGUIDE_FILM_ONLY"] = _film_only_value(args.rebuild_film)
+    elif args.film_only:
         os.environ["NAVIGUIDE_FILM_ONLY"] = _film_only_value(args.film_only)
     if args.store:
         os.environ["NAVIGUIDE_OFFICIAL_STORE_DIR"] = args.store
@@ -237,6 +252,22 @@ def main() -> int:
     if args.write_film and not args.loop:
         out = official_store.fill_written_film(force=True)
         _say(f"rédigé : {out}")
+        return 0
+    if args.rebuild_film:
+        variant = os.environ["NAVIGUIDE_FILM_ONLY"]
+        lang, _, secs = variant.partition(":")
+        _say(f"film : reconstruction {variant}")
+        from ici_engine import ensure_pearl_amp_layer_sig  # noqa: PLC0415
+        ensure_pearl_amp_layer_sig("prepare_official_store")
+        try:
+            official_store.rebuild_film_variant(lang, int(secs))
+        except official_store.FilmProgressStalled as exc:
+            _say(str(exc))
+            return 1
+        except Exception as exc:
+            _say(f"film : reconstruction impossible : {type(exc).__name__}: {exc}")
+            return 1
+        _say(f"film {variant} reconstruit")
         return 0
     if args.loop:
         return loop(args.period)
