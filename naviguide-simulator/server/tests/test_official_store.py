@@ -1341,6 +1341,82 @@ def test_film_progress_line_resets_the_silence_deadline(tmp_path, monkeypatch):
     assert "arrêt" not in blob
 
 
+def test_child_progress_line_extends_only_the_rebuild_deadline():
+    """Une ligne du fils remet le délai de la fabrication. Le délai dur de la boucle, non."""
+    import time
+
+    official_store.reset_film_journal()
+    t0 = time.monotonic()
+    finished, value = official_store.run_bounded_process(
+        official_store._bounded_progress_worker,
+        (4, 0.8),
+        2.5,
+        follow_progress=True,
+    )
+    assert time.monotonic() - t0 < 8
+    assert finished is True
+    assert isinstance(value, tuple) and value[0] == "ok"
+    assert value[1]["chapters"][0]["text"] == "Berry-Mappemonde"
+    followed = "\n".join(official_store.film_journal())
+    assert "calcul 0" in followed and "calcul 3" in followed
+
+    official_store.reset_film_journal()
+    t1 = time.monotonic()
+    cut, empty = official_store.run_bounded_process(
+        official_store._bounded_progress_worker,
+        (4, 0.8),
+        2.5,
+        follow_progress=False,
+    )
+    assert time.monotonic() - t1 < 6
+    assert cut is False and empty is None
+    hard = "\n".join(official_store.film_journal())
+    assert "calcul 0" in hard
+    assert "calcul 3" not in hard
+
+
+def test_rebuild_sees_a_progress_line_written_in_the_child(tmp_path, monkeypatch):
+    """La fabrication ne s'arrête pas si le fils a écrit avant le délai."""
+    import time
+
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_STORE_DIR", str(tmp_path / "store"))
+    monkeypatch.setenv("NAVIGUIDE_FILM_VARIANT_TIMEOUT_S", "2.5")
+    monkeypatch.setenv("NAVIGUIDE_FILM_PROGRESS_PUT", "1")
+    monkeypatch.delenv("SIMULATOR_MONGO_URL", raising=False)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    official_store.reset_film_journal()
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    seen = {}
+    real_run = official_store.run_bounded_process
+
+    def run_progress(target, args, timeout_s, follow_progress=False):
+        seen["follow"] = follow_progress
+        return real_run(
+            official_store._bounded_progress_worker,
+            (4, 0.8),
+            timeout_s,
+            follow_progress=follow_progress,
+        )
+
+    monkeypatch.setattr(official_store, "run_bounded_process", run_progress)
+    monkeypatch.setattr(official_store, "_nemotron_for_variant", lambda *_a, **_k: None)
+    t0 = time.monotonic()
+    payload = official_store.rebuild_film_variant("fr", 150, voy=_film_voy(), now=NOW)
+    assert time.monotonic() - t0 < 8
+    assert seen["follow"] is True
+    assert payload["variants"]["fr"]["150"]["chapters"]
+    blob = "\n".join(official_store.film_journal())
+    assert "variante fr 150s" in blob
+    assert "calcul 0" in blob and "calcul 3" in blob
+    assert "appel Nemotron fr 150s" in blob
+    assert "écriture stock fr 150s" in blob
+    assert "arrêt" not in blob
+    assert official_store._FOLLOW_FILM_PROGRESS is False
+
+
 def _rg17_voy():
     return {
         "t0": T0,

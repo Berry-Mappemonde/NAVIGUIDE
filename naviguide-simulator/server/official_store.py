@@ -1254,6 +1254,10 @@ _FILM_JOURNAL_LOCK = threading.Lock()
 _FILM_JOURNAL_MAX = 400
 # Un blocage simulé attend cet événement pour quitter, au lieu de dormir jusqu'au bout.
 _STEP_CANCEL = threading.Event()
+# File du fils : ses lignes remontent au père, sinon le délai ne les voit pas.
+_FILM_PROGRESS_QUEUE = None
+# --rebuild-film : une ligne du fils remet le délai. La boucle de fond, non.
+_FOLLOW_FILM_PROGRESS = False
 
 
 class FilmProgressStalled(RuntimeError):
@@ -1306,11 +1310,27 @@ def _film_say(msg: str) -> None:
         pass
 
 
+def _emit_film_progress(msg: str) -> None:
+    """Une ligne d'avancement. Depuis le fils, elle revient au père par la file.
+
+    Le journal et le délai de silence vivent dans le père. Une ligne écrite
+    seulement dans le fils s'affichait, puis la commande s'arrêtait quand même.
+    """
+    queue = _FILM_PROGRESS_QUEUE
+    if queue is not None:
+        try:
+            queue.put(("progress", msg))
+            return
+        except Exception:
+            pass
+    _film_say(msg)
+
+
 def _logging_cascade(lang: str, seconds: int):
     """Journalise l'appel que le film fait déjà. N'en ajoute pas."""
 
     async def _call(*args, **kwargs):
-        _film_say(f"appel Nemotron {lang} {int(seconds)}s")
+        _emit_film_progress(f"appel Nemotron {lang} {int(seconds)}s")
         from story_cascade import cascade_text  # noqa: PLC0415
         return await cascade_text(*args, **kwargs)
 
@@ -1487,9 +1507,23 @@ def _bounded_blob_worker(nbytes: int, queue) -> None:
     queue.put(("ok", {"chapters": [{"text": "x" * int(nbytes)}]}))
 
 
+def _bounded_progress_worker(beats: int, pause_s: float, queue) -> None:
+    """Cible de test : une ligne, une pause, puis un plan. Le silence se mesure entre deux lignes."""
+    import time as _time  # noqa: PLC0415
+
+    n = int(beats)
+    pause = float(pause_s)
+    for i in range(n):
+        _time.sleep(pause)
+        queue.put(("progress", f"calcul {i}"))
+    queue.put(("ok", {"chapters": [{"text": "Berry-Mappemonde"}]}))
+
+
 def _film_variant_worker(lang: str, seconds: int, timeout_s: float, queue) -> None:
     """Un processus neuf, sans la boucle du parent. Une variante, un délai."""
+    global _FILM_PROGRESS_QUEUE
     os.environ["NAVIGUIDE_OFFICIAL_WORKER"] = "0"
+    _FILM_PROGRESS_QUEUE = queue
     try:
         import asyncio  # noqa: PLC0415
         from film_script import official_film  # noqa: PLC0415
@@ -1505,9 +1539,15 @@ def _film_variant_worker(lang: str, seconds: int, timeout_s: float, queue) -> No
         queue.put(("timeout", None))
     except Exception as exc:
         queue.put(("error", f"{type(exc).__name__}: {exc}"[:400]))
+    finally:
+        _FILM_PROGRESS_QUEUE = None
 
 
-def run_bounded_process(target, args: tuple, timeout_s: float):
+def _queue_item_is_progress(item) -> bool:
+    return isinstance(item, tuple) and len(item) == 2 and item[0] == "progress"
+
+
+def run_bounded_process(target, args: tuple, timeout_s: float, *, follow_progress: bool = False):
     """Lance `target` hors de ce processus et l'arrête au délai.
 
     Retourne `(fini, valeur)`. `fini` est faux si le délai a coupé le processus.
@@ -1516,6 +1556,10 @@ def run_bounded_process(target, args: tuple, timeout_s: float):
     La file est lue pendant que le fils vit. L'attendre d'abord bloque :
     un plan déjà calculé plus gros que le tampon du tube (~65 Ko) empêche
     le fils de quitter, le délai le tue, et les chapitres sont perdus.
+
+    Une ligne `progress` est un avancement, pas le résultat. Avec
+    `follow_progress` (fabrication d'une variante), elle remet le délai à zéro.
+    Sans ce drapeau, le délai dur de la boucle de fond ne bouge pas.
     """
     import multiprocessing  # noqa: PLC0415
     import queue as queue_mod  # noqa: PLC0415
@@ -1543,23 +1587,36 @@ def run_bounded_process(target, args: tuple, timeout_s: float):
         deadline = time.monotonic() + float(timeout_s)
         value = None
         got = False
+
+        def _take(block_s: float):
+            nonlocal deadline, got, value
+            item = pipe.get(timeout=block_s)
+            if _queue_item_is_progress(item):
+                _film_say(str(item[1]))
+                if follow_progress:
+                    deadline = time.monotonic() + float(timeout_s)
+                return False
+            value = item
+            got = True
+            return True
+
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
             try:
-                value = pipe.get(timeout=min(0.2, remaining))
-                got = True
-                break
+                if _take(min(0.2, remaining)):
+                    break
             except queue_mod.Empty:
                 if not proc.is_alive():
                     break
         if not got:
-            try:
-                value = pipe.get(timeout=0.2)
-                got = True
-            except queue_mod.Empty:
-                got = False
+            while True:
+                try:
+                    if _take(0.2):
+                        break
+                except queue_mod.Empty:
+                    break
         if not got:
             if proc.is_alive():
                 return False, None
@@ -1624,10 +1681,12 @@ def _compute_one_variant(lang: str, seconds: int, timeout_s: float):
         kind, payload = _await_official_film(lang, seconds, timeout_s)
     else:
         # Grâce courte pour que le fils puisse rendre un résultat déjà fini.
+        kw = {"follow_progress": True} if _FOLLOW_FILM_PROGRESS else {}
         finished, value = run_bounded_process(
             _film_variant_worker,
             (lang, int(seconds), float(timeout_s)),
             float(timeout_s) + 5.0,
+            **kw,
         )
         if not finished:
             kind, payload = "timeout", None
@@ -1706,6 +1765,7 @@ def rebuild_film_variant(
     Le remplisseur de fond, lui, saute une variante en retard et continue.
     Ici la commande s'arrête : c'est une fabrication demandée, pas la boucle.
     """
+    global _FOLLOW_FILM_PROGRESS
     lg = (lang or "").strip().lower()
     try:
         secs = int(seconds)
@@ -1716,6 +1776,15 @@ def rebuild_film_variant(
     timeout_s = film_variant_timeout_s()
     current = voy if voy is not None else _load_official()
     when = now or _utc_now()
+    _FOLLOW_FILM_PROGRESS = True
+    try:
+        return _rebuild_film_variant_logged(lg, secs, timeout_s, current, when)
+    finally:
+        _FOLLOW_FILM_PROGRESS = False
+
+
+def _rebuild_film_variant_logged(lg: str, secs: int, timeout_s: float, current: dict, when: datetime) -> dict:
+    """Journal, appel, écriture. Le délai suit les lignes, y compris celles du fils."""
     if not current or not current.get("clock"):
         msg = "film : horloge absente — arrêt"
         _film_say(msg)
