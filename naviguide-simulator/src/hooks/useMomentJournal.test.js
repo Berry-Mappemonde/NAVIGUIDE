@@ -9,13 +9,16 @@ import {
   MOMENT_JOURNAL_CAP,
   appendLocalMoment,
   localChanges,
+  journalListUntil,
   momentAtOrBefore,
   momentJournalStorageKey,
   momentsRequestPath,
+  momentsStillPartial,
   parseOfficialMoments,
   pollOfficialMoments,
   readLocalJournal,
   sortJournalEntries,
+  visibleJournalEntries,
   writeLocalJournal,
 } from "./useMomentJournal.js";
 
@@ -148,6 +151,84 @@ describe("useMomentJournal — : re-demande /moments tant que vide", () => {
     assert.equal(n, 2);
     assert.equal(entries.length, 1);
     assert.equal(entries[0].signature, "a");
+  });
+
+  it("preparing puis ready : la liste longue, lignes déjà là ; officiel ready = un GET", async () => {
+    const morning = [
+      { t: "2026-10-18T08:00:00Z", signature: "dep" },
+      { t: "2026-10-18T11:00:00Z", signature: "h11" },
+    ];
+    const crossing = [
+      ...morning,
+      { t: "2026-12-02T08:00:00Z", signature: "eaux", changes: [{ title: "eaux espagnoles", kind: "zee-enter" }] },
+      { t: "2027-01-15T08:00:00Z", signature: "arrivee", changes: [{ title: "Arrivée", kind: "escale" }] },
+    ];
+    let n = 0;
+    const seen = [];
+    const entries = await pollOfficialMoments({
+      fetchFn: async () => {
+        n += 1;
+        if (n === 1) {
+          return { status: "preparing", moments: morning, coverageNm: 40, totalNm: 3500 };
+        }
+        return { status: "ready", moments: crossing, coverageNm: 3500, totalNm: 3500 };
+      },
+      sleep: async () => {},
+      onUpdate: (next) => seen.push(next.entries.map((row) => row.signature).join(",")),
+    });
+    assert.equal(n, 2);
+    assert.equal(entries.length, 4);
+    assert.equal(entries[2].signature, "eaux");
+    assert.equal(entries[3].signature, "arrivee");
+    assert.deepEqual(seen, ["dep,h11", "dep,h11,eaux,arrivee"]);
+    assert.equal(momentsStillPartial({ status: "preparing", coverageNm: 40, totalNm: 3500 }), true);
+    assert.equal(momentsStillPartial({ status: "ready", coverageNm: 3500, totalNm: 3500 }), false);
+    assert.equal(momentsStillPartial({ status: "preparing", coverageNm: 3500, totalNm: 3500 }), false);
+
+    let officialGets = 0;
+    let slept = 0;
+    const official = await pollOfficialMoments({
+      fetchFn: async () => {
+        officialGets += 1;
+        return { status: "ready", moments: morning };
+      },
+      sleep: async () => { slept += 1; },
+    });
+    assert.equal(officialGets, 1);
+    assert.equal(slept, 0);
+    assert.equal(official.length, 2);
+  });
+});
+
+describe("useMomentJournal — : Suivre × ma route ignore until, Berry le garde", () => {
+  const rows = [
+    { t: "2026-10-18T08:00:00Z", signature: "dep" },
+    { t: "2026-10-18T11:00:00Z", signature: "h11" },
+    { t: "2026-12-02T08:00:00Z", signature: "eaux" },
+    { t: "2027-01-15T08:00:00Z", signature: "arrivee" },
+  ];
+  const live = "2026-10-18T09:00:00Z";
+
+  it("suivreCustom liste toute la traversée ; Berry coupe à until ; nowMoment reste ≤ maintenant", () => {
+    const app = readFileSync(join(here, "../App.jsx"), "utf8");
+    assert.match(app, /until: momentIso,\s*suivreCustom,/);
+    assert.match(src, /journalListUntil\(\{ mode, until, suivreCustom \}\)/);
+    assert.match(src, /momentAtOrBefore\(state\.entries, until\)/);
+
+    const customUntil = journalListUntil({ mode: "follow", until: live, suivreCustom: true });
+    assert.equal(customUntil, null);
+    const custom = visibleJournalEntries(rows, { until: customUntil });
+    assert.equal(custom.length, 4);
+    assert.equal(custom[2].signature, "eaux");
+    assert.equal(custom[3].signature, "arrivee");
+
+    const berryUntil = journalListUntil({ mode: "follow", until: live, suivreCustom: false });
+    assert.equal(berryUntil, live);
+    const berry = visibleJournalEntries(rows, { until: berryUntil });
+    assert.equal(berry.length, 1);
+    assert.equal(berry[0].signature, "dep");
+    assert.equal(momentAtOrBefore(rows, live).signature, "dep");
+    assert.equal(momentAtOrBefore(rows, live).t <= live, true);
   });
 });
 

@@ -7,10 +7,18 @@ import { isAiGeneratedSource, llmSourceLabel, llmSourceShowsBrands } from "../ut
  * a fallback (OpenRouter, Claude, NIM). Nemotron on Token Factory adds the
  * names NVIDIA and Nebius as text — no third-party logo.
  */
-export const LlmSourceBadge = memo(function LlmSourceBadge({ source, label = null, testId = "llm-source", className = "" }) {
+export const LlmSourceBadge = memo(function LlmSourceBadge({
+  source,
+  reviewedBy = null,
+  label = null,
+  testId = "llm-source",
+  className = "",
+  textOnly = false,
+  hidden = false,
+}) {
   const { t } = useLang();
   // `label` lets a caller name the model with its own mapping (film sources).
-  const model = label || llmSourceLabel(source, t);
+  const model = label || llmSourceLabel(source, t, reviewedBy);
   const aiGenerated = isAiGeneratedSource(source);
   const showBrands = llmSourceShowsBrands(source);
   const line = aiGenerated ? t("aiActGeneratedLabel", { model }) : model;
@@ -20,6 +28,7 @@ export const LlmSourceBadge = memo(function LlmSourceBadge({ source, label = nul
       data-testid={testId}
       data-ai-generated={aiGenerated ? "true" : "false"}
       data-llm-source={source || ""}
+      hidden={hidden || undefined}
       className={`flex flex-col gap-0.5 min-w-0 ${className}`.trim()}
     >
       <span className="text-xs text-white leading-snug">{line}</span>
