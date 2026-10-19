@@ -1,3 +1,4 @@
+import { zoneWindAt } from "../utils/climatologyWind.js";
 const COLOR = "#2dd4bf";
 
 export function escHtml(value) {
@@ -108,7 +109,12 @@ export function layerPopupHtml(kind, p, t) {
   </div>`;
 }
 
-export function pointPopupHtml(data, t) {
+/**
+ * Popup d'un clic sur la carte. `where` ({ lat, lon, month }) sert au repli :
+ * si l'atlas ne donne aucune valeur (coupé, hors ligne), le vent de zone est
+ * affiché et signalé comme tel, au lieu d'une case vide.
+ */
+export function pointPopupHtml(data, t, where = null) {
   const w = data?.wind_atlas?.most_likely || data?.wind_atlas?.vector_mean;
   const wave = data?.wave;
   const cur = data?.current;
@@ -117,10 +123,17 @@ export function pointPopupHtml(data, t) {
   if (wave?.hs_p50_m != null) bits.push(`Hs P50 ${escHtml(wave.hs_p50_m)} m`);
   if (wave?.hs_p90_m != null) bits.push(`Hs P90 ${escHtml(wave.hs_p90_m)} m`);
   if (cur && !cur.below_threshold) bits.push(`courant ${escHtml(cur.speed_knots)} kn`);
+  let fallbackNote = "";
+  if (!bits.length && where && Number.isFinite(Number(where.lat)) && Number.isFinite(Number(where.lon))) {
+    const zone = zoneWindAt(Number(where.lat), Number(where.lon), data?.month ?? where.month);
+    bits.push(`vent ${escHtml(Math.round(zone.speedKnots))} kn / ${escHtml(Math.round(zone.dirFromDeg))}°`);
+    fallbackNote = `<div style="font-size:10px;color:#fcd34d;margin-top:3px;" data-testid="climatology-zone-fallback">${escHtml(t("climatologyAtlasDown"))}</div>`;
+  }
   return `<div data-testid="climatology-map-popup" style="min-width:210px;">
     <div style="font-weight:700;color:#fff;font-size:13px;">${escHtml(t("modeClimatologyFull"))}</div>
     ${climoCaptionHtml(data?.month, t)}
     <div style="font-size:11px;color:#e2e8f0;">${bits.join(" · ") || escHtml(data?.coordinates?.cell_selection)}</div>
+    ${fallbackNote}
     <div style="font-size:10px;color:#fde68a;margin-top:8px;">${escHtml(t("climoDisclaimer"))}</div>
   </div>`;
 }

@@ -115,29 +115,33 @@ def test_grib_get_returns_pending_and_kicks_shared_refresh(client, monkeypatch):
     assert len(calls) == 1
 
 
-def test_grib_kick_deduplicates_active_thread(monkeypatch):
-    # Threaded path (pipeline flag off); the child-process path is below.
-    import threading
+def test_grib_kick_deduplicates_when_variable_is_zero(monkeypatch):
+    # L'ancien chemin à fils est retiré : 0 passe aussi par la file, un second
+    # kick pendant le premier est refusé.
+    monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "0")
+    monkeypatch.setattr(voyage_api, "load_latest", lambda *_a, **_k: None)
+    providers = []
 
-    from weather_pipeline import get_pipeline
+    class _Queue:
+        def __init__(self):
+            self._busy = False
 
-    monkeypatch.delenv("NAVIGUIDE_WEATHER_PIPELINE", raising=False)
+        def submit(self, provider, *_args, **_kwargs):
+            providers.append(provider)
+            if self._busy:
+                return False
+            self._busy = True
+            return True
 
-    started = threading.Event()
-    release = threading.Event()
+        def provider_busy(self, _provider):
+            return self._busy
 
-    def _load(*_args, **_kwargs):
-        started.set()
-        release.wait(1)
-        return None
-
-    get_pipeline().clear()
-    monkeypatch.setattr(voyage_api, "maybe_refresh_official", _load)
-
+    queue = _Queue()
+    monkeypatch.setattr(voyage_api, "get_async_weather_queue", lambda: queue)
     assert voyage_api._kick_official_grib({"lat": 46.15, "lon": -1.16}) is True
-    assert started.wait(1)
+    assert providers == ["grib-wind"]
     assert voyage_api._kick_official_grib({"lat": 46.15, "lon": -1.16}) is False
-    release.set()
+    assert voyage_api._official_grib_refreshing() is True
 
 
 def test_grib_kick_deduplicates_active_child_process(monkeypatch, tmp_path):

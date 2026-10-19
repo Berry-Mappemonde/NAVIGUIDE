@@ -406,15 +406,21 @@ export function useClimatologyLayer({
       if (drawingRef.current) return;
       const { lat, lng } = ev.latlng || {};
       if (lat == null) return;
-      fetchJson(atlasPointUrl({ lat, lon: wrapLon(lng), month: m }))
+      const where = { lat, lon: wrapLon(lng), month: m };
+      const open = (data) => {
+        if (cancelled) return;
+        L.popup({ ...popupOpts, className: "bi-climatology-popup" })
+          .setLatLng(ev.latlng)
+          .setContent(pointPopupHtml(data, tRef.current, where))
+          .openOn(map);
+      };
+      fetchJson(atlasPointUrl(where))
         .then((data) => {
           onPointRef.current?.(data);
-          L.popup({ ...popupOpts, className: "bi-climatology-popup" })
-            .setLatLng(ev.latlng)
-            .setContent(pointPopupHtml(data, tRef.current))
-            .openOn(map);
+          open(data);
         })
-        .catch(() => {});
+        // Atlas coupé : repli de zone signalé, jamais une case vide ni rien.
+        .catch(() => open(null));
     };
     map.on("click", onClick);
 
