@@ -12,6 +12,7 @@ import { getCardinalDirection } from "../utils/getCardinalDirection.js";
 import { haversineNm } from "../utils/geo.js";
 import { localizePlaceName } from "../utils/placeNames.js";
 import { filmZeeBucket, filmZeeForBucket } from "./filmZeeStep.js";
+import { displayStopName } from "../utils/stopLabels.js";
 
 const TERRITORY = {
   fr: {
@@ -967,14 +968,14 @@ function legSentence(dossier, lang) {
   const en = isEn(lang);
   const mark = (dossier?.marks || []).find((m) => m.kind === "leg");
   const polar = dossier?.polar || {};
+  const to = mark?.to ? displayStopName(mark.to, lang) : mark?.to;
+  const from = mark?.from ? displayStopName(mark.from, lang) : mark?.from;
   if (mark?.vehicle === "plane" || mark?.phase === "air-out" || mark?.phase === "air-return") {
-    const quay = mark.from || "";
+    const quay = from || "";
     return en
       ? `The boat stays at the dock${quay ? ` in ${quay}` : ""} during the air hop.`
       : `Le bateau reste à quai${quay ? ` à ${quay}` : ""} pendant le transfert aérien.`;
   }
-  const to = mark?.to;
-  const from = mark?.from;
   const overland = isOverlandLeg(dossier, mark);
   const speed = !overland && Number.isFinite(polar.speedKnots) ? polar.speedKnots : null;
   const eta = formatEta(polar.etaHours, lang);

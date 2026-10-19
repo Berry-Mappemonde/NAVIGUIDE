@@ -102,6 +102,33 @@ export function displayStopName(name, lang = "fr", t = null) {
   return `${base} (${region})`;
 }
 
+/** « Açores (Corse) » → « Açores ». « Ajaccio (Corse) » ne bouge pas. */
+export function withoutForeignRegion(name) {
+  const raw = String(name || "").replace(/\s+/g, " ").trim();
+  const match = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(raw);
+  if (!match) return raw;
+  if (foreignRegion(match[1], match[2])) return match[1].trim();
+  return raw;
+}
+
+/** Distance routière : kilomètres, et les heures s'il y en a. Jamais de nm. */
+export function landLegDistanceClause(nm, hours, lang = "fr") {
+  const km = nmToRoundedKm(nm);
+  if (km == null) return "";
+  const loc = isEn(lang) ? "en-US" : "fr-FR";
+  const kmText = `${km.toLocaleString(loc)} km`;
+  const h = Number(hours);
+  if (!Number.isFinite(h) || h <= 0) return kmText;
+  return `${kmText}, ≈ ${String(h)} h`;
+}
+
+/** La phrase routière porte déjà les km : la ligne d'horloge ne répète pas des nm. */
+export function filmClockWithoutRoadNm(clockLine) {
+  return String(clockLine || "")
+    .replace(/^[\d\s\u202f\u00a0.,]+\s*nm\b\s*(?:·\s*)?/i, "")
+    .trim();
+}
+
 /** Transfert routier en km, avec les tournures déjà verrouillées (by road / par la route). */
 export function roadTransferLabel(nm, hours, t, lang = "fr", fromName = "", toName = "", byRoad = "", unitRoadHours = "", unitKm = "km") {
   const km = nmToRoundedKm(nm);

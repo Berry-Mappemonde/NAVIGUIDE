@@ -28,8 +28,8 @@ import { haversineNm, wrapLon } from "../utils/geo.js";
 import { MOMENT_MAX_NM } from "../hooks/useMomentJournal.js";
 // A null coordinate is unknown, never 0 (Number(null) === 0).
 import { finiteCoord } from "../hooks/useMoment.js";
-import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
-import { displayStopName } from "../utils/stopLabels.js";
+import { isLandLegNames } from "../utils/berryLegs.js";
+import { displayStopName, landLegDistanceClause } from "../utils/stopLabels.js";
 import { factKey, localizeStoredFact, localizeStoredTitle, sameShownMoment } from "../components/iciMaintenant.js";
 import fr from "../i18n/fr.js";
 import enDict from "../i18n/en.js";
@@ -601,7 +601,6 @@ export function escaleCard(leg, lang = "fr", { filmCum = null } = {}) {
   const from = displayStopName(fromRaw, lang);
   const to = toRaw ? displayStopName(toRaw, lang) : null;
   const land = isLandEscale(leg);
-  const u = en ? enDict : fr;
   const loc = en ? "en-GB" : "fr-FR";
   const quay = Number.isFinite(leg.holdDays) && leg.holdDays > 0
     ? (en ? ` — ${leg.holdDays} day${leg.holdDays > 1 ? "s" : ""} in port` : ` — ${leg.holdDays} jour${leg.holdDays > 1 ? "s" : ""} à quai`)
@@ -612,22 +611,19 @@ export function escaleCard(leg, lang = "fr", { filmCum = null } = {}) {
   let dist = "";
   if (distNm != null) {
     if (land) {
-      const km = nmToRoundedKm(distNm);
-      dist = km != null ? ` (${km.toLocaleString(loc)} ${u.unitKm} ${u.byRoad})` : "";
+      const clause = landLegDistanceClause(distNm, leg.roadHours, lang);
+      dist = clause ? `, ${clause}` : "";
     } else {
       dist = ` (${Math.round(distNm).toLocaleString(loc)} nm)`;
     }
   }
-  const roadH = land && Number.isFinite(leg.roadHours) && leg.roadHours > 0
-    ? `, ${leg.roadHours} ${u.unitRoadHours}`
-    : "";
   const eta = !land && leg.etaLabel
     ? (en ? `, expected on ${leg.etaLabel}` : `, arrivée prévue le ${leg.etaLabel}`)
     : "";
   const text = to
     ? (en
-      ? `Stopover ${from}${quay}. Departure: heading for ${to}${dist}${roadH}${eta}.`
-      : `Escale ${from}${quay}. Départ : cap sur ${to}${dist}${roadH}${eta}.`)
+      ? `Stopover ${from}${quay}. Departure: heading for ${to}${dist}${eta}.`
+      : `Escale ${from}${quay}. Départ : cap sur ${to}${dist}${eta}.`)
     : (en ? `Stopover ${from}${quay}.` : `Escale ${from}${quay}.`);
   return {
     key: `ev:escale:${fromRaw}→${toRaw || ""}`,

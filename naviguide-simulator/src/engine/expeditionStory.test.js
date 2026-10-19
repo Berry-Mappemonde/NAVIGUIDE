@@ -88,6 +88,20 @@ describe("expeditionStory — chronologique, jambe par jambe", () => {
     assert.equal(storyConnector(6, "fr"), "Puis");
   });
 
+  it("ne recolle pas la Corse sur les Açores", () => {
+    const acores = [
+      { name: "La Rochelle", nm: 0, filmNm: 0, iso: "2026-05-15T08:00:00Z", holdHours: 0 },
+      { name: "Açores (Corse)", nm: 1100, filmNm: 1100, iso: "2026-05-22T08:00:00Z", holdHours: 24 },
+    ];
+    const later = Date.parse("2026-06-01T00:00:00Z");
+    const frText = expeditionStory({ clock, marks: acores, live: null, now: later, lang: "fr" }).map(plain).join(" ");
+    const enText = expeditionStory({ clock, marks: acores, live: null, now: later, lang: "en" }).map(plain).join(" ");
+    assert.match(frText, /Açores/);
+    assert.match(enText, /Açores/);
+    assert.doesNotMatch(frText, /Corse|Corsica/);
+    assert.doesNotMatch(enText, /Corse|Corsica/);
+  });
+
   it("étape terrestre : km par la route, pas de nm", () => {
     const live = { filmNm: 19400, sailNm: 19260, seaHours: 94 * 24, iso: "2026-09-19T02:00:00Z", status: "live", vehicle: "main" };
     const paras = expeditionStory({ clock, marks, live, now, lang: "fr" }).map(plain);

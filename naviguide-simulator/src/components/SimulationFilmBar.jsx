@@ -5,7 +5,7 @@ import { filmBarEdgeStyle, readViewportWidth } from "../utils/filmBarLayout.js";
 import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
 import { SAINT_MAUR_LAND_HOURS } from "../engine/voyageClock.js";
 import { isLandLegNames } from "../utils/berryLegs.js";
-import { displayStopName, roadTransferLabel } from "../utils/stopLabels.js";
+import { displayStopName, filmClockWithoutRoadNm, roadTransferLabel } from "../utils/stopLabels.js";
 import { ListenButton } from "./ListenButton.jsx";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 import { DepartureField } from "./DepartureField.jsx";
@@ -241,7 +241,9 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
 
         <div data-testid="film-clock-line" className="text-[11px] text-white/75 tabular-nums leading-tight mt-0.5 truncate">
           <span data-testid="clock-line">
-            {clockLine || `${Math.round(nm).toLocaleString(lang === "en" ? "en-US" : "fr-FR")} nm`}
+            {landClock
+              ? filmClockWithoutRoadNm(clockLine)
+              : (clockLine || `${Math.round(nm).toLocaleString(lang === "en" ? "en-US" : "fr-FR")} nm`)}
             {!landClock && remainingNm > 0.5 && !finished && vehicle !== "plane"
               ? ` · ${t("nmRemaining")} ${Math.round(remainingNm).toLocaleString(lang === "en" ? "en-US" : "fr-FR")} nm`
               : ""}

@@ -1,7 +1,21 @@
 // Popup de climatologie : phrase lisible, jamais « kind: ».
 // Tuiles et point d'atlas factices — aucun appel Nebius ni Tavily.
+// GET /voyage/official : s'il manque, les assertions de route sont sautées.
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { dismissNotForNav } from "../helpers.js";
+import { dismissNotForNav, showLeftPanel } from "../helpers.js";
+
+const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/fv2");
+mkdirSync(recetteDir, { recursive: true });
+
+const shot = (page, name) => page.screenshot({
+  path: join(recetteDir, `${name}.webp`),
+  type: "webp",
+  quality: 85,
+  fullPage: false,
+});
 
 const POINT = {
   kind: "climatology",
@@ -25,7 +39,21 @@ const TILE = {
   }],
 };
 
+const ROAD = /Transfert routier Saint-Maur \(Indre\) → La Rochelle : \d[\d\s\u202f]* km, ≈ \d+ h|Road transfer Saint-Maur \(Indre\) → La Rochelle: \d[\d,\s]* km, ≈ \d+ h/;
+const PORT = /\d[\d\s\u202f\u00a0,.]* nm (jusqu’au port de destination|to destination port)/;
+const FOREIGN = /Açores \(Corse\)|Azores \(Corse\)|Azores \(Corsica\)/;
+
+async function officialUp(page) {
+  const res = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
+  if (!res || !res.ok()) return false;
+  const ctype = String(res.headers()["content-type"] || "").toLowerCase();
+  if (!ctype.includes("json")) return false;
+  const body = await res.json().catch(() => null);
+  return Boolean(body && typeof body === "object");
+}
+
 test("popup climatologie sans « kind: »", async ({ page }) => {
+  test.setTimeout(90_000);
   await page.route("**/climatology/wind/tiles/**", async (route) => {
     await route.fulfill({ contentType: "application/json", body: JSON.stringify(TILE) });
   });
@@ -40,6 +68,10 @@ test("popup climatologie sans « kind: »", async ({ page }) => {
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
   await page.getByTestId("scene-load-mask").waitFor({ state: "hidden", timeout: 25_000 }).catch(() => {});
+
+  const banner = page.getByTestId("climatology-banner");
+  await expect(banner).toBeVisible({ timeout: 15_000 });
+  await expect(banner).not.toContainText(/kind/i);
 
   await expect.poll(async () => page.evaluate(() => {
     const map = window.__naviguideScene?.map;
@@ -58,4 +90,50 @@ test("popup climatologie sans « kind: »", async ({ page }) => {
     Number.parseFloat(getComputedStyle(el).fontSize)
   ));
   expect(size).toBeGreaterThanOrEqual(12);
+  await shot(page, "01-climatologie");
+
+  const apiUp = await officialUp(page);
+  if (!apiUp) {
+    test.info().annotations.push({
+      type: "sans API",
+      description: "GET /voyage/official absent — assertions de route et de port sautées",
+    });
+    return;
+  }
+
+  await page.goto("/");
+  await dismissNotForNav(page);
+  await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
+
+  const rows = page.getByTestId("escale-legend-row");
+  const n = await rows.count();
+  for (let i = 0; i < n; i += 1) {
+    const label = await rows.nth(i).innerText();
+    expect(label, "suffixe d'une autre escale").not.toMatch(FOREIGN);
+  }
+
+  const land = page.getByTestId("film-land-leg");
+  const landVisible = await land.isVisible({ timeout: 8000 }).catch(() => false);
+  if (landVisible) {
+    await expect(land).toContainText(ROAD);
+    await expect(land).not.toContainText(/\bnm\b/);
+    const clock = await page.getByTestId("film-clock-line").innerText();
+    expect(clock).not.toMatch(/^\s*[\d\s\u202f\u00a0.,]+\s*nm\b/);
+    await shot(page, "02-transfert-routier");
+  } else {
+    test.info().annotations.push({
+      type: "hors Saint-Maur",
+      description: "horloge officielle hors jambe terrestre — libellé km non affiché",
+    });
+  }
+
+  await showLeftPanel(page);
+  const port = page.getByTestId("nm-to-destination-port");
+  await expect(port).toBeVisible({ timeout: 15_000 });
+  const portText = (await port.innerText()).replace(/[\u202f\u00a0]/g, " ");
+  expect(portText).not.toMatch(/\bPORT\b/);
+  if (portText !== "—") expect(portText).toMatch(PORT);
+  await shot(page, "03-distance-port");
 });
