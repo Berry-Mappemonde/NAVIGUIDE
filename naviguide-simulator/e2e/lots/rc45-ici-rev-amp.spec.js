@@ -63,7 +63,9 @@ async function seekAfterAjaccio(page) {
   const start = page.getByTestId("replay-start");
   if (!(await start.isEnabled().catch(() => false))) return false;
   await muteVoice(page);
-  await start.click({ timeout: 10_000 });
+  // Le film redessine la barre en continu : le clic Playwright attend une
+  // image stable et dépasse son délai. Le bouton est déjà actif.
+  await start.evaluate((el) => el.click());
   const ready = await page.waitForFunction(() => {
     const f = window.__naviguideFilm;
     return typeof f?.seekChapter === "function" && (f.chapterCount || 0) > 0;

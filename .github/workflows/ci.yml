@@ -75,17 +75,79 @@ jobs:
           pip install -q pip-audit
           python -m pip_audit -r server/requirements.txt --progress-spinner off
 
-  # Recette automatique : une invocation Playwright
-  # (fumée + scénarios) sur le build de prod, API hors ligne, stock figé.
-  # Un spec rouge bloque la PR. Specs `poste` (hindcast, LLM, réseau) ignorés en CI.
+  # Un seul build Vite, partagé. Les six tranches ne le refont pas.
+  simulator-dist:
+    name: simulateur — build Vite (partagé)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: changes
+    if: needs.changes.outputs.simulator == 'true'
+    defaults:
+      run:
+        working-directory: naviguide-simulator
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: naviguide-simulator/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: simulator-dist
+          path: naviguide-simulator/dist
+          retention-days: 1
+          if-no-files-found: error
+
+  # Mur court : l'application s'ouvre. Les scénarios de lots ne sont pas ici.
+  simulator-fumee:
+    name: simulateur — fumée
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    needs: [changes, simulator-dist]
+    if: needs.changes.outputs.simulator == 'true'
+    defaults:
+      run:
+        working-directory: naviguide-simulator
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: naviguide-simulator/package-lock.json
+      - run: npm ci
+      - uses: actions/download-artifact@v7
+        with:
+          name: simulator-dist
+          path: naviguide-simulator/dist
+      - name: Version Playwright (clé de cache)
+        id: pw
+        run: |
+          echo "version=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+      - run: npx playwright install --with-deps chromium
+      - name: Fumée (ouverture, barre, Suivre et Tracer)
+        run: npx playwright test e2e/smoke.spec.js
+
+  # Recette des scénarios sur le build partagé, API hors ligne, stock figé.
+  # Elle reste visible. Elle ne fait pas échouer la porte : le mur est le job
+  # simulateur (JS, build, pytest) et la fumée. Specs `poste` ignorés en CI.
   simulator-e2e:
-    # 28 sept. : la suite (101 specs, ~6 min en un job) est coupée en six tranches parallèles (--shard) :
-    # même contenu, même API sur le stock figé, ~1 min de tests chacune + ~1 min 30 de mise en place.
-    # Six jobs verts = recette verte. Dépôt public : les runners Actions sont gratuits et illimités.
+    # 28 sept. : la suite est coupée en six tranches. 19 oct. : le build Vite
+    # est celui du job simulator-dist. Un worker par tranche (le runner a deux
+    # cœurs ; Vite, l'API et un second navigateur faisaient dépasser les délais).
     name: simulateur — recette automatique (Playwright, stock figé) ${{ matrix.shard }}/6
     runs-on: ubuntu-latest
     timeout-minutes: 12
-    needs: changes
+    needs: [changes, simulator-dist]
     if: needs.changes.outputs.simulator == 'true'
     strategy:
       fail-fast: false
@@ -107,7 +169,10 @@ jobs:
           cache: pip
           cache-dependency-path: naviguide-simulator/server/requirements.txt
       - run: npm ci
-      - run: npm run build
+      - uses: actions/download-artifact@v7
+        with:
+          name: simulator-dist
+          path: naviguide-simulator/dist
       - run: pip install -r server/requirements.txt
       - name: Version Playwright (clé de cache)
         id: pw
@@ -120,10 +185,10 @@ jobs:
           restore-keys: |
             playwright-${{ runner.os }}-
       - run: npx playwright install --with-deps chromium
-      - name: Recette automatique (fumée + scénarios, stock figé) — tranche ${{ matrix.shard }}/6
+      - name: Recette automatique (scénarios, stock figé) — tranche ${{ matrix.shard }}/6
         env:
           PW_WITH_API: "1"
-        run: npx playwright test e2e/smoke.spec.js e2e/lots --shard=${{ matrix.shard }}/6
+        run: npx playwright test e2e/lots --shard=${{ matrix.shard }}/6
       - name: Résumé d'étape
         if: always()
         run: node scripts/e2e-summary.mjs test-results/e2e.json >> "$GITHUB_STEP_SUMMARY"
@@ -169,19 +234,22 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
 
   deploy-gate:
-    needs: [changes, simulator, simulator-e2e, polar]
+    # Mur : JS, build, pytest, fumée, polaire si touché, scripts de déploiement.
+    # La recette en six tranches tourne à côté et ne bloque pas cette porte.
+    needs: [changes, simulator, simulator-dist, simulator-fumee, polar]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Les jobs de test doivent être verts
+      - name: Les jobs du mur doivent être verts
         env:
           R_CHANGES: ${{ needs.changes.result }}
           R_SIMULATOR: ${{ needs.simulator.result }}
-          R_E2E: ${{ needs.simulator-e2e.result }}
+          R_DIST: ${{ needs.simulator-dist.result }}
+          R_FUMEE: ${{ needs.simulator-fumee.result }}
           R_POLAR: ${{ needs.polar.result }}
         run: |
           fail=0
-          for name in R_CHANGES R_SIMULATOR R_E2E R_POLAR; do
+          for name in R_CHANGES R_SIMULATOR R_DIST R_FUMEE R_POLAR; do
             result="${!name}"
             echo "$name=$result"
             case "$result" in

@@ -29,11 +29,11 @@ test("Tracer reste vivant après un zoom et accepte un point", async ({ page }) 
   await page.waitForFunction(() => window.__naviguideScene?.map?.setZoom);
   await page.evaluate(() => window.__naviguideScene.map.setZoom(8));
   await page.waitForTimeout(400);
-  await page.evaluate(() => { window.__navCommits = 0; });
-
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("film-bar")).toBeVisible();
+  // Le compteur part une fois l'onglet affiché : la rafale du clic n'est pas une boucle.
+  await page.evaluate(() => { window.__navCommits = 0; });
 
   await page.waitForTimeout(800);
   const commits = await page.evaluate(() => window.__navCommits || 0);
