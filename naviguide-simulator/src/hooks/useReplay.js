@@ -1339,7 +1339,10 @@ export function useReplay({
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (cancelled || ac.signal.aborted || !data) return;
-          applyResolvedMeta(data, "written");
+          const resolved = applyResolvedMeta(data, "written");
+          if (!resolved?.hasWritten || !resolved.source) return;
+          setFilmSource(resolved.source);
+          setFilmReviewedBy(resolved.reviewedBy || "");
         })
         .catch((err) => {
           if (err?.name === "AbortError" || cancelled || ac.signal.aborted) return;

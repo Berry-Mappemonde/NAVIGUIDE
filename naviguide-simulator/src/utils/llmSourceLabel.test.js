@@ -49,7 +49,15 @@ describe("llmSourceI18nKey", () => {
     assert.doesNotMatch(fr[lightning], /relu par Ultra/i);
     assert.equal(llmSourceI18nKey("nemotron-super", "nemotron-ultra"), "storySourceSuperReviewed");
     assert.equal(llmSourceI18nKey("nemotron", "nemotron-ultra"), "storySourceSuperReviewed");
+    assert.match(en.storySourceSuperReviewed, /Nemotron 3 Super/);
+    assert.match(en.storySourceSuperReviewed, /Token Factory/);
+    assert.match(en.storySourceSuperReviewed, /reviewed by Ultra/);
+    assert.match(fr.storySourceSuperReviewed, /Token Factory/);
     assert.match(fr.storySourceSuperReviewed, /relu par Ultra/);
+    assert.match(llmSourceLabel("nemotron-super", tEn, "nemotron-ultra"), /Token Factory/);
+    assert.equal(llmSourceShowsBrands("nemotron-super-reviewed-ultra"), true);
+    assert.doesNotMatch(llmSourceLabel("openrouter", tEn, "nemotron-ultra"), /Token Factory/);
+    assert.doesNotMatch(llmSourceLabel("nvidia-gpt-oss-20b", tEn, "nemotron-ultra"), /Token Factory/);
   });
 
   it("names each Token Factory tier exactly, and never a fallback", () => {

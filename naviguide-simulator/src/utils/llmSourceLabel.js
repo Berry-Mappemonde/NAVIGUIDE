@@ -49,6 +49,7 @@ const TOKEN_FACTORY_LABELS = new Set([
   "storySourceNano",
   "storySourceLightning",
   "storySourceSuper",
+  "storySourceSuperReviewed",
   "storySourceUltra",
 ]);
 

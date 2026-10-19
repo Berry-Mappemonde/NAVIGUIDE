@@ -1,8 +1,20 @@
-// ED2 — libellé rédigé en texte seul.
+// Libellé rédigé en texte seul, dans la rangée des commandes.
 // EN → Suivre → Revoir → Written : « Nemotron 3 Super » et « Token Factory »,
 // aucune image de logo. Un repli (NIM, OpenRouter) ne dit pas Token Factory.
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import { dismissNotForNav, leaveCinema, probeOfficial } from "../helpers.js";
+
+const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/ed2");
+mkdirSync(recetteDir, { recursive: true });
+const shot = (page, name) => page.screenshot({
+  path: join(recetteDir, `${name}.webp`),
+  type: "webp",
+  quality: 85,
+  fullPage: false,
+});
 
 const LLM_URL = /nebius|openai|anthropic|openrouter|tokenfactory|api\.nvidia/i;
 
@@ -95,7 +107,10 @@ test("EN, Follow, Replay, Written: text label, no third-party logo", async ({ pa
   await expect(source).not.toHaveAttribute("hidden", "");
   await expect(source.locator("img")).toHaveCount(0);
   await expect(source.locator("svg")).toHaveCount(0);
+  const inCommands = await source.evaluate((el) => Boolean(el.closest("[data-testid='film-commands']")));
+  expect(inCommands).toBe(true);
   expect(llmHits).toEqual([]);
+  await shot(page, "01-barre-lecture");
 
   if (await page.getByTestId("replay-start").isEnabled().catch(() => false)) {
     await page.getByTestId("replay-start").click();
@@ -125,6 +140,7 @@ test("replis NIM et OpenRouter : pas de Token Factory, pas de logo", async ({ pa
   await expect(source).not.toContainText("Token Factory");
   await expect(source.locator("img")).toHaveCount(0);
   await expect(source.locator("svg")).toHaveCount(0);
+  await shot(page, "02-repli-nim");
 
   await page.unroute("**/voyage/**/film**").catch(() => {});
   await installFilm(page, "openrouter");

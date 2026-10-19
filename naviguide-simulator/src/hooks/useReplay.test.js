@@ -1231,6 +1231,10 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.equal(filmSourceKey("nvidia-gpt-oss-20b"), "storySourceNim");
     assert.match(en.storySourceSuper, /Nemotron 3 Super/);
     assert.match(en.storySourceSuper, /Token Factory/);
+    assert.match(en.storySourceSuperReviewed, /Token Factory/);
+    assert.match(en.storySourceSuperReviewed, /reviewed by Ultra/);
+    assert.match(fr.storySourceSuperReviewed, /Token Factory/);
+    assert.match(fr.storySourceSuperReviewed, /relu par Ultra/);
     assert.doesNotMatch(en.storySourceNim, /Token Factory/);
     assert.doesNotMatch(en.storySourceOpenrouter, /Token Factory/);
     assert.doesNotMatch(fr.storySourceNim, /Token Factory/);
@@ -1275,6 +1279,11 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(bar, /testId="film-source"/);
     assert.match(bar, /textOnly/);
     assert.match(bar, /ed2WritingNemotron/);
+    const probeAt = hook.indexOf("const probeWritten");
+    assert.ok(probeAt > 0);
+    const probe = hook.slice(probeAt, probeAt + 900);
+    assert.match(probe, /setFilmSource\(resolved\.source\)/);
+    assert.match(probe, /setFilmReviewedBy\(resolved\.reviewedBy \|\| ""\)/);
     assert.match(bar, /filmStoryWrittenSoon/);
     assert.match(bar, /replay\.hasWritten/);
     assert.match(bar, /film-style-\$\{id\}/);
