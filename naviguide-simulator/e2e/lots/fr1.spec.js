@@ -1,4 +1,5 @@
-// La revue d'image ne change pas l'écran. Sans API, les boutons de la barre restent vérifiés.
+// La revue d'image ne change pas l'écran. Sans API, les commandes de la barre restent vérifiées.
+// Suivre et Tracer sont des radios ; Revoir et Cinéma sont des boutons.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,7 +32,7 @@ test("La barre film garde Suivre, Revoir et Cinéma", async ({ page }) => {
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByRole("button", { name: /Suivre l.expédition/ })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /Suivre l.expédition/ })).toBeVisible();
   await expect(page.getByTestId("replay-start")).toBeVisible();
   await expect(page.getByRole("button", { name: /Revoir l.expédition/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^(Cinéma|Cinema)$/ })).toBeVisible();
@@ -55,6 +56,6 @@ test("La barre film garde Suivre, Revoir et Cinéma", async ({ page }) => {
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "false");
-  await expect(page.getByRole("button", { name: "Tracer", exact: true })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Tracer", exact: true })).toBeVisible();
   await shot(page, "02-tracer");
 });
