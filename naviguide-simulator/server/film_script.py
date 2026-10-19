@@ -7191,7 +7191,7 @@ _EN_PLACE_NAMES = (
     ("marina de Papetoai", "Papetoai marina"),
 )
 _HEADING_FOR_RE = re.compile(
-    r"\b(?:heading for|course set for|departure for)\s+([^:.,]+)",
+    r"\b(?:heading(?:\s+(?!for\b)[A-Za-z'-]+){0,3}\s+for|course set for|departure for)\s+([^:.,]+)",
     re.I,
 )
 _ARRIVAL_AT_RE = re.compile(r"\bArrival\b.*?\bat\s+([^.]+)", re.I)
@@ -7225,18 +7225,24 @@ def heading_repeats_arrival(previous: str, sentence: str) -> bool:
 
 
 def polish_english_chapters(chapters: list[dict]) -> list[dict]:
+    """Retire un cap vers le lieu de la dernière arrivée, même si une phrase
+    d'escale (« three days ») s'intercale, et même si le cap porte un relèvement
+    (« heading northwest for »). Un cap vers un autre lieu lève le verrou."""
     out: list[dict] = []
-    prev = ""
+    last_arrival = ""
     for ch in chapters:
         if not isinstance(ch, dict):
             continue
         kept: list[str] = []
         for sent in _sentences(english_place_names(ch.get("text") or "")):
-            before = kept[-1] if kept else prev
-            if heading_repeats_arrival(before, sent):
+            if _ARRIVAL_AT_RE.search(sent):
+                last_arrival = sent
+            headed = _HEADING_FOR_RE.search(sent)
+            if last_arrival and heading_repeats_arrival(last_arrival, sent):
                 continue
+            if headed:
+                last_arrival = ""
             kept.append(sent)
-        prev = kept[-1] if kept else prev
         if not kept:
             continue
         out.append({**ch, "text": " ".join(kept)})

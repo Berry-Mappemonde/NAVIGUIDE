@@ -3223,6 +3223,42 @@ def test_english_heading_after_arrival_is_dropped():
     assert "Arrival on 15 August, at Saint-Pierre." in text
 
 
+def test_english_heading_with_bearing_after_stopover_is_dropped():
+    """« heading northwest for X » après une phrase d'escale reste un doublon
+    de l'arrivée à X. Un cap vers un autre lieu est conservé."""
+    from film_script import polish_english_chapters
+
+    chapters = polish_english_chapters([
+        {"id": "a", "text": (
+            "Arrival at Saint-Pierre (Saint-Pierre and Miquelon) on 15 August, "
+            "moored at the port. A three-day stopover."
+        )},
+        {"id": "b", "text": (
+            "On 16 August, Berry-Mappemonde leaves Saint-Pierre, "
+            "heading northwest for Saint-Pierre (Saint-Pierre-et-Miquelon). "
+            "Then, Canadian waters."
+        )},
+        {"id": "c", "text": (
+            "Arrival at Halifax (Nova Scotia) on 25 August. One day at the harbour."
+        )},
+        {"id": "d", "text": (
+            "On 25 August, Berry-Mappemonde leaves Halifax (Nova Scotia), "
+            "heading south for Halifax (Nova Scotia). The next day, Surinamese waters."
+        )},
+        {"id": "e", "text": (
+            "Arrival at La Rochelle on 15 May. "
+            "On 15 May, heading southwest for Ajaccio (Corse)."
+        )},
+    ])
+    text = " ".join(c["text"] for c in chapters)
+    assert "heading northwest for Saint-Pierre" not in text
+    assert "heading south for Halifax" not in text
+    assert "Then, Canadian waters." in text
+    assert "Surinamese waters." in text
+    assert "heading southwest for Ajaccio" in text
+    assert "Arrival at Saint-Pierre" in text
+
+
 def test_english_discourse_uses_english_place_names():
     from film_script import english_place_names
 
