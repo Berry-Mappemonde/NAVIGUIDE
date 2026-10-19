@@ -105,8 +105,8 @@ describe("SkipperOrdersPanel — remise d’un chiffre", () => {
 });
 
 describe("SkipperOrdersPanel — Demander conseil", () => {
-  it("le bouton Simulation dit Demander conseil, plus Recalculer l'itinéraire", () => {
-    const sim = readFileSync(join(here, "SimulationPanel.jsx"), "utf8");
+  it("le bouton Demander conseil est sur le panneau d'étape", () => {
+    const sim = readFileSync(join(here, "EtapePanel.jsx"), "utf8");
     const fr = readFileSync(join(here, "..", "i18n", "fr.js"), "utf8");
     const en = readFileSync(join(here, "..", "i18n", "en.js"), "utf8");
     assert.match(sim, /recomputeButton/);

@@ -426,7 +426,7 @@ export default {
   tracerModeLabel:   "Plot",
   exitTracerShort:   "Exit Plot",
 
-  // ── Nav buttons (SimulationPanel) ─────────────────────────────────────────
+  // ── Nav buttons (film bar) ────────────────────────────────────────────────
   previous: "Previous",
   next:     "Next",
   previousEscale: "Previous stop",

@@ -37,7 +37,7 @@ describe("Sidebar layout", () => {
   });
 
   it("garde les surfaces par alias : étape, sac, récit, journal — fiche d'escale hors du sac", () => {
-    assert.match(sidebar, /<SimulationPanel/);
+    assert.match(sidebar, /<EtapePanel/);
     assert.match(sidebar, /<IciMaintenant/);
     assert.match(sidebar, /data-testid="here-product"/);
     assert.match(sidebar, /data-testid="briefing"/);

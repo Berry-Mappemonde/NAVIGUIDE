@@ -85,7 +85,7 @@ describe("contrat UI produit", () => {
     const app = read("../App.jsx");
     const filmBar = read("../components/SimulationFilmBar.jsx");
     const sidebar = read("../components/Sidebar.jsx");
-    const simulationPanel = read("../components/SimulationPanel.jsx");
+    const simulationPanel = read("../components/EtapePanel.jsx");
     // Play / vitesses vivent aussi en Suivre sur ma route — jamais en
     // Suivre × Berry (le live officiel commande).
     assert.match(app, /const playControlsActive = isTracer \|\| suivreCustom;/);
@@ -124,7 +124,7 @@ describe("contrat UI produit", () => {
   it("garde LIVE une seule fois dans le HUD et la météo sur la même ligne", () => {
     const app = read("../App.jsx");
     const filmBar = read("../components/SimulationFilmBar.jsx");
-    const simulationPanel = read("../components/SimulationPanel.jsx");
+    const simulationPanel = read("../components/EtapePanel.jsx");
     assert.match(app, /liveStatus=\{isSuivre/);
     assert.match(filmBar, /<span data-testid="weather-line" className="text-cyan-200\/85">/);
     assert.doesNotMatch(simulationPanel, /bg-emerald-500\/20/);
@@ -142,7 +142,7 @@ describe("contrat UI produit", () => {
 
   it("retire la mention non éditable et la date répétée de la jambe", () => {
     const app = read("../App.jsx");
-    const panel = read("../components/SimulationPanel.jsx");
+    const panel = read("../components/EtapePanel.jsx");
     const fr = read("../i18n/fr.js");
     assert.doesNotMatch(app, /civilDate=/);
     assert.doesNotMatch(panel, /civilDate/);
@@ -201,7 +201,7 @@ describe("contrat UI produit", () => {
     const app = read("../App.jsx");
     const tools = read("../components/ToolsSidebar.jsx");
     const skipper = read("../components/SkipperOrdersPanel.jsx");
-    const sim = read("../components/SimulationPanel.jsx");
+    const sim = read("../components/EtapePanel.jsx");
     assert.match(app, /tracerLayout=\{!isSuivre\}/);
     assert.doesNotMatch(app, /showAdvice=/);
     assert.match(tools, /tracerLayout = false/);

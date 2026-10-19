@@ -187,7 +187,7 @@ export function IciMaintenant({
   mode = "follow",
   routeSource = "berry",
   planReview = null,
-  simulation = null,
+  etape = null,
   hereBody = null,
   hereText = "",
   escale = null,
@@ -308,7 +308,7 @@ export function IciMaintenant({
             >
               {formatLegLine(shown?.leg, t, lang)}
             </p>
-            {simulation}
+            {etape}
           </Section>
 
           <Section testId="ici-section-alerts" label={t("iciSectionAlerts")}>

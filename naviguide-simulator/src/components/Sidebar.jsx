@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
-import { SimulationPanel } from "./SimulationPanel";
+import { EtapePanel } from "./EtapePanel";
 import { JournalPanel } from "./JournalPanel.jsx";
 import { IciMaintenant } from "./IciMaintenant.jsx";
 import { LogbookChat } from "./LogbookChat.jsx";
@@ -476,8 +476,8 @@ export const Sidebar = memo(function Sidebar({
             onMomentDismiss={onMomentDismiss}
             onMomentNext={onMomentNext}
             onMomentFocus={onBriefingFocus}
-            simulation={(
-              <SimulationPanel
+            etape={(
+              <EtapePanel
                 legContext={legContext}
                 clockSample={clockSample}
                 kindLabel=""

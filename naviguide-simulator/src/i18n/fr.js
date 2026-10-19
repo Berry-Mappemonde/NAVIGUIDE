@@ -426,7 +426,7 @@ export default {
   tracerModeLabel:   "Tracer",
   exitTracerShort:   "Quitter Tracer",
 
-  // ── Nav buttons (SimulationPanel) ─────────────────────────────────────────
+  // ── Nav buttons (barre film) ──────────────────────────────────────────────
   previous: "Précédent",
   next:     "Suivant",
   previousEscale: "Escale précédente",
