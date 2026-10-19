@@ -17,6 +17,7 @@ import {
   waveColor,
 } from "./climatologyPaint.js";
 import { climoPointLngs, cycloneLatLngCopies, groupCycloneFeatures } from "./climatologyWorld.js";
+import { drawCapForZoom, LAYER_DRAW_CAPS } from "../engine/layerWarm.js";
 import {
   VIEW_DEBOUNCE_MS,
   climoViewKey,
@@ -75,6 +76,14 @@ function mergeTileFeatures(collections, paintProps) {
 const EMPTY_LAYERS = { wind: null, waveP50: null, waveP90: null, waveMean: null, current: null, cyclones: null };
 
 /** Survit au remontage React / StrictMode : le spec RF9 exige created=0 à vue égale. */
+const CLIMO_DRAW_CAPS = {
+  wind: LAYER_DRAW_CAPS.wind,
+  waveP50: LAYER_DRAW_CAPS.wave,
+  waveP90: LAYER_DRAW_CAPS.wave,
+  waveMean: LAYER_DRAW_CAPS.wave,
+  current: LAYER_DRAW_CAPS.current,
+};
+
 const SHARED = {
   pools: emptyClimoPools(),
   cache: new Map(),
@@ -208,6 +217,7 @@ export function useClimatologyLayer({
         bounds,
         makeLayer,
         copiesFor: (lon) => visibleClimoLngs(climoPointLngs(lon), bounds),
+        maxCount: drawCapForZoom(map.getZoom(), CLIMO_DRAW_CAPS[layerKey] || LAYER_DRAW_CAPS.point),
       });
       if (layerKey === "wind") {
         SHARED.windSyncs += 1;
@@ -292,7 +302,7 @@ export function useClimatologyLayer({
       setCounts({ ...countsRef });
       const used = Object.values(sourcesRef).filter(Boolean);
       setSource(used.includes("global") ? "global" : (used.length ? "tiles" : null));
-      const painted = Object.values(countsRef).some(Boolean);
+      const painted = Object.values(countsRef).some((n) => Number(n) > 0);
       if (!painted) setError("atlas_empty");
       else setError(null);
     };
@@ -336,8 +346,9 @@ export function useClimatologyLayer({
     const loadCyclones = async () => {
       const data = await fetchJson(atlasLayerUrl("cyclones", m), ctrl.signal);
       if (cancelled) return 0;
+      const storms = groupCycloneFeatures(data.features || []);
       const group = L.layerGroup();
-      groupCycloneFeatures(data.features || []).forEach((storm) => {
+      storms.forEach((storm) => {
         const copies = cycloneLatLngCopies(storm.coords);
         const p = storm.properties || {};
         copies.forEach((latlngs) => {
@@ -354,7 +365,8 @@ export function useClimatologyLayer({
         });
       });
       replaceGroup("cyclones", group);
-      return (data.features || []).length;
+      // Tempêtes distinctes (sid), pas les sommets ni les copies ±360°.
+      return storms.length;
     };
 
     setLoading(true);
@@ -364,7 +376,11 @@ export function useClimatologyLayer({
       first.push(loadSafe("cyclones", loadCyclones).then((n) => { countsRef.cyclones = n || 0; }));
     }
     Promise.all(first).finally(() => {
-      if (!cancelled) setLoading(false);
+      if (cancelled) return;
+      // Les cyclones arrivent après les vecteurs : republier pour ne pas
+      // laisser atlas_empty alors que des traces sont peintes.
+      publishCounts();
+      setLoading(false);
     });
 
     let debounceTimer = 0;

@@ -13,6 +13,7 @@ import {
   worldCopyLngs,
   worldCopyPolygonCoords,
 } from "../utils/geo.js";
+import { LAYER_DRAW_CAPS, pointsWithinDrawCap } from "../engine/layerWarm.js";
 
 const catalogLayers = new Set();
 
@@ -204,9 +205,14 @@ export class SpatialCatalogLayer {
   }
 
   update(featureCollection) {
-    this.features = featureCollection?.features || [];
+    const drawn = pointsWithinDrawCap(
+      featureCollection?.features || [],
+      this.map?.getZoom?.(),
+      LAYER_DRAW_CAPS.point,
+    );
+    this.features = drawn;
     const next = new Map();
-    (featureCollection?.features || []).forEach((feature, index) => {
+    drawn.forEach((feature, index) => {
       const key = this._featureKey(feature, index);
       const existing = this.records.get(key);
       const record = existing ? this._update(existing, feature) : this._create(feature);

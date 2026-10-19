@@ -18,6 +18,61 @@ const PEARL_PARALLEL = 4;
 export const DRAFT_WARM_DEBOUNCE_MS = 1500;
 export const LAYER_WARM_MAX_CELLS = 80;
 
+/** Plafond de marqueurs par calque, avant le facteur de zoom. */
+export const LAYER_DRAW_CAPS = Object.freeze({
+  point: 160,
+  arrow: 120,
+  current: 110,
+  wind: 240,
+  wave: 180,
+  grib: 72,
+});
+
+/**
+ * Zoom inconnu : plafond plein. Sinon 0,45 / 0,70 / 0,85, sans descendre
+ * sous 24 ni dépasser le plafond du calque.
+ */
+export function drawCapForZoom(zoom, fullCap) {
+  const cap = Math.max(1, Math.round(Number(fullCap) || 1));
+  const z = Number(zoom);
+  if (!Number.isFinite(z)) return cap;
+  let factor = 1;
+  if (z <= 3) factor = 0.45;
+  else if (z <= 5) factor = 0.7;
+  else if (z <= 8) factor = 0.85;
+  const scaled = Math.round(cap * factor);
+  const floor = Math.min(24, cap);
+  return Math.max(floor, Math.min(cap, scaled));
+}
+
+/** Garde un sous-ensemble régulier. En dessous du plafond, la liste ne change pas. */
+export function decimateByZoom(items, zoom, fullCap) {
+  const list = Array.isArray(items) ? items : [];
+  const cap = drawCapForZoom(zoom, fullCap);
+  if (list.length <= cap) return list;
+  const stride = list.length / cap;
+  const picked = [];
+  const used = new Set();
+  for (let i = 0; i < cap; i += 1) {
+    const idx = Math.min(list.length - 1, Math.floor(i * stride));
+    if (used.has(idx)) continue;
+    used.add(idx);
+    picked.push(list[idx]);
+  }
+  return picked;
+}
+
+/** Les polygones et les lignes restent. Seuls les points sont décimés. */
+export function pointsWithinDrawCap(features, zoom, fullCap = LAYER_DRAW_CAPS.point) {
+  const shapes = [];
+  const points = [];
+  for (const feature of features || []) {
+    if (feature?.geometry?.type === "Point") points.push(feature);
+    else shapes.push(feature);
+  }
+  return [...shapes, ...decimateByZoom(points, zoom, fullCap)];
+}
+
 function pushLonLat(out, pair) {
   if (!Array.isArray(pair) || pair.length < 2) return;
   const lon = Number(pair[0]);

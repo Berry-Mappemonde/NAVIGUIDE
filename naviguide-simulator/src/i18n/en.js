@@ -632,6 +632,8 @@ export default {
   layerFicheKindGlider: "Underwater glider",
   layerFicheClose: "Close the card",
 
+  // LY1 — Clément Filisetti
+  climatologyUnavailable: "atlas unavailable",
   // SO1
   skipperCoastalRule: "Coastal advised for < 12 m",
   exportNeedsRoute: "No route to export",

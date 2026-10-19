@@ -146,6 +146,38 @@ def test_climatology_block_atlas_when_point_answers(monkeypatch):
     assert block["kind"] == "climatology"
 
 
+def test_traces_are_not_atlas_empty_and_count_storms(monkeypatch):
+    """Des traces IBTrACS ne donnent pas atlas_empty. Le compte est les tempêtes, pas les sommets."""
+    reset_atlas_cache()
+    payload = {
+        "kind": "climatology",
+        "period": "1980-2020",
+        "cyclone": {
+            "tracks_in_month": 99,
+            "tracks": [
+                {"sid": "A", "coordinates": [[170, -15], [179, -16], [-179, -17], [-170, -18]]},
+                {"sid": "A", "coordinates": [[-160, -19], [-150, -20]]},
+                {"sid": "B", "coordinates": [[10, 5], [11, 6], [12, 7]]},
+            ],
+        },
+    }
+    monkeypatch.setattr("climatology_atlas.fetch_atlas_point", lambda *a, **k: payload)
+    monkeypatch.setattr("climatology_atlas.fetch_atlas_crossings", lambda *a, **k: None)
+    block = climatology_block(15.0, -25.0, 9)
+    assert block["status"] != "atlas_empty"
+    assert block["source"] == "ibtracs"
+    assert block["period"] == "1980-2020"
+    assert block["ibtracsCount"] == 2
+    assert block["kind"] == "climatology"
+
+
+def test_census_counts_when_the_track_list_is_absent():
+    from climatology_atlas import ibtracs_track_count
+    assert ibtracs_track_count({"cyclone": {"tracks_in_month": 12}}) == 12
+    assert ibtracs_track_count({"kind": "climatology"}) == 0
+    assert ibtracs_track_count({"cyclone": {"nearby": 1}}) == 0
+
+
 def test_c4_rose_speed_percentiles_from_sectors():
     rose = {
         "most_likely": {"speed_knots": 16.0, "dir_deg": 45},

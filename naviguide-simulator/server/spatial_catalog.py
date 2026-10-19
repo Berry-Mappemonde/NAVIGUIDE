@@ -293,12 +293,17 @@ class SpatialCatalogIndex:
         shape_budget = min(len(shapes), max(1, budget // 3)) if shapes else 0
         simplified_shapes = [simplify_feature(feature, zoom) for feature in shapes[:shape_budget]]
         clustered_points = _cluster_points(points, bbox, max(1, budget - shape_budget), zoom, self.catalog)
+        if source_name:
+            total = sum(1 for entry in self._entries if entry.source.lower() == source_name)
+        else:
+            total = len(self._entries)
         return {
             "type": "FeatureCollection",
             "features": [*simplified_shapes, *clustered_points],
             "metadata": {
                 "catalog": self.catalog,
                 "source": source_name or None,
+                "total": total,
                 "matched": len(visible),
                 "rendered": len(simplified_shapes) + len(clustered_points),
                 "budget": budget,

@@ -11,8 +11,9 @@ blueintelligence.online en direct (600-800 req/s). Ici :
   machine ; NAVIGUIDE_BI_CACHE_DIR pour le déplacer) ;
 - 50 requêtes identiques en vol = un seul appel amont ;
 - 6 appels amont au plus en parallèle ;
-- amont mort (5xx / réseau) : 30 s sans réessayer, réponse 502 immédiate
-  → le client passe en repli zone (kind reste « climatology »).
+- amont mort (5xx / réseau) : délai court, 30 s sans réessayer ; on sert la
+  dernière réponse bonne (même périmée), sinon 200 {"status":"unavailable"}
+  — jamais un 502 dans la console. Le client passe en repli zone.
 
 Incident 2026-09-22 (poste de recette) : 3 762 réponses 502 sur `point` pour
 281 succès. Cause : `wind.geojson` pèse 26 Mo et met ~18 s à sortir du VPS ;
@@ -49,7 +50,7 @@ TILE_RE = re.compile(r"^(wind|wave|current)/tiles/\d+/\d+/\d+\.json$")
 def is_allowed(rest: str) -> bool:
     return rest in ALLOWED or bool(TILE_RE.fullmatch(rest))
 TTL_S = 30 * 24 * 3600
-TIMEOUT_S = 12.0            # point, crossings, meta : l'atlas répond en moins d'une seconde
+TIMEOUT_S = 3.0             # court : point / crossings / meta répondent en moins d'une seconde
 LAYER_TIMEOUT_S = 90.0      # *.geojson : wind.geojson = 26 Mo, ~18 s même derrière nginx (22 sept.)
 DEAD_S = 30.0
 MAX_UPSTREAM = 6
@@ -113,13 +114,28 @@ def _sem_get() -> asyncio.Semaphore:
     return _sem
 
 
-def _read_cache(path: Path) -> bytes | None:
+def _read_cache(path: Path, *, allow_stale: bool = False) -> bytes | None:
     try:
-        if time.time() - path.stat().st_mtime > TTL_S:
+        if not allow_stale and time.time() - path.stat().st_mtime > TTL_S:
             return None
         return path.read_bytes()
     except OSError:
         return None
+
+
+_UNAVAILABLE = b'{"status":"unavailable"}'
+
+
+def _unavailable_response() -> Response:
+    """200, pas 502 : la console du navigateur ne montre pas d'échec réseau."""
+    return _json_response(_UNAVAILABLE, "UNAVAILABLE")
+
+
+def _stale_or_unavailable(path: Path) -> Response:
+    stale = _read_cache(path, allow_stale=True)
+    if stale:
+        return _json_response(stale, "STALE")
+    return _unavailable_response()
 
 
 def _write_cache(path: Path, body: bytes) -> None:
@@ -166,11 +182,12 @@ async def bi_climatology(rest: str, request: Request):
     if offline.enabled():
         # Stock figé : pas d'atlas amont. 200 vide → repli zone, pas de 502
         # dans la console (recette Playwright RF4).
-        return _json_response(b'{"kind":"unavailable"}', "OFFLINE")
+        return _json_response(b'{"kind":"unavailable","status":"unavailable"}', "OFFLINE")
     if is_dead(rest):
-        raise HTTPException(502, f"atlas unavailable (cooldown {rest})")
+        return _stale_or_unavailable(path)
     base = bi_base()
     if not base:
+        # BI_API_URL absente (#27) : erreur de configuration, aucun appel amont.
         raise HTTPException(502, "atlas unavailable (BI disabled)")
 
     lock = _locks.setdefault(key, asyncio.Lock())
@@ -179,17 +196,17 @@ async def bi_climatology(rest: str, request: Request):
         if cached is not None:
             return _json_response(cached, "HIT")
         if is_dead(rest):
-            raise HTTPException(502, f"atlas unavailable (cooldown {rest})")
+            return _stale_or_unavailable(path)
         params = request.query_params.multi_items()
         try:
             async with _sem_get():
                 status, body = await fetch_upstream(f"{base}/climatology/{rest}", params)
-        except Exception as exc:  # réseau, timeout, refus de connexion — ce point d'accès seulement
+        except Exception:  # réseau, timeout, refus de connexion — ce point d'accès seulement
             mark_dead(rest)
-            raise HTTPException(502, f"atlas unavailable ({type(exc).__name__})") from exc
+            return _stale_or_unavailable(path)
         if status >= 500 or status == 429:
             mark_dead(rest)
-            raise HTTPException(502, f"atlas unavailable (upstream {status})")
+            return _stale_or_unavailable(path)
         if status != 200:
             return Response(content=body, status_code=status, media_type="application/json")
         _write_cache(path, body)

@@ -7,6 +7,7 @@ import {
   waveHsColor,
 } from "../utils/gribSymbols.js";
 import { cameraLngForBoat, markerWorldLngs, wrapLon } from "../utils/waypointFlags.js";
+import { decimateByZoom, LAYER_DRAW_CAPS } from "../engine/layerWarm.js";
 
 function lonNearBox(lon, west, east) {
   const x = Number(lon);
@@ -64,11 +65,11 @@ export function useGribCorridorLayer(mapRef, { grib, mapReady, visible, whenIso,
     const [south, north, west, east] = box;
 
     const near = (grib.samples || []).filter((s) => sampleNearBox(s, south, north, west, east));
-    const slice = gribDisplayPoints(near.length ? near : grib.samples, {
+    const slice = decimateByZoom(gribDisplayPoints(near.length ? near : grib.samples, {
       lat: latCell,
       lon: camLon,
       whenIso,
-    });
+    }), map.getZoom(), LAYER_DRAW_CAPS.grib);
     const pane = map.getPane("grib") ? "grib" : "overlayPane";
     const cam = Number.isFinite(camLon) ? camLon : map.getCenter()?.lng;
     const nextWaves = new Set();

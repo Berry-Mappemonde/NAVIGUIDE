@@ -1,12 +1,19 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { MAX_PEARLS_SIM, flatFromCustomRoute, sampleLeg } from "./iciAlong.js";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
+  LAYER_DRAW_CAPS,
   createDraftWarmer,
+  decimateByZoom,
+  drawCapForZoom,
   geojsonFromDrawn,
   kickDraftPearls,
   kickLayerWarm,
   pointsFromCustomRoute,
+  pointsWithinDrawCap,
 } from "./layerWarm.js";
 
 const line = {
@@ -178,5 +185,45 @@ describe("layerWarm — brouillon pendant le tracé", () => {
     const pearls = sampleLeg(flat, { maxPearls: MAX_PEARLS_SIM });
     assert.ok(pearls.length >= 1 && pearls.length <= MAX_PEARLS_SIM);
     assert.ok(pearls.every((p) => p.lat > 44 && p.lat < 47 && p.lon < 0));
+  });
+});
+
+describe("décimation au zoom — plafond par calque", () => {
+  it("zoom non fini : plafond plein ; plus bas, le facteur ne descend pas sous 24", () => {
+    assert.equal(drawCapForZoom(Number.NaN, LAYER_DRAW_CAPS.wind), LAYER_DRAW_CAPS.wind);
+    assert.equal(drawCapForZoom(2, LAYER_DRAW_CAPS.wind), Math.round(LAYER_DRAW_CAPS.wind * 0.45));
+    assert.equal(drawCapForZoom(3, LAYER_DRAW_CAPS.point), Math.round(LAYER_DRAW_CAPS.point * 0.45));
+    assert.equal(drawCapForZoom(4, LAYER_DRAW_CAPS.wave), Math.round(LAYER_DRAW_CAPS.wave * 0.7));
+    assert.equal(drawCapForZoom(5, LAYER_DRAW_CAPS.current), Math.round(LAYER_DRAW_CAPS.current * 0.7));
+    assert.equal(drawCapForZoom(8, LAYER_DRAW_CAPS.grib), Math.max(24, Math.round(LAYER_DRAW_CAPS.grib * 0.85)));
+    assert.equal(drawCapForZoom(9, LAYER_DRAW_CAPS.arrow), LAYER_DRAW_CAPS.arrow);
+    assert.ok(drawCapForZoom(1, 10) <= 10);
+    assert.ok(drawCapForZoom(1, LAYER_DRAW_CAPS.wind) >= 24);
+  });
+
+  it("deux points restent, une grille dense est coupée, les polygones restent", () => {
+    const two = [{ geometry: { type: "Point" } }, { geometry: { type: "Point" } }];
+    assert.equal(decimateByZoom(two, 2, LAYER_DRAW_CAPS.point).length, 2);
+    const dense = Array.from({ length: 800 }, (_, i) => ({ id: i, geometry: { type: "Point" } }));
+    const cut = decimateByZoom(dense, 2, LAYER_DRAW_CAPS.point);
+    assert.ok(cut.length <= drawCapForZoom(2, LAYER_DRAW_CAPS.point));
+    assert.ok(cut.length >= 24);
+    const polygon = { geometry: { type: "Polygon", coordinates: [] } };
+    const mixed = pointsWithinDrawCap([polygon, ...dense], 2, LAYER_DRAW_CAPS.point);
+    assert.equal(mixed[0], polygon);
+    assert.ok(mixed.length < dense.length);
+  });
+
+  it("les calques dessinent avec ce plafond, sans réécrire le canvas", () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    const climo = readFileSync(join(root, "layers/useClimatologyLayer.js"), "utf8");
+    const catalog = readFileSync(join(root, "layers/spatialCatalogLayer.js"), "utf8");
+    const grib = readFileSync(join(root, "layers/useGribCorridorLayer.js"), "utf8");
+    const points = readFileSync(join(root, "layers/points.js"), "utf8");
+    assert.match(climo, /drawCapForZoom\(map\.getZoom\(\), CLIMO_DRAW_CAPS/);
+    assert.match(catalog, /pointsWithinDrawCap/);
+    assert.match(grib, /decimateByZoom\(/);
+    assert.match(points, /L\.canvas/);
+    assert.doesNotMatch(catalog, /L\.canvas\s*=/);
   });
 });

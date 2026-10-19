@@ -7,6 +7,56 @@ import { createAtlasScheduler, routeCells } from "../engine/atlasScheduler.js";
  * Browser fetch → JSON; HTTP errors carry `.status` so the scheduler can tell
  * « atlas down » (5xx / 429 / network) from « this cell never answers » (4xx).
  */
+/** Réponse BI muette : pas un point d'atlas. Le scheduler la traite comme une panne. */
+export function atlasNoticeFromBody(body) {
+  if (!body || typeof body !== "object") return null;
+  if (body.status === "unavailable" || body.kind === "unavailable") {
+    return { unavailable: true, source: null, period: null };
+  }
+  const period = body.period || body.periods?.cyclone || body.periods?.wind || null;
+  const tracks = body.ibtracsCount ?? body.cyclone?.tracks_in_month;
+  const count = Number(tracks);
+  const hasTraces = Number.isFinite(count) && count > 0;
+  if (!period && !hasTraces && body.kind !== "climatology") return null;
+  return {
+    unavailable: false,
+    source: hasTraces ? "IBTrACS" : (body.source || (body.kind === "climatology" ? "atlas" : null)),
+    period: period || null,
+  };
+}
+
+const atlasNotice = { unavailable: false, source: null, period: null };
+const noticeListeners = new Set();
+
+export function publishAtlasNotice(partial) {
+  if (!partial) return atlasNotice;
+  Object.assign(atlasNotice, partial);
+  const snap = { ...atlasNotice };
+  noticeListeners.forEach((fn) => {
+    try { fn(snap); } catch { /* un écouteur ne casse pas les autres */ }
+  });
+  return snap;
+}
+
+export function resetAtlasNotice() {
+  atlasNotice.unavailable = false;
+  atlasNotice.source = null;
+  atlasNotice.period = null;
+  noticeListeners.forEach((fn) => {
+    try { fn({ ...atlasNotice }); } catch { /* idem */ }
+  });
+}
+
+export function useAtlasNotice() {
+  const [snap, setSnap] = useState(() => ({ ...atlasNotice }));
+  useEffect(() => {
+    noticeListeners.add(setSnap);
+    setSnap({ ...atlasNotice });
+    return () => noticeListeners.delete(setSnap);
+  }, []);
+  return snap;
+}
+
 async function fetchJson(url) {
   const r = await fetch(url);
   if (!r.ok) {
@@ -14,7 +64,16 @@ async function fetchJson(url) {
     err.status = r.status;
     throw err;
   }
-  return r.json();
+  const body = await r.json();
+  const notice = atlasNoticeFromBody(body);
+  if (notice?.unavailable) {
+    publishAtlasNotice(notice);
+    const err = new Error("atlas unavailable");
+    err.status = 503;
+    throw err;
+  }
+  if (notice && (notice.period || notice.source)) publishAtlasNotice(notice);
+  return body;
 }
 
 // One scheduler per tab: the cache and the in-flight table are shared by
@@ -60,10 +119,21 @@ export function useAtlasLookup({
     return scheduler.subscribe((event) => {
       if (event.type === "down") {
         setAlive(false);
+        publishAtlasNotice({ unavailable: true, source: null, period: null });
         return;
       }
       if (event.type === "boat") setBoatPoint(event.point);
-      if (event.entry?.source === "atlas") setAlive(true);
+      const point = event.entry?.point || event.point;
+      const notice = atlasNoticeFromBody(point);
+      if (notice?.unavailable) {
+        setAlive(false);
+        publishAtlasNotice(notice);
+      } else if (notice && (notice.period || notice.source)) {
+        if (event.entry?.source === "atlas" || notice.source) setAlive(true);
+        publishAtlasNotice(notice);
+      } else if (event.entry?.source === "atlas") {
+        setAlive(true);
+      }
       setRevision((n) => n + 1);
     });
   }, [enabled]);
@@ -105,4 +175,5 @@ export function useAtlasLookup({
 
 export function resetAtlasCache() {
   scheduler.reset();
+  resetAtlasNotice();
 }

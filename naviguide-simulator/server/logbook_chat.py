@@ -16,6 +16,7 @@ Un chiffre ne passe jamais par le LLM : `filter_numbers` reste juge.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
@@ -1782,19 +1783,52 @@ def _facts_view(ctx: dict | None) -> dict[str, Any]:
     return {k: ctx.get(k) for k in keys if ctx.get(k) is not None}
 
 
+# Paquet /logbook/facts de l'heure UTC (la position du bateau change dans la journée).
+# Le chat (POST) recalcule ; seul ce GET est mis en cache.
+_FACTS_CACHE: dict[str, dict] = {}
+_FACTS_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def reset_facts_cache() -> None:
+    _FACTS_CACHE.clear()
+    _FACTS_LOCKS.clear()
+
+
+def facts_cache_key(now: datetime, lang: str | None) -> str:
+    """Heure UTC + langue + fonction de contexte (un monkeypatch de test ne réutilise pas la prod)."""
+    day = now.astimezone(timezone.utc).strftime("%Y-%m-%dT%H")
+    return f"{day}|{(lang or 'fr')[:2]}|{id(build_context)}"
+
+
 @router.get("/logbook/facts", dependencies=[Depends(_chat_limited)])
 async def get_logbook_facts(request: Request, lang: Optional[str] = "fr"):
-    """Paquet de faits du chat (recette RG19). Même limite que POST /logbook/chat."""
+    """Paquet de faits du chat (recette RG19). Même limite que POST /logbook/chat.
+
+    Le premier appel du jour paie le calcul (~18 s à froid). Le suivant, le même
+    jour et la même langue, relit le paquet.
+    """
     now = datetime.now(timezone.utc)
-    ctx = await build_context(None, now)
-    from toponyms import localize_ctx_places  # noqa: PLC0415
-    localize_ctx_places(ctx, lang or "fr")
-    return {
-        "status": "ready",
-        "t": now.isoformat().replace("+00:00", "Z"),
-        "tokens": estimate_tokens(ctx),
-        "facts": ctx,
-    }
+    key = facts_cache_key(now, lang)
+    hit = _FACTS_CACHE.get(key)
+    if hit is not None:
+        return {**hit, "cached": True}
+    lock = _FACTS_LOCKS.setdefault(key, asyncio.Lock())
+    async with lock:
+        hit = _FACTS_CACHE.get(key)
+        if hit is not None:
+            return {**hit, "cached": True}
+        ctx = await build_context(None, now)
+        from toponyms import localize_ctx_places  # noqa: PLC0415
+        localize_ctx_places(ctx, lang or "fr")
+        body = {
+            "status": "ready",
+            "t": now.isoformat().replace("+00:00", "Z"),
+            "tokens": estimate_tokens(ctx),
+            "facts": ctx,
+            "cached": False,
+        }
+        _FACTS_CACHE[key] = body
+        return body
 
 
 @router.post("/logbook/chat", dependencies=[Depends(_chat_limited)])

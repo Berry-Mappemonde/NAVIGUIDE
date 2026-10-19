@@ -632,6 +632,8 @@ export default {
   layerFicheKindGlider: "Planeur sous-marin",
   layerFicheClose: "Fermer la fiche",
 
+  // LY1 — Clément Filisetti
+  climatologyUnavailable: "atlas indisponible",
   // SO1
   skipperCoastalRule: "Côtier conseillé pour < 12 m",
   exportNeedsRoute: "Aucune route à exporter",

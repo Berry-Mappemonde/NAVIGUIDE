@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { allTilesErrored, loadClimoLayerFeatures } from "./climoLayerLoad.js";
+import { UNAVAILABLE_RETRY_MS, allTilesErrored, fetchJson, loadClimoLayerFeatures } from "./climoLayerLoad.js";
 
 const TILE_A = { z: 4, x: 8, y: 5 };
 const TILE_B = { z: 4, x: 8, y: 6 };
@@ -143,5 +143,86 @@ describe("loadClimoLayerFeatures", () => {
     assert.equal(second.features.length, 2);
     const geoAfter = urls.filter((u) => u.includes("wave.geojson")).length;
     assert.equal(geoAfter, 1);
+  });
+});
+
+describe("fetchJson — atlas coupé (200 « unavailable »)", () => {
+  it("lève une erreur au lieu de rendre une tuile vide", async () => {
+    const real = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ kind: "unavailable", status: "unavailable" }) });
+    try {
+      await assert.rejects(() => fetchJson("/bi/climatology/wind/tiles/3/1/1.json"), /atlas unavailable/);
+    } finally {
+      globalThis.fetch = real;
+    }
+  });
+
+  it("une tuile « unavailable » n'entre pas dans le cache de session", async () => {
+    const real = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ status: "unavailable" }) });
+    const cache = new Map();
+    try {
+      await loadClimoLayerFeatures({
+        kind: "wind",
+        month: 5,
+        tiles: [{ z: 3, x: 1, y: 1 }],
+        cache,
+        fetchJson,
+      });
+    } finally {
+      globalThis.fetch = real;
+    }
+    assert.equal(cache.size, 0);
+  });
+
+  it("une vraie réponse passe telle quelle", async () => {
+    const real = globalThis.fetch;
+    const body = { type: "FeatureCollection", features: [] };
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => body });
+    try {
+      assert.deepEqual(await fetchJson("/bi/climatology/wind/tiles/3/1/1.json"), body);
+    } finally {
+      globalThis.fetch = real;
+    }
+  });
+
+  it("atlas coupé : ni tuile ni repli global redemandés pendant la pause, puis redemandés", async () => {
+    const real = globalThis.fetch;
+    let calls = 0;
+    let up = false;
+    globalThis.fetch = async (url) => {
+      calls += 1;
+      if (up) return { ok: true, status: 200, json: async () => ({ features: [{ type: "Feature", url }] }) };
+      return { ok: true, status: 200, json: async () => ({ status: "unavailable" }) };
+    };
+    const cache = new Map();
+    const cooldown = new Map();
+    let t = 1_000;
+    const load = () => loadClimoLayerFeatures({
+      kind: "wave",
+      month: 7,
+      tiles: [{ z: 3, x: 2, y: 2 }, { z: 3, x: 2, y: 3 }],
+      cache,
+      cooldown,
+      fetchJson,
+      now: () => t,
+    });
+    try {
+      const down = await load();
+      assert.equal(calls, 3); // deux tuiles + le repli global
+      assert.equal(down.source, null);
+      assert.equal(cache.size, 0);
+      t += UNAVAILABLE_RETRY_MS - 1;
+      await load();
+      assert.equal(calls, 3);
+      up = true;
+      t += 1;
+      const back = await load();
+      assert.equal(calls, 5);
+      assert.equal(back.source, "tiles");
+      assert.equal(back.features.length, 2);
+    } finally {
+      globalThis.fetch = real;
+    }
   });
 });
