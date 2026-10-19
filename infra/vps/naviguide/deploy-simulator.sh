@@ -5,7 +5,9 @@
 #
 # Prerequisites: code in /home/naviguide/naviguide/naviguide-simulator
 # (rsync from the Mac — see publish-simulator-from-mac.sh).
-# DNS A naviguide.fr, www, simulator → 13.140.164.185 (Contabo) already in place.
+# DNS : naviguide.fr, www et simulator pointent encore vers l'OVH
+# (135.125.226.16). La bascule vers Contabo (13.140.164.185) est écrite
+# plus bas et n'est pas appliquée : le geste DNS reste à Clément.
 # Run on the VPS, outside a Blue Intelligence Full run if dist/ is missing
 # (npm would then run here).
 set -euo pipefail
@@ -228,6 +230,58 @@ for _ in $(seq 1 20); do
   sleep 1
 done
 echo "  naviguide-film-front (:8011) → HTTP $film_code"
+
+# BEGIN bascule-contabo
+# Bascule préparée, non appliquée. Ce bloc n'ouvre aucune connexion.
+# Accord explicite : NAVIGUIDE_APPLY_CONTABO_SWITCH=accord-clement
+# Même alors, ce script ne change pas le DNS.
+report_contabo_switch() {
+  local agreement="${NAVIGUIDE_APPLY_CONTABO_SWITCH:-}"
+  echo "Bascule préparée : naviguide.fr, www.naviguide.fr, simulator.naviguide.fr"
+  echo "  A actuel (OVH) : 135.125.226.16"
+  echo "  A préparé (Contabo) : 13.140.164.185"
+  if [ "$agreement" != "accord-clement" ]; then
+    echo "En attente de l'accord explicite de Clément. Aucun changement DNS."
+    return 0
+  fi
+  echo "Accord lu. Le DNS n'est pas modifié par ce script : Clément change les trois A vers 13.140.164.185."
+  return 0
+}
+# END bascule-contabo
+report_contabo_switch
+
+# BEGIN film-chapters
+count_film_chapters() {
+  printf '%s' "${1:-}" | python3 -c 'import json,sys
+raw=sys.stdin.read()
+try:
+    body=json.loads(raw) if raw.strip() else {}
+except Exception:
+    print(0)
+    raise SystemExit(0)
+chapters=body.get("chapters") if isinstance(body, dict) else None
+print(len(chapters) if isinstance(chapters, list) else 0)
+'
+}
+FILM_READY_TRIES="${FILM_READY_TRIES:-20}"
+FILM_READY_PAUSE="${FILM_READY_PAUSE:-1}"
+film_chapters=0
+for _ in $(seq 1 "$FILM_READY_TRIES"); do
+  film_body="$(curl -fsS -m 15 "http://127.0.0.1:8011/voyage/official/film?lang=en&seconds=150" || true)"
+  film_chapters="$(count_film_chapters "$film_body" || true)"
+  film_chapters="${film_chapters//[^0-9]/}"
+  film_chapters="${film_chapters:-0}"
+  if [ "$film_chapters" -ge 1 ]; then
+    break
+  fi
+  sleep "$FILM_READY_PAUSE"
+done
+if [ "${film_chapters:-0}" -lt 1 ]; then
+  echo "ERREUR : GET /voyage/official/film?lang=en&seconds=150 n'a aucun chapitre. Déploiement arrêté." >&2
+  exit 1
+fi
+echo "  film 150 s → ${film_chapters} chapitre(s)"
+# END film-chapters
 
 if [ "$HAVE_CERT" -eq 0 ]; then
   echo "  mode bootstrap : contrôles HTTPS publics sautés (le DNS pointe encore ailleurs)"

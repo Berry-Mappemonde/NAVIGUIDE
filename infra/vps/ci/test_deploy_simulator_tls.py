@@ -108,6 +108,75 @@ class DeploySimulatorTlsTests(unittest.TestCase):
         self.assertIn('sudo chown -R "$(id -un):$(id -gn)" "$WWW_ROOT"', text)
         self.assertNotIn("chown -R ubuntu:ubuntu", text)
 
+    def _marked(self, begin: str, end: str) -> str:
+        text = SCRIPT.read_text(encoding="utf-8")
+        return _section(text, begin, end)
+
+    def test_film_sans_chapitre_arrete_le_deploiement(self):
+        curl = self.bin / "curl"
+        curl.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf '%s' '{\"status\":\"preparing\",\"chapters\":[]}'\n",
+            encoding="utf-8",
+        )
+        curl.chmod(curl.stat().st_mode | stat.S_IEXEC)
+        env = dict(
+            os.environ,
+            PATH=f"{self.bin}:{os.environ['PATH']}",
+            STUB_LOG=str(self.log),
+            FILM_READY_TRIES="1",
+            FILM_READY_PAUSE="0",
+        )
+        proc = subprocess.run(
+            ["bash", "-c", "set -euo pipefail\n" + self._marked("# BEGIN film-chapters", "# END film-chapters")],
+            env=env, capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("aucun chapitre", proc.stderr)
+
+    def test_film_avec_chapitres_laisse_passer(self):
+        curl = self.bin / "curl"
+        curl.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf '%s' '{\"status\":\"ready\",\"chapters\":[{\"text\":\"Saint-Maur\"},{\"text\":\"La Rochelle\"}]}'\n",
+            encoding="utf-8",
+        )
+        curl.chmod(curl.stat().st_mode | stat.S_IEXEC)
+        env = dict(
+            os.environ,
+            PATH=f"{self.bin}:{os.environ['PATH']}",
+            STUB_LOG=str(self.log),
+            FILM_READY_TRIES="1",
+            FILM_READY_PAUSE="0",
+        )
+        proc = subprocess.run(
+            ["bash", "-c", "set -euo pipefail\n" + self._marked("# BEGIN film-chapters", "# END film-chapters")],
+            env=env, capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("2 chapitre", proc.stdout)
+
+    def test_bascule_ecrite_sans_contact_et_sans_accord(self):
+        block = self._marked("# BEGIN bascule-contabo", "# END bascule-contabo")
+        for banned in ("curl", "ssh", "wget", "nc ", "nmap"):
+            self.assertNotIn(banned, block)
+        self.assertIn("135.125.226.16", block)
+        self.assertIn("13.140.164.185", block)
+        script = "set -euo pipefail\n" + block + "\nreport_contabo_switch\n"
+        waiting = subprocess.run(
+            ["bash", "-c", script], capture_output=True, text=True, timeout=15,
+            env=dict(os.environ, NAVIGUIDE_APPLY_CONTABO_SWITCH=""),
+        )
+        self.assertEqual(waiting.returncode, 0, waiting.stderr)
+        self.assertIn("En attente de l'accord explicite de Clément", waiting.stdout)
+        agreed = subprocess.run(
+            ["bash", "-c", script], capture_output=True, text=True, timeout=15,
+            env=dict(os.environ, NAVIGUIDE_APPLY_CONTABO_SWITCH="accord-clement"),
+        )
+        self.assertEqual(agreed.returncode, 0, agreed.stderr)
+        self.assertIn("n'est pas modifié", agreed.stdout)
+        self.assertNotIn("En attente", agreed.stdout)
+
     def test_apply_scripts_par_defaut_sur_naviguide(self):
         for name in ("apply-site.sh", "apply-pending.sh"):
             text = (ROOT / "infra/vps/ci" / name).read_text(encoding="utf-8")
