@@ -3090,10 +3090,59 @@ def _align_quay_stop_to_passage(stop: dict, clock: dict | None) -> dict:
     }
 
 
+def _itinerary_sail_nm(mark: dict) -> Optional[float]:
+    """Milles de mer de l'itinéraire. `nm` prime sur `filmNm` (décalé d'un offset)."""
+    nm = mark.get("nm")
+    film = mark.get("filmNm")
+    if isinstance(nm, (int, float)) and not isinstance(nm, bool) and float(nm) > 0.5:
+        return float(nm)
+    if isinstance(film, (int, float)) and not isinstance(film, bool):
+        return float(film)
+    if isinstance(nm, (int, float)) and not isinstance(nm, bool):
+        return float(nm)
+    return None
+
+
+def _iso_on_itinerary(clock: dict | None, mark: dict) -> Optional[str]:
+    """Date du sommet déjà dans l'horloge, au mille d'itinéraire.
+
+    Une marque sans iso (Mata-Utu, Nouméa) ne doit pas disparaître : l'horloge
+    datée du poste leur colle parfois le filmNm du retour atlantique, et le
+    rapprochement par filmNm rate. Le sommet au mille réel, lui, est dans le
+    Pacifique. Aucune date n'est inventée : sans sommet, on ne date pas.
+    """
+    if not isinstance(mark, dict) or not isinstance(clock, dict):
+        return None
+    if _ms(mark.get("iso")) is not None:
+        return None
+    nm = _itinerary_sail_nm(mark)
+    if nm is None or not clock.get("vertices"):
+        return None
+    t0 = _ms(clock.get("t0"))
+    if t0 is None:
+        return None
+    from plan_review import _t_hours_at_sail_nm  # noqa: PLC0415
+
+    hit = _t_hours_at_sail_nm(clock, nm)
+    if hit is None:
+        return None
+    t_hours, _sail = hit
+    return _iso(t0 + int(round(float(t_hours) * 3_600_000)))
+
+
 def official_dated_stops(marks: list | None, clock: dict | None = None) -> list[dict]:
     """Escales datées, Saint-Maur + 15 mai 2026 en tête. Aucune autre date inventée."""
     raw = marks if marks else (clock or {}).get("marks")
-    dated = dated_marks(raw)
+    stamped: list = []
+    for mark in raw or []:
+        if not isinstance(mark, dict):
+            continue
+        row = dict(mark)
+        iso = _iso_on_itinerary(clock, row)
+        if iso:
+            row["iso"] = iso
+        stamped.append(row)
+    dated = dated_marks(stamped)
     saint_raw = next(
         (m for m in (raw or []) if isinstance(m, dict) and is_saint_maur(m.get("name") or "")),
         None,
@@ -4125,28 +4174,79 @@ def review_plan_stats(review: dict | None) -> dict[str, Any]:
     }
 
 
+def _non_air_stop_labels(stops: list | None) -> list[str]:
+    """Escales du bateau, dans l'ordre. Halifax et Saint-Pierre restent des escales
+    aériennes réelles, mais la liste dite « à venir » ne les reprend pas."""
+    out: list[str] = []
+    for raw in stops or []:
+        if isinstance(raw, dict):
+            name = raw.get("name") or raw.get("to") or ""
+        else:
+            name = str(raw or "")
+        label = _stop_spoken(name)
+        if not label or _is_air_only_stop(label):
+            continue
+        if any(same_stop(label, prev) for prev in out):
+            continue
+        out.append(label)
+    return out
+
+
+def _upcoming_from_route(
+    route_stops: list | None,
+    current_dest: str,
+    arrived: bool,
+    review_names: list[str],
+) -> list[str] | None:
+    """File réelle depuis la position. Une revue qui saute Mata-Utu et Nouméa
+    ne les efface pas : ils sont réinsérés, puis les noms de revue encore après."""
+    real = _non_air_stop_labels(route_stops)
+    if not real or not current_dest:
+        return None
+    ic = next((i for i, name in enumerate(real) if same_stop(name, current_dest)), None)
+    if ic is None:
+        return None
+    start = ic + 1 if arrived else ic
+    tail = list(real[start:])
+    for name in review_names:
+        if not name or _is_air_only_stop(name):
+            continue
+        label = _stop_spoken(name)
+        if not label or any(same_stop(item, label) for item in tail):
+            continue
+        # La Rochelle du départ est déjà derrière : le retour, lui, est encore devant.
+        tail.append(label)
+    return tail
+
+
 def upcoming_stop_names(
     review: dict | None,
     current_dest: str,
     *,
     arrived: bool = False,
+    route_stops: list | None = None,
 ) -> list[str]:
     """Escales à venir dans l'ordre du plan-review, depuis la dest courante.
 
     Si la dest courante n'est pas dans la revue, on se tait (rien n'est inventé).
     Les escales avion seules (Halifax…) sont omises : le bateau n'y va pas.
+    `route_stops` (marques réelles) réinsère une escale que la revue a sautée.
     """
     dests = [
         name for name in (review_plan_stats(review).get("dests") or [])
         if name and not _is_air_only_stop(name)
     ]
-    if not dests or not current_dest:
-        return []
-    idx = next((i for i, name in enumerate(dests) if same_stop(name, current_dest)), None)
-    if idx is None:
-        return []
-    start = idx + 1 if arrived else idx
-    return dests[start:]
+    review_names: list[str] = []
+    if dests and current_dest:
+        idx = next((i for i, name in enumerate(dests) if same_stop(name, current_dest)), None)
+        if idx is not None:
+            start = idx + 1 if arrived else idx
+            review_names = dests[start:]
+    if route_stops:
+        filled = _upcoming_from_route(route_stops, current_dest, arrived, review_names)
+        if filled is not None:
+            return filled
+    return review_names
 
 
 def eta_payload_for_stop(eta: dict | None, name: str) -> dict | None:
@@ -5440,6 +5540,7 @@ def _close_sentence(
     lang: str,
     review: dict | None = None,
     eta: dict | None = None,
+    route_stops: list | None = None,
 ) -> str:
     """Fin du film (2–3 phrases) : aujourd'hui, ETA du stock, escales à venir du plan-review."""
     live = live or {}
@@ -5449,7 +5550,9 @@ def _close_sentence(
     next_name = _stop_spoken(at_quay or dest)
     arrived = bool(at_quay or w.get("arrived"))
     eta_s = _eta_sentence(next_name, eta, lang) if next_name else ""
-    upcoming = upcoming_stop_names(review, next_name, arrived=arrived)
+    upcoming = upcoming_stop_names(
+        review, next_name, arrived=arrived, route_stops=route_stops,
+    )
     up_s = _upcoming_sentence(upcoming, lang)
     raw = " ".join(bit for bit in (first, eta_s, up_s) if bit)
     if not raw:
@@ -5844,7 +5947,7 @@ def _card(entry: dict) -> dict:
     }
 
 
-def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None, display_t0: str | None = None, review: dict | None = None, eta: dict | None = None, seconds: int = 0) -> list[dict]:
+def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None, display_t0: str | None = None, review: dict | None = None, eta: dict | None = None, seconds: int = 0, route_stops: list | None = None) -> list[dict]:
     chapters: list[dict] = []
     cited: set[str] = set()
     compact = _film_compact_template(seconds)
@@ -5891,7 +5994,9 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                     for sent in reversed(film_opens):
                         anchored.insert(0, (sent, w["tA"], {"role": "depart"}))
             if i == len(windows) - 1:
-                close = _close_sentence(w, live, lang, review=review, eta=eta)
+                close = _close_sentence(
+                    w, live, lang, review=review, eta=eta, route_stops=route_stops,
+                )
                 if close and close not in text:
                     text = speak_film_text(f"{text} {close}".strip(), lang)
                     anchored.append((close, w["tB"]))
@@ -7178,6 +7283,67 @@ def _parse_spoken_date(text: str, lang: str) -> Optional[datetime]:
         return None
 
 
+def _known_stop(place: str, stops: list | None) -> bool:
+    """Le lieu est une escale de la route, Halifax compris. « Noumea » ≡ « Nouméa »."""
+    if not place or not stops:
+        return False
+    labels: list[str] = []
+    for raw in stops:
+        if isinstance(raw, dict):
+            name = str(raw.get("name") or raw.get("to") or "")
+        else:
+            name = str(raw or "")
+        if name.strip():
+            labels.append(name.strip())
+    head = re.split(r"\s+[-–—]\s+", place.strip(), maxsplit=1)[0]
+    folded = _fold_stop(place)
+    for name in labels:
+        if same_stop(place, name) or (head and head != place.strip() and same_stop(head, name)):
+            return True
+        key = _fold_stop(norm_stop(name))
+        if len(key) >= 5 and key in folded:
+            return True
+    return False
+
+
+def _off_leg_stop(place: str, frm: Any, dest: Any, route_rows: list | None, kind: str) -> bool:
+    """Une autre escale de la route, dite pendant qu'on est encore ailleurs."""
+    if str(kind or "") not in {"approche", "coast", "port", "escale", "stop"}:
+        return False
+    if not _known_stop(place, route_rows):
+        return False
+    if frm and same_stop(place, str(frm)):
+        return False
+    dest_s = str(dest or "")
+    if dest_s and (
+        same_stop(place, dest_s)
+        or dest_s.casefold() in str(place or "").casefold()
+        or str(place or "").casefold() in dest_s.casefold()
+    ):
+        return False
+    return True
+
+
+def _spoken_before_anchor(sentence: str, t_ms: Any, lang: str) -> bool:
+    """La date dite est avant le jour de la barre (1 à 60 jours)."""
+    if not sentence or t_ms is None:
+        return False
+    spoken = _parse_spoken_date(sentence, lang)
+    if spoken is None:
+        return False
+    try:
+        bar = datetime.fromtimestamp(int(t_ms) / 1000, tz=timezone.utc)
+    except (TypeError, ValueError, OSError):
+        return False
+    if spoken.year != bar.year:
+        try:
+            spoken = spoken.replace(year=bar.year)
+        except ValueError:
+            return False
+    delta = (bar.date() - spoken.date()).days
+    return 1 <= delta <= 60
+
+
 def _is_arrival_sentence(text: str) -> bool:
     return bool(re.match(r"^(Arrivée à|Arrivée le|Arrival at|Arrival on)\b", text or "", re.I))
 
@@ -8320,6 +8486,7 @@ def build_raw_from_moments(
     cited: set[str] = set()
     chapters: list[dict] = []
     selected_all: list[dict] = []
+    route_rows = official_dated_stops(marks, clock) if marks else []
     for i, w in enumerate(windows):
         dest = _chapter_dest(w)
         dest_name = _window_dest_name(w)
@@ -8391,6 +8558,8 @@ def build_raw_from_moments(
                 "poe", "anchorage", "aton",
             }:
                 return
+            if _off_leg_stop(place, w.get("fromName"), dest_name, route_rows, str(change.get("kind") or "")):
+                return
             sentence = change_sentence(change, lang).strip()
             if not sentence or film_has_forbidden(sentence):
                 return
@@ -8398,8 +8567,6 @@ def build_raw_from_moments(
             sentence = (filtered or "").strip()
             if not sentence or film_has_forbidden(sentence):
                 return
-            char_idx = len(" ".join(bits)) + (1 if bits else 0)
-            bits.append(sentence)
             extra = {"place": place, "kind": str(change.get("kind") or "")}
             if change.get("lat") is not None:
                 extra["lat"] = change.get("lat")
@@ -8416,9 +8583,14 @@ def build_raw_from_moments(
                 w["tB"],
                 marks,
             )
+            # Une date dite avant le jour de l'ancre : la barre serait déjà plus loin.
+            if _known_stop(place, route_rows) and _spoken_before_anchor(sentence, t_ms, lang):
+                return
             # L'instant du jalon, pas le plus proche homonyme plus
             # loin sur l'horloge (Gibraltar recollé après le Maroc ; Mata-Utu /
             # Nouméa recollés en octobre au milieu d'août–septembre).
+            char_idx = len(" ".join(bits)) + (1 if bits else 0)
+            bits.append(sentence)
             anchored.append((sentence, t_ms, extra))
             placed.append(_bubble_from_change(change, w, lang, char_idx))
             selected_all.append(change)
@@ -8452,7 +8624,9 @@ def build_raw_from_moments(
                     for sent in reversed(film_opens):
                         anchored.insert(0, (sent, w["tA"], {"role": "depart"}))
             if i == len(windows) - 1:
-                close = _close_sentence(w, live, lang, review=review, eta=eta)
+                close = _close_sentence(
+                    w, live, lang, review=review, eta=eta, route_stops=route_rows,
+                )
                 if close and close not in text:
                     text = speak_film_text(f"{text} {close}".strip(), lang)
                     anchored.append((close, w["tB"]))
@@ -8525,7 +8699,9 @@ def build_raw_from_moments(
                 for sent in reversed(film_opens):
                     anchored.insert(0, (sent, w["tA"], {"role": "depart"}))
         if i == len(windows) - 1:
-            close = _close_sentence(w, live, lang, review=review, eta=eta)
+            close = _close_sentence(
+                w, live, lang, review=review, eta=eta, route_stops=route_rows,
+            )
             if close and close not in text:
                 text = speak_film_text(f"{text} {close}".strip(), lang)
                 anchored.append((close, w["tB"]))
@@ -8615,6 +8791,7 @@ def build_raw_script(
             windows, _assign(evs, windows), lang=lang, sea_name=sea_name,
             start_name=start_name, live=live, display_t0=display_t0,
             review=review, eta=eta, seconds=seconds,
+            route_stops=official_dated_stops(marks, clock),
         )
 
     chapters = compose(events)
@@ -9011,6 +9188,500 @@ def locate_events(tagged: str, events: list[dict]) -> tuple[str, list[dict]]:
     display_parts.append((tagged or "")[pos:])
     display = "".join(display_parts)
     return display, located
+
+
+REREAD_SYSTEM = (
+    "You re-read an expedition film against the real stops and the distance of each leg. "
+    "Return JSON only: {\"ok\": true|false, \"faults\": [\"skip\"]}. "
+    "ok is false when a stop is skipped, a place is not on the route, "
+    "an upcoming list omits a stop still ahead, or a date goes backward. "
+    "Do not rewrite the film."
+)
+_LEAVE_FOR_RE = re.compile(
+    r"(?:leaves|quitte|quitté)\s+(?P<frm>.+?)"
+    r"(?:,\s*heading\s+\w+)?\s+"
+    r"(?:for|pour)\s+(?P<to>.+?)"
+    r"(?=[.,;:]|\s+on\b|\s+le\b|$)",
+    re.I,
+)
+_CAP_RE = re.compile(
+    r"(?:cap sur|départ vers|departure for|heading for)\s+(?P<to>.+?)"
+    r"(?=\s*[:.,;]|\s+on\b|\s+le\b|$)",
+    re.I,
+)
+_FORMALITY_RE = re.compile(
+    r"(?:entry formalities go through|les formalités d['’]entrée passent par)\s+(.+?)(?=[.,;]|$)",
+    re.I,
+)
+_ARRIVAL_PLACE_RE = re.compile(
+    r"(?:Arrival at|Arrivée à)\s+(.+?)(?:\s+on\b|\s+le\b|[.,;]|$)",
+    re.I,
+)
+_APPROACH_BY_RE = re.compile(
+    r"(?:the approach is by|l['’]approche se fait par)\s+(.+?)(?=[.,;]|$)",
+    re.I,
+)
+_SKIRTS_RE = re.compile(
+    r"(?:the boat skirts|le bateau longe)\s+(.+?)(?=[.,;]|$)",
+    re.I,
+)
+_UPCOMING_RE = re.compile(
+    r"(?:Stops still to come|Les escales à venir)\s*:\s*(.+?)(?:\.|$)",
+    re.I,
+)
+_MILES_RE = re.compile(
+    r"(\d{1,3}(?:[ \u00a0\u202f,]\d{3})+|\d{3,6})\s*(?:nautical miles|miles|milles nautiques|milles)\b",
+    re.I,
+)
+
+
+def _place_core(raw: str) -> str:
+    s = re.sub(
+        r"^(?:the long crossing to|la longue traversée vers)\s+",
+        "",
+        str(raw or "").strip(),
+        flags=re.I,
+    )
+    return re.split(r"[.;:]", s, maxsplit=1)[0].strip()
+
+
+def _as_stop_rows(stops: list | None) -> list[dict]:
+    rows: list[dict] = []
+    for raw in stops or []:
+        if isinstance(raw, dict):
+            name = str(raw.get("name") or raw.get("to") or "").strip()
+            if not name:
+                continue
+            row: dict[str, Any] = {"name": name}
+            for key in ("nm", "filmNm"):
+                val = raw.get(key)
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    row["nm"] = float(val)
+                    break
+            rows.append(row)
+        elif str(raw or "").strip():
+            rows.append({"name": str(raw).strip()})
+    return rows
+
+
+def _row_nm(row: dict) -> Optional[float]:
+    val = row.get("nm")
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        return float(val)
+    return None
+
+
+def _index_row(rows: list[dict], name: str, *, after: int = -1) -> Optional[int]:
+    """Première escale de ce nom. `after` cherche la suivante (retour à La Rochelle)."""
+    start = after + 1
+    for i in range(max(0, start), len(rows)):
+        if _known_stop(name, [rows[i]]):
+            return i
+    if after >= 0:
+        for i, row in enumerate(rows):
+            if _known_stop(name, [row]):
+                return i
+    return None
+
+
+def _pair_indexes(rows: list[dict], frm: str, to: str) -> tuple[Optional[int], Optional[int]]:
+    ia = _index_row(rows, frm)
+    if ia is None:
+        return None, None
+    return ia, _index_row(rows, to, after=ia)
+
+
+def _sea_between(rows: list[dict], frm: str, to: str) -> list[str]:
+    ia, ib = _pair_indexes(rows, frm, to)
+    if ia is None or ib is None or ib <= ia + 1:
+        return []
+    missed: list[str] = []
+    for row in rows[ia + 1:ib]:
+        label = _stop_spoken(row.get("name") or "")
+        if not label or _is_air_only_stop(label):
+            continue
+        missed.append(label)
+    return missed
+
+
+def _span_nm(rows: list[dict], frm: str, to: str) -> Optional[float]:
+    ia, ib = _pair_indexes(rows, frm, to)
+    if ia is None or ib is None or ib <= ia:
+        return None
+    a, b = _row_nm(rows[ia]), _row_nm(rows[ib])
+    if a is None or b is None:
+        return None
+    gap = b - a
+    return gap if gap > 1 else None
+
+
+def _mile_ints(text: str) -> list[int]:
+    out: list[int] = []
+    for match in _MILES_RE.finditer(text or ""):
+        digits = re.sub(r"[^\d]", "", match.group(1))
+        if not digits:
+            continue
+        val = int(digits)
+        if val >= 100:
+            out.append(val)
+    return out
+
+
+def _sentence_at_idx(text: str, idx: int) -> str:
+    pos = 0
+    sents = _sentences(text)
+    for i, sent in enumerate(sents):
+        start = (text or "").find(sent, pos)
+        if start < 0:
+            start = pos
+        end = start + len(sent)
+        if start <= idx < end or i == len(sents) - 1:
+            return sent
+        pos = end
+    return ""
+
+
+def _dates_regress(text: str, lang: str) -> bool:
+    prev: Optional[datetime] = None
+    for sent in _sentences(text):
+        cur = _parse_spoken_date(sent, lang)
+        if cur is None:
+            continue
+        if prev is not None and cur.date() < prev.date():
+            back = (prev.date() - cur.date()).days
+            rolled = None
+            if back > 60:
+                try:
+                    rolled = cur.replace(year=cur.year + 1)
+                except ValueError:
+                    rolled = None
+            if rolled is not None and 0 <= (rolled.date() - prev.date()).days <= 200:
+                cur = rolled
+            else:
+                return True
+        prev = cur
+    return False
+
+
+def _anchor_dates_regress(chapters: list | None, lang: str) -> bool:
+    for ch in chapters or []:
+        if not isinstance(ch, dict):
+            continue
+        text = ch.get("text") or ""
+        for anchor in ch.get("anchors") or []:
+            if not isinstance(anchor, dict):
+                continue
+            t_raw = anchor.get("t")
+            t_ms = t_raw if isinstance(t_raw, int) else _ms(t_raw)
+            if t_ms is None:
+                continue
+            try:
+                idx = int(anchor.get("charIdx") or 0)
+            except (TypeError, ValueError):
+                idx = 0
+            if _spoken_before_anchor(_sentence_at_idx(text, idx), t_ms, lang):
+                return True
+    return False
+
+
+def _split_upcoming(blob: str) -> list[str]:
+    parts = re.split(r"\s*,\s*|\s+\bet\b\s+|\s+\band\b\s+", blob or "")
+    return [part.strip(" .") for part in parts if part.strip(" .")]
+
+
+def _skip_pairs(text: str, rows: list[dict]) -> bool:
+    for leave in _LEAVE_FOR_RE.finditer(text or ""):
+        frm = _place_core(leave.group("frm"))
+        to = _place_core(leave.group("to"))
+        if _is_air_leg(frm, to) or _is_side_leg(frm, to):
+            continue
+        if _sea_between(rows, frm, to):
+            return True
+    return False
+
+
+def _upcoming_omits(text: str, rows: list[dict], *, here: str | None = None) -> bool:
+    real = _non_air_stop_labels(rows)
+    if not real:
+        return False
+    departed_here = here or ""
+    departed = bool(here)
+    for sent in _sentences(text):
+        leave = _LEAVE_FOR_RE.search(sent)
+        if leave:
+            departed_here = _place_core(leave.group("frm"))
+            departed = True
+        found = _UPCOMING_RE.search(sent)
+        if not found or not departed_here:
+            continue
+        listed = _split_upcoming(found.group(1))
+        if not listed:
+            continue
+        ic = next((i for i, name in enumerate(real) if same_stop(name, departed_here)), None)
+        i0 = next((i for i, name in enumerate(real) if same_stop(name, listed[0])), None)
+        if ic is None or i0 is None:
+            continue
+        start = ic + 1 if departed else ic
+        if any(real[start:i0]):
+            return True
+        prev = i0
+        for name in listed[1:]:
+            j = next((i for i, item in enumerate(real) if same_stop(item, name)), None)
+            if j is None or j <= prev:
+                continue
+            if real[prev + 1:j]:
+                return True
+            prev = j
+    return False
+
+
+def _absent_places(text: str, rows: list[dict]) -> bool:
+    candidates: list[str] = []
+    for rx in (_FORMALITY_RE, _ARRIVAL_PLACE_RE):
+        candidates.extend(_place_core(m.group(1)) for m in rx.finditer(text or ""))
+    for leave in _LEAVE_FOR_RE.finditer(text or ""):
+        candidates.append(_place_core(leave.group("frm")))
+        candidates.append(_place_core(leave.group("to")))
+    for cap in _CAP_RE.finditer(text or ""):
+        candidates.append(_place_core(cap.group("to")))
+    for upcoming in _UPCOMING_RE.finditer(text or ""):
+        candidates.extend(_place_core(part) for part in _split_upcoming(upcoming.group(1)))
+    return any(place and not _known_stop(place, rows) for place in candidates)
+
+
+def _distance_mismatch(text: str, rows: list[dict]) -> bool:
+    sents = _sentences(text)
+    for i, sent in enumerate(sents):
+        leave = _LEAVE_FOR_RE.search(sent)
+        if not leave:
+            continue
+        frm = _place_core(leave.group("frm"))
+        to = _place_core(leave.group("to"))
+        blob = sent
+        if i + 1 < len(sents) and not _LEAVE_FOR_RE.search(sents[i + 1]):
+            blob = f"{sent} {sents[i + 1]}"
+        nums = _mile_ints(blob)
+        if not nums:
+            continue
+        stated = float(nums[0])
+        span = _span_nm(rows, frm, to)
+        if span is None:
+            continue
+        close = abs(stated - span) <= max(50.0, 0.08 * span)
+        if _sea_between(rows, frm, to):
+            if close:
+                return True
+        elif not close:
+            return True
+    return False
+
+
+def _cap_leg_faults(text: str, rows: list[dict], frm: str) -> list[str]:
+    """« cap sur Dzaoudzi » depuis Papeete : la destination n'est pas l'escale suivante."""
+    if not frm:
+        return []
+    faults: list[str] = []
+    for sent in _sentences(text):
+        match = _CAP_RE.search(sent)
+        if not match:
+            continue
+        to = _place_core(match.group("to"))
+        if not to or _is_air_leg(frm, to) or _is_side_leg(frm, to):
+            continue
+        skipped = _sea_between(rows, frm, to)
+        if skipped and "skip" not in faults:
+            faults.append("skip")
+        nums = _mile_ints(sent)
+        span = _span_nm(rows, frm, to)
+        if not nums or span is None:
+            continue
+        close = abs(float(nums[0]) - span) <= max(50.0, 0.08 * span)
+        if (skipped and close) or (not skipped and not close):
+            if "distance" not in faults:
+                faults.append("distance")
+    return faults
+
+
+def _offleg_in_chapter(chapter: dict, rows: list[dict]) -> bool:
+    frm = chapter.get("fromName") or ""
+    dest = chapter.get("toName") or ""
+    text = chapter.get("text") or ""
+    for rx in (_APPROACH_BY_RE, _SKIRTS_RE):
+        for match in rx.finditer(text):
+            if _off_leg_stop(_place_core(match.group(1)), frm, dest, rows, "approche"):
+                return True
+    return False
+
+
+def nemotron_reread_report(
+    text: str,
+    stops: list | None,
+    *,
+    lang: str = "en",
+    here: str | None = None,
+    chapters: list | None = None,
+) -> dict[str, Any]:
+    """Relecture simulée, sans appel. Même verdict que celui exigé avant le stock."""
+    rows = _as_stop_rows(stops)
+    blob = text or ""
+    if not blob and chapters:
+        blob = " ".join(
+            c.get("text") or "" for c in chapters if isinstance(c, dict)
+        )
+    faults: list[str] = []
+    if _skip_pairs(blob, rows):
+        faults.append("skip")
+    if _upcoming_omits(blob, rows, here=here):
+        faults.append("upcoming")
+    if _absent_places(blob, rows):
+        faults.append("absent")
+    if _distance_mismatch(blob, rows):
+        faults.append("distance")
+    if _dates_regress(blob, lang) or _anchor_dates_regress(chapters, lang):
+        faults.append("date")
+    for chapter in chapters or []:
+        if not isinstance(chapter, dict):
+            continue
+        for fault in _cap_leg_faults(chapter.get("text") or "", rows, str(chapter.get("fromName") or "")):
+            if fault not in faults:
+                faults.append(fault)
+        if _offleg_in_chapter(chapter, rows) and "offleg" not in faults:
+            faults.append("offleg")
+    return {"ok": not faults, "faults": faults, "source": "simulate"}
+
+
+def _stops_from_chapters(chapters: list | None) -> list[dict]:
+    rows: list[dict] = []
+    for chapter in chapters or []:
+        if not isinstance(chapter, dict):
+            continue
+        for key in ("fromName", "toName"):
+            name = str(chapter.get(key) or "").strip()
+            if not name:
+                continue
+            if rows and same_stop(rows[-1]["name"], name):
+                continue
+            rows.append({"name": name})
+    return rows
+
+
+def _insert_missing_air(rows: list[dict], clock_marks: list | None) -> list[dict]:
+    """Halifax est une vraie escale aérienne : le clock la porte, pas toujours `marks`."""
+    out = [dict(row) for row in rows]
+    clock = [m for m in (clock_marks or []) if isinstance(m, dict) and m.get("name")]
+    for i, mark in enumerate(clock):
+        name = str(mark.get("name") or "")
+        if not _is_air_only_stop(name) or _known_stop(name, out):
+            continue
+        anchor = None
+        for prev in reversed(clock[:i]):
+            anchor = _index_row(out, str(prev.get("name") or ""))
+            if anchor is not None:
+                break
+        row: dict[str, Any] = {"name": name}
+        nm = mark.get("filmNm") if isinstance(mark.get("filmNm"), (int, float)) else mark.get("nm")
+        if isinstance(nm, (int, float)) and not isinstance(nm, bool):
+            row["nm"] = float(nm)
+        if anchor is None:
+            out.append(row)
+        else:
+            out.insert(anchor + 1, row)
+    return out
+
+
+def _route_stops_for_reread(plan: dict | None) -> list[dict]:
+    """Escales du plan s'il les donne, sinon les marques du voyage (ordre de route).
+
+    L'horloge datée du poste recolle Mata-Utu et Nouméa en fin de retour et n'en
+    garde qu'une poignée : elle ne peut pas servir de contrôle.
+    """
+    explicit = (plan or {}).get("routeStops")
+    if isinstance(explicit, list) and explicit:
+        return _as_stop_rows(explicit)
+    try:
+        from voyage_store import load_voyage  # noqa: PLC0415
+        from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
+
+        voy = load_voyage(OFFICIAL_VOYAGE_ID) or {}
+        marks = voy.get("marks") if isinstance(voy.get("marks"), list) else []
+        clock = voy.get("clock") if isinstance(voy.get("clock"), dict) else {}
+        rows = _insert_missing_air(_as_stop_rows(marks), clock.get("marks"))
+        if len(rows) >= 8:
+            return rows
+        named = [
+            str(ch.get(key) or "")
+            for ch in (plan or {}).get("chapters") or []
+            if isinstance(ch, dict)
+            for key in ("fromName", "toName")
+            if str(ch.get(key) or "").strip()
+        ]
+        if len(rows) >= 2 and named and all(_known_stop(name, rows) for name in named):
+            return rows
+    except Exception:
+        pass
+    return _stops_from_chapters((plan or {}).get("chapters") or [])
+
+
+def _parse_reread_verdict(text: str) -> Optional[bool]:
+    raw = (text or "").strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        found = re.search(r"\{.*\}", raw, re.S)
+        if not found:
+            return None
+        try:
+            data = json.loads(found.group(0))
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(data, dict) or "ok" not in data:
+        return None
+    val = data.get("ok")
+    if val is True or val == "true" or val == 1:
+        return True
+    if val is False or val == "false" or val == 0:
+        return False
+    return None
+
+
+async def reread_before_store(
+    plan: dict,
+    stops: list | None,
+    *,
+    cascade: Callable | None = None,
+    lang: str = "en",
+) -> tuple[bool, dict]:
+    """Contrôle local, puis Nemotron si la cascade répond. Un échec n'entre pas en stock."""
+    chapters = [c for c in (plan.get("chapters") or []) if isinstance(c, dict)]
+    blob = " ".join(c.get("text") or "" for c in chapters)
+    report = nemotron_reread_report(blob, stops, lang=lang, chapters=chapters)
+    if not report["ok"]:
+        return False, report
+    if cascade is None:
+        return True, report
+    user = json.dumps(
+        {
+            "stops": [_stop_spoken(row.get("name") or "") for row in _as_stop_rows(stops)],
+            "text": blob[:8000],
+        },
+        ensure_ascii=False,
+    )
+    try:
+        text, source = await cascade(
+            REREAD_SYSTEM, user, tier="reread", fallback="", facts=user, max_tokens=200,
+        )
+    except Exception:
+        return True, report
+    if source in {"rules", "budget", ""} or not (text or "").strip():
+        return True, report
+    verdict = _parse_reread_verdict(text)
+    if verdict is None or verdict is True:
+        return True, report
+    return False, {
+        "ok": False,
+        "faults": ["nemotron"],
+        "source": str(source or "nemotron-super"),
+    }
 
 
 def written_is_valid(
@@ -9639,6 +10310,13 @@ async def write_film_chain(
                 stats["reviewed"] = True
                 stats["source"] = WRITTEN_SOURCE
 
+    stops = _route_stops_for_reread(raw)
+    ok_fr, review_fr = await reread_before_store(accepted, stops, cascade=cascade, lang="fr")
+    stats["reread"] = "pass" if ok_fr else "fail"
+    if not ok_fr:
+        stats["faults"] = review_fr.get("faults") or []
+        return None, None, stats
+
     en_plan = await translate_written_plan(accepted, raw, cascade=cascade)
     if en_plan:
         en_plan = _stamp_written_plan(
@@ -9649,6 +10327,12 @@ async def write_film_chain(
             model=accepted.get("model"),
         )
         stats["lightning"] = 1
+        ok_en, review_en = await reread_before_store(en_plan, stops, cascade=cascade, lang="en")
+        stats["reread_en"] = "pass" if ok_en else "fail"
+        if not ok_en:
+            stats["faults"] = review_en.get("faults") or []
+            stats["lightning"] = 0
+            en_plan = None
     return accepted, en_plan, stats
 
 
