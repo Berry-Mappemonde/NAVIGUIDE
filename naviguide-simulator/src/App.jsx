@@ -72,7 +72,7 @@ import {
   shouldFocusTracerJump,
   shouldKeepSceneVisible,
 } from "./utils/sceneGate.js";
-import { summarizeRoute, featuresToSegments, haversineNm } from "./utils/geo.js";
+import { routeStats, featuresToSegments, legsDistanceNm } from "./utils/geo.js";
 import { highSeasRuledOut, nearestStopNm, replayHereFrame } from "./engine/iciBriefing.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
@@ -96,7 +96,7 @@ import { weatherLine as buildWeatherLine } from "./utils/weatherLine.js";
 import { mapInsetVars, measureFilmBarOccupiedPx } from "./utils/filmBarLayout.js";
 import { productHasData } from "./hooks/weatherSnapshot.js";
 import { useSatellitePopup } from "./hooks/useSatellitePopup.js";
-import { useRouteDrawing } from "./hooks/useRouteDrawing.js";
+import { DRAW_MAX_POINTS, useRouteDrawing } from "./hooks/useRouteDrawing.js";
 import { parseRouteFile } from "./utils/routeImport.js";
 import { viewExportMode } from "./utils/routeExport.js";
 import { attachClockIso, legendNowAndLive, officialNowMs, usePlanReview } from "./hooks/usePlanReview.js";
@@ -214,7 +214,7 @@ export default function App() {
   // The drawn route: points, searoute segments, undo / redo (hooks/useRouteDrawing.js).
   const drawingState = useRouteDrawing();
   const {
-    drawingMode, setDrawingMode, drawnPoints, drawnSegments, drawingLoading, canRedo,
+    drawingMode, setDrawingMode, drawnPoints, drawnSegments, drawingLoading, drawingNotice, canRedo,
     reset: _resetDrawState, addPoint: handleDrawingClick, undo: handleDrawUndo, redo: handleDrawRedo,
     importPoints: handleImportPoints,
     toGeoJson,
@@ -659,6 +659,7 @@ export default function App() {
     routeId: journalRouteId,
     incomingMoment: iciMoment.moment,
     until: momentIso,
+    suivreCustom,
     enabled: sceneReady && !(suivreCustom && !customVoyageId),
   });
   const displayKnots = isSuivre
@@ -828,10 +829,14 @@ export default function App() {
   const highSeasRuled = highSeasRuledOut({
     vehicle: clockSample?.vehicle || jambe?.vehicle || null,
     nearStopNm: nearestStopNm(clockSample?.lat, clockSample?.lon, legendMarks),
+    fromStop: jambe?.fromStop,
+    toStop: jambe?.toStop,
   });
   const momentHighSeasRuled = highSeasRuledOut({
     vehicle: drawTip ? null : (clockSample?.vehicle || jambe?.vehicle || null),
     nearStopNm: nearestStopNm(momentLat, momentLon, legendMarks),
+    fromStop: jambe?.fromStop,
+    toStop: jambe?.toStop,
   });
   const replayPos = replay.active && replay.live
     && Number.isFinite(Number(replay.live.lat)) && Number.isFinite(Number(replay.live.lon))
@@ -1065,6 +1070,8 @@ export default function App() {
     },
     onVoice: replay.setVoice,
     source: replay.filmSource,
+    reviewedBy: replay.filmReviewedBy,
+    writing: replay.filmWriting,
     style: replay.filmStyle,
     hasWritten: replay.hasWritten,
     onStyle: replay.setFilmStyle,
@@ -1072,7 +1079,7 @@ export default function App() {
     onT0: suivreBerry ? setReplayT0 : voyage.setT0,
     remoteStatus: replay.remoteStatus,
     customFilm: suivreCustom,
-  } : null), [isSuivre, officialClock, suivreBerry, suivreCustom, view, closeEscaleSheet, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.fromName, replay.toName, replay.subtitle, replay.subtitlePlace, replay.targetSeconds, replay.estimatedSeconds, replay.variantEstimates, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replay.remoteStatus, replayT0, voyage.t0, voyage.setT0]);
+  } : null), [isSuivre, officialClock, suivreBerry, suivreCustom, view, closeEscaleSheet, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.fromName, replay.toName, replay.subtitle, replay.subtitlePlace, replay.targetSeconds, replay.estimatedSeconds, replay.variantEstimates, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmReviewedBy, replay.filmWriting, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replay.remoteStatus, replayT0, voyage.t0, voyage.setT0]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
@@ -1463,7 +1470,7 @@ export default function App() {
     }
     if (drawnPoints.length && !window.confirm(t("importRouteReplace"))) return;
     await handleImportPoints(parsed.points);
-    if (parsed.truncated) setDrawNotice({ kind: "notice", text: t("importRouteTruncated") });
+    if (parsed.truncated) setDrawNotice({ kind: "notice", text: t("importRouteTruncated", { max: DRAW_MAX_POINTS }) });
     else setDrawNotice(null);
     const map = sceneApiRef.current?.getMap?.();
     if (!map || !parsed.points.length) return;
@@ -1631,27 +1638,36 @@ export default function App() {
   // What the drawn route is so far — the boxes describe it, not the official route.
   const drawing = useMemo(() => {
     if (!drawingMode) return null;
-    let nm = 0;
-    let failed = 0;
-    for (const seg of drawnSegments) {
-      if (seg?.failed) failed += 1;
-      const c = seg?.coords || [];
-      for (let i = 1; i < c.length; i++) nm += haversineNm(c[i - 1][1], c[i - 1][0], c[i][1], c[i][0]);
-    }
+    const nm = legsDistanceNm(drawnSegments);
     return {
       points: drawnPoints.map((p, i) => ({ name: p.name || `${t("drawPointLabel")} ${i + 1}`, lat: p.lat, lon: p.lon })),
       distanceNm: Math.round(nm),
       segments: drawnSegments.length,
-      failed,
       loading: drawingLoading,
       message: drawingMessage,
     };
   }, [drawingMode, drawnPoints, drawnSegments, drawingLoading, drawingMessage, t]);
+
+  useEffect(() => {
+    if (!drawingNotice?.code) return;
+    const key = drawingNotice.code === "on_land"
+      ? "pointOnLand"
+      : drawingNotice.code === "limit"
+        ? "drawPointLimitReached"
+        : drawingNotice.code === "busy"
+          ? "routeServerBusy"
+          : drawingNotice.code === "server_error"
+            ? "routeServerError"
+            : drawingNotice.code === "network_error"
+              ? "routeNetworkError"
+              : "rhumbCrossesLand";
+    setDrawNotice({ kind: drawingNotice.code === "limit" ? "notice" : "error", text: t(key, { max: DRAW_MAX_POINTS }) });
+  }, [drawingNotice, t]);
   const statsSegs = useMemo(
     () => (routeForView ? featuresToSegments(routeForView) : segments),
     [routeForView, segments],
   );
-  const stats = useMemo(() => summarizeRoute(statsSegs), [statsSegs]);
+  const stats = useMemo(() => routeStats(statsSegs), [statsSegs]);
   const statsPoints = useMemo(
     () => (routeForView
       ? (routeForView.features || []).filter((f) => f.geometry?.type === "Point").map((f) => ({
@@ -2007,6 +2023,7 @@ export default function App() {
             <div className="flex items-center gap-2 bg-slate-900/95 border border-green-500/50 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-2xl">
               <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
               <span>{drawingMessage}</span>
+              <span data-testid="draw-point-limit" className="text-[11px] font-medium text-white/70">{t("drawPointLimit", { max: DRAW_MAX_POINTS })}</span>
               {drawingLoading && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
               <div className="flex gap-1 ml-1 pointer-events-auto">
                 <button type="button" onClick={handleDrawUndo} disabled={!drawnPoints.length} className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 disabled:opacity-30" title={t("undoLastPoint")}><Undo2 size={13} /></button>
@@ -2014,9 +2031,19 @@ export default function App() {
                 <button type="button" onClick={handleDrawCancel} className="h-7 px-2 rounded-full bg-white/10 text-[11px] font-semibold" title={t("cancel")}>{t("cancel")}</button>
               </div>
             </div>
-            {drawnSegments.some((s) => s.failed) && (
-              <div className="bg-orange-950/90 border border-orange-400/50 text-orange-100 text-[11px] font-medium px-3 py-1 rounded-full">
-                {t("searouteDrawFailed")}
+            {drawNotice && (
+              // Under the drawing pill, above the map and the panels: a point
+              // refused (on land, limit) is always said, never silently dropped.
+              <div
+                role="status"
+                data-testid={drawNotice.kind === "error" ? "route-import-error" : "route-import-notice"}
+                className={`border text-[11px] font-semibold px-3 py-1 rounded-full shadow-lg ${
+                  drawNotice.kind === "error"
+                    ? "bg-rose-950/95 border-rose-400/60 text-rose-50"
+                    : "bg-slate-900/95 border-sky-400/50 text-sky-50"
+                }`}
+              >
+                {drawNotice.text}
               </div>
             )}
           </div>
@@ -2028,10 +2055,11 @@ export default function App() {
           📋 {clipboardToast} {t("copied")}
         </div>
       )}
-      {drawNotice && (
+      {drawNotice && !drawingMode && (
         <div
+          role="status"
           data-testid={drawNotice.kind === "error" ? "route-import-error" : "route-import-notice"}
-          className="absolute top-5 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 text-white text-xs px-4 py-2 rounded-full"
+          className="absolute top-16 left-1/2 -translate-x-1/2 z-[2100] bg-slate-900/95 text-white text-xs px-4 py-2 rounded-full pointer-events-none"
         >
           {drawNotice.text}
         </div>

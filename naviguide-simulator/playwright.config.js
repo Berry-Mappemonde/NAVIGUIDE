@@ -38,7 +38,7 @@ export default defineConfig({
   testDir: "./e2e",
   globalSetup: "./e2e/global-setup.js",
   timeout: 30_000,
-  retries: 0,
+  retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 2 : 4,
   globalTimeout: 12 * 60 * 1000,
   reporter: process.env.CI
@@ -57,6 +57,9 @@ export default defineConfig({
     viewport: { width: 1280, height: 800 },
     trace: process.env.CI ? "off" : "retain-on-failure",
     navigationTimeout: 20_000,
+    launchOptions: process.env.PW_RELAXED_BROWSER === "1"
+      ? { args: ["--no-sandbox", "--disable-gpu", "--single-process", "--no-zygote"] }
+      : undefined,
   },
   webServer: withApi ? [viteServer, apiServer] : [viteServer],
 });

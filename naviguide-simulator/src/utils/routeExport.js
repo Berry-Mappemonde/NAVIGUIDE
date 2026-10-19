@@ -4,7 +4,7 @@
  * (downloadFile, buildGeoJSON, buildKML).
  */
 import { isAirSegment, legKind } from "./berryLegs.js";
-import { haversineNm } from "./geo.js";
+import { haversineNm, wrapLon, wrapLonParts } from "./geo.js";
 
 const KIND = { mer: "mer", terre: "terre", air: "air" };
 
@@ -145,6 +145,13 @@ function escapeXml(value) {
     .replace(/"/g, "&quot;");
 }
 
+/** GeoJSON (RFC 7946) : lon dans [−180, 180], coupée à l'antiméridien. */
+function lineGeometry(coords) {
+  const parts = wrapLonParts(coords);
+  if (parts.length <= 1) return { type: "LineString", coordinates: parts[0] || coords.map(([lon, lat]) => [wrapLon(lon), lat]) };
+  return { type: "MultiLineString", coordinates: parts };
+}
+
 function kmlCoords(coords) {
   return coords.map(([lon, lat]) => `${lon},${lat},0`).join(" ");
 }
@@ -166,7 +173,7 @@ export function buildGeoJSON(segments, points, name = "naviguide") {
         nm: nmOf(seg, coords),
         kind: kindOf({ ...seg, from, to }),
       },
-      geometry: { type: "LineString", coordinates: coords },
+      geometry: lineGeometry(coords),
     });
   });
 
@@ -177,7 +184,7 @@ export function buildGeoJSON(segments, points, name = "naviguide") {
         name: point.name || "",
         country: point.country || point.pays || "",
       },
-      geometry: { type: "Point", coordinates: [Number(point.lon), Number(point.lat)] },
+      geometry: { type: "Point", coordinates: [wrapLon(Number(point.lon)), Number(point.lat)] },
     });
   });
 
@@ -199,7 +206,8 @@ export function buildKML(segments, points, name = "naviguide") {
     const nm = nmOf(seg, coords);
     const label = escapeXml(`${from.name || "?"} → ${to.name || "?"}`);
     const style = kind === KIND.air ? "#air-style" : kind === KIND.terre ? "#overland-style" : "#maritime-style";
-    const lines = kind === KIND.air ? dashChunks(coords) : [coords];
+    // KML : longitudes dans [−180, 180], une ligne par côté de l'antiméridien.
+    const lines = (kind === KIND.air ? dashChunks(coords) : [coords]).flatMap((line) => wrapLonParts(line));
     const geometry = lines.length === 1
       ? `      <LineString>
         <tessellate>1</tessellate>
@@ -229,7 +237,7 @@ ${geometry}
         <Data name="country"><value>${country}</value></Data>
       </ExtendedData>
       <Point>
-        <coordinates>${Number(point.lon)},${Number(point.lat)},0</coordinates>
+        <coordinates>${wrapLon(Number(point.lon))},${Number(point.lat)},0</coordinates>
       </Point>
     </Placemark>`;
   }).join("\n");

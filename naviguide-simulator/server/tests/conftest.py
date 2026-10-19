@@ -68,3 +68,14 @@ def _isolated_voyage_dir(tmp_path_factory, monkeypatch):
     pearl_store.reset()
     official_store.reset_store()
     official_store.reset_worker_flag()
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _stop_idle_searoute_workers():
+    """Idle searoute workers are kept on purpose (graph loaded once), but they
+    must not outlive a test module: later tests count live child processes
+    (weather pipeline cancel tests)."""
+    yield
+    worker = sys.modules.get("searoute_worker")
+    if worker is not None:
+        worker.RUNNER.shutdown()

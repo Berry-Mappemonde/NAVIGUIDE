@@ -262,16 +262,21 @@ export function isAdviceUnavailable(body) {
 /** Empreinte stable : un rechargement de la même revue ne relance pas /advice. */
 export function reviewAdviceKey(review, heaviestIdx) {
   if (!review || review.source === "fixture") return "";
+  if (!(Number(heaviestIdx) >= 0)) return "";
   const legs = review.legs || [];
   if (!legs.length) return "";
   const sig = legs.map((l) => `${l.from || ""}>${l.to || ""}`).join("|");
   return `${Number(heaviestIdx)}:${sig}`;
 }
 
-export function pickHeaviestLegIdx(legs) {
-  let best = 0;
+/** Jambe la plus chargée parmi celles pas encore parties (départ > now). -1 si aucune. */
+export function pickHeaviestLegIdx(legs, now = Date.now()) {
+  const t = now instanceof Date ? now.getTime() : Number(now);
+  let best = -1;
   let score = -1;
   (legs || []).forEach((leg, i) => {
+    const dep = leg?.departIso ? Date.parse(leg.departIso) : NaN;
+    if (Number.isFinite(dep) && Number.isFinite(t) && dep <= t) return;
     const n = Number(leg?.alertCount);
     const s = Number.isFinite(n) ? n : (leg?.level === "alert" ? 2 : leg?.level === "watch" ? 1 : 0);
     if (s > score) {

@@ -823,10 +823,11 @@ def _call_vl(png: bytes, ids: list[str]) -> str:
         raise story_cascade._http_error("tokenfactory", response)
     data = response.json()
     text = story_cascade._openai_text(data)
-    if not text:
-        raise RuntimeError("réponse vide")
+    # Réponse vide (raisonnement seul, finish_reason=length) : déjà facturée.
     prompt_tokens, completion_tokens = story_cascade._usage_tokens(data, system, user_text, text)
     llm_budget.record(TIER, prompt_tokens, completion_tokens)
+    if not text:
+        raise RuntimeError("réponse vide")
     return text
 
 
