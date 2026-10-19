@@ -207,9 +207,12 @@ test.describe("iPhone 13 — tiroir et barre sur deux lignes", () => {
     await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
     await leaveCinema(page);
 
+    // La carte a beaucoup de liens avant le tiroir. On part du bouton du
+    // panneau, puis Tab doit poser un anneau sur un contrôle du tiroir ou de la barre.
+    await page.locator(".naviguide-sidebar-toggle--left").focus();
+    await page.keyboard.press("Tab");
     let seen = null;
-    for (let i = 0; i < 20 && !seen; i += 1) {
-      await page.keyboard.press("Tab");
+    for (let i = 0; i < 8 && !seen; i += 1) {
       seen = await page.evaluate(() => {
         const el = document.activeElement;
         if (!el || el === document.body) return null;
@@ -218,14 +221,12 @@ test.describe("iPhone 13 — tiroir et barre sur deux lignes", () => {
         );
         if (!bar) return null;
         const s = getComputedStyle(el);
+        const width = parseFloat(s.outlineWidth) || 0;
+        if (s.outlineStyle === "none" || width < 2) return null;
         const r = el.getBoundingClientRect();
-        return {
-          outline: s.outlineStyle,
-          width: parseFloat(s.outlineWidth) || 0,
-          w: r.width,
-          h: r.height,
-        };
+        return { outline: s.outlineStyle, width, w: r.width, h: r.height };
       });
+      if (!seen) await page.keyboard.press("Tab");
     }
     expect(seen, "aucun bouton de la barre ou du tiroir n'a pris le focus").toBeTruthy();
     expect(seen.outline).not.toBe("none");
@@ -301,10 +302,14 @@ test.describe("bureau inchangé", () => {
 
     await setPanel(page, "left", true);
     await setPanel(page, "right", true);
+    // Le glissement dure 300 ms. Attendre x ≥ 300 mesurait la barre
+    // encore sous le panneau de 320 px.
     await expect.poll(async () => {
-      const box = await page.getByTestId("film-bar").boundingBox();
-      return box ? box.x : 0;
-    }).toBeGreaterThanOrEqual(300);
+      const barBox = await page.getByTestId("film-bar").boundingBox();
+      const panelBox = await panelLocator(page, "left").boundingBox();
+      if (!barBox || !panelBox) return false;
+      return barBox.x + 1 >= panelBox.x + panelBox.width && !boxesOverlap(panelBox, barBox);
+    }).toBe(true);
     const bar = await page.getByTestId("film-bar").boundingBox();
     expect(bar.x).toBeGreaterThanOrEqual(300);
     expect(bar.x + bar.width).toBeLessThanOrEqual(1280 - 300);
