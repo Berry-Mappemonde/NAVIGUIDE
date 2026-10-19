@@ -1,0 +1,58 @@
+# Site de documentation. Construit en strict. Jamais publié.
+site_name: NAVIGUIDE
+site_description: Documentation du simulateur NAVIGUIDE
+repo_url: https://github.com/Berry-Mappemonde/NAVIGUIDE
+edit_uri: ""
+
+docs_dir: docs
+strict: true
+
+theme:
+  name: material
+  language: fr
+  features:
+    - navigation.sections
+
+nav:
+  - Manuel utilisateur: MANUEL_UTILISATEUR.md
+  - User manual: USER_MANUAL.md
+  - Index: README.md
+  - Pour comprendre l'application:
+      - "L'esprit de l'application": ESPRIT_DE_L_APPLICATION.md
+      - Discours du film: FILM_DISCOURS_ETAT_2026-09-28.md
+      - Familles autour du bateau: ici-tout.md
+  - Règles et calculs:
+      - Règles et paramètres: REGLES_PARAMETRES.md
+      - Cahier des calculs: audits/CALCULS.md
+      - État de l'art: audits/CALCULS_ETAT_DE_L_ART.md
+  - Conception:
+      - Nemotron, Nebius et Tavily: PLAN_NEMOTRON_NEBIUS_TAVILY.md
+      - Globe: PLAN_GLOBE_3D.md
+  - Audits:
+      - Profil du build de production: audits/PROFIL_BUILD_PROD_2026-09-19.md
+      - Profil du zoom: audits/PROFIL_ZOOM_2026-09-20.md
+  - Archives (historique):
+      - Sommaire: archives/README.md
+      - Planificateur: archives/naviguide-planificateur/README.md
+      - Banc de routage: archives/naviguide-planificateur/naviguide-api/routing_ab/README.md
+      - NavSecOps: archives/naviguide-navsecops/README.md
+      - "NavSecOps, texte source": archives/naviguide-navsecops/README.source.md
+      - Manuel NavSecOps: archives/naviguide-navsecops/docs/MANUAL.md
+      - Digest de route: archives/naviguide-navsecops/docs/BERRY_MAPPEMONDE_ROUTE_DIGEST.md
+      - Contexte du chat: archives/naviguide-navsecops/docs/CHAT_CONTEXT_SPEC.md
+      - Matrice des revues: archives/naviguide-navsecops/docs/NAVSECOPS_PR_MATRIX.md
+      - Feuille de route: archives/naviguide-navsecops/docs/NAVSECOPS_TECHNICAL_ROADMAP.md
+      - Plan Nova: archives/naviguide-navsecops/docs/PLAN_DEV_NOVA.md
+      - Mise en route Nova: archives/naviguide-navsecops/docs/SETUP_NOVA_CREDITS.md
+      - Nova: archives/naviguide-nova/README.md
+
+exclude_docs: |
+  requirements-docs.txt
+  check_md_links.py
+  recette/**
+  archives/**
+  !archives/**/*.md
+  archives/naviguide-navsecops/docs/DATA.md
+
+plugins:
+  - search
