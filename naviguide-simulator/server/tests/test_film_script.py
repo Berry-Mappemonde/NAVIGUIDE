@@ -5854,3 +5854,91 @@ def test_write_chain_stores_nothing_when_the_reread_says_no(monkeypatch):
     assert fr is None and en is None
     assert stats.get("faults") == ["nemotron"]
     assert stats.get("reread") == "fail"
+
+
+def _halifax_hop_marks():
+    """Halifax sans mille de mer : Saint-Pierre porte l'odomètre 9 160, pas la jambe."""
+    return [
+        {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": "2026-05-15T08:00:00Z",
+         "holdHours": 0, "lat": 46.8, "lon": 1.6},
+        {"name": "La Rochelle", "nm": 122, "filmNm": 122, "iso": "2026-05-15T12:00:00Z",
+         "holdHours": 0, "lat": 46.15, "lon": -1.16},
+        {"name": "Cayenne (Guyane)", "nm": 8700.6263, "filmNm": 8700.6263, "iso": "2026-08-08T19:59:04Z",
+         "holdHours": 72, "lat": 4.93, "lon": -52.33},
+        {"name": "Halifax (Nouvelle-Écosse)", "nm": 0, "filmNm": 8780.6263, "iso": "2026-08-12T03:59:04Z",
+         "holdHours": 24, "lat": 44.65, "lon": -63.57, "kind": "hub"},
+        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "nm": 9160.2308, "filmNm": 9160.2308,
+         "iso": "2026-08-15T08:59:54Z", "holdHours": 72, "lat": 46.78, "lon": -56.18},
+    ]
+
+
+def test_halifax_saint_pierre_hop_not_voyage():
+    """Le second bateau dit les milles et les jours de Halifax → Saint-Pierre.
+
+    L'odomètre du voyage (9 160 milles, 48 jours) n'est pas cette jambe.
+    Aucun appel payant : brut par les règles seulement.
+    """
+    from film_script import _opening_nm_label, spoken_sea_days
+
+    marks = _halifax_hop_marks()
+    clock = {
+        "t0": OFFICIAL_T0,
+        "marks": marks,
+        "vertices": [
+            {"iso": "2026-08-12T03:59:04Z", "lat": 44.65, "lon": -63.57, "vehicle": "plane", "filmNm": 8780.6263},
+            {"iso": "2026-08-13T12:00:00Z", "lat": 45.5, "lon": -60.0, "vehicle": "side", "filmNm": 8900},
+            {"iso": "2026-08-15T08:59:54Z", "lat": 46.78, "lon": -56.18, "vehicle": "side", "filmNm": 9160.2308},
+        ],
+    }
+    live = {"iso": "2026-08-20T00:00:00Z", "filmNm": 9200, "sailNm": 9200}
+    now_ms = int(datetime(2026, 8, 20, tzinfo=timezone.utc).timestamp() * 1000)
+    leg_nm, leg_days = 497, 2.6
+    review = {"legs": [{
+        "from": "Halifax (Nouvelle-Écosse)",
+        "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+        "legNm": leg_nm,
+        "daysAtSea": leg_days,
+        "plannedKnots": 8,
+    }]}
+    hop_film_nm = 9160.2308 - 8780.6263
+
+    def hop_chapter(plan):
+        for chapter in plan["chapters"]:
+            frm = chapter.get("fromName") or ""
+            to = chapter.get("toName") or ""
+            if "Halifax" in frm and "Saint-Pierre" in to:
+                return chapter
+        return None
+
+    def refuse_voyage(text):
+        assert "9,160" not in text
+        assert "9160" not in text
+        assert "9 160" not in text
+        assert "48 days" not in text
+        assert "48 jours" not in text
+
+    bare = build_raw_script(
+        clock, marks, live, None, lang="en", seconds=150, now_ms=now_ms,
+    )
+    reviewed = build_raw_script(
+        clock, marks, live, None, lang="en", seconds=150, now_ms=now_ms, review=review,
+    )
+    fr = build_raw_script(
+        clock, marks, live, None, lang="fr", seconds=150, now_ms=now_ms, review=review,
+    )
+    bare_ch = hop_chapter(bare)
+    rev_ch = hop_chapter(reviewed)
+    fr_ch = hop_chapter(fr)
+    assert bare_ch and rev_ch and fr_ch
+    assert bare_ch["tA"].startswith("2026-08-12")
+    assert bare_ch["tB"].startswith("2026-08-15")
+    for chapter in (bare_ch, rev_ch, fr_ch):
+        refuse_voyage(chapter["text"] or "")
+    bare_text = bare_ch["text"] or ""
+    rev_text = rev_ch["text"] or ""
+    assert _opening_nm_label(hop_film_nm, "en") in bare_text
+    assert "three days at sea" in bare_text
+    assert _opening_nm_label(leg_nm, "en") in rev_text
+    assert spoken_sea_days(leg_days, "en") in rev_text
+    assert _opening_nm_label(leg_nm, "fr") in (fr_ch["text"] or "")
+    assert "trois jours" in (fr_ch["text"] or "")
