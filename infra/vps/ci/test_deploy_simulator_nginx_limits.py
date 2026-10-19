@@ -98,6 +98,22 @@ class NginxLimitsFileTests(unittest.TestCase):
         self.assertIn("limit_req zone=sim_write", text)
         self.assertIn("limit_req zone=sim_story", text)
 
+    def test_hsts_un_an_et_csp_complete_encore_en_report_only(self):
+        text = VHOST.read_text(encoding="utf-8")
+        active = [line.strip() for line in text.splitlines() if not line.strip().startswith("#")]
+        hsts = [line for line in active if "Strict-Transport-Security" in line]
+        self.assertEqual(
+            hsts,
+            ['add_header Strict-Transport-Security "max-age=31536000" always;'],
+        )
+        enforced = [line for line in active if line.startswith("add_header Content-Security-Policy ")]
+        self.assertEqual(len(enforced), 1, enforced)
+        self.assertIn("frame-ancestors", enforced[0])
+        self.assertNotIn("default-src", enforced[0])
+        report = [line for line in active if line.startswith("add_header Content-Security-Policy-Report-Only ")]
+        self.assertEqual(len(report), 1, report)
+        self.assertIn("default-src 'self'", report[0])
+
     def test_fichier_conf_d_declare_les_deux_zones_une_fois(self):
         text = LIMITS.read_text(encoding="utf-8")
         for zone in ("sim_write", "sim_story"):
