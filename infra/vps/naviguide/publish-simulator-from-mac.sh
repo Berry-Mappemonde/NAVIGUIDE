@@ -55,6 +55,8 @@ rsync -az --delete -e "${RSH[*]}" \
 echo "→ Copie des fichiers infra simulateur…"
 rsync -az -e "${RSH[*]}" \
   "$ROOT/infra/vps/naviguide/nginx-simulator.conf" \
+  "$ROOT/infra/vps/naviguide/nginx-simulator-limits.conf" \
+  "$ROOT/infra/vps/naviguide/nginx-simulator-443-redirects.conf" \
   "$ROOT/infra/vps/naviguide/naviguide-simulator.service" \
   "$ROOT/infra/vps/naviguide/naviguide-film-front.service" \
   "$ROOT/infra/vps/naviguide/deploy-simulator.sh" \

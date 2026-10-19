@@ -37,6 +37,8 @@ require_file() {
 
 require_file "$NGINX_SRC" "nginx-simulator.conf"
 require_file "$UNIT_SRC" "naviguide-simulator.service"
+require_file "$APP/infra/vps/naviguide/nginx-simulator-limits.conf" "nginx-simulator-limits.conf"
+require_file "$APP/infra/vps/naviguide/nginx-simulator-443-redirects.conf" "nginx-simulator-443-redirects.conf"
 
 FILM_UNIT="$APP/infra/vps/naviguide/naviguide-film-front.service"
 FILM_PY="$SIM/server/film_front.py"
@@ -189,16 +191,100 @@ fi
 CERT=/etc/letsencrypt/live/naviguide.fr/fullchain.pem
 HAVE_CERT=0
 sudo test -f "$CERT" && HAVE_CERT=1
-sudo cp "$NGINX_SRC" /etc/nginx/sites-available/naviguide-simulator
+# BEGIN nginx-sites
+# Zones de débit (conf.d), vhost 443 et redirections 443 de www/simulator
+# sont posés dans le même passage, puis nginx -t. En cas d'échec, tout revient
+# à l'état sauvegardé et nginx n'est pas rechargé.
+# Les zones sim_write/sim_story ne doivent être déclarées qu'une fois : si un
+# autre site actif (ancien bootstrap HTTP) les déclare encore, on n'installe
+# pas le fichier conf.d.
+NGINX_ETC="${NGINX_ETC:-/etc/nginx}"
+LIMITS_SRC="${LIMITS_SRC:-${APP:-/home/naviguide/naviguide}/infra/vps/naviguide/nginx-simulator-limits.conf}"
+REDIRECTS_SRC="${REDIRECTS_SRC:-${APP:-/home/naviguide/naviguide}/infra/vps/naviguide/nginx-simulator-443-redirects.conf}"
+LIMITS_DST="$NGINX_ETC/conf.d/naviguide-simulator-limits.conf"
+SIM_AVAIL="$NGINX_ETC/sites-available/naviguide-simulator"
+SIM_ENABLED="$NGINX_ETC/sites-enabled/naviguide-simulator"
+REDIR_AVAIL="$NGINX_ETC/sites-available/naviguide-443-redirects"
+REDIR_ENABLED="$NGINX_ETC/sites-enabled/naviguide-443-redirects"
+NGINX_BAK="$NGINX_ETC/naviguide-deploy-bak/$(date -u +%Y%m%dT%H%M%SZ)"
+
+sudo mkdir -p "$NGINX_BAK"
+for f in "$LIMITS_DST" "$SIM_AVAIL" "$REDIR_AVAIL"; do
+  if sudo test -f "$f"; then sudo cp -a "$f" "$NGINX_BAK/"; fi
+done
+SIM_WAS_ENABLED=0
+[ -L "$SIM_ENABLED" ] && SIM_WAS_ENABLED=1
+REDIR_WAS_ENABLED=0
+[ -L "$REDIR_ENABLED" ] && REDIR_WAS_ENABLED=1
+
+nginx_restore_file() {
+  local dst="$1" bak
+  bak="$NGINX_BAK/$(basename "$dst")"
+  if sudo test -f "$bak"; then
+    sudo cp -a "$bak" "$dst"
+  else
+    sudo rm -f "$dst"
+  fi
+}
+nginx_restore_link() {
+  local was="$1" avail="$2" enabled="$3"
+  if [ "$was" -eq 1 ]; then
+    sudo ln -sf "$avail" "$enabled"
+  else
+    sudo rm -f "$enabled"
+  fi
+}
+nginx_restore() {
+  echo "ERREUR : nginx -t a échoué. Retour à la configuration sauvegardée ($NGINX_BAK)." >&2
+  nginx_restore_file "$LIMITS_DST"
+  nginx_restore_file "$SIM_AVAIL"
+  nginx_restore_file "$REDIR_AVAIL"
+  nginx_restore_link "$SIM_WAS_ENABLED" "$SIM_AVAIL" "$SIM_ENABLED"
+  nginx_restore_link "$REDIR_WAS_ENABLED" "$REDIR_AVAIL" "$REDIR_ENABLED"
+}
+
+# Sites actifs (hors fichiers posés ici) qui déclarent encore les zones.
+sim_zones_elsewhere() {
+  local f
+  for f in "$NGINX_ETC"/conf.d/*.conf "$NGINX_ETC"/sites-enabled/*; do
+    [ -e "$f" ] || continue
+    [ "$f" = "$LIMITS_DST" ] && continue
+    [ "$f" = "$SIM_ENABLED" ] && [ -L "$f" ] && continue
+    if grep -qsE '^[[:space:]]*limit_req_zone[^#]*zone=sim_(write|story):' "$f"; then
+      echo "$f"
+    fi
+  done
+}
+
+sudo cp "$NGINX_SRC" "$SIM_AVAIL"
+ZONES_ELSEWHERE="$(sim_zones_elsewhere)"
+if [ -n "$ZONES_ELSEWHERE" ]; then
+  echo "⚠  zones sim_write/sim_story déjà déclarées dans : $ZONES_ELSEWHERE" >&2
+  echo "   $LIMITS_DST non installé (pas de doublon)." >&2
+  sudo rm -f "$LIMITS_DST"
+else
+  sudo install -m 644 "$LIMITS_SRC" "$LIMITS_DST"
+fi
+sudo install -m 644 "$REDIRECTS_SRC" "$REDIR_AVAIL"
 if [ "$HAVE_CERT" -eq 1 ]; then
-  sudo ln -sf /etc/nginx/sites-available/naviguide-simulator /etc/nginx/sites-enabled/naviguide-simulator
+  sudo ln -sf "$SIM_AVAIL" "$SIM_ENABLED"
+  if [ -e "$NGINX_ETC/sites-enabled/naviguide" ]; then
+    echo "  sites-enabled/naviguide actif : redirections 443 déjà servies, naviguide-443-redirects non activé."
+  else
+    sudo ln -sf "$REDIR_AVAIL" "$REDIR_ENABLED"
+  fi
 else
   # Avant la bascule DNS (Contabo) : pas de certificat. Le vhost 443 du dépôt
   # ferait échouer nginx -t ; on garde le bootstrap HTTP (naviguide-http-bootstrap).
   echo "⚠  $CERT absent : vhost 443 copié mais non activé (mode bootstrap HTTP)." >&2
 fi
-sudo nginx -t
+if ! sudo nginx -t; then
+  nginx_restore
+  sudo nginx -t || echo "ERREUR : nginx -t échoue encore après le retour arrière." >&2
+  exit 1
+fi
 sudo systemctl reload nginx
+# END nginx-sites
 
 # ── TLS: add the SAN if missing (Let's Encrypt, free) ──────────────────
 # nginx plugin (not webroot): the www vhost still redirects /.well-known
