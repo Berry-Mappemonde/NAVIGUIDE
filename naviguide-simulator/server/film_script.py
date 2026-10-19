@@ -5481,18 +5481,55 @@ def _side_scale_gap(w: dict) -> Optional[float]:
     return sail if sail is not None else film
 
 
+def _side_scale_disagrees(nm: Any, scale: Optional[float]) -> bool:
+    """Vrai si le chiffre dit n'est pas l'écart d'une seule échelle (filmNm ou nm)."""
+    if not isinstance(nm, (int, float)) or isinstance(nm, bool):
+        return False
+    if not isinstance(scale, (int, float)) or isinstance(scale, bool):
+        return False
+    return abs(float(nm) - float(scale)) > max(1.0, abs(float(scale)) * 0.02)
+
+
+def _review_hop_trusted(
+    w: dict, review: dict | None, nm: Any, cap: float, dest: dict,
+) -> bool:
+    """La revue porte les milles de cette jambe, sous le plafond, pas l'odomètre."""
+    if not isinstance(review, dict):
+        return False
+    if not isinstance(nm, (int, float)) or isinstance(nm, bool):
+        return False
+    frm = w.get("fromName") or (w.get("from") or {}).get("name") or ""
+    to = w.get("toName") or w.get("destName") or (dest or {}).get("name") or ""
+    leg = review_leg_for_chapter(review, frm, to)
+    if not isinstance(leg, dict):
+        return False
+    raw = leg.get("legNm")
+    if not isinstance(raw, (int, float)) or isinstance(raw, bool):
+        return False
+    if abs(float(nm) - float(raw)) > 0.6:
+        return False
+    if float(nm) > cap:
+        return False
+    if _same_odometer(float(nm), dest) and float(nm) > 1500:
+        return False
+    return True
+
+
 def _side_hop_metrics(w: dict, review: dict | None) -> dict[str, Any]:
     """Milles et jours de Halifax ↔ Saint-Pierre. Jamais le cumul du voyage."""
-    metrics = dict(chapter_metrics(w, review if isinstance(review, dict) else None))
+    chosen = review if isinstance(review, dict) else None
+    metrics = dict(chapter_metrics(w, chosen))
     window_days = _window_span_days(w)
     cap = _hop_nm_cap(window_days)
     nm = metrics.get("legNm")
     dest = w.get("to") if isinstance(w.get("to"), dict) else {}
+    scale = _side_scale_gap(w)
     voyage = isinstance(nm, (int, float)) and not isinstance(nm, bool) and (
         float(nm) > cap or (_same_odometer(float(nm), dest) and float(nm) > 1500)
     )
-    if voyage or not isinstance(nm, (int, float)) or isinstance(nm, bool):
-        hop = _side_scale_gap(w)
+    mixed = not _review_hop_trusted(w, chosen, nm, cap, dest) and _side_scale_disagrees(nm, scale)
+    if voyage or mixed or not isinstance(nm, (int, float)) or isinstance(nm, bool):
+        hop = scale
         if hop is None or hop > cap:
             hop = _nm_between(
                 (w.get("from") or {}).get("lat"), (w.get("from") or {}).get("lon"),
@@ -5554,6 +5591,123 @@ def _side_opening_sentence(
     if stats:
         return f"{head} {stats[0].upper() + stats[1:]}."
     return head
+
+
+def _side_hop_stats_label(w: dict, review: dict | None, lang: str) -> str:
+    metrics = _side_hop_metrics(w, review if isinstance(review, dict) else None)
+    nm = _opening_nm_label(metrics.get("legNm"), lang)
+    days = spoken_sea_days(metrics.get("daysAtSea"), lang) if metrics.get("daysAtSea") is not None else ""
+    return ", ".join(x for x in (nm, days) if x)
+
+
+def _window_from_side_chapter(
+    chapter: dict, clock: dict | None, marks: list | None,
+) -> dict | None:
+    """Fenêtre Halifax ↔ Saint-Pierre à partir du chapitre déjà servi et des marques."""
+    frm_name = chapter.get("fromName") or ""
+    to_name = chapter.get("toName") or ""
+    if not _is_side_leg(frm_name, to_name):
+        return None
+    rows = [
+        row for row in list(marks or []) + list((clock or {}).get("marks") or [])
+        if isinstance(row, dict)
+    ]
+
+    def nearest(name: str, iso: Any) -> dict | None:
+        t = _ms(iso)
+        best = None
+        best_dt = None
+        for row in rows:
+            if not same_stop(str(row.get("name") or ""), name):
+                continue
+            rt = _ms(row.get("iso"))
+            if t is None or rt is None:
+                if best is None:
+                    best = row
+                continue
+            dt = abs(rt - t)
+            if best_dt is None or dt < best_dt:
+                best, best_dt = row, dt
+        return best
+
+    a = nearest(frm_name, chapter.get("tA"))
+    b = nearest(to_name, chapter.get("tB"))
+    if not a or not b:
+        return None
+    fa, fb = _stop_from_mark(a), _stop_from_mark(b)
+    t_a = _ms(chapter.get("tA")) or _ms(fa.get("iso"))
+    t_b = _ms(chapter.get("tB")) or _ms(fb.get("iso"))
+    if t_a is None or t_b is None or t_b <= t_a:
+        return None
+    return {
+        "from": fa,
+        "to": fb,
+        "fromName": fa.get("name") or frm_name,
+        "toName": fb.get("name") or to_name,
+        "destName": fb.get("name") or to_name,
+        "tA": t_a,
+        "tB": t_b,
+        "vehicle": "side",
+    }
+
+
+_HOP_STATS_RE = re.compile(
+    r"(?:\d{1,3}(?:[ \u00a0\u202f,]\d{3})+|\d{1,6})\s*(?:miles|milles)"
+    r"(?:\s*,\s*[^.]{0,80}?(?:days at sea|day at sea|jours de mer|jour de mer))?",
+    re.I,
+)
+
+
+def repair_side_hop_plan(
+    plan: dict | None,
+    *,
+    clock: dict | None = None,
+    marks: list | None = None,
+    review: dict | None = None,
+    lang: str = "en",
+) -> dict | None:
+    """Le snapshot déjà servi dit les milles de la jambe, pas l'odomètre du voyage.
+
+    Ne réécrit que la clause « N milles, M jours » d'un chapitre Halifax ↔ Saint-Pierre.
+    """
+    if not isinstance(plan, dict):
+        return plan
+    chapters = plan.get("chapters")
+    if not isinstance(chapters, list):
+        return plan
+    changed = False
+    out: list = []
+    for chapter in chapters:
+        if not isinstance(chapter, dict):
+            out.append(chapter)
+            continue
+        window = _window_from_side_chapter(chapter, clock, marks)
+        text = str(chapter.get("text") or "")
+        if window is None or not text:
+            out.append(chapter)
+            continue
+        stats = _side_hop_stats_label(window, review, lang)
+        match = _HOP_STATS_RE.search(text) if stats else None
+        if not match:
+            out.append(chapter)
+            continue
+        current = re.sub(r"\s+", " ", match.group(0)).strip()
+        wanted = re.sub(r"\s+", " ", stats).strip()
+        if current.casefold() == wanted.casefold():
+            out.append(chapter)
+            continue
+        new_text = text[:match.start()] + stats + text[match.end():]
+        if new_text == text:
+            out.append(chapter)
+            continue
+        out.append({**chapter, "text": new_text})
+        changed = True
+    if not changed:
+        return plan
+    copied = dict(plan)
+    copied["chapters"] = out
+    copied["chars"] = script_chars(out)
+    return copied
 
 
 def _resume_after_episode(w: dict, *, lang: str, display_t0: str | None = None) -> str:

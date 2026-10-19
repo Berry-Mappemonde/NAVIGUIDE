@@ -2873,6 +2873,21 @@ async def write_film_on_click(
     return serve_film(lang=lg, seconds=secs, style="written")
 
 
+def _repair_served_hop(plan: Optional[dict], lang: str, voy: Optional[dict]) -> Optional[dict]:
+    """Snapshot déjà en stock : la jambe Halifax dit ses milles, pas l'odomètre."""
+    if not isinstance(plan, dict) or not isinstance(voy, dict):
+        return plan
+    from film_script import _stored_review_and_eta, repair_side_hop_plan  # noqa: PLC0415
+
+    clock = voy.get("clock") if isinstance(voy.get("clock"), dict) else None
+    marks = voy.get("marks") if isinstance(voy.get("marks"), list) else None
+    try:
+        review, _eta = _stored_review_and_eta()
+    except Exception:
+        review = None
+    return repair_side_hop_plan(plan, clock=clock, marks=marks, review=review, lang=lang)
+
+
 def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
     extra = {
         "chapters": [], "source": "rules", "chars": 0,
@@ -2911,6 +2926,7 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
     if _is_written_style(style):
         wplan = _pick_written_plan(body, lg, int(seconds or 0))
         if isinstance(wplan, dict) and (wplan.get("chapters") or []):
+            wplan = _repair_served_hop(wplan, lg, voy)
             out = _with_film_estimate(wplan)
             if isinstance(lang_est, dict) and lang_est:
                 out["estimates"] = lang_est
@@ -2932,7 +2948,7 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
             out["style"] = "written"
             out.update(_stamp(hit))
             return out
-    out = _with_film_estimate(plan)
+    out = _with_film_estimate(_repair_served_hop(plan, lg, voy))
     if isinstance(lang_est, dict) and lang_est:
         out["estimates"] = lang_est
     out["status"] = READY

@@ -5942,3 +5942,64 @@ def test_halifax_saint_pierre_hop_not_voyage():
     assert spoken_sea_days(leg_days, "en") in rev_text
     assert _opening_nm_label(leg_nm, "fr") in (fr_ch["text"] or "")
     assert "trois jours" in (fr_ch["text"] or "")
+
+    # Poste : Halifax n'a pas de mille de mer, Saint-Pierre porte l'odomètre voile
+    # et un filmNm différent. L'écart mélangé (417 milles, deux jours) n'est pas la jambe.
+    station = [
+        {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": "2026-05-15T08:00:00Z",
+         "holdHours": 0, "lat": 46.8, "lon": 1.6},
+        {"name": "La Rochelle", "nm": 122, "filmNm": 122, "iso": "2026-05-15T12:00:00Z",
+         "holdHours": 0, "lat": 46.15, "lon": -1.16},
+        {"name": "Cayenne (Guyane)", "nm": 8700.626337220001, "filmNm": 8700.6263,
+         "iso": "2026-08-08T19:59:04Z", "holdHours": 72, "lat": 4.93, "lon": -52.33},
+        {"name": "Halifax (Nouvelle-Écosse)", "filmNm": 8780.6263, "iso": "2026-08-12T03:59:04Z",
+         "holdHours": 24, "lat": 44.65, "lon": -63.57, "kind": "hub"},
+        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "nm": 9197.415837873954,
+         "filmNm": 9160.2308, "iso": "2026-08-15T08:59:54Z", "holdHours": 72,
+         "lat": 46.78, "lon": -56.18},
+    ]
+    station_clock = {"t0": OFFICIAL_T0, "marks": station, "vertices": clock["vertices"]}
+    station_bare = build_raw_script(
+        station_clock, station, live, None, lang="en", seconds=150, now_ms=now_ms,
+    )
+    station_rev = build_raw_script(
+        station_clock, station, live, None, lang="en", seconds=150, now_ms=now_ms, review=review,
+    )
+    station_bare_ch = hop_chapter(station_bare)
+    station_rev_ch = hop_chapter(station_rev)
+    assert station_bare_ch and station_rev_ch
+    for chapter in (station_bare_ch, station_rev_ch):
+        refuse_voyage(chapter["text"] or "")
+        assert "417" not in (chapter["text"] or "")
+        assert "two days" not in (chapter["text"] or "")
+    assert _opening_nm_label(hop_film_nm, "en") in (station_bare_ch["text"] or "")
+    assert "three days at sea" in (station_bare_ch["text"] or "")
+    assert _opening_nm_label(leg_nm, "en") in (station_rev_ch["text"] or "")
+    assert spoken_sea_days(leg_days, "en") in (station_rev_ch["text"] or "")
+
+    from film_script import repair_side_hop_plan
+
+    stale = {
+        "chapters": [{
+            "fromName": "Halifax (Nouvelle-Écosse)",
+            "toName": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+            "tA": "2026-08-12T03:59:04Z",
+            "tB": "2026-08-15T08:59:54Z",
+            "text": (
+                "On 13 August, in Halifax (Nouvelle-Écosse), the crew boards a second sailing boat "
+                "for Saint-Pierre (Saint-Pierre-et-Miquelon). 9,160 miles, 48 days at sea. "
+                "Arrival on 15 August."
+            ),
+        }],
+        "chars": 10,
+        "targetSeconds": 150,
+    }
+    repaired = repair_side_hop_plan(
+        stale, clock=station_clock, marks=station, review=review, lang="en",
+    )
+    repaired_text = repaired["chapters"][0]["text"]
+    refuse_voyage(repaired_text)
+    assert "417" not in repaired_text
+    assert _opening_nm_label(leg_nm, "en") in repaired_text
+    assert spoken_sea_days(leg_days, "en") in repaired_text
+    assert "Arrival on 15 August." in repaired_text
