@@ -636,6 +636,11 @@ export default {
   skipperCoastalRule: "Coastal advised for < 12 m",
   exportNeedsRoute: "No route to export",
   exportKmlFollow: "KML of the followed route",
+  carnetTitle: "Logbook",
+  carnetStory: "Story",
+  carnetJournal: "Log",
+  carnetOpen: "Logbook",
+  carnetBack: "Back to the map",
   // DR1 — Tracer at J0: land departure, never "high seas".
   iciDepartureRoadTransfer: "Departure: Saint-Maur (Indre), road transfer to La Rochelle",
   // FV2
