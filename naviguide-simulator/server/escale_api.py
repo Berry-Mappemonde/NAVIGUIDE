@@ -15,9 +15,10 @@ et quand OSM / BI le disent un site et un téléphone :
 La **rédaction** (un paragraphe de présentation, trois phrases) passe par
 `cascade_text(tier="fast")` à partir de ces listes seulement,
 filtrée comme les cartes ; sans LLM, les listes seules. Rien n'est inventé :
-une section vide n'est pas envoyée. Cache par escale et par jour UTC
-(`pearl_store.kv`, ns « escale », TTL 7 j sur la clé du jour) plus un cache
-mémoire du jour si le store n'a pas la fiche. Le chauffeur de perles n'est
+une section vide n'est pas envoyée. Cache par escale, sans le jour dans la
+clé (`pearl_store.kv`, ns « escale », TTL 7 j) : la fiche survit au
+changement de jour UTC jusqu'à `ESCALE_TTL_S`. Le cache mémoire, lui, est
+indexé par escale et par jour UTC (`_day_mem_key`) si le store n'a pas la fiche. Le chauffeur de perles n'est
 pas lancé ici. Chaque paragraphe porte `source`.
 """
 from __future__ import annotations

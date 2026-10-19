@@ -173,8 +173,17 @@ test("tous les calques tiennent un zoom sans longtask d'une seconde", async ({ p
     });
     return;
   }
-  const flag = page.locator("[data-testid='waypoint-flag']").first();
-  if (!(await flag.count())) {
+  // Le premier drapeau (Saint-Maur) peut être sous le panneau de droite quand la caméra suit
+  // le bateau : un clic forcé tombe alors sur le panneau. On prend le premier drapeau dégagé.
+  const freeIdx = await page.evaluate(() => [...document.querySelectorAll("[data-testid='waypoint-flag']")]
+    .findIndex((el) => {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return false;
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return Boolean(top && el.contains(top));
+    }));
+  const flag = page.locator("[data-testid='waypoint-flag']").nth(Math.max(freeIdx, 0));
+  if (freeIdx < 0 || !(await flag.count())) {
     test.info().annotations.push({
       type: "api",
       description: "parcours officiel sans drapeau cliquable : fiche d'escale non jouée",
