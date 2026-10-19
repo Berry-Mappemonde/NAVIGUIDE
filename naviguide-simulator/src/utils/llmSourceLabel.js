@@ -32,6 +32,7 @@ export function llmSourceI18nKey(source, reviewedBy) {
   if (s === "cache") return "storySourceCache";
   if (/gpt-oss|nvidia-gpt|\bnim\b/i.test(s) || lower.startsWith("nvidia-")) return "storySourceNim";
   if (/\bgpt-4o\b|\bgpt-4\b/i.test(lower)) return "storySourceOpenrouter";
+  if (lower.endsWith("-nano") || lower.includes("-nano")) return "storySourceNano";
   if (s.endsWith("-lightning") || lower.includes("lightning")) return "storySourceLightning";
   if (s.endsWith("-super")) return "storySourceSuper";
   if (s.endsWith("-ultra") || (lower.includes("ultra") && lower.includes("nemotron"))) return "storySourceUltra";
@@ -45,6 +46,7 @@ export function llmSourceLabel(source, t, reviewedBy) {
 }
 
 const TOKEN_FACTORY_LABELS = new Set([
+  "storySourceNano",
   "storySourceLightning",
   "storySourceSuper",
   "storySourceUltra",

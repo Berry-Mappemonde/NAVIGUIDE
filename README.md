@@ -98,7 +98,7 @@ Copy templates and fill values **locally**—never commit secrets:
 **Hackathon / Nemotron (Token Factory)** — from `server/.env.example`:
 
 - `NEBIUS_API_KEY` — Nebius Token Factory API key (required for live Nemotron calls).
-- Optional: `NAVIGUIDE_TF_BASE`, `NAVIGUIDE_TF_BASE_ULTRA`, `NAVIGUIDE_TF_MODEL_FAST`, `NAVIGUIDE_TF_MODEL_WRITE`, `NAVIGUIDE_TF_MODEL_DEEP`, `NAVIGUIDE_TF_MODEL_JUDGE`, `NAVIGUIDE_LLM_PROVIDERS`, `NAVIGUIDE_LLM_DAILY_TOKENS_*`, `NAVIGUIDE_LLM_MODE`, `NAVIGUIDE_CHAT_ULTRA_PER_DAY`, `NAVIGUIDE_LLM_DAILY_USD`.
+- Optional: `NAVIGUIDE_TF_BASE`, `NAVIGUIDE_TF_BASE_EU`, `NAVIGUIDE_TF_BASE_ULTRA`, `NAVIGUIDE_TF_MODEL_NANO`, `NAVIGUIDE_TF_MODEL_FAST`, `NAVIGUIDE_TF_MODEL_WRITE`, `NAVIGUIDE_TF_MODEL_DEEP`, `NAVIGUIDE_TF_MODEL_JUDGE`, `NAVIGUIDE_LLM_PROVIDERS`, `NAVIGUIDE_LLM_DAILY_TOKENS_*` (including `NAVIGUIDE_LLM_DAILY_TOKENS_NANO`), `NAVIGUIDE_LLM_MODE`, `NAVIGUIDE_CHAT_ULTRA_PER_DAY`, `NAVIGUIDE_LLM_DAILY_USD`.
 
 **Fallback LLMs (optional):** `NVIDIA_API_KEY` (NIM), `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`.
 
@@ -164,6 +164,18 @@ Attributions for map tiles and data layers: [`naviguide-simulator/README.md`](na
 
 ## NVIDIA Nemotron models and Nebius Token Factory
 
+### Models
+
+NAVIGUIDE runs five open NVIDIA Nemotron models on Nebius Token Factory:
+
+- Nemotron 3 Nano 30B: fast routing (chat intent, stopover question pick, film moment ids, JSON only).
+- Nemotron 3.5 Lightning: short sentences and FR→EN translation of every story.
+- Nemotron 3 Super 120B: writes the "Here" stories, the written film and the plan review.
+- Nemotron 3 Ultra 550B: writes stopover and alert stories, then edits and judges the written film.
+- Nemotron 3.5 Super VL: looks at a local drawing of the route and picks the film's key moments.
+
+Every label on screen names the model that really answered; NIM fallback is labelled as such.
+
 Hackathon rules require a **runtime call to Nebius Token Factory** with at least one **NVIDIA open-source model**. This codebase routes **primary inference** through Token Factory; NVIDIA **NIM** (`integrate.api.nvidia.com`, model `openai/gpt-oss-20b`) is a **fallback** provider in the same cascade—not counted as the hackathon Token Factory path, but implemented for resilience.
 
 ### Token Factory endpoints and configuration
@@ -183,6 +195,7 @@ Defined in [`naviguide-simulator/server/llm_budget.py`](naviguide-simulator/serv
 
 | Tier | Default model ID | UI source label suffix |
 |------|------------------|-------------------------|
+| `nano` | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `nemotron-nano` |
 | `fast` | `nvidia/Nemotron-3_5-Lightning` | `nemotron-lightning` |
 | `write` | `nvidia/nemotron-3-super-120b-a12b` | `nemotron-super` |
 | `deep` / `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` |
@@ -195,10 +208,10 @@ Daily token caps, USD estimates, and `NAVIGUIDE_LLM_MODE` (`off` | `on-demand` |
 |--------|------|
 | [`story_cascade.py`](naviguide-simulator/server/story_cascade.py) | Central `cascade_text()` / `translate()`; `filter_numbers()` on LLM output; 24h LLM cache. |
 | [`story_cache.py`](naviguide-simulator/server/story_cache.py) | Briefing stories via `cascade_text(tier="write")`. |
-| [`logbook_chat.py`](naviguide-simulator/server/logbook_chat.py) | Logbook Q&A; tier `fast` vs `judge` (Ultra) routing; embeddings via Token Factory. |
+| [`logbook_chat.py`](naviguide-simulator/server/logbook_chat.py) | Logbook Q&A; intent JSON on `nano`, answers on `fast` or `judge` (Ultra); embeddings via Token Factory. |
 | [`escale_api.py`](naviguide-simulator/server/escale_api.py) | Port-of-call paragraphs (`tier="fast"`). |
-| [`escale_watch.py`](naviguide-simulator/server/escale_watch.py) | Tavily search/extract summaries (`tier="fast"`). |
-| [`film_script.py`](naviguide-simulator/server/film_script.py) | Film moment selection (fast), chapter writing (write), editing/judging (judge/Ultra). |
+| [`escale_watch.py`](naviguide-simulator/server/escale_watch.py) | Tavily search/extract summaries (`tier="fast"`); second-question id on `nano`. |
+| [`film_script.py`](naviguide-simulator/server/film_script.py) | Film moment ids on `nano` (repli Lightning, then NIM), chapter writing (write), editing/judging (judge/Ultra), FR→EN on Lightning. |
 | [`plan_review.py`](naviguide-simulator/server/plan_review.py) | Plan review comments (`tier="write"`). |
 | [`official_store.py`](naviguide-simulator/server/official_store.py) | Written film sources `nemotron-super-token-factory`, reviewed `nemotron-super-reviewed-ultra`. |
 | [`truth_judge.py`](naviguide-simulator/server/truth_judge.py) | Gold PoE: Tavily extract + Ultra `judge` tier for stale claims. |
@@ -207,7 +220,7 @@ Daily token caps, USD estimates, and `NAVIGUIDE_LLM_MODE` (`off` | `on-demand` |
 
 ### UI disclosure
 
-When the cascade returns a Nemotron Token Factory source, the UI shows the tier in text (« Nemotron 3 Super · Token Factory », and the words NVIDIA and Nebius). A fallback stays labelled OpenRouter, Claude or NVIDIA NIM. There is no third-party logo. See [`naviguide-simulator/src/utils/llmSourceLabel.js`](naviguide-simulator/src/utils/llmSourceLabel.js).
+When the cascade returns a Nemotron Token Factory source, the UI shows the tier in text (« Nemotron 3 Nano · Token Factory », « Nemotron 3 Super · Token Factory », and the words NVIDIA and Nebius). The film bar keeps one short line, « Models » / « Modèles », naming the model that answered. A fallback stays labelled Lightning, OpenRouter, Claude or NVIDIA NIM. There is no third-party logo. See [`naviguide-simulator/src/utils/llmSourceLabel.js`](naviguide-simulator/src/utils/llmSourceLabel.js).
 
 ### Safety: no invented numbers
 
@@ -257,4 +270,4 @@ Full API and MongoDB live in the **[Berry-Mappemonde/Blue-Intelligence](https://
 
 ### Résumé (français)
 
-**NAVIGUIDE** est en ligne sur [https://naviguide.fr](https://naviguide.fr). Chaque merge sur `main` déploie cette version. Le dépôt contient le simulateur (carte Leaflet, moteur d’escale, film, journal) et son serveur FastAPI ; l’API **Blue Intelligence** reste sur [blueintelligence.online](https://blueintelligence.online/api) (autre dépôt). Les textes générés passent d’abord par **Nebius Token Factory** avec les modèles **NVIDIA Nemotron** (Lightning / Super / Ultra), puis des replis documentés dans le code. Installation et variables d’environnement : voir les sections ci-dessus et [`naviguide-simulator/server/.env.example`](naviguide-simulator/server/.env.example).
+**NAVIGUIDE** est en ligne sur [https://naviguide.fr](https://naviguide.fr). Chaque merge sur `main` déploie cette version. Le dépôt contient le simulateur (carte Leaflet, moteur d’escale, film, journal) et son serveur FastAPI ; l’API **Blue Intelligence** reste sur [blueintelligence.online](https://blueintelligence.online/api) (autre dépôt). Les textes générés passent d’abord par **Nebius Token Factory** avec les modèles **NVIDIA Nemotron** (Nano / Lightning / Super / Ultra / Super VL), puis des replis documentés dans le code. Installation et variables d’environnement : voir les sections ci-dessus et [`naviguide-simulator/server/.env.example`](naviguide-simulator/server/.env.example).

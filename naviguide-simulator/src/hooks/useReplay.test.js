@@ -1221,6 +1221,12 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.equal(filmSourceKey("nemotron-super-reviewed-ultra"), "storySourceSuperReviewed");
     assert.equal(filmSourceKey("nemotron-super", "nemotron-ultra"), "storySourceSuperReviewed");
     assert.equal(filmSourceKey("nemotron-super"), "storySourceSuper");
+    assert.equal(filmSourceKey("nemotron-nano"), "storySourceNano");
+    assert.equal(filmSourceKey("nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"), "storySourceNano");
+    assert.equal(en.storySourceNano, "Nemotron 3 Nano · Token Factory");
+    assert.equal(fr.storySourceNano, "Nemotron 3 Nano · Token Factory");
+    assert.equal(en.filmModels, "Models");
+    assert.equal(fr.filmModels, "Modèles");
     assert.equal(filmSourceKey("openrouter"), "storySourceOpenrouter");
     assert.equal(filmSourceKey("nvidia-gpt-oss-20b"), "storySourceNim");
     assert.match(en.storySourceSuper, /Nemotron 3 Super/);

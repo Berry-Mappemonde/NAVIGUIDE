@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 _LLM_SOURCES = frozenset({
+    "nemotron-nano",
     "nemotron-lightning",
     "nemotron-super",
     "nemotron-ultra",

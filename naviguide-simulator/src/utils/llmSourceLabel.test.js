@@ -32,6 +32,7 @@ describe("AI transparency — source helpers", () => {
 describe("llmSourceI18nKey", () => {
   it("maps Nemotron suffixes and does not disguise NIM as rules", () => {
     assert.match(src, /endsWith\("-ultra"\)/);
+    assert.match(src, /"-nano"/);
     assert.match(src, /gpt-oss\|nvidia-gpt\|\\bnim\\b/);
     assert.match(src, /return "storySourceNim"/);
     const nimIdx = src.indexOf("storySourceNim");
@@ -53,6 +54,9 @@ describe("llmSourceI18nKey", () => {
 
   it("names each Token Factory tier exactly, and never a fallback", () => {
     const exact = {
+      "nemotron-nano": "Nemotron 3 Nano · Token Factory",
+      "route-nano": "Nemotron 3 Nano · Token Factory",
+      "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B": "Nemotron 3 Nano · Token Factory",
       "nemotron-lightning": "Nemotron 3.5 Lightning · Token Factory",
       "nvidia/Nemotron-3_5-Lightning": "Nemotron 3.5 Lightning · Token Factory",
       "nemotron-super": "Nemotron 3 Super · Token Factory",
@@ -83,6 +87,9 @@ describe("llmSourceI18nKey", () => {
       assert.doesNotMatch(llmSourceLabel(source, (key) => fr[key]), /Token Factory/, source);
     }
     for (const source of [
+      "nemotron-nano",
+      "route-nano",
+      "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
       "nemotron-lightning",
       "nvidia/Nemotron-3_5-Lightning",
       "nemotron-super",

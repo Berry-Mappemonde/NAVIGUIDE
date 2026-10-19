@@ -598,11 +598,11 @@ async def decide_second_question(
     client: httpx.AsyncClient | None = None,
     cascade: Any = None,
 ) -> str | None:
-    """Lightning choisit un id de remaining, ou None. Hors liste → refusée."""
+    """Nano choisit un id de remaining, ou None. Hors liste → refusée."""
     left = [q for q in WATCH_QUESTION_IDS if q in {str(x) for x in remaining}]
     if not left:
         return None
-    if not llm_budget.allow("fast"):
+    if not llm_budget.allow("nano"):
         return None if _has_answer(results) else left[0]
     fn = cascade or cascade_text
     user = json.dumps(
@@ -611,7 +611,7 @@ async def decide_second_question(
     )
     try:
         text, _src = await fn(
-            ROUND2_SYSTEM, user, client, tier="fast", fallback="", facts=user, max_tokens=40,
+            ROUND2_SYSTEM, user, client, tier="nano", fallback="", facts=user, max_tokens=40,
         )
     except Exception as exc:
         log.debug("tour 2 veille : %s", exc)

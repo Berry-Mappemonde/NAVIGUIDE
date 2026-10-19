@@ -1753,3 +1753,127 @@ def test_write_story_calls_super_and_stop_calls_ultra(monkeypatch):
     assert "us-central1" not in seen[0][0]
     assert seen[1][1] == "nvidia/Nemotron-3-Ultra-550b-a55b"
     assert "us-central1" in seen[1][0]
+
+
+NANO_ID = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+LIGHTNING_ID = "nvidia/Nemotron-3_5-Lightning"
+
+
+def test_nano_call_stays_on_eu_host(monkeypatch):
+    """Nano parle à la base EU, avec l'id catalogue exact."""
+    import story_cascade
+
+    monkeypatch.setenv("NAVIGUIDE_TF_BASE_EU", "https://api.tokenfactory.nebius.com/v1")
+    url = story_cascade._tf_url("nano")
+    assert "api.tokenfactory.nebius.com" in url
+    assert "us-central1" not in url
+    assert url.endswith("/chat/completions")
+    assert "us-central1" in story_cascade._tf_url("deep")
+
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        seen.append((str(request.url), body.get("model")))
+        return httpx.Response(200, json=_chat_ok("Le quai reste calme.", model=body.get("model")))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(
+                "sys", "user-nano", client, tier="nano", fallback="Phrase locale.", facts="user-nano",
+            )
+
+    result = asyncio.run(run())
+    text, source = result
+    assert text == "Le quai reste calme."
+    assert source == "nemotron-nano"
+    assert result.model == NANO_ID
+    assert result.tier == "nano"
+    assert len(seen) == 1
+    assert seen[0][1] == NANO_ID
+    assert "api.tokenfactory.nebius.com" in seen[0][0]
+    assert "us-central1" not in seen[0][0]
+
+
+def test_nano_falls_back_to_lightning_with_its_label(monkeypatch):
+    """Nano en échec → Lightning, étiquette nemotron-lightning, toujours en EU."""
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        url = str(request.url)
+        model = body.get("model")
+        seen.append((url, model))
+        if model == NANO_ID:
+            return httpx.Response(500, text='{"error":"nano down"}')
+        if model == LIGHTNING_ID:
+            return httpx.Response(200, json=_chat_ok("Le quai reste calme.", model=model))
+        return httpx.Response(500, text="unexpected")
+
+    monkeypatch.setenv("NAVIGUIDE_TF_BASE_EU", "https://api.tokenfactory.nebius.com/v1")
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(
+                "sys", "user-nano-fb", client, tier="nano", fallback="Phrase locale.", facts="user-nano-fb",
+            )
+
+    result = asyncio.run(run())
+    text, source = result
+    assert "quai" in text
+    assert source == "nemotron-lightning"
+    assert result.model == LIGHTNING_ID
+    assert [m for _u, m in seen] == [NANO_ID, LIGHTNING_ID]
+    assert all("us-central1" not in url for url, _m in seen)
+    assert all("api.tokenfactory.nebius.com" in url for url, _m in seen)
+    import llm_budget
+    assert llm_budget.status()["lastSourceByTier"]["nano"] == "nemotron-lightning"
+
+
+def test_nano_then_lightning_then_nim_keeps_nim_label(monkeypatch):
+    """Nano et Lightning muets → NIM, source étiquetée nvidia- (pas Nano)."""
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        body = json.loads(request.content.decode()) if request.content else {}
+        seen.append((url, body.get("model")))
+        if "tokenfactory" in url:
+            return httpx.Response(502, text='{"error":"down"}')
+        if "integrate.api.nvidia.com" in url:
+            return httpx.Response(200, json=_chat_ok("The quay stays calm.", model="openai/gpt-oss-20b"))
+        return httpx.Response(500, text="no")
+
+    monkeypatch.setenv("NAVIGUIDE_TF_BASE_EU", "https://api.tokenfactory.nebius.com/v1")
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(
+                "sys", "user-nano-nim", client, tier="nano", fallback="Phrase locale.", facts="user-nano-nim",
+            )
+
+    text, source = asyncio.run(run())
+    assert "quay" in text
+    assert source.startswith("nvidia-")
+    assert source != "nemotron-nano"
+    assert source != "nemotron-lightning"
+    models = [m for url, m in seen if "tokenfactory" in url]
+    assert models == [NANO_ID, LIGHTNING_ID]
+    assert any("integrate.api.nvidia.com" in url for url, _m in seen)
+    assert not any("openrouter" in url or "anthropic" in url for url, _m in seen)

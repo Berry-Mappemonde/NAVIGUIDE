@@ -673,4 +673,8 @@ export default {
   // Lot NB1 — Nemotron via Token Factory, badge en texte seul
   llmBrandNvidia: "NVIDIA",
   llmBrandNebius: "Nebius",
+
+  // NB2
+  storySourceNano: "Nemotron 3 Nano · Token Factory",
+  filmModels: "Models",
 };

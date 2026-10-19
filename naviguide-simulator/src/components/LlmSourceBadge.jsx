@@ -21,7 +21,9 @@ export const LlmSourceBadge = memo(function LlmSourceBadge({
   const model = label || llmSourceLabel(source, t, reviewedBy);
   const aiGenerated = isAiGeneratedSource(source);
   const showBrands = llmSourceShowsBrands(source);
-  const line = aiGenerated ? t("aiActGeneratedLabel", { model }) : model;
+  const named = aiGenerated ? t("aiActGeneratedLabel", { model }) : model;
+  // Film bar: one short "Models" line, still naming the model that answered.
+  const line = textOnly ? `${t("filmModels")} · ${named}` : named;
 
   return (
     <div

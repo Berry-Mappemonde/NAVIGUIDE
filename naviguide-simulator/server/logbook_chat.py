@@ -1302,18 +1302,18 @@ def parse_intent_text(text: str) -> dict[str, Any] | None:
 async def understand_question(
     question: str, lang: str, http: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
-    """Lightning ne rend qu'un JSON d'intention (≤ 60 tokens). Sinon mots-clés."""
+    """Nano ne rend qu'un JSON d'intention. Sinon mots-clés. Repli : Lightning, puis NIM."""
     fallback = keyword_intent(question)
     try:
         import llm_budget  # noqa: PLC0415
-        if not llm_budget.allow("fast"):
+        if not llm_budget.allow("nano"):
             return fallback
     except Exception:
         return fallback
     system, user = _parse_prompt(question)
     try:
         raw, _source = await cascade_text(
-            system, user, http, tier="fast", fallback="", max_tokens=PARSE_MAX_TOKENS,
+            system, user, http, tier="nano", fallback="", max_tokens=PARSE_MAX_TOKENS,
         )
     except Exception:
         return fallback
