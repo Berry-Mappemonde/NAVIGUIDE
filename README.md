@@ -207,7 +207,7 @@ Daily token caps, USD estimates, and `NAVIGUIDE_LLM_MODE` (`off` | `on-demand` |
 
 ### UI disclosure
 
-When the cascade returns a Nemotron Token Factory source, the UI shows translated labels and official **NVIDIA / Nebius / Token Factory** marks — [`naviguide-simulator/src/utils/llmSourceLabel.js`](naviguide-simulator/src/utils/llmSourceLabel.js), assets under [`naviguide-simulator/src/assets/brand/`](naviguide-simulator/src/assets/brand/) (usage notes in [`SOURCES.md`](naviguide-simulator/src/assets/brand/SOURCES.md)).
+When the cascade returns a Nemotron Token Factory source, the UI shows the tier in text (« Nemotron 3 Super · Token Factory », and the words NVIDIA and Nebius). A fallback stays labelled OpenRouter, Claude or NVIDIA NIM. There is no third-party logo. See [`naviguide-simulator/src/utils/llmSourceLabel.js`](naviguide-simulator/src/utils/llmSourceLabel.js).
 
 ### Safety: no invented numbers
 

@@ -1,6 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 import pytest
@@ -23,6 +24,13 @@ from story_cascade import (
     translate,
     write_story,
 )
+
+def _url_host_is(url: str, root: str) -> bool:
+    """Hôte exact, ou sous-domaine. Jamais une sous-chaîne ailleurs dans l'URL."""
+    host = (urlparse(str(url)).hostname or "").lower().rstrip(".")
+    root = root.lower().strip(".")
+    return bool(host) and (host == root or host.endswith("." + root))
+
 
 # Capture PR #252 / revue du 22 sept. : fiche Pointe-à-Pitre servie depuis le cache.
 CAPTURE_LEAK = (
@@ -657,6 +665,7 @@ def test_openai_text_strips_think_keeps_sentence():
 
 
 def test_openai_text_ignores_nvidia_reasoning_field():
+    """Une fuite de raisonnement ne devient pas le texte visiteur."""
     data = {
         "choices": [{
             "message": {
@@ -666,6 +675,32 @@ def test_openai_text_ignores_nvidia_reasoning_field():
         }],
     }
     assert _openai_text(data) == ""
+
+
+def test_openai_text_reads_reasoning_when_content_is_empty():
+    """content vide, finish=length : la phrase utile sort de reasoning ou reasoning_content."""
+    leaked = "Analyze User Input: Task: Translate.\nLa Rochelle est un port."
+    for field in ("reasoning", "reasoning_content"):
+        data = {
+            "choices": [{
+                "finish_reason": "length",
+                "message": {"content": "", field: leaked},
+            }],
+        }
+        assert _openai_text(data, prompt="sys\nuser", lang="fr") == "La Rochelle est un port.", field
+    english = {
+        "choices": [{
+            "finish_reason": "length",
+            "message": {
+                "content": None,
+                "reasoning_content": "The swell reaches two metres off the quay.",
+            },
+        }],
+    }
+    assert _openai_text(english, prompt="sys\nuser", lang="en") == (
+        "The swell reaches two metres off the quay."
+    )
+    assert _openai_text(english, prompt="sys\nuser", lang="fr") == ""
 
 
 def test_openai_text_unclosed_think_is_cut():
@@ -1085,23 +1120,22 @@ def _empty_reasoning(body, reasoning, finish="length"):
 
 
 def test_empty_content_with_reasoning_stays_on_the_tier(monkeypatch):
-    """content vide + reasoning + finish=length : repli NIM étiqueté, pas le palier."""
+    """content vide + reasoning utile + finish=length : texte et palier Nemotron, sans repli."""
     import llm_budget
 
     cases = (
-        ("fast", "nvidia/Nemotron-3_5-Lightning", False),
-        ("write", "nvidia/nemotron-3-super-120b-a12b", False),
-        ("deep", "nvidia/Nemotron-3-Ultra-550b-a55b", True),
-        ("judge", "nvidia/Nemotron-3-Ultra-550b-a55b", True),
+        ("fast", "nvidia/Nemotron-3_5-Lightning", "nemotron-lightning", False),
+        ("write", "nvidia/nemotron-3-super-120b-a12b", "nemotron-super", False),
+        ("deep", "nvidia/Nemotron-3-Ultra-550b-a55b", "nemotron-ultra", True),
+        ("judge", "nvidia/Nemotron-3-Ultra-550b-a55b", "nemotron-ultra", True),
     )
     monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
     monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
     monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    nim_text = "Le quai reste calme."
 
-    for tier, model, ultra_host in cases:
+    for tier, model, source, ultra_host in cases:
         seen = []
 
         def handler(request: httpx.Request, _seen=seen) -> httpx.Response:
@@ -1109,7 +1143,9 @@ def test_empty_content_with_reasoning_stays_on_the_tier(monkeypatch):
             url = str(request.url)
             _seen.append((url, body.get("model")))
             if "nvidia.com" in url:
-                return httpx.Response(200, json=_chat_ok(nim_text, model="openai/gpt-oss-20b"))
+                return httpx.Response(200, json=_chat_ok("Le quai reste calme.", model="openai/gpt-oss-20b"))
+            if "openrouter" in url or "anthropic" in url:
+                return httpx.Response(200, json=_chat_ok("Repli inutile."))
             return httpx.Response(200, json=_empty_reasoning(
                 body,
                 "Analyze User Input: Task: Translate.\nLa Rochelle est un port.",
@@ -1124,26 +1160,33 @@ def test_empty_content_with_reasoning_stays_on_the_tier(monkeypatch):
         before = llm_budget.get_usage(tier)
         result = asyncio.run(run())
         text, got = result
-        assert got.startswith("nvidia-"), tier
-        assert "nemotron" not in got.lower(), tier
-        assert text == nim_text, tier
+        assert got == source, tier
+        assert text == "La Rochelle est un port.", tier
         assert "Analyze" not in text, tier
-        assert "Rochelle" not in text, tier
-        assert result.model == "openai/gpt-oss-20b", tier
+        assert "Translate" not in text, tier
+        assert result.model == model, tier
         assert result.tier == tier
         tf = [(url, asked) for url, asked in seen if "tokenfactory" in url]
-        assert len(tf) == (2 if tier == "fast" else 1), tier
+        assert len(tf) == 1, tier
         assert tf[0][1] == model, tier
         assert ("us-central1" in tf[0][0]) is ultra_host, tier
-        assert any("nvidia.com" in url for url, _asked in seen), tier
+        assert not any(
+            _url_host_is(url, "nvidia.com")
+            or _url_host_is(url, "openrouter.ai")
+            or _url_host_is(url, "anthropic.com")
+            for url, _asked in seen
+        ), tier
         usage = llm_budget.get_usage(tier)
         assert usage["calls"] == before["calls"] + 1, tier
         assert usage["prompt_tokens"] == before["prompt_tokens"] + 8, tier
         assert usage["completion_tokens"] == before["completion_tokens"] + 40, tier
-        err = llm_budget.last_error()
-        assert err["provider"] == "tokenfactory", tier
-        assert err["reason"].startswith("tokenfactory empty"), tier
-        assert llm_budget.last_source_by_tier().get(tier) == "nim"
+        st = llm_budget.status()
+        assert "lastError" not in st, tier
+        assert st["lastSourceByTier"][tier] == source, tier
+        assert st["fallback"]["nim"] == 0, tier
+        if tier == "fast":
+            assert st["retrySuper"] == 0
+            assert llm_budget.get_usage("write")["calls"] == 0
 
 
 def test_empty_content_records_billed_reasoning_tokens(monkeypatch):
@@ -1398,7 +1441,9 @@ def test_reasoning_leak_falls_back_with_an_honest_label(monkeypatch):
 
 
 def test_plain_reasoning_sentence_stays_on_nemotron(monkeypatch):
-    """Même une phrase propre dans le raisonnement part en repli NIM étiqueté."""
+    """Une phrase propre dans le raisonnement reste sur Super, sans repli NIM."""
+    import llm_budget
+
     handler, seen = _nim_after_empty_reasoning(
         monkeypatch,
         "The user wants one or two sentences about the swell. "
@@ -1414,23 +1459,26 @@ def test_plain_reasoning_sentence_stays_on_nemotron(monkeypatch):
     out = asyncio.run(run())
     text = out.get("text") or ""
     assert out["status"] == "ready"
-    assert out["source"].startswith("nvidia-")
-    assert "nemotron" not in out["source"].lower()
-    assert out["model"] == "openai/gpt-oss-20b"
-    assert out["ai_model"] == "openai/gpt-oss-20b"
-    assert "port reste calme" in text
-    assert "houle" not in text
+    assert out["source"] == "nemotron-super"
+    assert out["tier"] == "write"
+    assert out["model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert out["ai_model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert "houle" in text
+    assert "Rochelle" in text
     assert "The user" not in text
     assert "JSON" not in text
-    assert any("nvidia.com" in url for url, _model in seen)
+    assert "port reste calme" not in text
+    assert not any(_url_host_is(url, "nvidia.com") for url, _model in seen)
+    assert llm_budget.status()["lastSourceByTier"]["write"] == "nemotron-super"
+    assert "lastError" not in llm_budget.status()
 
 
 def test_english_reasoning_falls_back_to_nim(monkeypatch):
-    """Une phrase anglaise dans le raisonnement part en repli NIM."""
+    """Une phrase anglaise propre reste sur Super. Une fuite ou la mauvaise langue part en NIM."""
     import llm_budget
 
     kept = "The swell reaches two metres off the quay."
-    handler, _seen = _nim_after_empty_reasoning(
+    handler, seen = _nim_after_empty_reasoning(
         monkeypatch, kept, lang="en", nim_text="The harbour stays quiet.",
     )
 
@@ -1443,12 +1491,14 @@ def test_english_reasoning_falls_back_to_nim(monkeypatch):
 
     good = asyncio.run(run_ok())
     text, source = good
-    assert source.startswith("nvidia-")
-    assert "nemotron" not in source.lower()
-    assert "harbour stays quiet" in text
-    assert "swell" not in text
-    assert good.model == "openai/gpt-oss-20b"
-    assert llm_budget.last_source_by_tier().get("write") == "nim"
+    assert source == "nemotron-super"
+    assert text == kept
+    assert "harbour stays quiet" not in text
+    assert good.model == "nvidia/nemotron-3-super-120b-a12b"
+    assert good.tier == "write"
+    assert llm_budget.last_source_by_tier().get("write") == "nemotron-super"
+    assert not any(_url_host_is(url, "nvidia.com") for url, _model in seen)
+    assert "lastError" not in llm_budget.status()
 
     leaks = (
         "La houle atteint deux mètres au large du quai.",
@@ -1557,3 +1607,149 @@ def test_reasoning_leak_is_a_labelled_nim_fallback(monkeypatch, tier, lang, reas
         assert len(tf) == 1 and "us-central1" in tf[0]
     else:
         assert len(tf) == 1 and "us-central1" not in tf[0]
+
+
+def test_lightning_reasoning_content_finish_length_stays_lightning(monkeypatch):
+    """reasoning_content + finish=length : Lightning, pas un second essai Super ni un repli."""
+    import llm_budget
+
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        url = str(request.url)
+        seen.append((url, body.get("model")))
+        if (
+            _url_host_is(url, "nvidia.com")
+            or _url_host_is(url, "openrouter.ai")
+            or _url_host_is(url, "anthropic.com")
+        ):
+            return httpx.Response(200, json=_chat_ok("Repli inutile.", model="openai/gpt-oss-20b"))
+        data = _empty_reasoning(
+            body,
+            "Analyze User Input: Task: Translate.\nLe quai de La Rochelle est calme.",
+        )
+        data["choices"][0]["message"] = {
+            "content": "",
+            "reasoning_content": data["choices"][0]["message"]["reasoning"],
+        }
+        data["choices"][0]["finish_reason"] = "length"
+        return httpx.Response(200, json=data)
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-x")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(
+                "sys", "user-rc", client, tier="fast", fallback="Phrase locale.", facts=None,
+            )
+
+    result = asyncio.run(run())
+    text, source = result
+    assert source == "nemotron-lightning"
+    assert text == "Le quai de La Rochelle est calme."
+    assert result.model == "nvidia/Nemotron-3_5-Lightning"
+    assert result.tier == "fast"
+    assert len(seen) == 1
+    assert "Lightning" in seen[0][1]
+    assert "us-central1" not in seen[0][0]
+    st = llm_budget.status()
+    assert st["retrySuper"] == 0
+    assert st["fallback"] == {"nim": 0, "openrouter": 0, "claude": 0}
+    assert "lastError" not in st
+    assert st["lastSourceByTier"]["fast"] == "nemotron-lightning"
+    assert st["fast"]["calls"] == 1
+
+
+def test_write_deep_judge_call_planned_token_factory_models(monkeypatch):
+    """Rédaction, approfondissement et juge appellent Super 120B ou Ultra 550B, sans repli."""
+    import llm_budget
+
+    cases = (
+        ("write", "nvidia/nemotron-3-super-120b-a12b", "nemotron-super", False, "Le bateau entre dans la ZEE."),
+        ("deep", "nvidia/Nemotron-3-Ultra-550b-a55b", "nemotron-ultra", True, "L'escale de La Rochelle est calme."),
+        ("judge", "nvidia/Nemotron-3-Ultra-550b-a55b", "nemotron-ultra", True, "Le récit tient les faits du journal."),
+    )
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-x")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+
+    for tier, model, source, ultra_host, sentence in cases:
+        seen = []
+
+        def handler(request: httpx.Request, _seen=seen, _sentence=sentence) -> httpx.Response:
+            body = json.loads(request.content.decode())
+            url = str(request.url)
+            _seen.append((url, body.get("model"), body.get("max_tokens")))
+            if "tokenfactory" not in url:
+                return httpx.Response(200, json=_chat_ok("Repli inutile.", model="openai/gpt-4o-mini"))
+            return httpx.Response(200, json=_chat_ok(_sentence, model=body.get("model")))
+
+        async def run(tier=tier):
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                return await cascade_text(
+                    "sys", f"user-plan-{tier}", client, tier=tier, fallback="Phrase locale.", facts=None,
+                )
+
+        result = asyncio.run(run())
+        text, got = result
+        assert got == source, tier
+        assert sentence in text, tier
+        assert result.model == model, tier
+        assert result.tier == tier
+        assert len(seen) == 1, tier
+        url, asked, max_tokens = seen[0]
+        assert asked == model, tier
+        assert ("us-central1" in url) is ultra_host, tier
+        assert max_tokens == llm_budget.max_tokens_for(tier), tier
+        st = llm_budget.status()
+        assert st["lastSourceByTier"][tier] == source, tier
+        assert st["fallback"] == {"nim": 0, "openrouter": 0, "claude": 0}, tier
+        assert "lastError" not in st, tier
+
+
+def test_write_story_calls_super_and_stop_calls_ultra(monkeypatch):
+    """write_story : Super pour le récit, Ultra 550B pour une escale."""
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        seen.append((str(request.url), body.get("model")))
+        return httpx.Response(200, json=_chat_ok("La Rochelle est un port calme.", model=body.get("model")))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            written = await write_story({
+                "event": "zee-enter", "eventId": "zee-plan-write", "lang": "fr", "needPage": False,
+            }, client=client)
+            stopped = await write_story({
+                "event": "stop", "eventId": "stop-plan-deep", "lang": "fr", "needPage": False,
+            }, client=client)
+            return written, stopped
+
+    written, stopped = asyncio.run(run())
+    assert written["status"] == "ready"
+    assert written["source"] == "nemotron-super"
+    assert written["tier"] == "write"
+    assert written["model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert stopped["status"] == "ready"
+    assert stopped["source"] == "nemotron-ultra"
+    assert stopped["tier"] == "deep"
+    assert stopped["model"] == "nvidia/Nemotron-3-Ultra-550b-a55b"
+    assert len(seen) == 2
+    assert seen[0][1] == "nvidia/nemotron-3-super-120b-a12b"
+    assert "us-central1" not in seen[0][0]
+    assert seen[1][1] == "nvidia/Nemotron-3-Ultra-550b-a55b"
+    assert "us-central1" in seen[1][0]

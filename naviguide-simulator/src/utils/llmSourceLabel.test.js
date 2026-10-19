@@ -1,34 +1,17 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import en from "../i18n/en.js";
 import fr from "../i18n/fr.js";
 import { isAiGeneratedSource, llmSourceI18nKey, llmSourceLabel, llmSourceShowsBrands } from "./llmSourceLabel.js";
 
-const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "llmSourceLabel.js"), "utf8");
-const badge = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/LlmSourceBadge.jsx"), "utf8");
+const here = dirname(fileURLToPath(import.meta.url));
+const src = readFileSync(join(here, "llmSourceLabel.js"), "utf8");
+const badge = readFileSync(join(here, "../components/LlmSourceBadge.jsx"), "utf8");
 
 const tEn = (key) => en[key];
-
-async function loadLabelModule() {
-  const stripped = src
-    .replace(/^import .+\.svg";\n/gm, "")
-    .replace(
-      /export const LLM_BRAND_LOGOS = Object\.freeze\(\{[\s\S]*?\}\);/,
-      "export const LLM_BRAND_LOGOS = Object.freeze({});",
-    );
-  const dir = mkdtempSync(join(tmpdir(), "llm-label-"));
-  const file = join(dir, "llmSourceLabel.js");
-  writeFileSync(file, stripped);
-  try {
-    return await import(pathToFileURL(file).href);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
 
 describe("AI transparency — source helpers", () => {
   it("exports isAiGeneratedSource and maps legacy film ids", () => {
@@ -57,8 +40,7 @@ describe("llmSourceI18nKey", () => {
     assert.match(src, /lower === "nemotron" \|\| lower\.includes\("super"\)/);
   });
 
-  it("Lightning relu par Ultra ne devient pas Super relu par Ultra", async () => {
-    const { llmSourceI18nKey } = await loadLabelModule();
+  it("Lightning relu par Ultra ne devient pas Super relu par Ultra", () => {
     const lightning = llmSourceI18nKey("nemotron-lightning", "nemotron-ultra");
     assert.equal(lightning, "storySourceLightning");
     assert.equal(llmSourceI18nKey("nemotron-lightning", null), "storySourceLightning");
@@ -123,6 +105,9 @@ describe("LlmSourceBadge — texte seul", () => {
     assert.doesNotMatch(badge, /bg-\[url\(/);
     assert.doesNotMatch(badge, /\.svg|LLM_BRAND_LOGOS/);
     assert.doesNotMatch(src, /<img\b|<svg\b|backgroundImage|background\s*:\s*["'`]?\s*url\s*\(|bg-\[url\(|\.svg|LLM_BRAND_LOGOS/i);
+    const brandDir = join(here, "../assets/brand");
+    const images = readdirSync(brandDir).filter((name) => /\.(svg|png|webp|gif|jpe?g)$/i.test(name));
+    assert.deepEqual(images, []);
     assert.equal(isAiGeneratedSource("openai/gpt-4o-mini"), true);
     assert.match(badge, /llmBrandNvidia/);
     assert.match(badge, /llmBrandNebius/);
