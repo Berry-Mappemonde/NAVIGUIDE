@@ -88,6 +88,22 @@ describe("Sidebar layout", () => {
     assert.doesNotMatch(sidebar, /t\("clickToImport"\)|t\("importOrDraw"\)|t\("clickNewImport"\)/);
   });
 
+  it("sous 600 px le panneau gauche est un tiroir au-dessus de la barre", () => {
+    assert.match(sidebar, /naviguide-sidebar-drawer/);
+    assert.match(sidebar, /naviguide-sidebar-drawer-body/);
+    assert.match(sidebar, /aria-expanded=\{open \? "true" : "false"\}/);
+    assert.match(sidebar, /-translate-x-full/);
+    assert.match(sidebar, /left-\[322px\]/);
+    assert.match(css, /@media \(max-width: 599px\)/);
+    assert.match(css, /--film-bar-left/);
+    assert.match(css, /\.naviguide-sidebar-drawer/);
+    assert.match(css, /max-height:\s*calc\(100% - var\(--sim-inset-bottom/);
+    assert.match(css, /display:\s*contents/);
+    assert.match(css, /order:\s*2/);
+    assert.match(css, /\[data-testid="film-view-switch"\][\s\S]{0,180}order:\s*3/);
+    assert.doesNotMatch(sidebar, /t\("mo1/);
+  });
+
   it("Toggle gauche fermé à top-4, pas d'aplat blanc crédits/zoom", () => {
     assert.match(sidebar, /naviguide-sidebar-toggle--left[\s\S]{0,280}absolute top-4/);
     assert.doesNotMatch(sidebar, /top-\[92px\]/);

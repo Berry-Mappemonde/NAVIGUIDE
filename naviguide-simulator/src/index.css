@@ -600,3 +600,107 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 .layer-fiche-popup h3 { margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #fff; }
 .layer-fiche-popup a { color: #38bdf8; text-decoration: none; word-break: break-all; }
 .layer-fiche-popup .muted { color: #94a3b8; font-size: 11px; }
+
+/*
+ * Sous 600 px : le panneau gauche est un tiroir (il ne réserve pas la colonne
+ * de la barre). La barre du film occupe toute la largeur, sous les panneaux,
+ * et ses commandes passent sur deux lignes. À 600 px et au-dessus, rien ici
+ * ne s'applique.
+ */
+@media (max-width: 599px) {
+  .naviguide-sidebar-panel {
+    height: auto !important;
+    max-height: calc(100% - var(--sim-inset-bottom, 120px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .naviguide-sidebar-drawer {
+    width: min(320px, calc(100vw - 48px)) !important;
+  }
+  .naviguide-sidebar-drawer-body {
+    overflow-y: auto;
+  }
+  .naviguide-sidebar-toggle--left[class*="322px"] {
+    left: calc(min(320px, 100vw - 48px) + 4px) !important;
+  }
+  [data-testid="film-bar"],
+  [data-testid="sim-root"] > .absolute:has(> [data-testid="show-film-bar"]) {
+    left: var(--film-bar-left, 8px) !important;
+    right: var(--film-bar-right, 8px) !important;
+  }
+  .naviguide-film-bar {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .naviguide-film-bar [data-testid="film-clock-line"] {
+    white-space: normal;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  /* Les commandes deviennent des items du même flex, coupées en deux
+     rangées : masquage, cinéma, écoute, style et durée au-dessus ;
+     mode, départ et relecture en dessous. */
+  .naviguide-film-bar > .flex.items-start {
+    flex-wrap: wrap;
+    align-items: center;
+    align-content: flex-start;
+    column-gap: 2px;
+    row-gap: 2px;
+  }
+  .naviguide-film-bar > .flex.items-start::before {
+    content: "";
+    order: 2;
+    flex: 0 0 100%;
+    width: 100%;
+    height: 0;
+    overflow: hidden;
+  }
+  .naviguide-film-bar [data-testid="film-commands"],
+  .naviguide-film-bar [data-testid="film-commands"] > div,
+  .naviguide-film-bar [data-testid="replay-controls"],
+  .naviguide-film-bar [data-testid="replay-controls"] > div {
+    display: contents;
+  }
+  .naviguide-film-bar [data-testid="film-source"] {
+    order: 0;
+    flex: 1 0 100%;
+    max-width: 100%;
+  }
+  .naviguide-film-bar button,
+  .naviguide-film-bar [data-testid="film-style"],
+  .naviguide-film-bar [data-testid="film-duration"] {
+    order: 1;
+  }
+  .naviguide-film-bar [data-testid="film-view-switch"],
+  .naviguide-film-bar [data-testid="replay-departure-field"],
+  .naviguide-film-bar [data-testid="replay-start"],
+  .naviguide-film-bar [data-testid="replay-stop"] {
+    order: 3;
+  }
+  .naviguide-film-bar button,
+  .naviguide-film-bar [data-testid="film-style"],
+  .naviguide-film-bar [data-testid="film-view-switch"],
+  .naviguide-film-bar [data-testid="film-duration"],
+  .naviguide-film-bar [data-testid="replay-departure-field"] {
+    font-size: 7px;
+    flex-shrink: 0;
+  }
+  .naviguide-film-bar button {
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+  .naviguide-film-bar [data-testid="replay-departure-field"] input {
+    font-size: 8px;
+  }
+  .naviguide-sidebar-toggle:focus-visible,
+  .naviguide-film-bar button:focus-visible,
+  .naviguide-film-bar input:focus-visible,
+  .naviguide-sidebar-drawer button:focus-visible,
+  .naviguide-sidebar-panel button:focus-visible,
+  [data-testid="not-for-nav-modal"] button:focus-visible {
+    outline: 2px solid #7dd3fc !important;
+    outline-offset: 1px;
+  }
+}
