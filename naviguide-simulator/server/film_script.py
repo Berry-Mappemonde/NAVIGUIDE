@@ -3090,10 +3090,59 @@ def _align_quay_stop_to_passage(stop: dict, clock: dict | None) -> dict:
     }
 
 
+def _itinerary_sail_nm(mark: dict) -> Optional[float]:
+    """Milles de mer de l'itinéraire. `nm` prime sur `filmNm` (décalé d'un offset)."""
+    nm = mark.get("nm")
+    film = mark.get("filmNm")
+    if isinstance(nm, (int, float)) and not isinstance(nm, bool) and float(nm) > 0.5:
+        return float(nm)
+    if isinstance(film, (int, float)) and not isinstance(film, bool):
+        return float(film)
+    if isinstance(nm, (int, float)) and not isinstance(nm, bool):
+        return float(nm)
+    return None
+
+
+def _iso_on_itinerary(clock: dict | None, mark: dict) -> Optional[str]:
+    """Date du sommet déjà dans l'horloge, au mille d'itinéraire.
+
+    Une marque sans iso (Mata-Utu, Nouméa) ne doit pas disparaître : l'horloge
+    datée du poste leur colle parfois le filmNm du retour atlantique, et le
+    rapprochement par filmNm rate. Le sommet au mille réel, lui, est dans le
+    Pacifique. Aucune date n'est inventée : sans sommet, on ne date pas.
+    """
+    if not isinstance(mark, dict) or not isinstance(clock, dict):
+        return None
+    if _ms(mark.get("iso")) is not None:
+        return None
+    nm = _itinerary_sail_nm(mark)
+    if nm is None or not clock.get("vertices"):
+        return None
+    t0 = _ms(clock.get("t0"))
+    if t0 is None:
+        return None
+    from plan_review import _t_hours_at_sail_nm  # noqa: PLC0415
+
+    hit = _t_hours_at_sail_nm(clock, nm)
+    if hit is None:
+        return None
+    t_hours, _sail = hit
+    return _iso(t0 + int(round(float(t_hours) * 3_600_000)))
+
+
 def official_dated_stops(marks: list | None, clock: dict | None = None) -> list[dict]:
     """Escales datées, Saint-Maur + 15 mai 2026 en tête. Aucune autre date inventée."""
     raw = marks if marks else (clock or {}).get("marks")
-    dated = dated_marks(raw)
+    stamped: list = []
+    for mark in raw or []:
+        if not isinstance(mark, dict):
+            continue
+        row = dict(mark)
+        iso = _iso_on_itinerary(clock, row)
+        if iso:
+            row["iso"] = iso
+        stamped.append(row)
+    dated = dated_marks(stamped)
     saint_raw = next(
         (m for m in (raw or []) if isinstance(m, dict) and is_saint_maur(m.get("name") or "")),
         None,
@@ -4159,19 +4208,14 @@ def _upcoming_from_route(
         return None
     start = ic + 1 if arrived else ic
     tail = list(real[start:])
-    anchor_i = (start + len(tail) - 1) if tail else ic
-    seen = {norm_stop(name) for name in real[: anchor_i + 1]}
     for name in review_names:
         if not name or _is_air_only_stop(name):
             continue
-        key = norm_stop(name)
-        if not key or key in seen:
+        label = _stop_spoken(name)
+        if not label or any(same_stop(item, label) for item in tail):
             continue
-        later = next((i for i, item in enumerate(real) if same_stop(item, name)), None)
-        if later is not None and later <= anchor_i:
-            continue
-        seen.add(key)
-        tail.append(_stop_spoken(name))
+        # La Rochelle du départ est déjà derrière : le retour, lui, est encore devant.
+        tail.append(label)
     return tail
 
 

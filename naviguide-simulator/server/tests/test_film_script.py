@@ -5669,6 +5669,66 @@ def test_reread_refuses_a_later_stop_announced_on_the_wrong_leg():
     assert "offleg" in noumea["faults"]
 
 
+def test_scrambled_clock_keeps_mata_utu_before_dzaoudzi():
+    """L'horloge recolle Mata-Utu en mai 2027 : la route réelle le garde avant Dzaoudzi.
+
+    Sans la date du sommet au mille d'itinéraire, le chapitre dit
+    « cap sur Dzaoudzi : 12 124 milles » et la liste à venir commence par Dzaoudzi.
+    """
+    t0 = "2026-05-15T08:00:00Z"
+    clock = {
+        "t0": t0,
+        "vertices": [
+            {"tHours": 0, "sailNm": 122, "lat": 46.15, "lon": -1.15, "vehicle": "main"},
+            {"tHours": 3422, "sailNm": 16205, "lat": -17.5, "lon": -149.5, "vehicle": "main"},
+            {"tHours": 3680, "sailNm": 17847, "lat": -13.28, "lon": -176.17, "vehicle": "main"},
+            {"tHours": 3858, "sailNm": 19177, "lat": -22.2, "lon": 166.4, "vehicle": "main"},
+            {"tHours": 5849, "sailNm": 28328, "lat": -12.8, "lon": 45.2, "vehicle": "main"},
+        ],
+        "marks": [
+            {"name": "Mata-Utu (Wallis-et-Futuna)", "tHours": 8454, "filmNm": 38364,
+             "iso": "2027-05-02T14:00:00Z", "lat": 28.1, "lon": -16.1},
+            {"name": "Nouméa (Nouvelle-Calédonie)", "tHours": 9020, "filmNm": 39295,
+             "iso": "2027-05-26T04:00:00Z", "lat": 42.9, "lon": -9.7},
+        ],
+    }
+    marks = [
+        {"name": "La Rochelle", "nm": 122, "filmNm": 122, "lat": 46.15, "lon": -1.15},
+        {"name": "Papeete (Polynésie française)", "nm": 16205, "filmNm": 16365,
+         "lat": -17.5, "lon": -149.5},
+        {"name": "Mata-Utu (Wallis-et-Futuna)", "nm": 17847, "filmNm": 18007,
+         "lat": -13.28, "lon": -176.17},
+        {"name": "Nouméa (Nouvelle-Calédonie)", "nm": 19177, "filmNm": 19337,
+         "lat": -22.2, "lon": 166.4},
+        {"name": "Dzaoudzi (Mayotte)", "nm": 28328, "filmNm": 28488,
+         "iso": "2027-01-14T00:00:00Z", "lat": -12.8, "lon": 45.2},
+    ]
+    stops = official_dated_stops(marks, clock)
+    names = [s["name"] for s in stops]
+    assert names.index("Mata-Utu (Wallis-et-Futuna)") < names.index("Nouméa (Nouvelle-Calédonie)")
+    assert names.index("Nouméa (Nouvelle-Calédonie)") < names.index("Dzaoudzi (Mayotte)")
+    mata = next(s for s in stops if "Mata-Utu" in s["name"])
+    assert mata["iso"].startswith("2026-")
+    assert not mata["iso"].startswith("2027-05")
+    review = {
+        "legs": [
+            {"from": "Cayenne", "to": "Papeete", "legNm": 8000},
+            {"from": "Papeete", "to": "Dzaoudzi", "legNm": 12124},
+            {"from": "Dzaoudzi", "to": "La Rochelle", "legNm": 11000},
+        ]
+    }
+    upcoming = upcoming_stop_names(review, "Papeete", arrived=True, route_stops=stops)
+    assert upcoming.index("Mata-Utu") < upcoming.index("Nouméa") < upcoming.index("Dzaoudzi")
+    assert upcoming[-1] == "La Rochelle"
+    t_end = int(datetime(2026, 10, 20, tzinfo=timezone.utc).timestamp() * 1000)
+    wins = _windows(stops, _ms(t0), t_end, clock)
+    leg = next(w for w in wins if "Papeete" in str(w.get("fromName") or ""))
+    assert "Mata-Utu" in str(leg.get("toName") or leg.get("destName") or "")
+    assert "Dzaoudzi" not in str(leg.get("toName") or "")
+    gap = chapter_metrics(leg, review).get("legNm")
+    assert isinstance(gap, (int, float)) and gap < 3000
+
+
 def test_upcoming_keeps_stops_a_review_leg_skipped():
     review = {
         "legs": [
