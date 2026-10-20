@@ -15,6 +15,18 @@ import { catalogSourceCount } from "./catalogSource.js";
 
 const EMPTY = { type: "FeatureCollection", features: [] };
 
+/**
+ * Valeur suivante d'un calque sous cadenas.
+ * Allumer sans accord rend la valeur actuelle (`v`) : le bandeau s'ouvre
+ * à côté, pas dans le setState. Éteindre reste libre. Aucun zoom n'entre
+ * ici : la vue monde n'est pas un refus.
+ */
+export function nextRestricted(v, fn, allowed) {
+  const next = typeof fn === "function" ? fn(v) : !!fn;
+  if (next && !allowed) return v;
+  return next;
+}
+
 function lruSet(cache, key, value, maxEntries = 8) {
   if (cache.has(key)) cache.delete(key);
   cache.set(key, value);
@@ -139,15 +151,40 @@ export function useToggleLayers(
   const [showCables, setShowCablesRaw] = useState(false);
 
   const [showBalisage, setShowBalisageRaw] = useState(false);
+  const shownRef = useRef({ balisage: false, bathymetry: false, fonds: false, cables: false });
+  shownRef.current.balisage = showBalisage;
+  shownRef.current.bathymetry = showBathymetry;
+  shownRef.current.fonds = showFonds;
+  shownRef.current.cables = showCables;
+
+  // Le refus vit hors du setState : un updater qui rend la même valeur
+  // abandonne le setState du parent (le dialogue ne s'ouvrait pas) et
+  // laissait le bouton éteint. Accepter écrit via gate.commit, sans second clic.
   const gatedSet = useCallback((setter, kind) => (fn) => {
-    setter((v) => {
-      const next = typeof fn === "function" ? fn(v) : !!fn;
-      if (next && gateRef && !gateRef.current?.allowed) {
-        gateRef.current?.onNeed?.(kind);
-        return v;
-      }
-      return next;
-    });
+    const current = shownRef.current[kind];
+    const allowed = !gateRef || Boolean(gateRef.current?.allowed);
+    const requested = typeof fn === "function" ? fn(current) : !!fn;
+    const next = nextRestricted(current, fn, allowed);
+    if (requested && !allowed) {
+      gateRef.current?.onNeed?.(kind);
+      return;
+    }
+    setter(next);
+  }, [gateRef]);
+
+  useEffect(() => {
+    const gate = gateRef?.current;
+    if (!gate) return undefined;
+    const commit = (kind) => {
+      if (kind === "balisage") setShowBalisageRaw(true);
+      else if (kind === "bathymetry") setShowBathymetryRaw(true);
+      else if (kind === "fonds") setShowFondsRaw(true);
+      else if (kind === "cables") setShowCablesRaw(true);
+    };
+    gate.commit = commit;
+    return () => {
+      if (gateRef.current?.commit === commit) gateRef.current.commit = null;
+    };
   }, [gateRef]);
   // Stable identities: the memoized bag below lists these setters as deps.
   // A new function each render republishes the bag and setStates forever.
@@ -313,6 +350,8 @@ export function useToggleLayers(
       pane: "balisage",
       opacity: 0.85,
       errorTileUrl: "",
+      // Vue monde comprise : pas de plancher qui laisserait le bouton allumé sans tuile.
+      minZoom: 0,
     });
     tiles.on("tileerror", () => {
       if (!alive || layersRef.current.balisageFallback) return;
@@ -323,6 +362,7 @@ export function useToggleLayers(
       layersRef.current.balisageFallback = L.tileLayer("/proxy/seamark/{z}/{x}/{y}.png", {
         pane: "balisage",
         opacity: 0.85,
+        minZoom: 0,
       }).addTo(map);
     });
     tiles.addTo(map);
@@ -354,6 +394,7 @@ export function useToggleLayers(
         version: "1.1.1",
         opacity: spec.opacity,
         pane: spec.pane,
+        minZoom: 0,
         maxZoom: 18,
         updateWhenZooming: false,
       });
