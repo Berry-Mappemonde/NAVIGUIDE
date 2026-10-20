@@ -70,17 +70,17 @@ def test_official_route_is_bounded_and_offline(monkeypatch):
         ids.append(point["callId"])
         assert vl_route._CALL_ID.fullmatch(point["callId"])
     assert roles.get("escale") == 17
-    assert roles.get("leg") == 12
-    assert len(points) == 29
+    assert roles.get("leg") == 11
+    assert len(points) == 28
     assert len(points) <= vl_route.MAX_IMAGES
     assert len(ids) == len(set(ids))
     info = vl_route.describe(points)
-    assert info["points"] == info["images"] == info["calls"] == 29
+    assert info["points"] == info["images"] == info["calls"] == 28
     assert info["tilesFetched"] == 0
-    assert info["tiles"] == 29 * vl_route.TILE_SPAN * vl_route.TILE_SPAN
+    assert info["tiles"] == 28 * vl_route.TILE_SPAN * vl_route.TILE_SPAN
     text = vl_route.format_account(points)
-    assert "points: 29" in text
-    assert "images: 29" in text
+    assert "points: 28" in text
+    assert "images: 28" in text
     assert "tiles_fetched: 0" in text
 
 
@@ -98,11 +98,11 @@ def test_estimate_lists_images_without_calling(monkeypatch, tmp_path):
     assert code == 0
     assert seen == []
     est = one_shot.build_estimate("vl_route_bm")
-    assert est["calls"] == 29
-    assert est["prompt_tokens"] == 29 * vl_route.PROMPT_TOKENS
-    assert est["completion_tokens"] == 29 * vl_route.COMPLETION_TOKENS
+    assert est["calls"] == 28
+    assert est["prompt_tokens"] == 28 * vl_route.PROMPT_TOKENS
+    assert est["completion_tokens"] == 28 * vl_route.COMPLETION_TOKENS
     part = llm_budget.estimate_usd("write", vl_route.PROMPT_TOKENS, vl_route.COMPLETION_TOKENS)
-    assert est["usd"] == round(29 * part, 8)
+    assert est["usd"] == round(28 * part, 8)
     assert est["fingerprint"] == one_shot.fingerprint_for(est)
     assert all(item["tier"] == "write" for item in est["items"])
     job_dir = Path(os.environ[one_shot.ENV_DIR]) / "vl_route_bm"
@@ -436,11 +436,11 @@ def test_estimate_prints_points_and_images(monkeypatch, capsys, tmp_path):
     assert "points" not in est
     assert "images" not in est
     assert f"calls: {est['calls']}" in out
-    assert "points: 29" in out
-    assert "images: 29" in out
+    assert "points: 28" in out
+    assert "images: 28" in out
     assert "tiles_fetched: 0" in out
     assert "escale=17" in out
-    assert "leg=12" in out
+    assert "leg=11" in out
     assert f"fingerprint: {est['fingerprint']}" in out
     assert not (tmp_path / "one-shot").exists()
 
