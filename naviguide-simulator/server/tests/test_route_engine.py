@@ -4,6 +4,7 @@ import pytest
 from geographiclib.geodesic import Geodesic
 
 import route_engine
+from route_contract import PANAMA_BOX, SUEZ_BOX, in_passage_box
 from route_engine import (
     _LAND_MASK_AVAILABLE,
     _NE_TREE,
@@ -11,9 +12,11 @@ from route_engine import (
     _is_land_hires,
     _segment_crosses_land,
     _segment_enters,
+    _split_canal_links,
     avoid_zones,
     route_open_hits,
     searoute_with_exact_end,
+    segment_in_named_passage,
     split_antimeridian,
     unwrap_path,
     wrap_lon,
@@ -274,3 +277,110 @@ def test_antimeridian_segment_enters_box_glued_at_179():
     assert not _segment_enters(150.0, 0.0, 160.0, 0.0, inside)
     assert not _segment_crosses_land(170.0, 0.0, -170.0, 0.0)
     assert _segment_crosses_land(170.0, 66.0, -170.0, 66.0)
+
+
+def _metres_away(lon, lat, azimuth, metres):
+    pos = Geodesic.WGS84.Direct(lat, lon, azimuth, metres)
+    return [pos["lon2"], pos["lat2"]]
+
+
+def _force_land(monkeypatch, predicate):
+    monkeypatch.setattr(route_engine, "_LAND_MASK_AVAILABLE", True)
+    monkeypatch.setattr(route_engine, "_is_land_hires", predicate)
+
+
+def test_named_passage_is_both_ends_in_one_box_up_to_60km():
+    panama = [-80.0, 8.8]
+    at_60 = _metres_away(panama[0], panama[1], 0.0, 60_000)
+    over = _metres_away(panama[0], panama[1], 0.0, 70_000)
+    assert in_passage_box(panama[0], panama[1], PANAMA_BOX)
+    assert in_passage_box(at_60[0], at_60[1], PANAMA_BOX)
+    assert in_passage_box(over[0], over[1], PANAMA_BOX)
+    assert segment_in_named_passage([panama, at_60])
+    assert not segment_in_named_passage([panama, over])
+
+    suez = [32.35, 30.0]
+    suez_end = _metres_away(suez[0], suez[1], 0.0, 28_000)
+    assert in_passage_box(suez[0], suez[1], SUEZ_BOX)
+    assert in_passage_box(suez_end[0], suez_end[1], SUEZ_BOX)
+    assert segment_in_named_passage([suez, suez_end])
+
+    one_out = [-79.05, 9.0]
+    outside = _metres_away(one_out[0], one_out[1], 90.0, 28_000)
+    assert in_passage_box(one_out[0], one_out[1], PANAMA_BOX)
+    assert not in_passage_box(outside[0], outside[1], PANAMA_BOX)
+    assert not segment_in_named_passage([one_out, outside])
+    assert not segment_in_named_passage([[-40.0, 20.0], [-39.7, 20.0]])
+
+
+def test_panama_28km_land_ends_are_not_a_crossing(monkeypatch):
+    _force_land(monkeypatch, lambda lat, lon: True)
+    a = [-80.0, 9.0]
+    b = _metres_away(a[0], a[1], 0.0, 28_000)
+    assert in_passage_box(a[0], a[1], PANAMA_BOX)
+    assert in_passage_box(b[0], b[1], PANAMA_BOX)
+    assert segment_in_named_passage([a, b])
+    assert not _segment_crosses_land(a[0], a[1], b[0], b[1])
+
+
+def test_suez_28km_land_ends_are_not_a_crossing(monkeypatch):
+    _force_land(monkeypatch, lambda lat, lon: True)
+    a = [32.35, 30.0]
+    b = _metres_away(a[0], a[1], 0.0, 28_000)
+    assert in_passage_box(a[0], a[1], SUEZ_BOX)
+    assert in_passage_box(b[0], b[1], SUEZ_BOX)
+    assert segment_in_named_passage([a, b])
+    assert not _segment_crosses_land(a[0], a[1], b[0], b[1])
+
+
+def test_28km_island_outside_named_boxes_stays_a_hit(monkeypatch):
+    """28 km à travers une île fictive, loin de Panama et de Suez.
+
+    La découpe des liens de 20 à 40 km ne doit plus effacer ce hit.
+    """
+    a = [-40.0, 20.0]
+    b = _metres_away(a[0], a[1], 90.0, 28_000)
+    lo, hi = sorted((a[0], b[0]))
+    span = hi - lo
+    west, east = lo + span * 0.3, lo + span * 0.7
+
+    def island(lat, lon):
+        return west <= lon <= east and abs(lat - a[1]) <= 0.25
+
+    _force_land(monkeypatch, island)
+    for lon, lat in (a, b):
+        assert not in_passage_box(lon, lat, PANAMA_BOX)
+        assert not in_passage_box(lon, lat, SUEZ_BOX)
+        assert island(lat, lon) is False
+    mid = _metres_away(a[0], a[1], 90.0, 14_000)
+    assert island(mid[1], mid[0])
+    assert not segment_in_named_passage([a, b])
+    assert _segment_crosses_land(a[0], a[1], b[0], b[1])
+    out = _split_canal_links([a, b])
+    assert len(out) == 2
+    assert _segment_crosses_land(out[0][0], out[0][1], out[1][0], out[1][1])
+
+
+def test_port_guard_under_20km_remains_outside_named_boxes(monkeypatch):
+    _force_land(monkeypatch, lambda lat, lon: True)
+    a = [-30.0, 15.0]
+    b = _metres_away(a[0], a[1], 90.0, 15_000)
+    assert not segment_in_named_passage([a, b])
+    assert not _segment_crosses_land(a[0], a[1], b[0], b[1])
+
+
+def test_panama_link_over_60km_is_split_inside_the_box(monkeypatch):
+    _force_land(monkeypatch, lambda lat, lon: True)
+    a = [-80.0, 8.6]
+    b = _metres_away(a[0], a[1], 0.0, 90_000)
+    assert in_passage_box(a[0], a[1], PANAMA_BOX)
+    assert in_passage_box(b[0], b[1], PANAMA_BOX)
+    assert not segment_in_named_passage([a, b])
+    assert _segment_crosses_land(a[0], a[1], b[0], b[1])
+    out = _split_canal_links([a, b])
+    assert len(out) == 3
+    mid = out[1]
+    assert in_passage_box(wrap_lon(mid[0]), mid[1], PANAMA_BOX)
+    assert not in_passage_box(wrap_lon(mid[0]), mid[1], SUEZ_BOX)
+    assert not _segment_crosses_land(out[0][0], out[0][1], mid[0], mid[1])
+    assert not _segment_crosses_land(mid[0], mid[1], out[2][0], out[2][1])

@@ -10,6 +10,7 @@ from typing import Optional
 from geographiclib.geodesic import Geodesic
 
 from longitude import delta_lon, unwrap_lon, wrap_lon  # noqa: F401  (wrap_lon : API de main.py)
+from route_contract import PANAMA_BOX, SUEZ_BOX, in_passage_box
 
 from mem_limits import ROUTE_CACHE_MAX, lru_set
 from shipping_lanes import attach_anti_shipping
@@ -171,6 +172,45 @@ def split_antimeridian(lon1: float, lat1: float, lon2: float, lat2: float):
     return tuple(pieces)
 
 
+# Panama et Suez : un segment dont les deux sommets sont dans la même boîte,
+# jusqu'à cette longueur, est le passage searoute, pas une traversée à
+# détourner. Au-delà, le lien peut être coupé en deux s'il reste dans la boîte.
+NAMED_PASSAGE_MAX_M = 60_000.0
+_NAMED_PASSAGE_BOXES = (PANAMA_BOX, SUEZ_BOX)
+
+
+def _shared_passage_box(lon1: float, lat1: float, lon2: float, lat2: float):
+    """La boîte Panama ou Suez qui contient les deux bouts, sinon None."""
+    for box in _NAMED_PASSAGE_BOXES:
+        if in_passage_box(lon1, lat1, box) and in_passage_box(lon2, lat2, box):
+            return box
+    return None
+
+
+def segment_in_named_passage(coords) -> bool:
+    """Vrai seulement si les deux bouts sont dans la même boîte et la longueur ≤ 60 km.
+
+    Panama ou Suez, pas les deux. Un seul bout dans la boîte, ou une
+    géodésique plus longue que le plafond, n'est pas un passage nommé.
+    """
+    if not coords or len(coords) < 2:
+        return False
+    try:
+        lon1, lat1 = float(coords[0][0]), float(coords[0][1])
+        lon2, lat2 = float(coords[-1][0]), float(coords[-1][1])
+    except (TypeError, ValueError, IndexError):
+        return False
+    if not all(math.isfinite(v) for v in (lon1, lat1, lon2, lat2)):
+        return False
+    if _shared_passage_box(lon1, lat1, lon2, lat2) is None:
+        return False
+    try:
+        dist = Geodesic.WGS84.Inverse(lat1, lon1, lat2, lon2)["s12"]
+    except Exception:
+        return False
+    return math.isfinite(dist) and dist <= NAMED_PASSAGE_MAX_M
+
+
 def _segment_crosses_land(lon1: float, lat1: float, lon2: float, lat2: float,
                           n_samples: int = 30, _folded: bool = False) -> bool:
     """
@@ -206,11 +246,15 @@ def _segment_crosses_land(lon1: float, lat1: float, lon2: float, lat2: float,
     if total_dist < 1000:             # < 1 km — skip micro-segments (canal links)
         return False
 
-    # Guard 2 — canal / passage endpoints: if either endpoint is on land AND
-    # the segment is short (≤ 20 km), trust searoute's canal / strait routing.
-    # Panama Canal, Suez Canal and all navigable straits are < 20 km per segment.
-    # Segments longer than 20 km are checked even when an endpoint is on an island,
-    # so that island-to-island routes don't cross intermediate landmasses silently.
+    # Passage nommé, avant le garde-fou des 20 km : les deux sommets dans
+    # la même boîte Panama ou Suez, jusqu'à 60 km. Le masque peut dire
+    # « terre » sur les cellules du canal ; ce n'est pas une traversée.
+    if segment_in_named_passage([[lon1, lat1], [lon2, lat2]]):
+        return False
+
+    # Hors boîte : port ou détroit court. Un segment ≤ 20 km dont un bout
+    # est à terre reste un passage, pas une traversée. Au-delà de 20 km,
+    # la terre intermédiaire compte, même si un bout est sur une île.
     if total_dist <= 20_000 and (_is_land_hires(lat1, lon1) or _is_land_hires(lat2, lon2)):
         return False
 
@@ -686,11 +730,12 @@ def avoid_zones(coords: list, inside=None, max_iterations: int = 4) -> list:
 
 
 def _split_canal_links(coords: list) -> list:
-    """Coupe un lien de canal de 20 à 40 km en deux.
+    """Coupe en deux un lien de passage nommé plus long que 60 km.
 
-    Le moteur traite déjà un passage ≤ 20 km dont un bout est à terre
-    (canal, détroit) comme un passage, pas comme une traversée à détourner.
-    Un seul lien searoute du canal de Panama dépasse ce seuil.
+    Hors des boîtes Panama et Suez, un segment n'est plus découpé parce
+    qu'il mesure 20 à 40 km : 28 km de terre qui n'est pas un canal nommé
+    reste une traversée. Dans une boîte, un lien au-delà de 60 km peut
+    être coupé en son milieu, seulement si ce milieu reste dans la boîte.
     """
     if len(coords) < 2:
         return coords
@@ -703,15 +748,28 @@ def _split_canal_links(coords: list) -> list:
             result.append(b)
             continue
         try:
-            dist = geod.Inverse(a[1], a[0], b[1], b[0])["s12"]
+            box = _shared_passage_box(float(a[0]), float(a[1]), float(b[0]), float(b[1]))
+        except (TypeError, ValueError):
+            result.append(b)
+            continue
+        if box is None:
+            result.append(b)
+            continue
+        try:
+            line = geod.InverseLine(a[1], a[0], b[1], b[0])
+            dist = float(line.s13)
         except Exception:
             result.append(b)
             continue
-        if not 20_000 < dist <= 40_000:
+        if not math.isfinite(dist) or dist <= NAMED_PASSAGE_MAX_M:
             result.append(b)
             continue
-        midpos = geod.InverseLine(a[1], a[0], b[1], b[0]).Position(dist / 2)
-        mid = _normalize_antimeridian([[midpos["lon2"], midpos["lat2"]]], a[0])[0]
+        midpos = line.Position(dist / 2)
+        mid_lon, mid_lat = float(midpos["lon2"]), float(midpos["lat2"])
+        if not in_passage_box(wrap_lon(mid_lon), mid_lat, box):
+            result.append(b)
+            continue
+        mid = _normalize_antimeridian([[mid_lon, mid_lat]], a[0])[0]
         b_norm = _normalize_antimeridian([b], mid[0])[0]
         left_clear = not _segment_crosses_land(a[0], a[1], mid[0], mid[1])
         right_clear = not _segment_crosses_land(mid[0], mid[1], b_norm[0], b_norm[1])
