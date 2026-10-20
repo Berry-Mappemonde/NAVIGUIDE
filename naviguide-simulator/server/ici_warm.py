@@ -103,6 +103,20 @@ def status() -> dict[str, Any]:
         "moments": info.get("moments", 0),
     }
     out.setdefault("stories", {"skipped": "on-demand"})
+    try:
+        import pearls_warm  # noqa: PLC0415
+        out["pearlsWarm"] = pearls_warm.public_status()
+    except Exception:
+        out["pearlsWarm"] = {
+            "state": "idle",
+            "done": 0,
+            "skipped": 0,
+            "remaining": 0,
+            "llmSkipped": 0,
+            "lastError": None,
+            "found": None,
+            "routePoints": None,
+        }
     return out
 
 

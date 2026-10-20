@@ -1,0 +1,21 @@
+[Unit]
+Description=NAVIGUIDE — préchauffage unique des perles (ajout seul)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=naviguide
+WorkingDirectory=/home/naviguide/naviguide/naviguide-simulator
+EnvironmentFile=-/home/naviguide/.config/naviguide/simulator.env
+Environment=NAVIGUIDE_ICI_WARM=0
+Environment=NAVIGUIDE_LLM_MODE=off
+Environment=NAVIGUIDE_TAVILY_WATCH=0
+Environment=NAVIGUIDE_PEARLS_WARM_MEMORY_MAX=1677721600
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=2G
+TimeoutStartSec=infinity
+ExecStart=/home/naviguide/naviguide/naviguide-simulator/.venv/bin/python /home/naviguide/naviguide/naviguide-simulator/scripts/pearls_warm.py --run
+
+# Pas de [Install] et pas de timer : démarrage manuel uniquement
+# (systemctl start naviguide-pearls-warm).
