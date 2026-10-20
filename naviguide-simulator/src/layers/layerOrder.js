@@ -20,8 +20,8 @@ export const PANES = [
   { name: "amp", zIndex: 420 },
   { name: "grib", zIndex: 560, pointerEvents: "none" },
   { name: "boat", zIndex: 620 },
-  // Briefing focus (place named in the sidebar): above the boat, under tooltips.
-  { name: "briefing-focus", zIndex: 630 },
+  // The dashed briefing line is not clickable. Its canvas must not cover the flags.
+  { name: "briefing-focus", zIndex: 630, pointerEvents: "none" },
 ];
 
 export function createPanes(map) {
