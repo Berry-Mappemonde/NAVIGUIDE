@@ -9,7 +9,7 @@ from typing import Optional
 
 from geographiclib.geodesic import Geodesic
 
-from longitude import unwrap_lon, wrap_lon  # noqa: F401  (wrap_lon : API de main.py)
+from longitude import delta_lon, unwrap_lon, wrap_lon  # noqa: F401  (wrap_lon : API de main.py)
 
 from mem_limits import ROUTE_CACHE_MAX, lru_set
 from shipping_lanes import attach_anti_shipping
@@ -103,8 +103,76 @@ def _has_nearby_ocean(lat: float, lon: float, radius_deg: float = 1.5) -> bool:
     return False
 
 
+def _latitude_where_lon_crosses(lat1: float, lon1: float, lat2: float, lon2: float,
+                                boundary: float) -> float:
+    """Latitude de la géodésique là où la longitude dépliée atteint ±180°."""
+    try:
+        line = Geodesic.WGS84.InverseLine(lat1, lon1, lat2, lon2)
+        total = float(line.s13)
+    except Exception:
+        return lat1
+    if total <= 0.0 or not math.isfinite(total):
+        return lat1
+    going_east = boundary > 0.0
+
+    def _ulon(distance: float) -> float:
+        return unwrap_lon(lon1, line.Position(distance)["lon2"])
+
+    lo, hi = 0.0, total
+    for _ in range(48):
+        mid = (lo + hi) * 0.5
+        crossed = _ulon(mid) >= boundary if going_east else _ulon(mid) <= boundary
+        if crossed:
+            hi = mid
+        else:
+            lo = mid
+    try:
+        lat = float(line.Position(hi)["lat2"])
+    except Exception:
+        return lat1
+    return lat if math.isfinite(lat) else lat1
+
+
+def split_antimeridian(lon1: float, lat1: float, lon2: float, lat2: float):
+    """Un ou deux segments repliés dans [-180, 180], coupés sur ±180°.
+
+    Le plus court arc qui sort de [-180, 180] est coupé au méridien : le
+    morceau oriental finit à 180, le morceau occidental commence à -180
+    (le même point). Un segment qui ne traverse pas est rendu tel quel,
+    longitudes repliées (identité si elles étaient déjà dans l'intervalle).
+    """
+    try:
+        lat1_f, lat2_f = float(lat1), float(lat2)
+        a, b = wrap_lon(float(lon1)), wrap_lon(float(lon2))
+    except (TypeError, ValueError):
+        return ((lon1, lat1, lon2, lat2),)
+    if not all(math.isfinite(v) for v in (a, b, lat1_f, lat2_f)):
+        return ((lon1, lat1, lon2, lat2),)
+    end_u = a + delta_lon(a, b)
+    if -180.0 <= end_u <= 180.0:
+        return ((a, lat1_f, b, lat2_f),)
+    boundary = 180.0 if end_u > 180.0 else -180.0
+    other = -boundary
+    lat_cross = _latitude_where_lon_crosses(lat1_f, a, lat2_f, b, boundary)
+    if not math.isfinite(lat_cross):
+        frac = (boundary - a) / (end_u - a)
+        lat_cross = lat1_f + (lat2_f - lat1_f) * frac
+    raw = (
+        (a, lat1_f, boundary, lat_cross),
+        (other, lat_cross, b, lat2_f),
+    )
+    pieces = []
+    for lon_a, la, lon_b, lb in raw:
+        if abs(delta_lon(lon_a, lon_b)) < 1e-9 and abs(la - lb) < 1e-9:
+            continue
+        pieces.append((lon_a, la, lon_b, lb))
+    if not pieces:
+        return ((a, lat1_f, b, lat2_f),)
+    return tuple(pieces)
+
+
 def _segment_crosses_land(lon1: float, lat1: float, lon2: float, lat2: float,
-                          n_samples: int = 30) -> bool:
+                          n_samples: int = 30, _folded: bool = False) -> bool:
     """
     Return True if the great-circle segment from (lon1,lat1)→(lon2,lat2)
     crosses any land, including small islands and archipelagos.
@@ -114,17 +182,20 @@ def _segment_crosses_land(lon1: float, lat1: float, lon2: float, lat2: float,
     so islands like Nias and the Mentawai group are reliably detected.
     Dense sampling (30 pts) catches features as narrow as ~20 km.
 
-    Antimeridian segments (|Δlon| > 180°) are never re-routed: they were
-    already computed by searoute across the ±180° boundary and are correct.
-    Re-sampling them in lon space produces bogus midpoints that span the
-    globe, so we skip the land check entirely for these segments.
+    A short arc that crosses ±180° is cut first (split_antimeridian). Each
+    folded piece is sampled on its own side of the meridian. The longitude
+    jump alone is not a reason to skip the check.
     """
     if not _LAND_MASK_AVAILABLE and _NE_TREE is None:
         return False
-    # Guard 1 — antimeridian: searoute already routed the segment correctly;
-    # geodesic sampling across ±180° produces bogus mid-globe land hits.
-    if abs(lon2 - lon1) > 180:
-        return False
+    if not _folded:
+        pieces = split_antimeridian(lon1, lat1, lon2, lat2)
+        if len(pieces) > 1:
+            return any(
+                _segment_crosses_land(p_lon1, p_lat1, p_lon2, p_lat2, n_samples, True)
+                for p_lon1, p_lat1, p_lon2, p_lat2 in pieces
+            )
+        lon1, lat1, lon2, lat2 = pieces[0]
     geod = Geodesic.WGS84
     try:
         line = geod.InverseLine(lat1, lon1, lat2, lon2)
@@ -381,17 +452,26 @@ def _find_land_crossing_detour(a: list, b: list, deadline: float | None = None) 
 
 
 def _segment_enters(lon1: float, lat1: float, lon2: float, lat2: float,
-                    inside, n_samples: int = 30) -> bool:
+                    inside, n_samples: int = 30, _folded: bool = False) -> bool:
     """Vrai si la géodésique traverse une zone interdite (deux échantillons de suite).
 
     Un port situé dans un parc est déjà retiré du test par l'appelant
     (escape_points). On ne masque donc ni le début ni la fin du segment :
     un sommet intermédiaire posé dans l'aire compterait sinon comme une
-    simple sortie. Un segment qui traverse l'antiméridien n'est pas
-    rééchantillonné.
+    simple sortie. Un segment qui traverse ±180° est coupé
+    (split_antimeridian) et chaque morceau replié est contrôlé : le saut
+    de longitude seul ne dispense plus du contrôle.
     """
-    if inside is None or abs(lon2 - lon1) > 180:
+    if inside is None:
         return False
+    if not _folded:
+        pieces = split_antimeridian(lon1, lat1, lon2, lat2)
+        if len(pieces) > 1:
+            return any(
+                _segment_enters(p_lon1, p_lat1, p_lon2, p_lat2, inside, n_samples, True)
+                for p_lon1, p_lat1, p_lon2, p_lat2 in pieces
+            )
+        lon1, lat1, lon2, lat2 = pieces[0]
     try:
         line = Geodesic.WGS84.InverseLine(lat1, lon1, lat2, lon2)
         total = line.s13

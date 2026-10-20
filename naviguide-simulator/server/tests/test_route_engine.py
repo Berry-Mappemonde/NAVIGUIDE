@@ -9,10 +9,12 @@ from route_engine import (
     _NE_TREE,
     _has_nearby_ocean,
     _is_land_hires,
+    _segment_crosses_land,
     _segment_enters,
     avoid_zones,
     route_open_hits,
     searoute_with_exact_end,
+    split_antimeridian,
     unwrap_path,
     wrap_lon,
 )
@@ -248,3 +250,27 @@ def test_missing_catalog_marks_amp_unavailable_and_keeps_the_land_line(monkeypat
     assert land_calls["n"] >= 1
     assert route["properties"]["ampStatus"] == "unavailable"
     assert "constraintStatus" not in route["properties"]
+
+
+def test_antimeridian_segment_enters_box_glued_at_179():
+    """170° → −170° traverse une boîte collée à 179°. Un segment d'océan
+    qui ne rencontre pas la boîte reste faux. Le saut de longitude seul
+    ne dispense plus du contrôle de terre.
+    """
+    def inside(lat, lon):
+        # Ouverte en 180 : sur le segment non coupé, un seul échantillon
+        # tombe dans la boîte, et il en faut deux de suite.
+        return -1.0 <= lat <= 1.0 and 179.0 <= lon < 180.0
+
+    pieces = split_antimeridian(170.0, 0.0, -170.0, 0.0)
+    assert len(pieces) == 2
+    for lon1, _lat1, lon2, _lat2 in pieces:
+        assert -180.0 <= lon1 <= 180.0
+        assert -180.0 <= lon2 <= 180.0
+        assert abs(lon2 - lon1) <= 180.0
+    assert split_antimeridian(10.0, 45.0, 12.0, 46.0) == ((10.0, 45.0, 12.0, 46.0),)
+
+    assert _segment_enters(170.0, 0.0, -170.0, 0.0, inside)
+    assert not _segment_enters(150.0, 0.0, 160.0, 0.0, inside)
+    assert not _segment_crosses_land(170.0, 0.0, -170.0, 0.0)
+    assert _segment_crosses_land(170.0, 66.0, -170.0, 66.0)
