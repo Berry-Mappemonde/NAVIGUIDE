@@ -1,5 +1,5 @@
-// Film 2:30 : à l'instant du vol Halifax → Cayenne, l'infobulle d'arrivée
-// ne dit plus Halifax pendant que la barre annonce Saint-Pierre-et-Miquelon.
+// Film 2:30 : quand le panneau indique la destination Saint-Pierre-et-Miquelon,
+// l'infobulle d'arrivée ne dit plus Halifax.
 // Sans API, Revoir reste grisé ; les assertions du film sont sautées.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -17,7 +17,7 @@ const shot = (page, name) => page.screenshot({
   fullPage: false,
 });
 
-const FLIGHT_RE = /flies from Halifax to Cayenne|s'envole de Halifax pour Cayenne/i;
+const SAINT_PIERRE_RE = /saint-pierre/i;
 
 test("film 2:30 : plus d'arrivée Halifax face à Saint-Pierre-et-Miquelon", async ({ page }) => {
   test.setTimeout(90_000);
@@ -67,29 +67,40 @@ test("film 2:30 : plus d'arrivée Halifax face à Saint-Pierre-et-Miquelon", asy
   await expect(page.getByTestId("film-subtitle")).toBeVisible({ timeout: 8_000 });
 
   const chapters = await page.evaluate(() => window.__naviguideFilm?.chapters || []);
-  const flightIdx = chapters.findIndex((c) => FLIGHT_RE.test(c?.text || ""));
-  expect(flightIdx, "chapitre du vol Halifax → Cayenne").toBeGreaterThanOrEqual(0);
-  let arrivalIdx = -1;
-  for (let i = 0; i < flightIdx; i += 1) {
-    const text = chapters[i]?.text || "";
-    if (/halifax/i.test(chapters[i]?.toName || "") && /arriv/i.test(text)) arrivalIdx = i;
-  }
-  expect(arrivalIdx, "chapitre d'arrivée à Halifax").toBeGreaterThanOrEqual(0);
+  const spmIdx = chapters.findIndex((c) => SAINT_PIERRE_RE.test(c?.toName || ""));
+  expect(spmIdx, "chapitre dont la destination est Saint-Pierre-et-Miquelon").toBeGreaterThanOrEqual(0);
 
-  const arrivalChars = String(chapters[arrivalIdx].text || "").length;
-  await page.evaluate(({ idx, charIdx }) => window.__naviguideFilm.seekChapter(idx, charIdx), {
-    idx: arrivalIdx,
-    charIdx: Math.max(1, arrivalChars),
-  });
+  const text = String(chapters[spmIdx].text || "");
+  const atHalifax = text.search(/Halifax/i);
+  const atArrival = text.search(/Arrival at Saint-Pierre|Arrivée à Saint-Pierre/i);
+  const leg = page.getByTestId("ici-leg-line");
+  const filmLeg = page.getByTestId("film-leg");
   const arrivalCard = page.getByTestId("moment-now");
-  await expect(arrivalCard).toBeVisible({ timeout: 8_000 });
-  await expect(arrivalCard).toContainText(/Halifax/);
+  const bubble = page.getByTestId("event-bubble");
 
-  await page.evaluate((idx) => window.__naviguideFilm.seekChapter(idx, 0), flightIdx);
-  const subtitle = page.getByTestId("film-subtitle");
-  await expect(subtitle).toContainText(FLIGHT_RE, { timeout: 8_000 });
-  await expect(page.getByTestId("film-bar")).not.toContainText("Saint-Pierre-et-Miquelon");
-  await expect(arrivalCard).toBeHidden();
-  await expect(page.getByTestId("event-bubble")).toBeHidden();
+  const destinationText = async () => {
+    const to = (await filmLeg.getAttribute("data-to")) || "";
+    const panel = (await leg.textContent()) || "";
+    return `${to}\n${panel}`;
+  };
+
+  const points = [...new Set([atArrival, atHalifax].filter((n) => n >= 0))];
+  if (!points.length) points.push(Math.max(1, Math.floor(text.length / 2)));
+  for (const charIdx of points) {
+    await page.evaluate(({ idx, at }) => window.__naviguideFilm.seekChapter(idx, at), {
+      idx: spmIdx,
+      at: charIdx,
+    });
+    await expect.poll(destinationText, { timeout: 8_000 }).toMatch(SAINT_PIERRE_RE);
+    await expect(arrivalCard).toBeVisible({ timeout: 8_000 });
+    await expect(arrivalCard).toContainText(SAINT_PIERRE_RE);
+    await expect(arrivalCard).not.toContainText(/Halifax/);
+    if (await bubble.isVisible().catch(() => false)) {
+      await expect(bubble).not.toContainText(/Halifax/);
+    } else {
+      await expect(bubble).toBeHidden();
+    }
+  }
+
   await shot(page, "01-vol-sans-arrivee-halifax");
 });
