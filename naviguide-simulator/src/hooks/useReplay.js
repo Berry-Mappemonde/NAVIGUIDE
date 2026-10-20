@@ -969,6 +969,55 @@ function shortStopName(name) {
   return String(name || "").replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function foldArrivalPort(name) {
+  return String(name || "")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s*\([^)]*\)\s*/g, " ")
+    .replace(/[^a-z0-9]+/gi, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function portFromArrivalText(text) {
+  const flat = String(text || "").normalize("NFD").replace(/\p{M}/gu, "").trim();
+  const named = /^(?:arrival at|arrivee\s+a)\s+(.+?)(?:\s+on\b|\s+le\b|[.,]|$)/i.exec(flat);
+  return named ? foldArrivalPort(named[1]) : "";
+}
+
+function arrivalCardPort(card) {
+  return portFromArrivalText(card?.title)
+    || portFromArrivalText(card?.text)
+    || foldArrivalPort(card?.title);
+}
+
+function isArrivalBubble(card) {
+  if (!card) return false;
+  const id = String(card.id || card.key || "");
+  if (id.startsWith("approach:")) return true;
+  return /arriv/i.test(`${card.title || ""} ${card.text || ""}`);
+}
+
+function sameArrivalPort(cardPort, dest) {
+  if (!cardPort || !dest) return false;
+  if (cardPort === dest) return true;
+  return cardPort.startsWith(`${dest} `) || dest.startsWith(`${cardPort} `);
+}
+
+/**
+ * Une carte d'arrivée ne reste ouverte que pour la destination du chapitre.
+ * Halifax pendant Saint-Pierre → Cayenne, ou Papeete pendant Papeete → Mata-Utu,
+ * se ferme. On ne cache pas le nom : la carte quitte l'écran.
+ */
+export function arrivalBubbleFitsDestination(card, toName) {
+  if (!isArrivalBubble(card)) return true;
+  const port = arrivalCardPort(card);
+  const dest = foldArrivalPort(toName);
+  if (!port) return true;
+  if (!dest) return false;
+  return sameArrivalPort(port, dest);
+}
+
 /** Bulle à l'approche de l'escale d'arrivée du chapitre (affichage RA3 ; choix R9). */
 export function approachStopEvent(chapter, { frac } = {}) {
   const name = shortStopName(chapter?.toName);
@@ -2048,13 +2097,23 @@ export function useReplay({
         voiceLed,
         plan,
       }) || approachStopEvent(chapter, { frac: approachFrac });
-      const accepted = filmScoreRef.current.accept(filmEv);
-      const shown = filmBubbleRef.current.propose(filmEventCard(accepted));
+      const destName = chapter?.toName || "";
+      const fittingEv = filmEv && arrivalBubbleFitsDestination(filmEventCard(filmEv), destName)
+        ? filmEv
+        : null;
+      const accepted = filmScoreRef.current.accept(fittingEv);
+      let shown = filmBubbleRef.current.propose(filmEventCard(accepted));
+      if (shown && !arrivalBubbleFitsDestination(shown, destName)) {
+        filmBubbleRef.current.dismiss();
+        shown = null;
+      }
       if (shown !== publishedBubbleRef.current) {
         publishedBubbleRef.current = shown;
         if (shown) {
           cardSinceRef.current = now;
           setCard(shown);
+        } else {
+          setCard(null);
         }
         publishEventBubble(shown);
       }

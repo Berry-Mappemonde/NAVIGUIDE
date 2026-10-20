@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt, sentenceSpan, stepFilmTime } from "../engine/replay.js";
-import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmBudgetCanPlay, filmCharRatesStable, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, arrivalBubbleFitsDestination, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmBudgetCanPlay, filmCharRatesStable, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
 import { briefingForReplayPosition, replayPlace } from "./useReplay.js";
 import { VOICE_LEAD_MS, VOICE_MS_PER_CHAR } from "../utils/speak.js";
 import { shouldStopSpeakingOnChapterChange } from "./useReplayVoice.js";
@@ -626,6 +626,41 @@ describe("useReplay — interpolation jusqu'au dernier chapitre", () => {
     assert.match(late.card.title, /Ajaccio/);
     assert.equal(approachStopEvent(chapters[1], { frac: 0.2 }), null);
     assert.equal(approachStopEvent({ idx: 0, toName: "", text: "" }, { frac: 0.99 }), null);
+  });
+
+  it("ferme la carte d'arrivée quand la barre a changé de jambe", () => {
+    const halifax = {
+      kind: "stop",
+      id: "stop:halifax",
+      title: "Halifax",
+      text: "Arrival at Halifax (Nouvelle-Écosse) on 26 August.",
+    };
+    assert.equal(arrivalBubbleFitsDestination(halifax, "Cayenne (Guyane)"), false);
+    assert.equal(arrivalBubbleFitsDestination(halifax, "Saint-Pierre-et-Miquelon"), false);
+    assert.equal(arrivalBubbleFitsDestination(halifax, "Halifax"), true);
+    const papeete = {
+      kind: "stop",
+      title: "Papeete",
+      text: "Arrival at Papeete (Polynésie française) on 4 October.",
+    };
+    assert.equal(arrivalBubbleFitsDestination(papeete, "Mata-Utu (Wallis-et-Futuna)"), false);
+    assert.equal(arrivalBubbleFitsDestination(papeete, "Papeete (Polynésie française)"), true);
+    const sentence = {
+      kind: "stop",
+      title: "Arrival at Papeete on 4 October",
+      text: "Arrival at Papeete on 4 October.",
+    };
+    assert.equal(arrivalBubbleFitsDestination(sentence, "Papeete (Polynésie française)"), true);
+    assert.equal(arrivalBubbleFitsDestination(sentence, "Mata-Utu"), false);
+    assert.equal(arrivalBubbleFitsDestination({ kind: "wx", title: "Vent", text: "12 kn" }, "Mata-Utu"), true);
+    const approach = approachStopEvent(
+      { idx: 2, toName: "Ajaccio (Corse)", text: "Arrival at Ajaccio on 24 May." },
+      { frac: 0.9 },
+    );
+    assert.equal(arrivalBubbleFitsDestination(approach.card, "Ajaccio (Corse)"), true);
+    assert.equal(arrivalBubbleFitsDestination(approach.card, "Fort-de-France"), false);
+    assert.match(hook, /arrivalBubbleFitsDestination/);
+    assert.match(hook, /filmBubbleRef\.current\.dismiss\(\)/);
   });
 });
 
