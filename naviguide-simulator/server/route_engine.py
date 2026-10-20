@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextvars
+import hashlib
 import math
 import pathlib
 import time
@@ -1017,16 +1018,60 @@ def _sanitize_route_coords(coords: list) -> list:
     return cleaned
 
 
-def _route_cache_key(start, end) -> tuple:
+# à augmenter quand le pipeline change.
+# 2 : deux changements depuis 429c1e3 (recontrôle des aires, puis canaux nommés).
+ENGINE_REV = 2
+
+
+def _catalog_id_fingerprint(items: list) -> str:
+    """Hash sha256 des identifiants d'aires triés. Les géométries n'entrent pas.
+
+    Un identifiant vide est ignoré. Les doublons ne comptent qu'une fois.
+    La liste vide a un hash : ce n'est pas le mot « unavailable ».
+    """
+    seen: set[str] = set()
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("id") or "").strip()
+        if text:
+            seen.add(text)
+    payload = "\n".join(sorted(seen))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _area_catalog_fingerprint() -> str:
+    """Empreinte du catalogue courant, ou « unavailable » s'il ne se charge pas.
+
+    Un catalogue chargé et vide a le hash de zéro identifiant. Ce hash ne
+    se confond pas avec la panne : une ligne calculée sans catalogue ne
+    doit pas être resservie une fois le catalogue vide connu, ni l'inverse.
+    """
+    try:
+        from amp_nogo import forbidden_catalog_available, load_forbidden_nogo
+        items = load_forbidden_nogo()
+        if forbidden_catalog_available() is not True:
+            return "unavailable"
+    except Exception:
+        return "unavailable"
+    return _catalog_id_fingerprint(list(items or []))
+
+
+def _route_cache_key(start, end, *, catalog_fp: str | None = None) -> tuple:
     """
     Bidirectional cache key: always places the lexicographically smaller point
     first so that A→B and B→A map to the same key.
     Coordinates are rounded to 4 decimal places (~11 m precision) so that
     floating-point noise doesn't create spurious cache misses.
+
+    The key also carries ENGINE_REV and the area-catalog fingerprint, so a
+    line computed before an avoidance change, or with another catalog, is
+    not served again. ``catalog_fp`` None reads the live catalog.
     """
     p1 = (round(start[0], 4), round(start[1], 4))
     p2 = (round(end[0], 4), round(end[1], 4))
-    return (min(p1, p2), max(p1, p2))
+    fp = _area_catalog_fingerprint() if catalog_fp is None else catalog_fp
+    return (ENGINE_REV, min(p1, p2), max(p1, p2), fp)
 
 
 # In-memory route cache  {cache_key: (route_dict, canonical_start_tuple)}
