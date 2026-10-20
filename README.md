@@ -1,275 +1,188 @@
-# NAVIGUIDE — Blue Intelligence expedition briefing
+[Français](README.fr.md)
+
+# NAVIGUIDE
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE-MIT)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE-APACHE)
 [![NVIDIA Nemotron](https://img.shields.io/badge/NVIDIA-Nemotron-76B900.svg)](https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/)
 [![Nebius Token Factory](https://img.shields.io/badge/Nebius-Token%20Factory-0B1F3A.svg)](https://tokenfactory.nebius.com/)
 
-A [Berry-Mappemonde](https://berrymappemonde.org) project. Code is **MIT or Apache-2.0** (see [License](#license)).
+NAVIGUIDE is the expedition cockpit for the Berry-Mappemonde voyage: a map, the boat, and a briefing written only from structured facts, with NVIDIA Nemotron on Nebius Token Factory.
 
-> **Not for navigation.** Maps and figures come from public sources and calculations. This is not an official chart. Always check government publications before decisions at sea.
+**Live: https://naviguide.fr**
 
-**NAVIGUIDE is live at [https://naviguide.fr](https://naviguide.fr).**  
-**Every merge to `main` deploys this version** (GitHub Actions → Contabo VPS; see [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)).
+**Demo video:** TODO (Berry)
 
-The **Blue Intelligence** HTTP API remains at [https://blueintelligence.online/api](https://blueintelligence.online/api) (separate repository: [Berry-Mappemonde/Blue-Intelligence](https://github.com/Berry-Mappemonde/Blue-Intelligence)).
+> **Not for navigation.** Maps and figures come from public sources and calculations. This is not an official chart. Check government publications before any decision at sea.
 
-This repository is the **NAVIGUIDE** codebase submitted to the [Nebius × NVIDIA Global AI Hackathon on Devpost](https://nebiusglobalaihackathon.devpost.com/).
+## What it is, and who it is for
 
----
+NAVIGUIDE follows the Berry-Mappemonde expedition on a map and briefs the harbour ahead from structured facts: maritime borders, ports, protected areas, wind and sea state.
+It is for the crew and for anyone watching that voyage. The locked official departure is 15 May 2026, 08:00 UTC.
+It is also for judges of the Nebius × NVIDIA hackathon who want to see Nemotron answer on Token Factory from those facts, not from an open-ended chat.
+A missing fact stays empty. A figure is shown only when a measurement or a published source already contains it.
+It is not an official chart, and it is not for decisions at sea.
 
-## What NAVIGUIDE is
+Manuals: [English](docs/USER_MANUAL.md), [French](docs/MANUEL_UTILISATEUR.md).
 
-**NAVIGUIDE simulator** is an expedition cockpit: a Leaflet map, a moving catamaran on the real Berry-Mappemonde circumnavigation route (departure Saint-Maur, 15 May 2026, French overseas territories, return to La Rochelle), and a **briefing** built from structured facts—maritime borders, official ports of entry (“Gold”), marine protected areas, wind and sea state, science layers, and the next harbour. Empty fields stay empty; numbers are not invented.
+## Try it in 60 seconds
 
-Around the boat, the app assembles a small **“here” bag** (`ici()` on the server) from map data and from **Blue Intelligence** over HTTP. Rules (not a model) decide what interrupts the sailor (*NOW*) versus what waits for a quiet moment (*FREE*).
+On [https://naviguide.fr](https://naviguide.fr). The first visit opens in English. If the follow button is not in English, click **EN**.
 
-| Mode | What you see |
-|------|----------------|
-| **Follow the expedition** | Today’s position, camera follow, briefing cards, logbook, and **Replay** (narrated film of the voyage so far). |
-| **Simulation** | The same clock, advanced on demand; departure date and skipper limits (wind, waves); route recomputation. |
-| **Draw your own route** | Click or import a route; the same briefing pipeline applies. |
-| **Replay / film** | Scripted chapters with optional **Raw** vs **Written** narration (see [NVIDIA & Nebius](#nvidia-nemotron-models-and-nebius-token-factory)). |
+1. Click **Follow expedition**.
+2. Click **Replay the expedition**. If it is grey, the tooltip says **preparing**.
+3. When the film controls are up, **Raw** and **Edited** sit side by side. **Edited** is the written narration. If **Edited** is grey, the tooltip says **not yet written for this duration**.
+4. When the boat is at a stop, the panel is titled **Port of call sheet**. If that stop is inside the watch window and a watch was stored, a card is titled with the port name, the words **watch of**, and a date, plus one sentence. If no watch was stored, that card is absent. The sheet still lists the places it has.
+5. In the side panel, **Logbook — ask a question**. The field reads **Wind at the boat? Next stop?** Press the button whose tooltip is **Send**.
+6. Click **Draw your own route**.
 
-Screen-by-screen manual: [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md) (English), [`docs/MANUEL_UTILISATEUR.md`](docs/MANUEL_UTILISATEUR.md) (French). Simulator-focused notes: [`naviguide-simulator/README.md`](naviguide-simulator/README.md).
+A plain logbook question is answered from the facts already collected. A why, a how, or a long question is the one sent to Nemotron 3 Ultra when the budget allows. The chat then shows: **You are interacting with artificial intelligence. Replies are generated automatically and may contain errors.**
 
----
+## How we use NVIDIA Nemotron on Nebius Token Factory
 
-## Architecture
+Primary inference goes to Nebius Token Factory. The ids below are the defaults in `naviguide-simulator/server/llm_budget.py`. An environment variable `NAVIGUIDE_TF_MODEL_*` can replace one of them.
+
+| Gesture | Tier | Model | File |
+|---|---|---|---|
+| Logbook question, JSON only | `nano` | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `naviguide-simulator/server/logbook_chat.py` |
+| Film moment ids | `nano` | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `naviguide-simulator/server/film_script.py` |
+| Second watch question, one id from a fixed list | `nano` | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `naviguide-simulator/server/escale_watch.py` |
+| Short sentences, and French to English | `fast` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/story_cascade.py` |
+| Port-of-call paragraph | `fast` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/escale_api.py` |
+| One-sentence watch summary | `fast` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/escale_watch.py` |
+| “Here” card when a written story is asked | `write` | `nvidia/nemotron-3-super-120b-a12b` | `naviguide-simulator/server/story_cache.py` |
+| Written film chapters | `write` | `nvidia/nemotron-3-super-120b-a12b` | `naviguide-simulator/server/film_script.py` |
+| Plan-review comment | `write` | `nvidia/nemotron-3-super-120b-a12b` | `naviguide-simulator/server/plan_review.py` |
+| Edit, then judge, the written film | `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `naviguide-simulator/server/film_script.py` |
+| Hard logbook question | `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `naviguide-simulator/server/logbook_chat.py` |
+| Stale official-port claim, only if that judge is switched on | `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `naviguide-simulator/server/truth_judge.py` |
+| Look at a local drawing of the route (not the Draw button’s routing) | — | `nvidia/Nemotron-3.5-Super-VL` | `naviguide-simulator/server/vl_route.py` |
+
+The `deep` tier uses the same Ultra id. No module under `naviguide-simulator/server/` calls `tier="deep"` on this commit. The VL call runs only from `naviguide-simulator/scripts/one_shot.py` with `--run`. The image it sends is drawn locally. Map tiles are not sent.
+
+Hosts in `naviguide-simulator/server/story_cascade.py`: Nano on `https://api.tokenfactory.nebius.com/v1` (EU base), Lightning and Super on the same default base, Ultra (`deep` and `judge`) on `https://api.tokenfactory.us-central1.nebius.com/v1`.
+
+**Cascade.** A 24-hour SQLite cache is read first. If the daily budget or `NAVIGUIDE_LLM_MODE` refuses the call, nothing is sent and the source is `budget`. Otherwise the default order in `DEFAULT_PROVIDERS` is Token Factory, then NIM, then OpenRouter, then Claude. If the caller passed a fallback string and every provider failed, the source is `rules`.
+
+On the `fast` tier only, an empty Token Factory body, an HTTP status of 500 or higher, or a timeout is tried once more on Token Factory with the Super model. A 4xx does not take that second try. On the `nano` tier, a Token Factory failure is tried once more on Token Factory as Lightning, then the cascade continues. NIM is `openai/gpt-oss-20b` at `https://integrate.api.nvidia.com/v1/chat/completions`. OpenRouter defaults to `openai/gpt-4o-mini`. Claude is `claude-haiku-4-5`.
+
+**Numbers.** `filter_numbers` in `naviguide-simulator/server/story_cascade.py` drops every sentence that contains a number not already in the facts. A sentence with no number is kept. The filter does not catch a non-numeric invention.
+
+**Budgets** when the matching variable is unset (`naviguide-simulator/server/llm_budget.py`):
+
+| Tier | Tokens per day |
+|---|---|
+| `nano` | 100,000 |
+| `fast` | 200,000 |
+| `write` | 150,000 |
+| `deep` | 80,000 |
+| `judge` | 60,000 |
+
+Hard logbook questions that reach Ultra are also capped at 10 calls per day. There is no dollar cutoff unless `NAVIGUIDE_LLM_DAILY_USD` is set. The commented figures in `naviguide-simulator/server/.env.example` are not these defaults. Default mode is `on-demand` (a user action, not a background job). `off` never pays. `all` is explicit.
+
+**Public proof.** `GET /ici/warm/status` includes `llm`, and `llm.lastSourceByTier` when a tier has already answered. The value is the source that answered (`nemotron-nano`, `nemotron-lightning`, `nemotron-super`, `nemotron-ultra`, or a fallback name), not a sentence from the model.
+
+On screen, a Token Factory answer is named in text, for example **Nemotron 3.5 Lightning · Token Factory**. The film bar keeps one short line, **Models**, naming the model that answered. A fallback stays labelled **NVIDIA NIM (fallback)**, **OpenRouter**, **Claude**, or **rules**. There is no third-party logo.
+
+## Tavily
+
+There is no Tavily button.
+
+The watch is a server job. It stays off until `NAVIGUIDE_TAVILY_WATCH=1` (the default is `0`). When it is on, it covers a stop from 10 days before arrival through 2 days after, at most two rounds, once per stop. Lightning writes one sentence from the extracts. If a second round is needed, Nano picks one remaining id from a fixed list. It does not invent a question. Caps, unless overridden: 2 searches per stop, 6 searches per day, 80 Tavily credits per day. The dated card, when a watch is stored and not expired, is titled `{name} · watch of {date}`.
+
+The separate “re-read the official port page” judge is off unless `NAVIGUIDE_TRUTH_JUDGE=1`.
+
+## Architecture and data sources
 
 ```
-naviguide.fr  ──►  nginx (VPS)  ──►  naviguide-simulator
-                      │                ├── Vite/React SPA (dist/)
-                      │                └── FastAPI (uvicorn :8010)
-                      │
-                      └── HTTP ──►  blueintelligence.online/api  (other repo / OVH)
+naviguide.fr  →  nginx  →  naviguide-simulator
+                            ├── Vite / React (dist/)
+                            └── FastAPI (uvicorn :8010)
 ```
 
-| Area | Role |
-|------|------|
-| [`naviguide-simulator/`](naviguide-simulator/) | **Main application**: React 19 + Vite 8 frontend, Python **FastAPI** server (`server/main.py`), on-disk stores (no MongoDB on the simulator VPS). |
-| [`naviguide-simulator/server/`](naviguide-simulator/server/) | API on port **8010**: routing, weather pipeline, `ici()` bag, LLM cascade, film script, logbook chat, Tavily watch, BI proxy. |
-| [`backend/`](backend/) | **Partial copy** in this repo: climatology wind helpers and sample `.npz` data—not the full Blue Intelligence API. |
-| [`infra/vps/`](infra/vps/) | Deploy scripts, systemd units, nginx snippets, env templates for the Contabo host (`naviguide@13.140.164.185`). Details: [`infra/vps/README.md`](infra/vps/README.md). |
-| [`docs/`](docs/) | Plans, hackathon submission text, user manuals, recette screenshots. |
-| [`Archives/`](Archives/) | Archived planner / navsecops trees (not part of the live product). |
+The simulator does not run MongoDB. Blue Intelligence is a separate HTTP API. The partial `backend/` tree in this repository is not that API.
 
-**CI** (`.github/workflows/ci.yml`) runs when `naviguide-simulator/**` changes: Node unit tests, Vite build, `pytest`, npm/pip audit, and Playwright e2e on a frozen store. The Blue Intelligence frontend and API pytest suite are **not** in this repository.
+Licences are stated here only when this repository names them. The sheet with URL, on-screen credit, and survey date is [naviguide-simulator/DATA_SOURCES.md](naviguide-simulator/DATA_SOURCES.md).
 
-**Production:** `https://naviguide.fr` serves the built simulator; `www.naviguide.fr` and `simulator.naviguide.fr` redirect there ([`infra/vps/README.md`](infra/vps/README.md)).
+| Source | Licence written in this repository |
+|---|---|
+| Marine Regions EEZ v12 | CC-BY 4.0. This repository does not contain CC-BY-NC-SA and does not settle that difference. |
+| OpenStreetMap | ODbL is named for the OpenSeaMap seamarks. The base map credits OpenStreetMap contributors. |
+| EMODnet | CC-BY 4.0 |
+| World Port Index, Copernicus Marine, GEBCO, ProtectedSeas / MPAs, Saildocs / GRIB, Tavily, Blue Intelligence | Not named next to those sources. See the data sheet. |
 
----
+Model governance: [naviguide-simulator/docs/AI_GOVERNANCE.md](naviguide-simulator/docs/AI_GOVERNANCE.md).
 
-## Installation
-
-### Prerequisites
-
-Versions pinned or used in CI (do not guess newer majors unless you accept drift from lockfiles):
+## Run locally
 
 | Tool | Version |
-|------|---------|
-| **Node.js** | **24** (see [`.nvmrc`](.nvmrc)) |
-| **npm** | Uses `naviguide-simulator/package-lock.json` (`npm ci`) |
-| **Python** | **3.12** (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)) |
-| **pip packages** | Pinned in [`naviguide-simulator/server/requirements.txt`](naviguide-simulator/server/requirements.txt) (FastAPI 0.142.2, uvicorn 0.54.0, …) |
+|---|---|
+| Node.js | 24 ([.nvmrc](.nvmrc)) |
+| Python | 3.12 (as in [.github/workflows/ci.yml](.github/workflows/ci.yml)) |
 
-Frontend stack (from [`naviguide-simulator/package.json`](naviguide-simulator/package.json)): React 19.1.1, Vite 8.3.4, Leaflet 1.9.4, Tailwind 4.1.17.
-
-### Clone and install dependencies
+From a clean clone:
 
 ```bash
 git clone https://github.com/Berry-Mappemonde/NAVIGUIDE.git
 cd NAVIGUIDE/naviguide-simulator
+```
+
+On macOS, `./dev-mac.sh` creates `.venv` and installs npm packages the first time those folders are missing, then serves the API on port 8010 and the UI on port 5174.
+
+Or install and start the two processes yourself:
+
+```bash
 npm ci
 python3.12 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r server/requirements.txt
-```
-
-### Environment variables
-
-Copy templates and fill values **locally**—never commit secrets:
-
-| Template | Purpose |
-|----------|---------|
-| [`naviguide-simulator/server/.env.example`](naviguide-simulator/server/.env.example) | LLM cascade (Nebius, NIM, OpenRouter, Claude), Tavily, optional model overrides. |
-| [`infra/vps/naviguide/simulator.env.example`](infra/vps/naviguide/simulator.env.example) | Production-oriented: Copernicus, admin secret, CORS, `BI_API_URL`, LLM mode caps. |
-
-**Hackathon / Nemotron (Token Factory)** — from `server/.env.example`:
-
-- `NEBIUS_API_KEY` — Nebius Token Factory API key (required for live Nemotron calls).
-- Optional: `NAVIGUIDE_TF_BASE`, `NAVIGUIDE_TF_BASE_EU`, `NAVIGUIDE_TF_BASE_ULTRA`, `NAVIGUIDE_TF_MODEL_NANO`, `NAVIGUIDE_TF_MODEL_FAST`, `NAVIGUIDE_TF_MODEL_WRITE`, `NAVIGUIDE_TF_MODEL_DEEP`, `NAVIGUIDE_TF_MODEL_JUDGE`, `NAVIGUIDE_LLM_PROVIDERS`, `NAVIGUIDE_LLM_DAILY_TOKENS_*` (including `NAVIGUIDE_LLM_DAILY_TOKENS_NANO`), `NAVIGUIDE_LLM_MODE`, `NAVIGUIDE_CHAT_ULTRA_PER_DAY`, `NAVIGUIDE_LLM_DAILY_USD`.
-
-**Fallback LLMs (optional):** `NVIDIA_API_KEY` (NIM), `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`.
-
-**Tavily (optional):** `TAVILY_API_KEY`, `TAVILY_API_BASE`, `NAVIGUIDE_TAVILY_WATCH`, `NAVIGUIDE_WATCH_DAILY_SEARCHES`.
-
-**Blue Intelligence:** `BI_API_URL` (default in code: `https://blueintelligence.online/api`), `BI_ADMIN_KEY` for Gold review fiches (see simulator env example).
-
-**Weather (optional):** `COPERNICUS_USERNAME`, `COPERNICUS_PASSWORD` (see infra example).
-
-On macOS, the local dev scripts may read `~/.config/naviguide/simulator.env`. **Without API keys**, the app still runs: stories fall back to **rules**, caches, or mocks; CI runs with no secrets.
-
----
-
-## Usage
-
-### Local development
-
-**macOS (recommended in-repo scripts):**
-
-```bash
-cd naviguide-simulator
-bash ensure-dev.sh --open    # API + Vite in background, browser on http://localhost:5174
-# or
-bash dev-mac.sh              # foreground Vite
-bash stop-dev.sh             # stop background servers
-```
-
-**Generic (two terminals):**
-
-```bash
-cd naviguide-simulator
 source .venv/bin/activate
-npm run server    # uvicorn on http://127.0.0.1:8010
-npm run dev       # Vite on http://localhost:5174 (proxies API)
+pip install -r server/requirements.txt
+uvicorn server.main:app --port 8010
+npm run dev
 ```
 
-Other npm scripts ([`package.json`](naviguide-simulator/package.json)): `npm run build`, `npm run preview`, `npm run e2e`, `npm run e2e:store`.
+`npm run dev` is the Vite dev server. `npm run server` is the same API with `--reload` on `127.0.0.1:8010`.
 
-### Tests
+Names in [naviguide-simulator/server/.env.example](naviguide-simulator/server/.env.example), and nowhere a value: `NEBIUS_API_KEY`, `NAVIGUIDE_TF_BASE`, `NAVIGUIDE_TF_MODEL_NANO`, `NAVIGUIDE_TF_MODEL_FAST`, `NAVIGUIDE_TF_MODEL_WRITE`, `NAVIGUIDE_TF_MODEL_JUDGE`, `NAVIGUIDE_LLM_PROVIDERS`, `NAVIGUIDE_LLM_DAILY_TOKENS_NANO`, `NAVIGUIDE_LLM_DAILY_TOKENS_FAST`, `NAVIGUIDE_LLM_DAILY_TOKENS_WRITE`, `NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `NVIDIA_API_KEY`, `TAVILY_API_KEY`, `TAVILY_API_BASE`, `NAVIGUIDE_TAVILY_WATCH`, `NAVIGUIDE_WATCH_DAILY_SEARCHES`.
+
+`NAVIGUIDE_LLM_MODE` is read by the server and is not in that example. Set `NAVIGUIDE_LLM_MODE=off` to run with no paid model call. Stories then stay on rules, cache, or the local text.
+
+Python packages are pinned in [naviguide-simulator/server/requirements.txt](naviguide-simulator/server/requirements.txt).
+
+## Tests
 
 From `naviguide-simulator/`:
 
-| Command | What it runs |
-|---------|----------------|
-| `npm test` | Node.js unit tests (`src/**/*.test.js`, engine, hooks, UI contracts). |
-| `python -m pytest -q` | Python API tests (`server/tests/`, see [`pytest.ini`](naviguide-simulator/pytest.ini)). |
-| `npm run e2e` | Playwright (full suite; some `poste` specs skipped without a live store). |
-| `PW_WITH_API=1 npm run e2e:store` | Playwright specs with API + frozen store. |
+```bash
+npm test
+python -m pytest -q
+npx playwright test
+```
 
-CI mirrors: `npm test`, `npm run build`, `pytest`, Playwright shards ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+CI runs the same Node tests, the Vite build, and pytest when `naviguide-simulator/` changes, then Playwright. See [.github/workflows/ci.yml](.github/workflows/ci.yml).
 
----
+## Deploy
 
-## Dependencies (summary)
+A merge to `main` deploys [https://naviguide.fr](https://naviguide.fr) on Contabo. The workflow is [.github/workflows/deploy.yml](.github/workflows/deploy.yml).
 
-- **Map & UI:** Leaflet, React, Tailwind, Lucide icons.
-- **Server:** FastAPI, httpx, searoute, shapely, geographiclib, Copernicus Marine client, pandas/numpy/xarray for GRIB/climatology paths, pymongo only where tests or tooling expect it—not a simulator production MongoDB.
-- **External APIs (when keys are set):** Nebius Token Factory (Nemotron), NVIDIA NIM, OpenRouter, Anthropic, Tavily, Copernicus, Blue Intelligence HTTP API.
+## Changes since August 26, 2026
 
-Attributions for map tiles and data layers: [`naviguide-simulator/README.md`](naviguide-simulator/README.md#licences-and-attributions). Source sheet (URL, licence as written in the repo, on-screen credit, survey date): [`naviguide-simulator/DATA_SOURCES.md`](naviguide-simulator/DATA_SOURCES.md). Model governance: [`naviguide-simulator/docs/AI_GOVERNANCE.md`](naviguide-simulator/docs/AI_GOVERNANCE.md).
+Measured from git on code files only. The sentence is copied from that measurement. It is not an estimate.
 
----
+In numbers (from git, code files only): on August 26, 2026 the repository held 0 code files and 0 lines — the NAVIGUIDE simulator did not exist. Today it holds 708 code files and 174,566 lines, and 100% of those lines (174,566) were written or rewritten since August 26, 2026 — 1094 commits, 811 files touched. The simulator (171,071 lines) is entirely post-August 26, 2026.
 
-## NVIDIA Nemotron models and Nebius Token Factory
+## Responsible AI and security
 
-### Models
+Generated text is marked. The label is **AI-generated content (model: {model})**. The same block sets `data-ai-generated`. The server payload can carry `ai_generated` and `generated_at` (`naviguide-simulator/server/ai_transparency.py`). The chat notice is the sentence quoted in the 60-second path. That is the marking this repository ships for AI Act article 50. Whether the product is high-risk, and how the two paragraphs of article 50 attach, is not settled in the tree: see [naviguide-simulator/docs/AI_GOVERNANCE.md](naviguide-simulator/docs/AI_GOVERNANCE.md). This repository contains no watermark string.
 
-NAVIGUIDE runs five open NVIDIA Nemotron models on Nebius Token Factory:
+This checkout does not contain a red-team eval directory or a red-team report. This README does not say the product was adversarially tested with NVIDIA garak or promptfoo.
 
-- Nemotron 3 Nano 30B: fast routing (chat intent, stopover question pick, film moment ids, JSON only).
-- Nemotron 3.5 Lightning: short sentences and FR→EN translation of every story.
-- Nemotron 3 Super 120B: writes the "Here" stories, the written film and the plan review.
-- Nemotron 3 Ultra 550B: writes stopover and alert stories, then edits and judges the written film.
-- Nemotron 3.5 Super VL: looks at a local drawing of the route and picks the film's key moments.
+Policy: [SECURITY.md](SECURITY.md). Data sheet: [naviguide-simulator/DATA_SOURCES.md](naviguide-simulator/DATA_SOURCES.md).
 
-Every label on screen names the model that really answered; NIM fallback is labelled as such.
+[![CodeQL](https://github.com/Berry-Mappemonde/NAVIGUIDE/actions/workflows/codeql.yml/badge.svg)](https://github.com/Berry-Mappemonde/NAVIGUIDE/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Berry-Mappemonde/NAVIGUIDE/badge)](https://scorecard.dev/viewer/?uri=github.com/Berry-Mappemonde/NAVIGUIDE)
 
-Hackathon rules require a **runtime call to Nebius Token Factory** with at least one **NVIDIA open-source model**. This codebase routes **primary inference** through Token Factory; NVIDIA **NIM** (`integrate.api.nvidia.com`, model `openai/gpt-oss-20b`) is a **fallback** provider in the same cascade—not counted as the hackathon Token Factory path, but implemented for resilience.
-
-### Token Factory endpoints and configuration
-
-| Item | Location |
-|------|----------|
-| Default API base (Nano / Lightning / Super) | `https://api.tokenfactory.nebius.com/v1` — [`naviguide-simulator/server/story_cascade.py`](naviguide-simulator/server/story_cascade.py) (`TOKENFACTORY_BASE`, `NAVIGUIDE_TF_BASE`) |
-| Ultra / judge region base | `https://api.tokenfactory.us-central1.nebius.com/v1` — same file (`TOKENFACTORY_ULTRA_BASE`, `NAVIGUIDE_TF_BASE_ULTRA`) |
-| API key | `NEBIUS_API_KEY` — [`story_cascade.py`](naviguide-simulator/server/story_cascade.py) (`nebius_key()`), [`server/.env.example`](naviguide-simulator/server/.env.example) |
-| Provider order | `NAVIGUIDE_LLM_PROVIDERS` default `tokenfactory,nim,openrouter,claude` — [`story_cascade.py`](naviguide-simulator/server/story_cascade.py) |
-| HTTP chat call | `_call_tokenfactory()` → `/chat/completions` — [`story_cascade.py`](naviguide-simulator/server/story_cascade.py) |
-| Embeddings (logbook RAG) | `{TOKENFACTORY_BASE}/embeddings` — [`naviguide-simulator/server/logbook_chat.py`](naviguide-simulator/server/logbook_chat.py) |
-
-### Default Nemotron model IDs (overridable via `NAVIGUIDE_TF_MODEL_*`)
-
-Defined in [`naviguide-simulator/server/llm_budget.py`](naviguide-simulator/server/llm_budget.py) (`DEFAULT_MODELS`, `SOURCE_FOR_TIER`):
-
-| Tier | Default model ID | UI source label suffix |
-|------|------------------|-------------------------|
-| `nano` | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `nemotron-nano` |
-| `fast` | `nvidia/Nemotron-3_5-Lightning` | `nemotron-lightning` |
-| `write` | `nvidia/nemotron-3-super-120b-a12b` | `nemotron-super` |
-| `deep` / `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` |
-
-Daily token caps, USD estimates, and `NAVIGUIDE_LLM_MODE` (`off` | `on-demand` | `all`) are enforced in [`llm_budget.py`](naviguide-simulator/server/llm_budget.py) before any paid call.
-
-### Where Nemotron is used (server modules)
-
-| Module | Role |
-|--------|------|
-| [`story_cascade.py`](naviguide-simulator/server/story_cascade.py) | Central `cascade_text()` / `translate()`; `filter_numbers()` on LLM output; 24h LLM cache. |
-| [`story_cache.py`](naviguide-simulator/server/story_cache.py) | Briefing stories via `cascade_text(tier="write")`. |
-| [`logbook_chat.py`](naviguide-simulator/server/logbook_chat.py) | Logbook Q&A; intent JSON on `nano`, answers on `fast` or `judge` (Ultra); embeddings via Token Factory. |
-| [`escale_api.py`](naviguide-simulator/server/escale_api.py) | Port-of-call paragraphs (`tier="fast"`). |
-| [`escale_watch.py`](naviguide-simulator/server/escale_watch.py) | Tavily search/extract summaries (`tier="fast"`); second-question id on `nano`. |
-| [`film_script.py`](naviguide-simulator/server/film_script.py) | Film moment ids on `nano` (repli Lightning, then NIM), chapter writing (write), editing/judging (judge/Ultra), FR→EN on Lightning. |
-| [`plan_review.py`](naviguide-simulator/server/plan_review.py) | Plan review comments (`tier="write"`). |
-| [`official_store.py`](naviguide-simulator/server/official_store.py) | Written film sources `nemotron-super-token-factory`, reviewed `nemotron-super-reviewed-ultra`. |
-| [`truth_judge.py`](naviguide-simulator/server/truth_judge.py) | Gold PoE: Tavily extract + Ultra `judge` tier for stale claims. |
-
-**Tavily** is not a Nebius service; it is integrated beside Nemotron ([`tavily_client.py`](naviguide-simulator/server/tavily_client.py), [`escale_watch.py`](naviguide-simulator/server/escale_watch.py), [`truth_judge.py`](naviguide-simulator/server/truth_judge.py)) with budgets in [`llm_budget.py`](naviguide-simulator/server/llm_budget.py).
-
-### UI disclosure
-
-When the cascade returns a Nemotron Token Factory source, the UI shows the tier in text (« Nemotron 3 Nano · Token Factory », « Nemotron 3 Super · Token Factory », and the words NVIDIA and Nebius). The film bar keeps one short line, « Models » / « Modèles », naming the model that answered. A fallback stays labelled Lightning, OpenRouter, Claude or NVIDIA NIM. There is no third-party logo. See [`naviguide-simulator/src/utils/llmSourceLabel.js`](naviguide-simulator/src/utils/llmSourceLabel.js).
-
-### Safety: no invented numbers
-
-`filter_numbers()` in [`story_cascade.py`](naviguide-simulator/server/story_cascade.py) (also used from [`logbook_chat.py`](naviguide-simulator/server/logbook_chat.py)) drops sentences that introduce figures not present in the fact pack.
-
----
-
-## Other Nebius services
-
-**In this repository’s runtime code, only Nebius Token Factory is integrated** (HTTP API bases above, `NEBIUS_API_KEY`). Earlier design notes mentioned optional **Token Factory Data Lab** and **Sandboxes** as stretch goals; there are **no** calls to Nebius AI Cloud Jobs, Endpoints, or DevPods in `naviguide-simulator/server/`.
-
----
-
-## Relation to Blue Intelligence
-
-[Blue Intelligence](https://blueintelligence.online) holds curated maritime source data (marinas, harbour masters, Gold ports of entry, MPAs, science layers, projects). **NAVIGUIDE does not share its database.**
-
-The simulator reads BI over HTTP:
-
-- Default base URL: [`naviguide-simulator/server/main.py`](naviguide-simulator/server/main.py), [`ici_engine.py`](naviguide-simulator/server/ici_engine.py), [`bi_proxy.py`](naviguide-simulator/server/bi_proxy.py) (`BI_API_URL` or `https://blueintelligence.online/api`).
-- Vite dev proxy: [`naviguide-simulator/vite.config.js`](naviguide-simulator/vite.config.js) (`BI_PROXY_TARGET`).
-
-Full API and MongoDB live in the **[Berry-Mappemonde/Blue-Intelligence](https://github.com/Berry-Mappemonde/Blue-Intelligence)** repository (OVH deployment).
-
----
+The badges point at [.github/workflows/codeql.yml](.github/workflows/codeql.yml) and [.github/workflows/scorecard.yml](.github/workflows/scorecard.yml). CodeQL is not a required check. [SECURITY.md](SECURITY.md) records that, as of 18 October 2026, this repository had no published CodeQL result yet.
 
 ## License
 
-- **Code:** [MIT](LICENSE) / [Apache-2.0](LICENSE-APACHE) (dual-licensed; choose one).
-- **Map and data layers:** retain upstream licences (OpenStreetMap, EMODnet, GEBCO, etc.—see simulator README).
-- **Nemotron model weights:** NVIDIA model licence (inference via Token Factory/NIM under your API keys).
-
----
-
-## Links
-
-| Resource | URL |
-|----------|-----|
-| Live app | [https://naviguide.fr](https://naviguide.fr) |
-| Blue Intelligence API | [https://blueintelligence.online/api](https://blueintelligence.online/api) |
-| Blue Intelligence repo | [https://github.com/Berry-Mappemonde/Blue-Intelligence](https://github.com/Berry-Mappemonde/Blue-Intelligence) |
-| Hackathon | [https://nebiusglobalaihackathon.devpost.com/](https://nebiusglobalaihackathon.devpost.com/) |
-| Nebius Token Factory docs | [https://docs.tokenfactory.nebius.com/](https://docs.tokenfactory.nebius.com/) |
-| Docs index | [`docs/README.md`](docs/README.md) |
-| Simulator data sources | [`naviguide-simulator/DATA_SOURCES.md`](naviguide-simulator/DATA_SOURCES.md) |
-| Model governance | [`naviguide-simulator/docs/AI_GOVERNANCE.md`](naviguide-simulator/docs/AI_GOVERNANCE.md) |
-
----
-
-### Résumé (français)
-
-**NAVIGUIDE** est en ligne sur [https://naviguide.fr](https://naviguide.fr). Chaque merge sur `main` déploie cette version. Le dépôt contient le simulateur (carte Leaflet, moteur d’escale, film, journal) et son serveur FastAPI ; l’API **Blue Intelligence** reste sur [blueintelligence.online](https://blueintelligence.online/api) (autre dépôt). Les textes générés passent d’abord par **Nebius Token Factory** avec les modèles **NVIDIA Nemotron** (Nano / Lightning / Super / Ultra / Super VL), puis des replis documentés dans le code. Fiche des sources : [`naviguide-simulator/DATA_SOURCES.md`](naviguide-simulator/DATA_SOURCES.md). Gouvernance des modèles : [`naviguide-simulator/docs/AI_GOVERNANCE.md`](naviguide-simulator/docs/AI_GOVERNANCE.md). Installation et variables d’environnement : voir les sections ci-dessus et [`naviguide-simulator/server/.env.example`](naviguide-simulator/server/.env.example).
+Code is [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option. Data keeps the licence named above, or the one in the data sheet. Nemotron weights are not in this repository. They are served by Token Factory and NIM under the [NVIDIA Nemotron Open Model License](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-nemotron-open-model-license/).
