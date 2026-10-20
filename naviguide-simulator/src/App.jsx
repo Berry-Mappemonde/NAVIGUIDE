@@ -97,7 +97,7 @@ import { weatherLine as buildWeatherLine } from "./utils/weatherLine.js";
 import { mapInsetVars, measureFilmBarOccupiedPx } from "./utils/filmBarLayout.js";
 import { productHasData } from "./hooks/weatherSnapshot.js";
 import { useSatellitePopup } from "./hooks/useSatellitePopup.js";
-import { DRAW_MAX_POINTS, useRouteDrawing } from "./hooks/useRouteDrawing.js";
+import { DRAW_MAX_POINTS, canFinishDrawnRoute, useRouteDrawing } from "./hooks/useRouteDrawing.js";
 import { parseRouteFile } from "./utils/routeImport.js";
 import { viewExportMode } from "./utils/routeExport.js";
 import { attachClockIso, legendNowAndLive, officialNowMs, usePlanReview } from "./hooks/usePlanReview.js";
@@ -1654,8 +1654,9 @@ export default function App() {
       segments: drawnSegments.length,
       loading: drawingLoading,
       message: drawingMessage,
+      notice: drawingNotice?.code || null,
     };
-  }, [drawingMode, drawnPoints, drawnSegments, drawingLoading, drawingMessage, t]);
+  }, [drawingMode, drawnPoints, drawnSegments, drawingLoading, drawingMessage, drawingNotice, t]);
 
   useEffect(() => {
     if (!drawingNotice?.code) return;
@@ -1905,7 +1906,7 @@ export default function App() {
         onDrawCancel={handleDrawCancel}
         onCustomDelete={handleCustomDelete}
         canContinueDraw={drawnPoints.length > 0}
-        canFinishDraw={drawnPoints.length >= 2 && !drawingLoading}
+        canFinishDraw={canFinishDrawnRoute(drawnPoints.length, drawnSegments.length, drawingLoading, drawingNotice?.code)}
         drawing={drawing}
         onDrawUndo={handleDrawUndo}
         onImportRoute={handleImportRoute}
