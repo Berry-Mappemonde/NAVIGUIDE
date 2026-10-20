@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "url";
 import { describe, it } from "node:test";
-import { importPointsSequential, loadLeg } from "./useRouteDrawing.js";
+import { canFinishDrawnRoute, drawingRefusalPhrase, importPointsSequential, loadLeg } from "./useRouteDrawing.js";
+import fr from "../i18n/fr.js";
+import en from "../i18n/en.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hook = readFileSync(join(here, "useRouteDrawing.js"), "utf8");
@@ -170,5 +172,57 @@ describe("loadLeg: never a straight line the server did not route", () => {
     assert.match(onError, /notify\(result\.error === "network" \? "network_error" : "server_error"\)/);
     assert.match(onError, /return;/);
     assert.doesNotMatch(onError, /segmentsRef\.current\s*=/);
+  });
+
+  it("un 422 terre ou traversée s'écrit dans le cadre, Terminer reste grisé", async () => {
+    const tFr = (key) => fr[key];
+    const tEn = (key) => en[key];
+    const land = await withFetch(
+      answer(422, { detail: "on_land", end: "on_land_end" }),
+      () => loadLeg(LA_ROCHELLE, GULF_OF_LION),
+    );
+    const cross = await withFetch(
+      answer(422, { detail: "crosses_land" }),
+      () => loadLeg(LA_ROCHELLE, GULF_OF_LION),
+    );
+    assert.equal(land.reject, "on_land");
+    assert.equal(cross.reject, "crosses_land");
+    assert.equal(drawingRefusalPhrase(land.reject, tFr), "Point sur terre : non ajouté");
+    assert.equal(drawingRefusalPhrase(cross.reject, tFr), "La ligne droite traverse la terre");
+    assert.equal(drawingRefusalPhrase(land.reject, tEn), "Point on land: not added");
+    assert.equal(drawingRefusalPhrase(cross.reject, tEn), "Straight line crosses land");
+    assert.equal(canFinishDrawnRoute(2, 0, false, "on_land"), false);
+    assert.equal(canFinishDrawnRoute(1, 0, false, "crosses_land"), false);
+    assert.equal(canFinishDrawnRoute(2, 1, true, "on_land"), false);
+    const refuse = hook.slice(hook.indexOf("if (result?.reject)"), hook.indexOf("const next = segmentsRef"));
+    assert.match(refuse, /removePointAt/);
+    assert.match(refuse, /notify\(result\.reject\)/);
+    const tools = readFileSync(join(here, "..", "components", "ToolsSidebar.jsx"), "utf8");
+    const box = tools.slice(tools.indexOf("function DrawingBox"), tools.indexOf("function ExpeditionBox"));
+    assert.match(box, /drawingRefusalPhrase\(drawing\?\.notice, t\)/);
+    assert.match(box, /\{refusal \?/);
+    const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
+    assert.match(app, /notice: drawingNotice\?\.code \|\| null/);
+    assert.match(app, /canFinishDrawnRoute\(drawnPoints\.length, drawnSegments\.length, drawingLoading, drawingNotice\?\.code\)/);
+  });
+
+  it("une paire en mer, Australie vers Californie, active Terminer", async () => {
+    const australia = { lat: -18.2, lon: 153.8 };
+    const california = { lat: 34.5, lon: -123.5 };
+    const line = {
+      type: "Feature",
+      geometry: {
+        type: "LineString",
+        coordinates: [[153.8, -18.2], [-140, 20], [-123.5, 34.5]],
+      },
+      properties: { length: 12000, units: "km" },
+    };
+    const leg = await withFetch(answer(200, line), () => loadLeg(australia, california));
+    assert.equal(leg.coords.length, 3);
+    assert.ok(leg.nm > 1000);
+    assert.equal("reject" in leg, false);
+    assert.equal(canFinishDrawnRoute(2, 1, false, null), true);
+    assert.equal(canFinishDrawnRoute(2, 1, false, undefined), true);
+    assert.equal(drawingRefusalPhrase(null, (key) => fr[key]), "");
   });
 });

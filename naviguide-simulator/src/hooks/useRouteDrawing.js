@@ -76,6 +76,33 @@ export function legsStillLoading(pending, pointCount) {
   return false;
 }
 
+const REFUSAL_KEYS = {
+  on_land: "pointOnLand",
+  crosses_land: "rhumbCrossesLand",
+};
+
+/** Phrase already used for a 422 land answer. Empty when the leg was routed. */
+export function drawingRefusalPhrase(code, translate) {
+  const key = REFUSAL_KEYS[code];
+  if (!key || typeof translate !== "function") return "";
+  return translate(key) || "";
+}
+
+/**
+ * Terminer stays disabled while a leg is loading, or while a land refusal
+ * left the chain short. A complete sea chain (one segment per gap) enables it.
+ * A server error that keeps every point, with no land notice, is unchanged.
+ */
+export function canFinishDrawnRoute(pointCount, segmentCount, loading, notice) {
+  if (loading) return false;
+  const points = Number(pointCount) || 0;
+  const segments = Number(segmentCount) || 0;
+  if (notice === "on_land" || notice === "crosses_land") {
+    if (points < 2 || segments < points - 1) return false;
+  }
+  return points >= 2;
+}
+
 /** Same path as N map clicks: clear, then one addPoint per imported waypoint. */
 export async function importPointsSequential(addPoint, reset, points) {
   reset();
@@ -137,6 +164,7 @@ export function useRouteDrawing() {
     slotGenRef.current = [];
     pendingSlotsRef.current = new Map();
     setDrawingLoading(false);
+    setDrawingNotice(null);
     publishDrawn([], []);
   }, []);
 
@@ -224,6 +252,7 @@ export function useRouteDrawing() {
       segmentsRef.current = next.slice(0, Math.max(0, pointsRef.current.length - 1));
       setDrawnSegments(denseSegments(segmentsRef.current));
       publishDrawn(pointsRef.current, segmentsRef.current);
+      setDrawingNotice(null);
     } finally {
       const left = (slots.get(slot) || 0) - 1;
       if (left > 0) slots.set(slot, left);

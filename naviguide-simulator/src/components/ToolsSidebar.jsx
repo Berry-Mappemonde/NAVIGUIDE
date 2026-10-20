@@ -6,6 +6,7 @@ import { SkipperOrdersPanel } from "./SkipperOrdersPanel.jsx";
 import { EscaleLegend } from "./EscaleLegend.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { LayerToggles, activeLayerCount } from "./LayerToggles.jsx";
+import { drawingRefusalPhrase } from "../hooks/useRouteDrawing.js";
 import { summarizeLegs, wrapLon } from "../utils/geo.js";
 import { summarizeAmpTraffic } from "../engine/ampRules.js";
 import { polarBoatSpeed } from "../engine/polarSpeed.js";
@@ -308,6 +309,7 @@ function SectionTitle({ children, right = null }) {
 function DrawingBox({ drawing }) {
   const { t } = useLang();
   const pts = drawing?.points || [];
+  const refusal = drawingRefusalPhrase(drawing?.notice, t);
   return (
     <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 overflow-hidden" data-testid="drawing-box">
       <div className="px-3 py-1.5 text-[10px] text-slate-200 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="drawing-summary">
@@ -315,6 +317,9 @@ function DrawingBox({ drawing }) {
         <span>· {pts.length} {t("drawingPoints")}</span>
         <span>· {Number(drawing?.distanceNm || 0).toLocaleString()} nm</span>
       </div>
+      {refusal ? (
+        <p className="px-3 py-1 text-[10px] leading-snug text-rose-100 border-t border-white/5">{refusal}</p>
+      ) : null}
       {pts.length ? (
         <ol className="max-h-36 overflow-y-auto sidebar-scroll border-t border-white/5">
           {pts.map((p, i) => (
@@ -325,7 +330,7 @@ function DrawingBox({ drawing }) {
             </li>
           ))}
         </ol>
-      ) : (
+      ) : refusal ? null : (
         <p className="px-3 pb-2 text-[10px] text-slate-400 leading-snug">{drawing?.message || t("drawStart")}</p>
       )}
     </div>
