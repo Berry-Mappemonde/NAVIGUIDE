@@ -3,6 +3,7 @@ from copy import deepcopy
 import pytest
 from geographiclib.geodesic import Geodesic
 
+import route_engine
 from route_engine import (
     _LAND_MASK_AVAILABLE,
     _NE_TREE,
@@ -10,6 +11,7 @@ from route_engine import (
     _is_land_hires,
     _segment_enters,
     avoid_zones,
+    route_open_hits,
     searoute_with_exact_end,
     unwrap_path,
     wrap_lon,
@@ -140,3 +142,109 @@ def test_searoute_gibraltar_exposes_antishipping_without_moving_the_line():
     pack = (route.get("properties") or {}).get("antiShipping") or {}
     assert pack.get("score") is not None and pack["score"] < 1
     assert "Gibraltar" in (pack.get("lanes") or [])
+
+
+def _straight_searoute(start, end, timeout_s=None):
+    return {
+        "type": "Feature",
+        "geometry": {
+            "type": "LineString",
+            "coordinates": [[start[0], start[1]], [end[0], end[1]]],
+        },
+        "properties": {},
+    }
+
+
+def _drop_route_cache(start, end):
+    route_engine._route_cache.pop(route_engine._route_cache_key(start, end), None)
+
+
+def test_route_open_hits_counts_area_and_land():
+    def inside(lat, lon):
+        return 45.0 < lat < 45.2 and -8.0 < lon < -7.5
+
+    # Atlantique, sous le palier de densification : le segment coupe la boîte.
+    box = [[-8.2, 45.1], [-7.4, 45.1]]
+    assert _segment_enters(box[0][0], box[0][1], box[1][0], box[1][1], inside)
+    hits = route_open_hits(box, inside)
+    assert len(hits) == 1
+    assert hits[0]["area"] is True
+    assert hits[0]["land"] is False
+
+    # Péninsule ibérique : terre, pas d'aire.
+    iberia = [[-9.0, 40.0], [-1.0, 40.0]]
+    land_hits = route_open_hits(iberia, None)
+    assert land_hits
+    assert all(hit["land"] for hit in land_hits)
+    assert not any(hit["area"] for hit in land_hits)
+
+
+def test_constraint_open_when_detour_cannot_leave_the_box(monkeypatch):
+    """Détour impossible : _detour_clear rend [b], le segment reste dans la boîte."""
+    def inside(lat, lon):
+        return 45.0 < lat < 45.2 and -8.0 < lon < -7.5
+
+    monkeypatch.setattr("amp_nogo.load_forbidden_nogo", lambda *a, **k: [{"id": "box"}])
+
+    def fake_fn(items, *, escape_points=None):
+        return inside
+
+    monkeypatch.setattr("amp_nogo.amp_nogo_fn", fake_fn)
+    monkeypatch.setattr(route_engine, "_detour_clear", lambda a, b, _inside: [b])
+    monkeypatch.setattr(route_engine, "_invoke_searoute", _straight_searoute)
+
+    seen = []
+    real_avoid = route_engine.avoid_zones
+
+    def spy(coords, inside_fn=None, max_iterations=4):
+        seen.append(inside_fn)
+        return real_avoid(coords, inside_fn, max_iterations)
+
+    monkeypatch.setattr(route_engine, "avoid_zones", spy)
+
+    start, end = (-8.2, 45.1), (-7.4, 45.1)
+    _drop_route_cache(start, end)
+    route = searoute_with_exact_end(start, end)
+
+    assert route is not None
+    assert seen and all(fn is inside for fn in seen)
+    coords = route["geometry"]["coordinates"]
+    assert len(coords) >= 2
+    hits = route_open_hits(coords, inside)
+    assert len([hit for hit in hits if hit["area"]]) >= 1
+    assert route["properties"]["constraintStatus"] == "open"
+    assert "ampStatus" not in route["properties"]
+
+
+@pytest.mark.parametrize("loader", ["empty", "down"])
+def test_missing_catalog_marks_amp_unavailable_and_keeps_the_land_line(monkeypatch, loader):
+    if loader == "empty":
+        monkeypatch.setattr("amp_nogo.load_forbidden_nogo", lambda *a, **k: [])
+        start, end = (-40.0, 30.0), (-39.3, 30.0)
+    else:
+        def boom(*_a, **_k):
+            raise RuntimeError("catalogue en panne")
+
+        monkeypatch.setattr("amp_nogo.load_forbidden_nogo", boom)
+        start, end = (-40.0, 10.0), (-39.3, 10.0)
+
+    monkeypatch.setattr(route_engine, "_invoke_searoute", _straight_searoute)
+    land_calls = {"n": 0}
+    real_land = route_engine.avoid_land
+
+    def spy_land(coords, max_iterations=8, deadline=None):
+        land_calls["n"] += 1
+        return real_land(coords, max_iterations=max_iterations, deadline=deadline)
+
+    monkeypatch.setattr(route_engine, "avoid_land", spy_land)
+    _drop_route_cache(start, end)
+    route = searoute_with_exact_end(start, end)
+
+    assert route is not None
+    coords = route["geometry"]["coordinates"]
+    assert len(coords) >= 2
+    assert coords[0][0] == pytest.approx(start[0])
+    assert coords[-1][0] == pytest.approx(end[0])
+    assert land_calls["n"] >= 1
+    assert route["properties"]["ampStatus"] == "unavailable"
+    assert "constraintStatus" not in route["properties"]

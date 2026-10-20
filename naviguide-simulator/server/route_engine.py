@@ -535,6 +535,42 @@ def _snap_out_of_zone(lon: float, lat: float, inside, max_km: float = 160.0) -> 
     return [lon, lat]
 
 
+def route_open_hits(coords: list, inside) -> list:
+    """Segments encore dans la terre ou dans une aire interdite.
+
+    Un hit par segment : ``land`` et ``area`` disent pourquoi. ``inside``
+    est le prédicat d'aire ``(lat, lon) -> bool``, ou None s'il n'y a pas
+    de catalogue. La liste vide veut dire que le dernier détour a laissé
+    la ligne dehors.
+    """
+    hits: list = []
+    if not coords or len(coords) < 2:
+        return hits
+    for i in range(len(coords) - 1):
+        a, b = coords[i], coords[i + 1]
+        if not a or not b or len(a) < 2 or len(b) < 2:
+            continue
+        try:
+            land = _segment_crosses_land(float(a[0]), float(a[1]), float(b[0]), float(b[1]))
+        except Exception:
+            land = False
+        area = False
+        if inside is not None:
+            try:
+                area = _segment_enters(float(a[0]), float(a[1]), float(b[0]), float(b[1]), inside)
+            except Exception:
+                area = False
+        if land or area:
+            hits.append({
+                "index": i,
+                "from": [a[0], a[1]],
+                "to": [b[0], b[1]],
+                "land": bool(land),
+                "area": bool(area),
+            })
+    return hits
+
+
 def avoid_zones(coords: list, inside=None, max_iterations: int = 4) -> list:
     """Détourne les segments qui traversent encore la terre ou une zone interdite."""
     if not coords or len(coords) < 2:
@@ -606,20 +642,55 @@ def _split_canal_links(coords: list) -> list:
     return result
 
 
-def avoid_forbidden_amps(coords: list, start, end) -> list:
-    """Détourne les aires interdites à la plaisance. Sans catalogue, la ligne ne bouge pas."""
+def _forbidden_amp_predicate(start, end):
+    """Un seul prédicat d'aire interdite à la plaisance, ou None.
+
+    None si le catalogue est vide ou si le chargement lève : l'appelant
+    pose ``ampStatus = unavailable`` et ne fait pas semblant d'avoir
+    vérifié. Les aires à circulation régulée ne font pas partie de ce
+    prédicat : ``amp_nogo`` ne garde que l'interdit plaisance.
+    """
     try:
         from amp_nogo import amp_nogo_fn, load_forbidden_nogo
         items = load_forbidden_nogo()
+        if not items:
+            return None
+        return amp_nogo_fn(
+            items,
+            escape_points=[(float(start[1]), float(start[0])), (float(end[1]), float(end[0]))],
+        )
     except Exception:
+        return None
+
+
+def avoid_forbidden_amps(coords: list, start, end, inside=None) -> list:
+    """Détourne les aires interdites à la plaisance. Sans catalogue, la ligne ne bouge pas.
+
+    ``inside`` est le prédicat déjà construit pour ce calcul. None : catalogue
+    vide ou en panne, on ne recharge pas et on ne détourne pas.
+    """
+    if inside is None:
         return coords
-    if not items:
-        return coords
-    blocked = amp_nogo_fn(
-        items,
-        escape_points=[(float(start[1]), float(start[0])), (float(end[1]), float(end[0]))],
-    )
-    return avoid_zones(coords, lambda lat, lon: bool(blocked(lat, lon)))
+    return avoid_zones(coords, inside)
+
+
+def _stamp_avoidance_status(props: dict, coords: list, inside) -> None:
+    """Après le dernier détour. Ne lève pas : Tracer reçoit la ligne et le statut.
+
+    Catalogue absent : ``ampStatus = unavailable``. Catalogue présent et un
+    segment encore dans l'aire : ``constraintStatus = open``. Un hit de terre
+    seul ne marque pas l'aire comme ouverte.
+    """
+    if inside is None:
+        props["ampStatus"] = "unavailable"
+        return
+    try:
+        hits = route_open_hits(coords, inside)
+    except Exception:
+        props["ampStatus"] = "unavailable"
+        return
+    if any(hit.get("area") for hit in hits):
+        props["constraintStatus"] = "open"
 
 
 def avoid_land(coords: list, max_iterations: int = 8, deadline: float | None = None) -> list:
@@ -983,12 +1054,27 @@ def searoute_with_exact_end(start, end, deadline: float | None = None):
     #           iterative scan catches and reroutes any remaining crossings.
     coords = avoid_land(coords, max_iterations=5, deadline=deadline)
 
-    # Aires interdites, puis à nouveau la terre : un détour d'aire ne doit pas
-    # couper une côte. Les sorties de port trop courtes pour le premier passage
-    # sont reprises avec un pas plus fin. Le canal reste le passage searoute.
-    coords = avoid_forbidden_amps(coords, start, end)
+    # Un seul prédicat d'aire pour les deux passages. Le détour de terre qui
+    # suit le premier peut reposer le trait dans l'aire : le dernier
+    # avoid_zones reprend ce même prédicat. Les aires régulées ne sont pas
+    # un mur. Sans catalogue, la ligne de terre est rendue quand même.
+    inside = _forbidden_amp_predicate(start, end)
+    try:
+        coords = avoid_forbidden_amps(coords, start, end, inside)
+    except RouteBusy:
+        raise
+    except Exception:
+        inside = None
     coords = avoid_land(coords, max_iterations=3, deadline=deadline)
-    coords = avoid_zones(coords)
+    if inside is None:
+        coords = avoid_zones(coords)
+    else:
+        try:
+            coords = avoid_zones(coords, inside)
+        except RouteBusy:
+            raise
+        except Exception:
+            inside = None
     coords = _split_canal_links(coords)
 
     # Continu relativement au départ replié : pas de saut ±360° entre deux sommets.
@@ -999,6 +1085,9 @@ def searoute_with_exact_end(start, end, deadline: float | None = None):
     props = dict(route.get("properties") or {})
     props["length"] = round(route_length_km(coords), 3)
     props["units"] = "km"
+    # Recontrôle sur la ligne rendue, après le dernier détour. Pas d'exception :
+    # GET /route doit livrer le trait et le statut.
+    _stamp_avoidance_status(props, coords, inside)
     route["properties"] = props
     attach_anti_shipping(route)
 
