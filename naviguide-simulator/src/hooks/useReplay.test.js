@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt, sentenceSpan, stepFilmTime } from "../engine/replay.js";
-import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmBudgetCanPlay, filmCharRatesStable, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, arrivalBubbleFitsDestination, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmBudgetCanPlay, filmCharRatesStable, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
 import { briefingForReplayPosition, replayPlace } from "./useReplay.js";
 import { VOICE_LEAD_MS, VOICE_MS_PER_CHAR } from "../utils/speak.js";
 import { shouldStopSpeakingOnChapterChange } from "./useReplayVoice.js";
@@ -626,6 +626,37 @@ describe("useReplay — interpolation jusqu'au dernier chapitre", () => {
     assert.match(late.card.title, /Ajaccio/);
     assert.equal(approachStopEvent(chapters[1], { frac: 0.2 }), null);
     assert.equal(approachStopEvent({ idx: 0, toName: "", text: "" }, { frac: 0.99 }), null);
+  });
+
+  it("arrivée Halifax retirée quand la destination du chapitre n'est plus Halifax", () => {
+    const halifax = {
+      id: "approach:10:Halifax",
+      kind: "stop",
+      title: "Halifax",
+      text: "Arrival at Halifax (Nouvelle-Écosse) on 25 August.",
+    };
+    assert.equal(arrivalBubbleFitsDestination(halifax, "Halifax (Nouvelle-Écosse)"), true);
+    assert.equal(arrivalBubbleFitsDestination(halifax, "Saint-Pierre (Saint-Pierre-et-Miquelon)"), false);
+    assert.equal(arrivalBubbleFitsDestination(halifax, "Cayenne (Guyane)"), false);
+    const fr = {
+      id: "stop:Halifax (Nouvelle-Écosse):2026-08-25",
+      kind: "stop",
+      title: "Halifax (Nouvelle-Écosse)",
+      text: "Arrivée à Halifax (Nouvelle-Écosse) le 25 août.",
+    };
+    assert.equal(arrivalBubbleFitsDestination(fr, "Cayenne (Guyane)"), false);
+    const approachBy = {
+      id: "stop:pap",
+      kind: "stop",
+      title: "Pointe-à-Pitre",
+      text: "On 14 July, the approach is by Pointe-à-Pitre.",
+    };
+    assert.equal(arrivalBubbleFitsDestination(approachBy, "Fort-de-France (Martinique)"), true);
+    assert.equal(arrivalBubbleFitsDestination(
+      { id: "zee", kind: "zee", title: "Canadian waters", text: "On 13 August, Canadian waters." },
+      "Cayenne (Guyane)",
+    ), true);
+    assert.match(hook, /arrivalBubbleFitsDestination\(shown, destName\)/);
   });
 });
 

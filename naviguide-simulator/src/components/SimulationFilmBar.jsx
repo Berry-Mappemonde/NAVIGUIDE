@@ -4,7 +4,7 @@ import { useLang } from "../i18n/LangContext.jsx";
 import { filmBarEdgeStyle, readViewportWidth } from "../utils/filmBarLayout.js";
 import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
 import { SAINT_MAUR_LAND_HOURS } from "../engine/voyageClock.js";
-import { isLandLegNames } from "../utils/berryLegs.js";
+import { isLandLegNames, isSideLegNames } from "../utils/berryLegs.js";
 import { displayStopName, filmClockWithoutRoadNm, roadTransferLabel } from "../utils/stopLabels.js";
 import { ListenButton } from "./ListenButton.jsx";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
@@ -154,7 +154,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     ? t("filmPhaseAir")
     : phase === "air-return"
       ? t("filmPhaseAirReturn")
-      : phase === "side-sail"
+      : phase === "side-sail" && isSideLegNames(fromName, toName)
         ? t("filmPhaseSide")
         : "";
   const onBarClick = (e) => {

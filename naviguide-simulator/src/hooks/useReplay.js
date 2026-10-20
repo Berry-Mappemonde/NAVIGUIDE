@@ -969,6 +969,47 @@ function shortStopName(name) {
   return String(name || "").replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function foldArrivalPort(name) {
+  return String(name || "")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s*\([^)]*\)\s*/g, " ")
+    .replace(/[^a-z0-9]+/gi, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function arrivalCardPort(card) {
+  const fromTitle = foldArrivalPort(card?.title);
+  if (fromTitle) return fromTitle;
+  const text = String(card?.text || "").trim();
+  const named = /^(?:arrival at|arrivee\s+a)\s+(.+?)(?:\s+on\b|\s+le\b|[.,]|$)/i.exec(
+    text.normalize("NFD").replace(/\p{M}/gu, ""),
+  );
+  return named ? foldArrivalPort(named[1]) : "";
+}
+
+function isArrivalBubble(card) {
+  if (!card || card.kind !== "stop") return false;
+  const id = String(card.id || card.key || "");
+  if (id.startsWith("approach:")) return true;
+  return /^(arrival\b|arriv)/i.test(String(card.text || "").trim());
+}
+
+/**
+ * Une infobulle d'arrivée ne nomme que la destination du chapitre en cours.
+ * Une arrivée déjà quittée (Halifax pendant le vol vers Cayenne, ou pendant
+ * la voile vers Saint-Pierre) ne reste pas à l'écran.
+ */
+export function arrivalBubbleFitsDestination(card, toName) {
+  if (!isArrivalBubble(card)) return true;
+  const port = arrivalCardPort(card);
+  const dest = foldArrivalPort(toName);
+  if (!port) return true;
+  if (!dest) return false;
+  return port === dest;
+}
+
 /** Bulle à l'approche de l'escale d'arrivée du chapitre (affichage RA3 ; choix R9). */
 export function approachStopEvent(chapter, { frac } = {}) {
   const name = shortStopName(chapter?.toName);
@@ -2048,13 +2089,23 @@ export function useReplay({
         voiceLed,
         plan,
       }) || approachStopEvent(chapter, { frac: approachFrac });
-      const accepted = filmScoreRef.current.accept(filmEv);
-      const shown = filmBubbleRef.current.propose(filmEventCard(accepted));
+      const destName = chapter?.toName || "";
+      const fittingEv = filmEv && arrivalBubbleFitsDestination(filmEventCard(filmEv), destName)
+        ? filmEv
+        : null;
+      const accepted = filmScoreRef.current.accept(fittingEv);
+      let shown = filmBubbleRef.current.propose(filmEventCard(accepted));
+      if (shown && !arrivalBubbleFitsDestination(shown, destName)) {
+        filmBubbleRef.current.dismiss();
+        shown = null;
+      }
       if (shown !== publishedBubbleRef.current) {
         publishedBubbleRef.current = shown;
         if (shown) {
           cardSinceRef.current = now;
           setCard(shown);
+        } else {
+          setCard(null);
         }
         publishEventBubble(shown);
       }

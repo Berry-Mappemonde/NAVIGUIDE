@@ -32,6 +32,14 @@ function t(key, vars = {}) {
   );
 }
 
+describe("barre film — phase du second bateau", () => {
+  it("Voile Halifax — Saint-Pierre seulement si la jambe affichée est ce trajet", () => {
+    assert.match(bar, /isSideLegNames\(fromName, toName\)/);
+    assert.match(bar, /phase === "side-sail" && isSideLegNames\(fromName, toName\)/);
+    assert.doesNotMatch(bar, /phase === "side-sail"\s*\?\s*t\("filmPhaseSide"\)/);
+  });
+});
+
 describe("barre film — vitesse cyclique", () => {
   it("4 clics : réel → lecture → normale → accélérée → réel", () => {
     assert.deepEqual(PROFILES.map((p) => p.id), ["real", "read", "normal", "fast"]);
