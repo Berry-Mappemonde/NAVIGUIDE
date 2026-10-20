@@ -362,6 +362,29 @@ export const Sidebar = memo(function Sidebar({
   // Tracer sans poser de point : le briefing et Ajaccio restent là.
   const drawingHidesBerry = Boolean(isDrawing && drawing?.points?.length);
   const showIciBriefing = !drawingHidesBerry && (isCockpit || briefing || briefingLoading || skipperNotice);
+  const drawerRef = useRef(null);
+  const [drawerSettled, setDrawerSettled] = useState(false);
+  useEffect(() => {
+    if (!open) {
+      setDrawerSettled(false);
+      return undefined;
+    }
+    const panel = drawerRef.current;
+    if (!panel) return undefined;
+    let settled = false;
+    const finish = (event) => {
+      if (settled) return;
+      if (event && (event.target !== panel || event.propertyName !== "transform")) return;
+      settled = true;
+      setDrawerSettled(true);
+    };
+    panel.addEventListener("transitionend", finish);
+    const timer = setTimeout(finish, 350);
+    return () => {
+      panel.removeEventListener("transitionend", finish);
+      clearTimeout(timer);
+    };
+  }, [open]);
 
   return (
     <>
@@ -380,9 +403,11 @@ export const Sidebar = memo(function Sidebar({
       </button>
 
       <div
+        ref={drawerRef}
         className={`naviguide-sidebar-panel naviguide-sidebar-drawer absolute top-0 left-0 h-full z-20 flex flex-col bg-slate-900/97
           shadow-2xl transition-transform duration-300 border-r border-slate-700/60
-          ${open ? "translate-x-0" : "-translate-x-full"}`}
+          ${open ? "translate-x-0" : "-translate-x-full"}
+          ${drawerSettled ? "naviguide-drawer-settled" : ""}`}
         style={{ width: 320 }}
       >
         <div className="px-2.5 pt-1.5 pb-1.5 border-b border-slate-700/60 flex-shrink-0">
