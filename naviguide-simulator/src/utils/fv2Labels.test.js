@@ -5,6 +5,7 @@ import fr from "../i18n/fr.js";
 import {
   destinationPortLabel,
   displayStopName,
+  legPopupName,
   filmClockWithoutRoadNm,
   landLegDistanceClause,
   roadTransferLabel,
@@ -37,6 +38,27 @@ describe("FV2 — noms d'escale", () => {
     assert.equal(displayStopName("Fort-de-France (Martinique)", "fr", tFr), "Fort-de-France (Martinique)");
     assert.equal(displayStopName("Europa (TAAF)", "en", tEn), "Europa (TAAF)");
     assert.equal(displayStopName("La Rochelle", "fr", tFr), "La Rochelle");
+  });
+
+  it("retire le pays de la destination au-delà de 80 nm, et le garde à l'approche", () => {
+    assert.equal(
+      legPopupName("Mata-Utu (Wallis-et-Futuna)", { remainingNm: 453, lang: "fr", t: tFr }),
+      "Mata-Utu",
+    );
+    assert.equal(
+      legPopupName("Mata-Utu (Wallis and Futuna)", { remainingNm: 453, lang: "en", t: tEn }),
+      "Mata-Utu",
+    );
+    assert.equal(
+      legPopupName("Mata-Utu (Wallis-et-Futuna)", { remainingNm: 80, lang: "fr", t: tFr }),
+      "Mata-Utu (Wallis-et-Futuna)",
+    );
+    assert.equal(
+      legPopupName("Mata-Utu (Wallis-et-Futuna)", { remainingNm: 40, lang: "fr", t: tFr }),
+      "Mata-Utu (Wallis-et-Futuna)",
+    );
+    assert.equal(legPopupName("Ajaccio (Corse)", { lang: "fr", t: tFr }), "Ajaccio (Corse)");
+    assert.equal(legPopupName("Saint-Maur (Berry, Indre)", { remainingNm: 40, lang: "fr", t: tFr }), "Saint-Maur (Indre)");
   });
 
   it("affiche Saint-Maur avec le département Indre, en FR et EN", () => {

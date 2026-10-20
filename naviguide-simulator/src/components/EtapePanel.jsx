@@ -13,7 +13,7 @@
 import { Navigation, Clock, Compass, Map as MapIcon } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { getCardinalDirection, numberLocale } from "../utils/getCardinalDirection.js";
-import { destinationPortLabel, displayStopName } from "../utils/stopLabels.js";
+import { destinationPortLabel, displayStopName, legPopupName } from "../utils/stopLabels.js";
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 
@@ -75,7 +75,7 @@ export function EtapePanel({
   } = legContext;
 
   const fromLabel = displayStopName(fromStop, lang, t);
-  const toLabel = displayStopName(toStop, lang, t);
+  const toLabel = legPopupName(toStop, { remainingNm: nmRemainingToStop, lang, t });
 
   return (
     <div className="bg-slate-800/70 rounded-lg border border-blue-600/30 overflow-hidden">

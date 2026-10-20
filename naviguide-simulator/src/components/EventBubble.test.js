@@ -120,6 +120,10 @@ describe("EventBubble — contrat", () => {
     assert.equal(bubbleTitle({ title: "Court" }).length <= 40, true);
     const long = "X".repeat(50);
     assert.equal(bubbleTitle({ title: long }).length, 40);
+    assert.equal(bubbleTitle({ title: "Mata-Utu (Wallis-et-Futuna)" }), "Mata-Utu");
+    assert.equal(bubbleTitle({ title: "Mata-Utu (Wallis and Futuna)" }), "Mata-Utu");
+    assert.equal(bubbleTitle({ title: "French EEZ (Guadeloupe)" }), "French EEZ (Guadeloupe)");
+    assert.equal(bubbleTitle({ title: "ZEE française (Guadeloupe)" }), "ZEE française (Guadeloupe)");
     const chapter = {
       idx: 0,
       events: [

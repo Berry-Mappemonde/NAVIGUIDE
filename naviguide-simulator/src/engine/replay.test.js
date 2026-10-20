@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-  advance, calibrateRate, cardDwellMs, measuredCps, voiceLedStep, cardFromJournalEntry, cardsBetween, chapterAtElapsed, chapterAnchors, filmChaptersFromStory, filmPlan, FILM_RATE_MAX, FILM_RATE_MIN, FILM_VOICE_LOOKAHEAD_CHARS, FILM_V_MAX_PX_S, FILM_V_MIN_PX_S, journalTimeline, positionAt, replayProgress, replaySample, replayScale, replayWindow, stepFilmTime, trimQueue, voiceShouldWait, windFromJournalAt,
+  advance, calibrateRate, cardDwellMs, measuredCps, voiceLedStep, cardFromJournalEntry, cardsBetween, chapterAtElapsed, chapterAnchors, departureSentenceHoldsBoat, filmChaptersFromStory, filmPlan, FILM_RATE_MAX, FILM_RATE_MIN, FILM_VOICE_LOOKAHEAD_CHARS, FILM_V_MAX_PX_S, FILM_V_MIN_PX_S, journalTimeline, positionAt, replayProgress, replaySample, replayScale, replayWindow, sentenceSpan, stepFilmTime, trimQueue, voiceShouldWait, windFromJournalAt,
 } from "./replay.js";
 const T0 = "2026-05-15T08:00:00.000Z";
 
@@ -518,5 +518,76 @@ describe("replay — ancres au mot", () => {
     assert.equal(atName.t, tGib);
     const plan = filmPlan({ chapters: [{ ...ch, tA: new Date(tA).toISOString(), tB: new Date(tB).toISOString() }], targetSeconds: 150 });
     assert.equal(plan.timeAt(0, compensated), tGib);
+  });
+});
+
+describe("replay — phrase de départ longue", () => {
+  it("tient le bateau au départ pendant la phrase, puis rejoint la fin", () => {
+    const tA = Date.parse("2026-10-07T00:00:00Z");
+    const tB = Date.parse("2026-10-14T00:00:00Z");
+    const text = "On 7 October, departure for Mata-Utu: 1,642 miles, seven days at sea.";
+    const plan = filmPlan({
+      chapters: [{ tA: new Date(tA).toISOString(), tB: new Date(tB).toISOString(), text, chars: text.length }],
+      targetSeconds: 150,
+    });
+    const ch = plan.chapters[0];
+    const clock = {
+      t0: "2026-10-07T00:00:00Z",
+      vertices: [
+        { tHours: 0, filmNm: 0, sailNm: 0, lat: -17.51, lon: -149.57 },
+        { tHours: 7 * 24, filmNm: 1642, sailNm: 1642, lat: -13.27, lon: -176.2 },
+      ],
+    };
+    const mid = Math.floor(text.length / 2);
+    assert.equal(departureSentenceHoldsBoat(ch, mid, clock), true);
+    const held = stepFilmTime({
+      t: tA + (tB - tA) / 2,
+      dt: 1 / 60,
+      chapter: ch,
+      plan,
+      chapterIdx: 0,
+      charIdx: mid,
+      clock,
+      voiceLed: false,
+      phraseEnded: false,
+    });
+    assert.equal(held.t, sentenceSpan(ch, mid).startT);
+    assert.equal(held.voiceHold, false);
+    const atHold = positionAt(clock, held.t);
+    assert.ok(Math.abs(atHold.lon + 149.57) < 1, `lon ${atHold.lon}`);
+    assert.ok(atHold.lon > -160, "pas sur le pays traversé");
+    const jumped = stepFilmTime({
+      t: held.t,
+      dt: 1 / 60,
+      chapter: ch,
+      plan,
+      chapterIdx: 0,
+      charIdx: text.length,
+      clock,
+      voiceLed: false,
+      phraseEnded: true,
+    });
+    const atEnd = positionAt(clock, jumped.t);
+    assert.ok(Math.abs(atEnd.lon + 176.2) < 1.5, `fin ${atEnd.lon}`);
+
+    const hop = "Le 1er juillet, départ vers Pointe-à-Pitre.";
+    const hopCh = filmPlan({
+      chapters: [{
+        tA: "2026-07-01T00:00:00Z",
+        tB: "2026-07-02T00:00:00Z",
+        text: hop,
+        chars: hop.length,
+      }],
+      targetSeconds: 150,
+    }).chapters[0];
+    const short = {
+      t0: "2026-07-01T00:00:00Z",
+      vertices: [
+        { tHours: 0, filmNm: 0, sailNm: 0, lat: 14.6, lon: -61.07 },
+        { tHours: 24, filmNm: 150, sailNm: 150, lat: 16.2, lon: -61.53 },
+      ],
+    };
+    assert.equal(departureSentenceHoldsBoat(hopCh, 4, short), false);
+    assert.equal(departureSentenceHoldsBoat(ch, mid, null), false);
   });
 });

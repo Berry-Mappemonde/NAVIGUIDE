@@ -79,6 +79,21 @@ function foreignRegion(base, region) {
 }
 
 /**
+ * En dessous, le bateau est à l'approche du port : le pays entre parenthèses
+ * peut s'afficher. Au-delà, ce pays n'est pas le label de la carte sous le bateau
+ * (Samoa sur la route de Mata-Utu, par exemple).
+ */
+export const LEG_COUNTRY_NEAR_NM = 80;
+
+/** Destination affichée. Loin du port, le pays entre parenthèses disparaît. */
+export function legPopupName(name, { remainingNm = null, lang = "fr", t = null } = {}) {
+  const full = displayStopName(name, lang, t);
+  const left = Number(remainingNm);
+  if (!full || !Number.isFinite(left) || left <= LEG_COUNTRY_NEAR_NM) return full;
+  return full.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
  * Nom montré au visiteur.
  * Saint-Maur → « Saint-Maur (Indre) ».
  * « Açores (Corse) » → « Açores » / « Azores (Portugal) ».

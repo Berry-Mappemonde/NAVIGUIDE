@@ -365,6 +365,30 @@ export function sentenceSpan(chapter, charIdx) {
   };
 }
 
+/**
+ * Au-delà, une phrase « départ vers / departure for » ne fait pas naviguer
+ * le bateau : il reste au départ de la phrase, puis rejoint la fin d'un coup.
+ * Sinon la carte montre le pays traversé (Samoa) sous un bateau dont la
+ * phrase nomme encore la destination.
+ */
+export const DEPARTURE_HOLD_NM = 400;
+
+export function isDepartureSentence(chapter, charIdx) {
+  const sent = sentenceSpan(chapter, charIdx);
+  const slice = String(chapter?.text || "").slice(sent.start, sent.end);
+  return /\b(?:departure for|départ vers)\b/i.test(slice);
+}
+
+export function departureSentenceHoldsBoat(chapter, charIdx, clock) {
+  if (!clock || !isDepartureSentence(chapter, charIdx)) return false;
+  const sent = sentenceSpan(chapter, charIdx);
+  if (!Number.isFinite(sent.startT) || !Number.isFinite(sent.endT)) return false;
+  const a = positionAt(clock, sent.startT);
+  const b = positionAt(clock, sent.endT);
+  if (!a || !b) return false;
+  return haversineNm(a.lat, a.lon, b.lat, b.lon) > DEPARTURE_HOLD_NM;
+}
+
 /** L'intervalle [tA, tB] ne déplace pas le bateau à l'écran (quai, route terrestre). */
 export function sentenceIsStationary(clock, tA, tB, eps = FILM_QUAY_NM_EPS) {
   const a = positionAt(clock, tA);
@@ -508,6 +532,29 @@ export function stepFilmTime({
       atQuay: true,
       pxPerS: 0,
     };
+  }
+
+  if (departureSentenceHoldsBoat(chapter, charIdx, clock)) {
+    if (!phraseEnded && Number.isFinite(sent.startT)) {
+      return {
+        t: sent.startT,
+        recaleRemainMs: 0,
+        skipRamp: null,
+        voiceHold: false,
+        atQuay: false,
+        pxPerS: 0,
+      };
+    }
+    if (phraseEnded && Number.isFinite(sent.endT)) {
+      return {
+        t: sent.endT,
+        recaleRemainMs: 0,
+        skipRamp: null,
+        voiceHold: false,
+        atQuay: false,
+        pxPerS: 0,
+      };
+    }
   }
 
   if (phraseEnded && atQuay) {

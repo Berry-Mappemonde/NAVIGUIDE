@@ -5,7 +5,7 @@ import { filmBarEdgeStyle, readViewportWidth } from "../utils/filmBarLayout.js";
 import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
 import { SAINT_MAUR_LAND_HOURS } from "../engine/voyageClock.js";
 import { isLandLegNames } from "../utils/berryLegs.js";
-import { displayStopName, filmClockWithoutRoadNm, roadTransferLabel } from "../utils/stopLabels.js";
+import { displayStopName, filmClockWithoutRoadNm, legPopupName, roadTransferLabel } from "../utils/stopLabels.js";
 import { ListenButton } from "./ListenButton.jsx";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 import { DepartureField } from "./DepartureField.jsx";
@@ -223,7 +223,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     <>
                       <span className="text-blue-200">{displayStopName(fromName, lang, t) || "—"}</span>
                       <span className="text-white/35 mx-1">→</span>
-                      <span className="text-cyan-200">{displayStopName(toName, lang, t) || "—"}</span>
+                      <span className="text-cyan-200">{legPopupName(toName, { remainingNm, lang, t }) || "—"}</span>
                     </>
                   )}
                 </span>

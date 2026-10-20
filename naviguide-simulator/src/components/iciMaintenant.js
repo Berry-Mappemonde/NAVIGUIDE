@@ -2,7 +2,7 @@ import { reviewLeg } from "../engine/planReview.js";
 import { momentNearest } from "../hooks/useMomentJournal.js";
 import frDict from "../i18n/fr.js";
 import enDict from "../i18n/en.js";
-import { displayStopName } from "../utils/stopLabels.js";
+import { displayStopName, legPopupName } from "../utils/stopLabels.js";
 
 const MONTHS_SHORT = {
   fr: ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],
@@ -470,7 +470,9 @@ export function legsFromClockMarks(clock, lang = "fr") {
 export function formatLegLine(leg, t, lang = "fr") {
   if (!leg || typeof leg !== "object") return "";
   const bits = [];
-  if (leg.from && leg.to) bits.push(`${displayStopName(leg.from, lang)} → ${displayStopName(leg.to, lang)}`);
+  if (leg.from && leg.to) {
+    bits.push(`${displayStopName(leg.from, lang)} → ${legPopupName(leg.to, { remainingNm: leg.remainingNm, lang, t })}`);
+  }
   if (Number.isFinite(Number(leg.day))) bits.push(t("iciLegDay", { n: String(Math.trunc(Number(leg.day))) }));
   if (Number.isFinite(Number(leg.kn))) bits.push(t("iciLegKn", { kn: formatNumber(leg.kn, lang, 1) }));
   if (Number.isFinite(Number(leg.remainingNm))) {

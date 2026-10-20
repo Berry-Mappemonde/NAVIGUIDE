@@ -38,7 +38,13 @@ export function isNowAlertOrDecision(card) {
 }
 
 export function bubbleTitle(card, max = EVENT_BUBBLE_TITLE_MAX) {
-  const raw = String(card?.title || card?.kind || "").trim();
+  let raw = String(card?.title || card?.kind || "").trim();
+  if (
+    /^[^().:]{2,40}\s*\([^)]+\)\s*$/.test(raw)
+    && !/eez|zee|zone|exclusive|économique/i.test(raw)
+  ) {
+    raw = raw.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  }
   if (raw.length <= max) return raw;
   return `${raw.slice(0, Math.max(1, max - 1)).trimEnd()}…`;
 }

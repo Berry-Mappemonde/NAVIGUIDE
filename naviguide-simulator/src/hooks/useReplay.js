@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, cardDwellMs, measuredCps, cardsBetween, chapterAtElapsed, chapterZoomEstimate, filmChaptersFromStory, filmPlan, journalTimeline, nextMovingTime, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, sentenceIsStationary, sentenceSpan, stepFilmTime, trimQueue, voiceShouldWait,
+  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, cardDwellMs, measuredCps, cardsBetween, chapterAtElapsed, chapterZoomEstimate, departureSentenceHoldsBoat, filmChaptersFromStory, filmPlan, journalTimeline, nextMovingTime, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, sentenceIsStationary, sentenceSpan, stepFilmTime, trimQueue, voiceShouldWait,
 } from "../engine/replay.js";
 import { FILM_UI_MS } from "../map/filmCamera.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
@@ -423,8 +423,16 @@ export function filmBoatTimeAtPhrase({
   chapterIdx = 0,
   phraseEnded = false,
   t = null,
+  clock = null,
 } = {}) {
   const sent = sentenceSpan(chapter, charIdx);
+  if (
+    !phraseEnded
+    && departureSentenceHoldsBoat(chapter, charIdx, clock)
+    && Number.isFinite(sent.startT)
+  ) {
+    return sent.startT;
+  }
   const idx = Number.isFinite(Number(chapterIdx)) ? Number(chapterIdx) : (chapter?.idx ?? 0);
   const phraseT = plan?.timeAt ? plan.timeAt(idx, charIdx) : sent.startT;
   const tB = chapterTimeMs(chapter?.tB);
@@ -457,7 +465,7 @@ export function filmBoatAtPhrase({
   t,
 } = {}) {
   const when = filmBoatTimeAtPhrase({
-    chapter, charIdx, plan, chapterIdx, phraseEnded, t,
+    chapter, charIdx, plan, chapterIdx, phraseEnded, t, clock,
   });
   return { t: when, pos: positionAt(clock, when) };
 }
@@ -1452,6 +1460,7 @@ export function useReplay({
       const at = pinChar != null
         ? filmBoatTimeAtPhrase({
             chapter: ch, charIdx: pinChar, plan, chapterIdx: n, phraseEnded: false,
+            clock: clockRef.current,
           })
         : (Number.isFinite(ch.tB) ? ch.tB : ch.tA);
       if (Number.isFinite(at)) {
@@ -1900,6 +1909,7 @@ export function useReplay({
                 plan,
                 chapterIdx: ch.idx ?? pinned,
                 phraseEnded: false,
+                clock: clockRef.current,
               })
             : (Number.isFinite(ch.tB) ? ch.tB : plan.timeAt(0, 0));
           ingestHeld(Number.isFinite(pinT) ? pinT : ch.tA, ch, { hold: false });
@@ -2006,6 +2016,7 @@ export function useReplay({
         chapterIdx: chapterIdxRef.current,
         phraseEnded: phraseDone,
         t: lastTRef.current,
+        clock: clockRef.current,
       });
       const curBoat = lastTRef.current;
       const tBpub = chapterTimeMs(chapter?.tB);

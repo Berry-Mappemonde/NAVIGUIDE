@@ -1421,6 +1421,36 @@ describe("Bateau sur la phrase, pas à tB", () => {
     assert.ok(stepped.t <= sent.endT + 1, "pas au-delà de la phrase en cours");
     assert.match(text.slice(sent.start, sent.end), /Cape Verde/);
 
+    const depText = "On 7 October, departure for Mata-Utu: 1,642 miles, seven days at sea.";
+    const depPlan = filmPlan({
+      chapters: [{
+        tA: Date.parse("2026-10-07T00:00:00Z"),
+        tB: Date.parse("2026-10-14T00:00:00Z"),
+        text: depText,
+        chars: depText.length,
+      }],
+      targetSeconds: 150,
+    });
+    const depCh = depPlan.chapters[0];
+    const depClock = {
+      t0: "2026-10-07T00:00:00Z",
+      vertices: [
+        { lat: -17.51, lon: -149.57, tHours: 0, sailNm: 0, filmNm: 0 },
+        { lat: -13.27, lon: -176.2, tHours: 7 * 24, sailNm: 1642, filmNm: 1642 },
+      ],
+    };
+    const depMid = Math.floor(depText.length / 2);
+    const heldT = filmBoatTimeAtPhrase({
+      chapter: depCh, charIdx: depMid, plan: depPlan, chapterIdx: 0, phraseEnded: false, clock: depClock,
+    });
+    const heldPos = positionAt(depClock, heldT);
+    assert.ok(Math.abs(heldPos.lon + 149.57) < 1, `départ lon ${heldPos.lon}`);
+    assert.ok(heldPos.lon > -160);
+    const freeT = filmBoatTimeAtPhrase({
+      chapter: depCh, charIdx: depMid, plan: depPlan, chapterIdx: 0, phraseEnded: false,
+    });
+    assert.ok(freeT > depCh.tA, "sans horloge, la phrase suit encore timeAt");
+
     const lastLinear = linearFilmAt(400, plan);
     assert.equal(filmShouldFinish({
       voiceClock: false, speaking: false, voiceAllDone: false,
