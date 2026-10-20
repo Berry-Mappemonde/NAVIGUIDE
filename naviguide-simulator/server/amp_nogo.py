@@ -18,7 +18,9 @@ from bi_upstream import BiDisabled, bi_base as _bi_base
 log = logging.getLogger("naviguide-simulator.amp_nogo")
 
 _NOGO_TTL = 3600.0
-_nogo_cache: dict[str, Any] = {"ts": 0.0, "items": None}
+# available : True si le dernier chargement a abouti (même liste vide),
+# False si la source a échoué sans catalogue déjà en cache, None si pas encore demandé.
+_nogo_cache: dict[str, Any] = {"ts": 0.0, "items": None, "available": None}
 
 
 def _item_from_feature(feat: dict) -> dict | None:
@@ -47,6 +49,8 @@ def load_forbidden_nogo(*, fetch_fn=None, ttl: float = _NOGO_TTL) -> list[dict]:
         if _nogo_cache["items"] is None:
             _nogo_cache["ts"] = now
             _nogo_cache["items"] = []
+            # Panne sans catalogue déjà chargé : ce n'est pas une liste vide réussie.
+            _nogo_cache["available"] = False
         return list(_nogo_cache["items"] or [])
     items = []
     for feat in (data.get("features") if isinstance(data, dict) else None) or []:
@@ -55,6 +59,7 @@ def load_forbidden_nogo(*, fetch_fn=None, ttl: float = _NOGO_TTL) -> list[dict]:
             items.append(item)
     _nogo_cache["ts"] = now
     _nogo_cache["items"] = items
+    _nogo_cache["available"] = True
     return items
 
 
@@ -72,6 +77,12 @@ def _fetch_nogo() -> dict:
 def reset_nogo_cache() -> None:
     _nogo_cache["ts"] = 0.0
     _nogo_cache["items"] = None
+    _nogo_cache["available"] = None
+
+
+def forbidden_catalog_available() -> bool | None:
+    """True : catalogue chargé, même vide. False : panne. None : pas encore demandé."""
+    return _nogo_cache.get("available")
 
 
 def _in_bbox(lon: float, lat: float, box: tuple[float, float, float, float]) -> bool:

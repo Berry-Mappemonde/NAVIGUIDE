@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextvars
+import hashlib
 import math
 import pathlib
 import time
@@ -9,7 +10,8 @@ from typing import Optional
 
 from geographiclib.geodesic import Geodesic
 
-from longitude import unwrap_lon, wrap_lon  # noqa: F401  (wrap_lon : API de main.py)
+from longitude import delta_lon, unwrap_lon, wrap_lon  # noqa: F401  (wrap_lon : API de main.py)
+from route_contract import PANAMA_BOX, SUEZ_BOX, in_passage_box
 
 from mem_limits import ROUTE_CACHE_MAX, lru_set
 from shipping_lanes import attach_anti_shipping
@@ -103,8 +105,115 @@ def _has_nearby_ocean(lat: float, lon: float, radius_deg: float = 1.5) -> bool:
     return False
 
 
+def _latitude_where_lon_crosses(lat1: float, lon1: float, lat2: float, lon2: float,
+                                boundary: float) -> float:
+    """Latitude de la géodésique là où la longitude dépliée atteint ±180°."""
+    try:
+        line = Geodesic.WGS84.InverseLine(lat1, lon1, lat2, lon2)
+        total = float(line.s13)
+    except Exception:
+        return lat1
+    if total <= 0.0 or not math.isfinite(total):
+        return lat1
+    going_east = boundary > 0.0
+
+    def _ulon(distance: float) -> float:
+        return unwrap_lon(lon1, line.Position(distance)["lon2"])
+
+    lo, hi = 0.0, total
+    for _ in range(48):
+        mid = (lo + hi) * 0.5
+        crossed = _ulon(mid) >= boundary if going_east else _ulon(mid) <= boundary
+        if crossed:
+            hi = mid
+        else:
+            lo = mid
+    try:
+        lat = float(line.Position(hi)["lat2"])
+    except Exception:
+        return lat1
+    return lat if math.isfinite(lat) else lat1
+
+
+def split_antimeridian(lon1: float, lat1: float, lon2: float, lat2: float):
+    """Un ou deux segments repliés dans [-180, 180], coupés sur ±180°.
+
+    Le plus court arc qui sort de [-180, 180] est coupé au méridien : le
+    morceau oriental finit à 180, le morceau occidental commence à -180
+    (le même point). Un segment qui ne traverse pas est rendu tel quel,
+    longitudes repliées (identité si elles étaient déjà dans l'intervalle).
+    """
+    try:
+        lat1_f, lat2_f = float(lat1), float(lat2)
+        a, b = wrap_lon(float(lon1)), wrap_lon(float(lon2))
+    except (TypeError, ValueError):
+        return ((lon1, lat1, lon2, lat2),)
+    if not all(math.isfinite(v) for v in (a, b, lat1_f, lat2_f)):
+        return ((lon1, lat1, lon2, lat2),)
+    end_u = a + delta_lon(a, b)
+    if -180.0 <= end_u <= 180.0:
+        return ((a, lat1_f, b, lat2_f),)
+    boundary = 180.0 if end_u > 180.0 else -180.0
+    other = -boundary
+    lat_cross = _latitude_where_lon_crosses(lat1_f, a, lat2_f, b, boundary)
+    if not math.isfinite(lat_cross):
+        frac = (boundary - a) / (end_u - a)
+        lat_cross = lat1_f + (lat2_f - lat1_f) * frac
+    raw = (
+        (a, lat1_f, boundary, lat_cross),
+        (other, lat_cross, b, lat2_f),
+    )
+    pieces = []
+    for lon_a, la, lon_b, lb in raw:
+        if abs(delta_lon(lon_a, lon_b)) < 1e-9 and abs(la - lb) < 1e-9:
+            continue
+        pieces.append((lon_a, la, lon_b, lb))
+    if not pieces:
+        return ((a, lat1_f, b, lat2_f),)
+    return tuple(pieces)
+
+
+# Panama et Suez : un segment dont les deux sommets sont dans la même boîte,
+# jusqu'à cette longueur, est le passage searoute, pas une traversée à
+# détourner. Au-delà, le lien peut être coupé en deux s'il reste dans la boîte.
+NAMED_PASSAGE_MAX_M = 60_000.0
+_NAMED_PASSAGE_BOXES = (PANAMA_BOX, SUEZ_BOX)
+
+
+def _shared_passage_box(lon1: float, lat1: float, lon2: float, lat2: float):
+    """La boîte Panama ou Suez qui contient les deux bouts, sinon None."""
+    for box in _NAMED_PASSAGE_BOXES:
+        if in_passage_box(lon1, lat1, box) and in_passage_box(lon2, lat2, box):
+            return box
+    return None
+
+
+def segment_in_named_passage(coords) -> bool:
+    """Vrai seulement si les deux bouts sont dans la même boîte et la longueur ≤ 60 km.
+
+    Panama ou Suez, pas les deux. Un seul bout dans la boîte, ou une
+    géodésique plus longue que le plafond, n'est pas un passage nommé.
+    """
+    if not coords or len(coords) < 2:
+        return False
+    try:
+        lon1, lat1 = float(coords[0][0]), float(coords[0][1])
+        lon2, lat2 = float(coords[-1][0]), float(coords[-1][1])
+    except (TypeError, ValueError, IndexError):
+        return False
+    if not all(math.isfinite(v) for v in (lon1, lat1, lon2, lat2)):
+        return False
+    if _shared_passage_box(lon1, lat1, lon2, lat2) is None:
+        return False
+    try:
+        dist = Geodesic.WGS84.Inverse(lat1, lon1, lat2, lon2)["s12"]
+    except Exception:
+        return False
+    return math.isfinite(dist) and dist <= NAMED_PASSAGE_MAX_M
+
+
 def _segment_crosses_land(lon1: float, lat1: float, lon2: float, lat2: float,
-                          n_samples: int = 30) -> bool:
+                          n_samples: int = 30, _folded: bool = False) -> bool:
     """
     Return True if the great-circle segment from (lon1,lat1)→(lon2,lat2)
     crosses any land, including small islands and archipelagos.
@@ -114,17 +223,20 @@ def _segment_crosses_land(lon1: float, lat1: float, lon2: float, lat2: float,
     so islands like Nias and the Mentawai group are reliably detected.
     Dense sampling (30 pts) catches features as narrow as ~20 km.
 
-    Antimeridian segments (|Δlon| > 180°) are never re-routed: they were
-    already computed by searoute across the ±180° boundary and are correct.
-    Re-sampling them in lon space produces bogus midpoints that span the
-    globe, so we skip the land check entirely for these segments.
+    A short arc that crosses ±180° is cut first (split_antimeridian). Each
+    folded piece is sampled on its own side of the meridian. The longitude
+    jump alone is not a reason to skip the check.
     """
     if not _LAND_MASK_AVAILABLE and _NE_TREE is None:
         return False
-    # Guard 1 — antimeridian: searoute already routed the segment correctly;
-    # geodesic sampling across ±180° produces bogus mid-globe land hits.
-    if abs(lon2 - lon1) > 180:
-        return False
+    if not _folded:
+        pieces = split_antimeridian(lon1, lat1, lon2, lat2)
+        if len(pieces) > 1:
+            return any(
+                _segment_crosses_land(p_lon1, p_lat1, p_lon2, p_lat2, n_samples, True)
+                for p_lon1, p_lat1, p_lon2, p_lat2 in pieces
+            )
+        lon1, lat1, lon2, lat2 = pieces[0]
     geod = Geodesic.WGS84
     try:
         line = geod.InverseLine(lat1, lon1, lat2, lon2)
@@ -135,11 +247,15 @@ def _segment_crosses_land(lon1: float, lat1: float, lon2: float, lat2: float,
     if total_dist < 1000:             # < 1 km — skip micro-segments (canal links)
         return False
 
-    # Guard 2 — canal / passage endpoints: if either endpoint is on land AND
-    # the segment is short (≤ 20 km), trust searoute's canal / strait routing.
-    # Panama Canal, Suez Canal and all navigable straits are < 20 km per segment.
-    # Segments longer than 20 km are checked even when an endpoint is on an island,
-    # so that island-to-island routes don't cross intermediate landmasses silently.
+    # Passage nommé, avant le garde-fou des 20 km : les deux sommets dans
+    # la même boîte Panama ou Suez, jusqu'à 60 km. Le masque peut dire
+    # « terre » sur les cellules du canal ; ce n'est pas une traversée.
+    if segment_in_named_passage([[lon1, lat1], [lon2, lat2]]):
+        return False
+
+    # Hors boîte : port ou détroit court. Un segment ≤ 20 km dont un bout
+    # est à terre reste un passage, pas une traversée. Au-delà de 20 km,
+    # la terre intermédiaire compte, même si un bout est sur une île.
     if total_dist <= 20_000 and (_is_land_hires(lat1, lon1) or _is_land_hires(lat2, lon2)):
         return False
 
@@ -381,17 +497,26 @@ def _find_land_crossing_detour(a: list, b: list, deadline: float | None = None) 
 
 
 def _segment_enters(lon1: float, lat1: float, lon2: float, lat2: float,
-                    inside, n_samples: int = 30) -> bool:
+                    inside, n_samples: int = 30, _folded: bool = False) -> bool:
     """Vrai si la géodésique traverse une zone interdite (deux échantillons de suite).
 
     Un port situé dans un parc est déjà retiré du test par l'appelant
     (escape_points). On ne masque donc ni le début ni la fin du segment :
     un sommet intermédiaire posé dans l'aire compterait sinon comme une
-    simple sortie. Un segment qui traverse l'antiméridien n'est pas
-    rééchantillonné.
+    simple sortie. Un segment qui traverse ±180° est coupé
+    (split_antimeridian) et chaque morceau replié est contrôlé : le saut
+    de longitude seul ne dispense plus du contrôle.
     """
-    if inside is None or abs(lon2 - lon1) > 180:
+    if inside is None:
         return False
+    if not _folded:
+        pieces = split_antimeridian(lon1, lat1, lon2, lat2)
+        if len(pieces) > 1:
+            return any(
+                _segment_enters(p_lon1, p_lat1, p_lon2, p_lat2, inside, n_samples, True)
+                for p_lon1, p_lat1, p_lon2, p_lat2 in pieces
+            )
+        lon1, lat1, lon2, lat2 = pieces[0]
     try:
         line = Geodesic.WGS84.InverseLine(lat1, lon1, lat2, lon2)
         total = line.s13
@@ -535,6 +660,42 @@ def _snap_out_of_zone(lon: float, lat: float, inside, max_km: float = 160.0) -> 
     return [lon, lat]
 
 
+def route_open_hits(coords: list, inside) -> list:
+    """Segments encore dans la terre ou dans une aire interdite.
+
+    Un hit par segment : ``land`` et ``area`` disent pourquoi. ``inside``
+    est le prédicat d'aire ``(lat, lon) -> bool``, ou None s'il n'y a pas
+    de catalogue. La liste vide veut dire que le dernier détour a laissé
+    la ligne dehors.
+    """
+    hits: list = []
+    if not coords or len(coords) < 2:
+        return hits
+    for i in range(len(coords) - 1):
+        a, b = coords[i], coords[i + 1]
+        if not a or not b or len(a) < 2 or len(b) < 2:
+            continue
+        try:
+            land = _segment_crosses_land(float(a[0]), float(a[1]), float(b[0]), float(b[1]))
+        except Exception:
+            land = False
+        area = False
+        if inside is not None:
+            try:
+                area = _segment_enters(float(a[0]), float(a[1]), float(b[0]), float(b[1]), inside)
+            except Exception:
+                area = False
+        if land or area:
+            hits.append({
+                "index": i,
+                "from": [a[0], a[1]],
+                "to": [b[0], b[1]],
+                "land": bool(land),
+                "area": bool(area),
+            })
+    return hits
+
+
 def avoid_zones(coords: list, inside=None, max_iterations: int = 4) -> list:
     """Détourne les segments qui traversent encore la terre ou une zone interdite."""
     if not coords or len(coords) < 2:
@@ -570,11 +731,12 @@ def avoid_zones(coords: list, inside=None, max_iterations: int = 4) -> list:
 
 
 def _split_canal_links(coords: list) -> list:
-    """Coupe un lien de canal de 20 à 40 km en deux.
+    """Coupe en deux un lien de passage nommé plus long que 60 km.
 
-    Le moteur traite déjà un passage ≤ 20 km dont un bout est à terre
-    (canal, détroit) comme un passage, pas comme une traversée à détourner.
-    Un seul lien searoute du canal de Panama dépasse ce seuil.
+    Hors des boîtes Panama et Suez, un segment n'est plus découpé parce
+    qu'il mesure 20 à 40 km : 28 km de terre qui n'est pas un canal nommé
+    reste une traversée. Dans une boîte, un lien au-delà de 60 km peut
+    être coupé en son milieu, seulement si ce milieu reste dans la boîte.
     """
     if len(coords) < 2:
         return coords
@@ -587,15 +749,28 @@ def _split_canal_links(coords: list) -> list:
             result.append(b)
             continue
         try:
-            dist = geod.Inverse(a[1], a[0], b[1], b[0])["s12"]
+            box = _shared_passage_box(float(a[0]), float(a[1]), float(b[0]), float(b[1]))
+        except (TypeError, ValueError):
+            result.append(b)
+            continue
+        if box is None:
+            result.append(b)
+            continue
+        try:
+            line = geod.InverseLine(a[1], a[0], b[1], b[0])
+            dist = float(line.s13)
         except Exception:
             result.append(b)
             continue
-        if not 20_000 < dist <= 40_000:
+        if not math.isfinite(dist) or dist <= NAMED_PASSAGE_MAX_M:
             result.append(b)
             continue
-        midpos = geod.InverseLine(a[1], a[0], b[1], b[0]).Position(dist / 2)
-        mid = _normalize_antimeridian([[midpos["lon2"], midpos["lat2"]]], a[0])[0]
+        midpos = line.Position(dist / 2)
+        mid_lon, mid_lat = float(midpos["lon2"]), float(midpos["lat2"])
+        if not in_passage_box(wrap_lon(mid_lon), mid_lat, box):
+            result.append(b)
+            continue
+        mid = _normalize_antimeridian([[mid_lon, mid_lat]], a[0])[0]
         b_norm = _normalize_antimeridian([b], mid[0])[0]
         left_clear = not _segment_crosses_land(a[0], a[1], mid[0], mid[1])
         right_clear = not _segment_crosses_land(mid[0], mid[1], b_norm[0], b_norm[1])
@@ -606,20 +781,55 @@ def _split_canal_links(coords: list) -> list:
     return result
 
 
-def avoid_forbidden_amps(coords: list, start, end) -> list:
-    """Détourne les aires interdites à la plaisance. Sans catalogue, la ligne ne bouge pas."""
+def _forbidden_amp_predicate(start, end):
+    """Un seul prédicat d'aire interdite à la plaisance, ou None.
+
+    None si le catalogue est vide ou si le chargement lève : l'appelant
+    pose ``ampStatus = unavailable`` et ne fait pas semblant d'avoir
+    vérifié. Les aires à circulation régulée ne font pas partie de ce
+    prédicat : ``amp_nogo`` ne garde que l'interdit plaisance.
+    """
     try:
         from amp_nogo import amp_nogo_fn, load_forbidden_nogo
         items = load_forbidden_nogo()
+        if not items:
+            return None
+        return amp_nogo_fn(
+            items,
+            escape_points=[(float(start[1]), float(start[0])), (float(end[1]), float(end[0]))],
+        )
     except Exception:
+        return None
+
+
+def avoid_forbidden_amps(coords: list, start, end, inside=None) -> list:
+    """Détourne les aires interdites à la plaisance. Sans catalogue, la ligne ne bouge pas.
+
+    ``inside`` est le prédicat déjà construit pour ce calcul. None : catalogue
+    vide ou en panne, on ne recharge pas et on ne détourne pas.
+    """
+    if inside is None:
         return coords
-    if not items:
-        return coords
-    blocked = amp_nogo_fn(
-        items,
-        escape_points=[(float(start[1]), float(start[0])), (float(end[1]), float(end[0]))],
-    )
-    return avoid_zones(coords, lambda lat, lon: bool(blocked(lat, lon)))
+    return avoid_zones(coords, inside)
+
+
+def _stamp_avoidance_status(props: dict, coords: list, inside) -> None:
+    """Après le dernier détour. Ne lève pas : Tracer reçoit la ligne et le statut.
+
+    Catalogue absent : ``ampStatus = unavailable``. Catalogue présent et un
+    segment encore dans l'aire : ``constraintStatus = open``. Un hit de terre
+    seul ne marque pas l'aire comme ouverte.
+    """
+    if inside is None:
+        props["ampStatus"] = "unavailable"
+        return
+    try:
+        hits = route_open_hits(coords, inside)
+    except Exception:
+        props["ampStatus"] = "unavailable"
+        return
+    if any(hit.get("area") for hit in hits):
+        props["constraintStatus"] = "open"
 
 
 def avoid_land(coords: list, max_iterations: int = 8, deadline: float | None = None) -> list:
@@ -808,16 +1018,60 @@ def _sanitize_route_coords(coords: list) -> list:
     return cleaned
 
 
-def _route_cache_key(start, end) -> tuple:
+# à augmenter quand le pipeline change.
+# 2 : deux changements depuis 429c1e3 (recontrôle des aires, puis canaux nommés).
+ENGINE_REV = 2
+
+
+def _catalog_id_fingerprint(items: list) -> str:
+    """Hash sha256 des identifiants d'aires triés. Les géométries n'entrent pas.
+
+    Un identifiant vide est ignoré. Les doublons ne comptent qu'une fois.
+    La liste vide a un hash : ce n'est pas le mot « unavailable ».
+    """
+    seen: set[str] = set()
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("id") or "").strip()
+        if text:
+            seen.add(text)
+    payload = "\n".join(sorted(seen))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _area_catalog_fingerprint() -> str:
+    """Empreinte du catalogue courant, ou « unavailable » s'il ne se charge pas.
+
+    Un catalogue chargé et vide a le hash de zéro identifiant. Ce hash ne
+    se confond pas avec la panne : une ligne calculée sans catalogue ne
+    doit pas être resservie une fois le catalogue vide connu, ni l'inverse.
+    """
+    try:
+        from amp_nogo import forbidden_catalog_available, load_forbidden_nogo
+        items = load_forbidden_nogo()
+        if forbidden_catalog_available() is not True:
+            return "unavailable"
+    except Exception:
+        return "unavailable"
+    return _catalog_id_fingerprint(list(items or []))
+
+
+def _route_cache_key(start, end, *, catalog_fp: str | None = None) -> tuple:
     """
     Bidirectional cache key: always places the lexicographically smaller point
     first so that A→B and B→A map to the same key.
     Coordinates are rounded to 4 decimal places (~11 m precision) so that
     floating-point noise doesn't create spurious cache misses.
+
+    The key also carries ENGINE_REV and the area-catalog fingerprint, so a
+    line computed before an avoidance change, or with another catalog, is
+    not served again. ``catalog_fp`` None reads the live catalog.
     """
     p1 = (round(start[0], 4), round(start[1], 4))
     p2 = (round(end[0], 4), round(end[1], 4))
-    return (min(p1, p2), max(p1, p2))
+    fp = _area_catalog_fingerprint() if catalog_fp is None else catalog_fp
+    return (ENGINE_REV, min(p1, p2), max(p1, p2), fp)
 
 
 # In-memory route cache  {cache_key: (route_dict, canonical_start_tuple)}
@@ -983,12 +1237,27 @@ def searoute_with_exact_end(start, end, deadline: float | None = None):
     #           iterative scan catches and reroutes any remaining crossings.
     coords = avoid_land(coords, max_iterations=5, deadline=deadline)
 
-    # Aires interdites, puis à nouveau la terre : un détour d'aire ne doit pas
-    # couper une côte. Les sorties de port trop courtes pour le premier passage
-    # sont reprises avec un pas plus fin. Le canal reste le passage searoute.
-    coords = avoid_forbidden_amps(coords, start, end)
+    # Un seul prédicat d'aire pour les deux passages. Le détour de terre qui
+    # suit le premier peut reposer le trait dans l'aire : le dernier
+    # avoid_zones reprend ce même prédicat. Les aires régulées ne sont pas
+    # un mur. Sans catalogue, la ligne de terre est rendue quand même.
+    inside = _forbidden_amp_predicate(start, end)
+    try:
+        coords = avoid_forbidden_amps(coords, start, end, inside)
+    except RouteBusy:
+        raise
+    except Exception:
+        inside = None
     coords = avoid_land(coords, max_iterations=3, deadline=deadline)
-    coords = avoid_zones(coords)
+    if inside is None:
+        coords = avoid_zones(coords)
+    else:
+        try:
+            coords = avoid_zones(coords, inside)
+        except RouteBusy:
+            raise
+        except Exception:
+            inside = None
     coords = _split_canal_links(coords)
 
     # Continu relativement au départ replié : pas de saut ±360° entre deux sommets.
@@ -999,6 +1268,9 @@ def searoute_with_exact_end(start, end, deadline: float | None = None):
     props = dict(route.get("properties") or {})
     props["length"] = round(route_length_km(coords), 3)
     props["units"] = "km"
+    # Recontrôle sur la ligne rendue, après le dernier détour. Pas d'exception :
+    # GET /route doit livrer le trait et le statut.
+    _stamp_avoidance_status(props, coords, inside)
     route["properties"] = props
     attach_anti_shipping(route)
 

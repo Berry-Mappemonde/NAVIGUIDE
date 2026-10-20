@@ -430,3 +430,105 @@ def test_route_deadline_leaves_room_after_one_searoute_call():
     # the detours around land before the request answers « busy ».
     assert route_engine.ROUTE_DEADLINE_S >= route_engine.SEAROUTE_TIMEOUT_S + 3.0
     assert route_engine.ROUTE_DEADLINE_S <= 12.0
+
+
+def _forbid_searoute(monkeypatch, route_engine):
+    def boom(*_args, **_kwargs):
+        raise AssertionError("searoute ne doit pas partir pour calculer la clé")
+
+    monkeypatch.setattr(route_engine, "_invoke_searoute", boom)
+    monkeypatch.setattr(route_engine, "searoute_with_exact_end", boom)
+
+
+def test_route_cache_key_carries_engine_rev_and_catalog_fingerprint(monkeypatch):
+    """Même extrémités, empreintes différentes : deux clés. Aucun appel searoute."""
+    import route_engine
+
+    _forbid_searoute(monkeypatch, route_engine)
+    assert route_engine.ENGINE_REV == 2
+
+    start, end = (-1.7, 46.25), (-2.1, 46.05)
+    empty = route_engine._catalog_id_fingerprint([])
+    assert empty != "unavailable"
+    with_geom = route_engine._catalog_id_fingerprint([
+        {"id": "B", "geom": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}},
+        {"id": "A", "geom": {"type": "Polygon", "coordinates": [[[9, 9], [8, 9], [8, 8], [9, 9]]]}},
+    ])
+    same_ids = route_engine._catalog_id_fingerprint([
+        {"id": "A", "geom": "autre"},
+        {"id": "B"},
+    ])
+    other = route_engine._catalog_id_fingerprint([{"id": "A"}, {"id": "C"}])
+    named_unavailable = route_engine._catalog_id_fingerprint([{"id": "unavailable"}])
+
+    key_empty = route_engine._route_cache_key(start, end, catalog_fp=empty)
+    key_ids = route_engine._route_cache_key(start, end, catalog_fp=with_geom)
+    key_same = route_engine._route_cache_key(end, start, catalog_fp=same_ids)
+    key_other = route_engine._route_cache_key(start, end, catalog_fp=other)
+    key_down = route_engine._route_cache_key(start, end, catalog_fp="unavailable")
+    key_word = route_engine._route_cache_key(start, end, catalog_fp=named_unavailable)
+
+    assert key_empty[0] == route_engine.ENGINE_REV
+    assert key_ids == key_same
+    assert key_ids != key_other
+    assert key_empty != key_down
+    assert key_down[-1] == "unavailable"
+    assert key_empty[-1] != "unavailable"
+    assert key_word[-1] != "unavailable"
+    assert len(key_empty) == 4
+
+
+def test_live_catalog_fingerprint_changes_the_cache_key(monkeypatch):
+    """Le catalogue chargé (même vide) n'a pas l'empreinte d'une panne."""
+    import amp_nogo
+    import route_engine
+
+    _forbid_searoute(monkeypatch, route_engine)
+
+    def no_network(*_args, **_kwargs):
+        raise AssertionError("pas d'appel réseau pour l'empreinte")
+
+    monkeypatch.setattr("httpx.get", no_network)
+    start, end = (0.0, 0.0), (1.0, 1.0)
+    ring = [[-2.0, 46.0], [-1.5, 46.0], [-1.5, 46.3], [-2.0, 46.3], [-2.0, 46.0]]
+    other = [[-10.0, 40.0], [-9.0, 40.0], [-9.0, 41.0], [-10.0, 41.0], [-10.0, 40.0]]
+
+    def feat(site_id, shell):
+        return {
+            "type": "Feature",
+            "properties": {"site_id": site_id, "entry": 1, "speed": 3},
+            "geometry": {"type": "Polygon", "coordinates": [shell]},
+        }
+
+    def use(features):
+        amp_nogo.reset_nogo_cache()
+        monkeypatch.setattr(
+            amp_nogo, "_fetch_nogo",
+            lambda: {"type": "FeatureCollection", "features": features},
+        )
+        return route_engine._route_cache_key(start, end)
+
+    try:
+        key_ab = use([feat("B", ring), feat("A", other)])
+        key_ab_swapped = use([feat("A", ring), feat("B", other)])
+        key_ac = use([feat("A", ring), feat("C", other)])
+        key_empty = use([])
+        amp_nogo.reset_nogo_cache()
+
+        def down():
+            raise RuntimeError("catalogue en panne")
+
+        monkeypatch.setattr(amp_nogo, "_fetch_nogo", down)
+        key_down = route_engine._route_cache_key(start, end)
+        key_down_back = route_engine._route_cache_key(end, start)
+    finally:
+        amp_nogo.reset_nogo_cache()
+
+    assert key_ab == key_ab_swapped
+    assert key_ab != key_ac
+    assert key_ab[0] == 2
+    assert key_empty[-1] == route_engine._catalog_id_fingerprint([])
+    assert key_empty[-1] != "unavailable"
+    assert key_down[-1] == "unavailable"
+    assert key_empty != key_down
+    assert key_down_back == key_down
