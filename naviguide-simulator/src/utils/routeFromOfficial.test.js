@@ -32,7 +32,7 @@ describe("routeFromOfficial", () => {
 });
 
 describe("chargement App", () => {
-  it("tente route.geojson avant les appels searoute", () => {
+  it("charge route.geojson et ne rappelle searoute que si le fichier manque", () => {
     const src = readFileSync(join(root, "src/App.jsx"), "utf8");
     const geo = src.indexOf("loadOfficialBerryRoute");
     const api = src.indexOf("${API_URL}/route?");
