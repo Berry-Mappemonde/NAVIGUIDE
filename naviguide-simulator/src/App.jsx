@@ -1822,10 +1822,16 @@ export default function App() {
   ]);
 
   const enablePendingRestricted = (kind) => {
+    // commit écrit l'état brut : Accepter allume tout de suite, vue monde comprise.
+    const commit = gateRef.current?.commit;
+    if (typeof commit === "function") {
+      commit(kind);
+      return;
+    }
     if (kind === "balisage") maritimeLayers.setShowBalisage(true);
-    if (kind === "bathymetry") maritimeLayers.setShowBathymetry(true);
-    if (kind === "fonds") maritimeLayers.setShowFonds(true);
-    if (kind === "cables") maritimeLayers.setShowCables(true);
+    else if (kind === "bathymetry") maritimeLayers.setShowBathymetry(true);
+    else if (kind === "fonds") maritimeLayers.setShowFonds(true);
+    else if (kind === "cables") maritimeLayers.setShowCables(true);
   };
 
   useLayoutEffect(() => {
@@ -1883,11 +1889,12 @@ export default function App() {
         open={notForNavOpen}
         onCancel={() => { pendingLayerRef.current = null; setNotForNavOpen(false); }}
         onAccept={() => {
+          const kind = pendingLayerRef.current;
           writeNotForNavAccepted();
           gateRef.current.allowed = true;
           setNotForNavOk(true);
           setNotForNavOpen(false);
-          enablePendingRestricted(pendingLayerRef.current);
+          enablePendingRestricted(kind);
           pendingLayerRef.current = null;
         }}
       />
