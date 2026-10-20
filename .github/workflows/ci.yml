@@ -188,6 +188,8 @@ jobs:
       - name: Recette automatique (scénarios, stock figé) — tranche ${{ matrix.shard }}/6
         env:
           PW_WITH_API: "1"
+        # judge-path.spec.js est dans e2e/lots : cette commande le joue avec
+        # les autres. Il reste sur le build local, jamais sur la production.
         run: npx playwright test e2e/lots --shard=${{ matrix.shard }}/6
       - name: Résumé d'étape
         if: always()

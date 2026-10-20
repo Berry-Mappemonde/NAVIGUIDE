@@ -164,6 +164,15 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 .naviguide-sidebar-panel {
   z-index: 2000 !important;
 }
+/* Tiroir gauche : les textes restent lisibles hors champ (la recette les
+   voit). Les boutons, non, tant que le glissement (duration-300) n'est pas
+   fini. « Fermer » hors écran est sinon vu comme visible, puis se détache,
+   et le clic attend jusqu'au délai du test. Le panneau droit a déjà sa
+   propre visibilité et n'a pas la classe drawer. */
+.naviguide-sidebar-drawer:not(.naviguide-drawer-settled) button,
+.naviguide-sidebar-drawer:not(.naviguide-drawer-settled) [role="button"] {
+  visibility: hidden;
+}
 .naviguide-sidebar-toggle {
   z-index: 2010 !important;
 }

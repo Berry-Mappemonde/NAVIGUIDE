@@ -126,7 +126,6 @@ function JournalList({ entries, onSeek, lang, days = null }) {
   const [dayRows, setDayRows] = useState([]);
 
   async function selectDay(day) {
-    if (typeof onSeek === "function") onSeek(`${day}T12:00:00Z`);
     setOpenDay(day);
     try {
       const res = await fetch(`${API}/voyage/official/journal/${encodeURIComponent(day)}`);
@@ -137,7 +136,7 @@ function JournalList({ entries, onSeek, lang, days = null }) {
         return;
       }
     } catch {
-      /* the day list still moved the cursor */
+      /* the film stays on the current leg */
     }
     setDayRows(rows.filter((entry) => String(entry.t || "").startsWith(day)));
   }
