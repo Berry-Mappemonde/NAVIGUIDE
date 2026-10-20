@@ -8,6 +8,8 @@ from route_engine import (
     _NE_TREE,
     _has_nearby_ocean,
     _is_land_hires,
+    _segment_enters,
+    avoid_zones,
     searoute_with_exact_end,
     unwrap_path,
     wrap_lon,
@@ -34,6 +36,34 @@ def test_unwrap_path_continuous_pacific():
         assert abs(b - a) <= 180
     assert lons[-1] > 180
     assert all(c[1] <= 50 for c in out)
+
+
+def test_avoid_zones_leaves_a_forbidden_box():
+    def inside(lat, lon):
+        return 45.0 < lat < 45.2 and -8.0 < lon < -7.5
+
+    straight = [[-8.5, 45.1], [-7.0, 45.1]]
+    assert _segment_enters(straight[0][0], straight[0][1], straight[1][0], straight[1][1], inside)
+    out = avoid_zones(straight, inside)
+    assert len(out) >= 3
+    for a, b in zip(out, out[1:]):
+        assert not _segment_enters(a[0], a[1], b[0], b[1], inside)
+
+
+def test_avoid_zones_pulls_a_vertex_out_of_the_box():
+    def inside(lat, lon):
+        return 45.0 < lat < 45.2 and -8.0 < lon < -7.5
+
+    # Le sommet du milieu est dans l'aire. Le sortir, puis contourner.
+    line = [[-8.6, 45.1], [-7.75, 45.1], [-6.9, 45.1]]
+    assert inside(line[1][1], line[1][0])
+    out = avoid_zones(line, inside)
+    assert out[0] == line[0]
+    assert out[-1] == line[-1]
+    for lon, lat in out[1:-1]:
+        assert not inside(lat, lon)
+    for a, b in zip(out, out[1:]):
+        assert not _segment_enters(a[0], a[1], b[0], b[1], inside)
 
 
 def test_short_offshore_leg():

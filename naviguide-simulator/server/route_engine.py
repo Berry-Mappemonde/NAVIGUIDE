@@ -380,6 +380,248 @@ def _find_land_crossing_detour(a: list, b: list, deadline: float | None = None) 
     return [b]   # last-resort direct hop
 
 
+def _segment_enters(lon1: float, lat1: float, lon2: float, lat2: float,
+                    inside, n_samples: int = 30) -> bool:
+    """Vrai si la géodésique traverse une zone interdite (deux échantillons de suite).
+
+    Un port situé dans un parc est déjà retiré du test par l'appelant
+    (escape_points). On ne masque donc ni le début ni la fin du segment :
+    un sommet intermédiaire posé dans l'aire compterait sinon comme une
+    simple sortie. Un segment qui traverse l'antiméridien n'est pas
+    rééchantillonné.
+    """
+    if inside is None or abs(lon2 - lon1) > 180:
+        return False
+    try:
+        line = Geodesic.WGS84.InverseLine(lat1, lon1, lat2, lon2)
+        total = line.s13
+    except Exception:
+        return False
+    if total < 1000:
+        return False
+    consecutive = 0
+    try:
+        for k in range(1, n_samples):
+            pos = line.Position(k / n_samples * total)
+            if inside(pos["lat2"], pos["lon2"]):
+                consecutive += 1
+                if consecutive >= 2:
+                    return True
+            else:
+                consecutive = 0
+    except Exception:
+        return False
+    return False
+
+
+def _detour_clear(a: list, b: list, inside) -> list:
+    """Remplace A→B par un détour hors terre et hors zone interdite.
+
+    Retourne les points après A, B compris. [B] si aucun détour ne convient.
+    """
+    geod = Geodesic.WGS84
+    try:
+        inv = geod.Inverse(a[1], a[0], b[1], b[0])
+        line = geod.InverseLine(a[1], a[0], b[1], b[0])
+    except Exception:
+        return [b]
+    bearing, dist = inv["azi1"], inv["s12"]
+    # Une aire peut être plus large que la jambe qui la coupe (réserve de
+    # ~100 km sur un segment de 70 km). Le palier court ne la contourne pas.
+    if inside is not None:
+        distances = [5, 10, 20, 40, 80, 120, 180, 260]
+    elif dist < 100_000:
+        distances = [2, 4, 8, 12, 20, 30, 40]
+    else:
+        distances = [5, 10, 20, 40, 80, 120, 180]
+    for frac in (0.5, 0.33, 0.67, 0.25, 0.75):
+        mid = line.Position(frac * dist)
+        for sign in (1, -1):
+            for km in distances:
+                p = geod.Direct(mid["lat2"], mid["lon2"], (bearing + sign * 90) % 360, km * 1000)
+                wp = _normalize_antimeridian([[p["lon2"], p["lat2"]]], a[0])[0]
+                if _is_land_hires(wp[1], wp[0]):
+                    continue
+                if inside is not None:
+                    try:
+                        if inside(wp[1], wp[0]):
+                            continue
+                    except Exception:
+                        continue
+                if _segment_crosses_land(a[0], a[1], wp[0], wp[1]):
+                    continue
+                if _segment_crosses_land(wp[0], wp[1], b[0], b[1]):
+                    continue
+                if inside is not None and (
+                    _segment_enters(a[0], a[1], wp[0], wp[1], inside)
+                    or _segment_enters(wp[0], wp[1], b[0], b[1], inside)
+                ):
+                    continue
+                b_norm = _normalize_antimeridian([b], wp[0])[0]
+                return [wp, b_norm]
+    if dist < 40_000:
+        return _nearby_water_detour(a, b, inside)
+    return [b]
+
+
+def _nearby_water_detour(a: list, b: list, inside, radius: float = 0.35, step: float = 0.02) -> list:
+    """Pour une sortie de port : le premier point d'eau dont les deux bouts sont libres."""
+    geod = Geodesic.WGS84
+    mid_lat = (a[1] + b[1]) / 2
+    mid_lon = (a[0] + b[0]) / 2
+    best = None
+    best_m = float("inf")
+    n = int(radius / step)
+    for i in range(-n, n + 1):
+        for j in range(-n, n + 1):
+            lat = mid_lat + i * step
+            lon = mid_lon + j * step
+            if _is_land_hires(lat, lon):
+                continue
+            if inside is not None:
+                try:
+                    if inside(lat, lon):
+                        continue
+                except Exception:
+                    continue
+            if _segment_crosses_land(a[0], a[1], lon, lat):
+                continue
+            if _segment_crosses_land(lon, lat, b[0], b[1]):
+                continue
+            if inside is not None and (
+                _segment_enters(a[0], a[1], lon, lat, inside)
+                or _segment_enters(lon, lat, b[0], b[1], inside)
+            ):
+                continue
+            extra = (
+                geod.Inverse(a[1], a[0], lat, lon)["s12"]
+                + geod.Inverse(lat, lon, b[1], b[0])["s12"]
+            )
+            if extra < best_m:
+                best_m = extra
+                best = [lon, lat]
+    if best is None:
+        return [b]
+    b_norm = _normalize_antimeridian([b], best[0])[0]
+    return [_normalize_antimeridian([best], a[0])[0], b_norm]
+
+
+def _snap_out_of_zone(lon: float, lat: float, inside, max_km: float = 160.0) -> list:
+    """Ramène un sommet posé dans une zone interdite sur l'eau, juste dehors.
+
+    Le premier point d'eau libre le plus proche, par anneaux. Si rien n'est
+    libre dans le rayon, le sommet ne bouge pas.
+    """
+    try:
+        if not inside(lat, lon):
+            return [lon, lat]
+    except Exception:
+        return [lon, lat]
+    geod = Geodesic.WGS84
+    for km in (4, 8, 12, 20, 30, 45, 60, 80, 110, 150):
+        if km > max_km:
+            break
+        for bearing in range(0, 360, 15):
+            p = geod.Direct(lat, lon, bearing, km * 1000)
+            plat, plon = p["lat2"], p["lon2"]
+            if _is_land_hires(plat, plon):
+                continue
+            try:
+                if inside(plat, plon):
+                    continue
+            except Exception:
+                continue
+            return _normalize_antimeridian([[plon, plat]], lon)[0]
+    return [lon, lat]
+
+
+def avoid_zones(coords: list, inside=None, max_iterations: int = 4) -> list:
+    """Détourne les segments qui traversent encore la terre ou une zone interdite."""
+    if not coords or len(coords) < 2:
+        return coords
+    if inside is not None and len(coords) >= 3:
+        # Les bouts de la jambe restent (escales). Un sommet du milieu tombé
+        # dans l'aire est sorti avant le détour, sinon chaque branche repart
+        # de l'intérieur et le test la compte encore comme une traversée.
+        snapped = [coords[0]]
+        for pt in coords[1:-1]:
+            snapped.append(_snap_out_of_zone(pt[0], pt[1], inside))
+        snapped.append(coords[-1])
+        coords = snapped
+    for _ in range(max_iterations):
+        changed = False
+        result = [coords[0]]
+        for i in range(len(coords) - 1):
+            a = result[-1]
+            b = coords[i + 1]
+            land = _segment_crosses_land(a[0], a[1], b[0], b[1])
+            forbidden = inside is not None and _segment_enters(a[0], a[1], b[0], b[1], inside)
+            if land or forbidden:
+                detour = _detour_clear(a, b, inside)
+                if len(detour) > 1:
+                    result.extend(detour)
+                    changed = True
+                    continue
+            result.append(b)
+        coords = result
+        if not changed:
+            break
+    return coords
+
+
+def _split_canal_links(coords: list) -> list:
+    """Coupe un lien de canal de 20 à 40 km en deux.
+
+    Le moteur traite déjà un passage ≤ 20 km dont un bout est à terre
+    (canal, détroit) comme un passage, pas comme une traversée à détourner.
+    Un seul lien searoute du canal de Panama dépasse ce seuil.
+    """
+    if len(coords) < 2:
+        return coords
+    geod = Geodesic.WGS84
+    result = [coords[0]]
+    for i in range(len(coords) - 1):
+        a = result[-1]
+        b = coords[i + 1]
+        if not _segment_crosses_land(a[0], a[1], b[0], b[1]):
+            result.append(b)
+            continue
+        try:
+            dist = geod.Inverse(a[1], a[0], b[1], b[0])["s12"]
+        except Exception:
+            result.append(b)
+            continue
+        if not 20_000 < dist <= 40_000:
+            result.append(b)
+            continue
+        midpos = geod.InverseLine(a[1], a[0], b[1], b[0]).Position(dist / 2)
+        mid = _normalize_antimeridian([[midpos["lon2"], midpos["lat2"]]], a[0])[0]
+        b_norm = _normalize_antimeridian([b], mid[0])[0]
+        left_clear = not _segment_crosses_land(a[0], a[1], mid[0], mid[1])
+        right_clear = not _segment_crosses_land(mid[0], mid[1], b_norm[0], b_norm[1])
+        if left_clear and right_clear:
+            result.extend([mid, b_norm])
+        else:
+            result.append(b)
+    return result
+
+
+def avoid_forbidden_amps(coords: list, start, end) -> list:
+    """Détourne les aires interdites à la plaisance. Sans catalogue, la ligne ne bouge pas."""
+    try:
+        from amp_nogo import amp_nogo_fn, load_forbidden_nogo
+        items = load_forbidden_nogo()
+    except Exception:
+        return coords
+    if not items:
+        return coords
+    blocked = amp_nogo_fn(
+        items,
+        escape_points=[(float(start[1]), float(start[0])), (float(end[1]), float(end[0]))],
+    )
+    return avoid_zones(coords, lambda lat, lon: bool(blocked(lat, lon)))
+
+
 def avoid_land(coords: list, max_iterations: int = 8, deadline: float | None = None) -> list:
     """
     Iteratively scan every consecutive segment in the route and reroute
@@ -740,6 +982,14 @@ def searoute_with_exact_end(start, end, deadline: float | None = None):
     #           geodesic midpoints on small islands (e.g. Nias).  This final
     #           iterative scan catches and reroutes any remaining crossings.
     coords = avoid_land(coords, max_iterations=5, deadline=deadline)
+
+    # Aires interdites, puis à nouveau la terre : un détour d'aire ne doit pas
+    # couper une côte. Les sorties de port trop courtes pour le premier passage
+    # sont reprises avec un pas plus fin. Le canal reste le passage searoute.
+    coords = avoid_forbidden_amps(coords, start, end)
+    coords = avoid_land(coords, max_iterations=3, deadline=deadline)
+    coords = avoid_zones(coords)
+    coords = _split_canal_links(coords)
 
     # Continu relativement au départ replié : pas de saut ±360° entre deux sommets.
     coords = _normalize_antimeridian(coords, start[0])
