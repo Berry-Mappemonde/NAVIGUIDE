@@ -1579,6 +1579,8 @@ export default function App() {
       setLoading(true);
       setOfficialFallback(false);
       try {
+        // La route Berry est déjà dans le fichier (routeur + contrôle de terre).
+        // On la charge. searoute ne sert que si ce fichier manque.
         const official = await loadOfficialBerryRoute();
         if (cancelled) return;
         setSegments(official.segments);

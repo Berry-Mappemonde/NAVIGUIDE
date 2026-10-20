@@ -1,5 +1,7 @@
 /** Convertit l'itinéraire Berry (GET /route.geojson) en segments + stops.
- *  public/route.geojson est un lien vers backend/data/route.geojson.
+ *  public/route.geojson est la route Berry déjà calculée par le routeur.
+ *  Elle ne change pas : l'application la charge, elle ne rappelle pas
+ *  searoute à chaque ouverture.
  */
 
 import { isAirLegNames, isSideLegNames } from "./berryLegs.js";
