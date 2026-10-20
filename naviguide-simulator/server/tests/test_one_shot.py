@@ -63,7 +63,7 @@ def _watch_execute(monkeypatch):
 
 
 def test_registry_holds_fixture_and_vl_route():
-    assert list(one_shot.REGISTRY) == [one_shot.FIXTURE_JOB, "vl_route_bm"]
+    assert list(one_shot.REGISTRY) == [one_shot.FIXTURE_JOB, "vl_route_bm", "stories_177"]
 
 
 def test_estimate_makes_no_call(monkeypatch, capsys):

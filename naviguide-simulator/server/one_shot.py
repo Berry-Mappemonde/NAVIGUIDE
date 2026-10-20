@@ -1,7 +1,8 @@
 """Passages uniques : estimation sans appel, empreinte, verrou, reprise.
 
-Le registre contient ``fixture`` (aucun réseau) et ``vl_route_bm``
-(aucun réseau dans ``plan``). ``execute`` réalise un appel prévu ; c'est à lui
+Le registre contient ``fixture`` (aucun réseau), ``vl_route_bm``
+(aucun réseau dans ``plan``) et ``stories_177`` (chaîne du clic, aucun
+appel dans ``plan``). ``execute`` réalise un appel prévu ; c'est à lui
 d'enregistrer la dépense via ``llm_budget.record`` (le socle ne le fait pas,
 pour ne pas compter deux fois).
 
@@ -430,8 +431,15 @@ def _install_vl_route() -> None:
     vl_route.register_job()
 
 
+def _install_stories() -> None:
+    import stories_once  # noqa: PLC0415
+
+    stories_once.register_job()
+
+
 _install_fixture()
 _install_vl_route()
+_install_stories()
 
 
 def main(argv: list[str] | None = None) -> int:

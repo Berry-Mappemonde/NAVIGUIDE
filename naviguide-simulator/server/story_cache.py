@@ -170,6 +170,15 @@ async def _store_en_from_fr(body: dict, fr_text: str, client=None) -> dict[str, 
     return result
 
 
+def _prepared_official(body: dict | None) -> dict | None:
+    """Récit préparé une fois, s'il est dans le stock. Sinon le chemin à la demande."""
+    try:
+        import stories_once  # noqa: PLC0415
+    except Exception:
+        return None
+    return stories_once.prepared(body)
+
+
 async def story_through_cache(body: dict, client=None, writer=None) -> dict[str, Any]:
     """What POST /ici/story returns: the cache when it knows, else the cascade
     (`writer`, default story_cascade.write_story → cascade_text tier=write)
@@ -181,6 +190,9 @@ async def story_through_cache(body: dict, client=None, writer=None) -> dict[str,
     if writer is None:
         from story_cascade import write_story  # noqa: PLC0415
         writer = write_story
+    prepared_hit = _prepared_official(body)
+    if prepared_hit is not None:
+        return prepared_hit
     hit = get_cached(body)
     if hit:
         return hit
