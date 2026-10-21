@@ -2216,3 +2216,110 @@ def test_film_write_rate_limit_and_offered_durations(client, tmp_path, monkeypat
     local = client.post("/voyage/official/film?lang=fr&seconds=180")
     assert local.status_code == 200
     admin_guard.reset_limiters()
+
+
+def test_official_meta_route_fingerprints_on_fake_stock(client, monkeypatch):
+    """Mêmes coordonnées → même empreinte. Stock fictif : les deux champs,
+    égaux si les points recopient les LineString, différents sinon.
+    Sans points, routeVoyageFp est null. routeRev reste. Aucun semis."""
+    import json
+
+    from route_contract import line_strings
+    from voyage_clock import OFFICIAL_T0, OFFICIAL_VOYAGE_ID
+    from voyage_store import load_voyage, save_voyage
+    import voyage_api
+
+    def _forbid_seed():
+        raise AssertionError("seed_official_voyage")
+
+    monkeypatch.setattr(voyage_api, "seed_official_voyage", _forbid_seed)
+
+    same = voyage_api.route_points_fingerprint([
+        {"lon": 1, "lat": -46.2, "cumNm": 12},
+        {"lat": 10.5, "lon": -79.5, "jump": False},
+    ])
+    again = voyage_api.route_points_fingerprint([
+        {"lat": -46.2, "lon": 1.0},
+        {"lon": -79.5, "lat": 10.5, "name": "ignore"},
+    ])
+    assert same and same == again
+    assert same != voyage_api.route_points_fingerprint([
+        {"lon": -79.5, "lat": 10.5},
+        {"lon": 1.0, "lat": -46.2},
+    ])
+    assert voyage_api.route_points_fingerprint(None) is None
+    assert voyage_api.route_points_fingerprint([]) is None
+
+    collection = json.loads(voyage_api._ROUTE_GEOJSON.read_text(encoding="utf-8"))
+    file_points = []
+    for line in line_strings(collection):
+        for coord in line["coordinates"]:
+            file_points.append({
+                "lon": coord[0],
+                "lat": coord[1],
+                "cumNm": len(file_points),
+                "filmCum": len(file_points),
+                "jump": False,
+            })
+    assert file_points
+    file_fp = voyage_api.route_file_fingerprint()
+    assert isinstance(file_fp, str) and len(file_fp) == 64
+    assert voyage_api.route_file_fingerprint() == file_fp
+    assert voyage_api.route_points_fingerprint(file_points) == file_fp
+
+    save_voyage({
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "t0": OFFICIAL_T0,
+        "official": True,
+        "routeRev": 4,
+        "points": file_points,
+        "marks": [],
+        "follow": True,
+    })
+    got = client.get("/voyage/official")
+    assert got.status_code == 200
+    body = got.json()
+    assert body["routeRev"] == 4
+    assert body["routeFileFp"] == file_fp
+    assert body["routeVoyageFp"] == file_fp
+
+    shifted = [dict(point) for point in file_points]
+    shifted[0]["lon"] = float(shifted[0]["lon"]) + 0.05
+    save_voyage({
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "t0": OFFICIAL_T0,
+        "official": True,
+        "routeRev": 4,
+        "points": shifted,
+        "marks": [],
+        "follow": True,
+    })
+    body_shifted = client.get("/voyage/official").json()
+    assert body_shifted["routeFileFp"] == file_fp
+    assert body_shifted["routeVoyageFp"] != file_fp
+    assert isinstance(body_shifted["routeVoyageFp"], str)
+    assert body_shifted["routeRev"] == 4
+    stored = load_voyage(OFFICIAL_VOYAGE_ID)
+    assert stored["points"][0]["lon"] == pytest.approx(float(file_points[0]["lon"]) + 0.05)
+    assert stored["routeRev"] == 4
+
+    bare = voyage_api._public_meta({
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "t0": OFFICIAL_T0,
+        "official": True,
+        "routeRev": 0,
+    })
+    assert bare["routeFileFp"] == file_fp
+    assert bare["routeVoyageFp"] is None
+    assert bare["routeRev"] == 0
+    assert load_voyage(OFFICIAL_VOYAGE_ID)["routeRev"] == 4
+
+    draft = voyage_api._public_meta({
+        "voyageId": "brouillon",
+        "t0": OFFICIAL_T0,
+        "official": False,
+        "points": file_points[:2],
+    })
+    assert "routeFileFp" not in draft
+    assert "routeVoyageFp" not in draft
+    assert draft["routeRev"] == 0

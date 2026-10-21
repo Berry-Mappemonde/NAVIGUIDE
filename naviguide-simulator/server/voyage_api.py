@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 import json
 import logging
 import os
@@ -271,9 +272,90 @@ def _journal_safely(fn) -> None:
         log.warning("journal officiel: %s", exc)
 
 
+def _coord_num(value: Any) -> float:
+    """Nombre fini. 1 et 1.0 sont la même coordonnée ; -0.0 vaut 0.0."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError
+    number = float(value)
+    if number != number or number in (float("inf"), float("-inf")):
+        raise ValueError
+    if number == 0.0:
+        return 0.0
+    return number
+
+
+def _pairs_fingerprint(pairs: list[tuple[float, float]]) -> str:
+    """SHA-256 hex des couples [lon, lat], ordre conservé.
+
+    Mêmes coordonnées, même ordre → même empreinte. Les noms de jambes,
+    les milles et le t0 n'entrent pas : le fichier et le voyage se comparent.
+    """
+    raw = json.dumps(
+        [[lon, lat] for lon, lat in pairs],
+        ensure_ascii=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def route_points_fingerprint(points) -> Optional[str]:
+    """Empreinte des points stockés. None s'il n'y a pas de liste lisible."""
+    if not points:
+        return None
+    pairs: list[tuple[float, float]] = []
+    for point in points:
+        if not isinstance(point, dict):
+            return None
+        try:
+            pairs.append((_coord_num(point["lon"]), _coord_num(point["lat"])))
+        except (KeyError, TypeError, ValueError):
+            return None
+    if not pairs:
+        return None
+    return _pairs_fingerprint(pairs)
+
+
+_FILE_FP_CACHE: Optional[tuple[int, int, Optional[str]]] = None
+
+
+def route_file_fingerprint() -> Optional[str]:
+    """Empreinte des LineString de public/route.geojson. Lecture seule."""
+    global _FILE_FP_CACHE
+    try:
+        stat = _ROUTE_GEOJSON.stat()
+    except OSError:
+        return None
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    if (
+        _FILE_FP_CACHE is not None
+        and _FILE_FP_CACHE[0] == stamp[0]
+        and _FILE_FP_CACHE[1] == stamp[1]
+    ):
+        return _FILE_FP_CACHE[2]
+    fingerprint: Optional[str] = None
+    try:
+        from route_contract import line_strings  # noqa: PLC0415
+
+        collection = json.loads(_ROUTE_GEOJSON.read_text(encoding="utf-8"))
+        pairs: list[tuple[float, float]] = []
+        for line in line_strings(collection):
+            for coord in line.get("coordinates") or []:
+                if not isinstance(coord, (list, tuple)) or len(coord) < 2:
+                    continue
+                pairs.append((_coord_num(coord[0]), _coord_num(coord[1])))
+        if pairs:
+            fingerprint = _pairs_fingerprint(pairs)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        log.warning("empreinte du fichier de route illisible: %s", exc)
+        fingerprint = None
+    _FILE_FP_CACHE = (stamp[0], stamp[1], fingerprint)
+    return fingerprint
+
+
 def _public_meta(voy: dict) -> dict:
     official = voy.get("official") or _is_official(voy.get("voyageId") or "")
-    return {
+    meta = {
         "voyageId": voy["voyageId"],
         "t0": voy["t0"],
         "expedition_id": voy.get("expedition_id"),
@@ -295,6 +377,11 @@ def _public_meta(voy: dict) -> dict:
             "notForNav": "Ne convient pas à la navigation.",
         },
     }
+    if official:
+        # Lecture du fichier et des points déjà en mémoire. Aucune écriture.
+        meta["routeFileFp"] = route_file_fingerprint()
+        meta["routeVoyageFp"] = route_points_fingerprint(voy.get("points"))
+    return meta
 
 
 def _dated_error(reason: str, status: str = "unavailable") -> dict:
