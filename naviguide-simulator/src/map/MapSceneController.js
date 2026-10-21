@@ -58,6 +58,16 @@ import {
   stepFilmCamera,
   tilesAlongLeg,
 } from "./filmCamera.js";
+import {
+  filmExitZoomHold,
+  filmFocusAnchor,
+  filmFocusExpired,
+  filmFocusHold,
+  filmTrackAfterFocus,
+  focusFromBubble,
+  heldFilmPose,
+  lonNearAnchor,
+} from "./filmFocus.js";
 import { attachEventBubble } from "../components/EventBubble.jsx";
 import { attachEscalePopup } from "../components/EscalePopup.jsx";
 import { officialAirRouteStyles, officialRouteLineStyle } from "../utils/berryLegs.js";
@@ -324,6 +334,8 @@ export class MapSceneController {
     this.filmSamples = [];
     this.filmPose = null;
     this.filmPreload = { key: "", images: [] };
+    // « Voir sur la carte » pendant le film : caméra tenue sur le lieu jusqu'à la fermeture de la bulle.
+    this.filmFocusHold = null;
     this.playback = new ScenePlaybackController({
       onFrame: (snapshot) => this.renderDynamic(snapshot),
       onPublish: (snapshot) => this.publishPlayback(snapshot),
@@ -364,7 +376,8 @@ export class MapSceneController {
       this.waypointZoom = this.map.getZoom();
     };
     this.onUserNavigation = (event) => {
-      if (this.ignoreUserNavigation) return;
+      // Pendant un recentrage du film, un geste ne coupe pas le suivi : comme le reste du film (#102).
+      if (this.ignoreUserNavigation || this.filmFocusHold) return;
       this.userNavigated = true;
       // zoomstart + stop() annule la molette (KO #327). On n'arrête un flyTo
       // que sur un glisser.
@@ -428,12 +441,26 @@ export class MapSceneController {
    * Briefing link "voir sur la carte": pin the named place, draw a dashed line
    * from the boat, and fit both in view. Counts as a manual navigation so the
    * camera does not snap back to the boat until the skipper recaptures it.
+   * During the film (#102) the boat is the film's, and the film camera is held
+   * on the place until the event bubble closes (releaseBubbleFocus).
    */
   focusBriefingPlace(place, boat) {
     const lat = Number(place?.lat);
-    const lon = Number(place?.lon);
+    let lon = Number(place?.lon);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
-    this.clearBriefingFocus();
+    const filming = Boolean(this.config?.filmActive);
+    if (filming) {
+      const film = typeof window !== "undefined" ? window.__naviguideFilm : null;
+      boat = filmFocusAnchor(this.filmPose, film) || boat;
+      lon = lonNearAnchor(lon, Number(boat?.lon));
+      this.filmFocusHold = filmFocusHold(this.filmFocusHold, {
+        zoom: this.map.getZoom(),
+        zoomHold: this.camera.filmZoomHold,
+        fromBubble: focusFromBubble(place, this.eventBubble?.shownCard?.()),
+        at: typeof performance !== "undefined" ? performance.now() : Date.now(),
+      });
+    }
+    this.removeBriefingFocusLayer();
     const group = L.layerGroup();
     const label = String(place.name || "").slice(0, 60);
     const icon = L.divIcon({
@@ -459,8 +486,10 @@ export class MapSceneController {
     }
     group.addTo(this.map);
     this.briefingFocus = group;
-    this.userNavigated = true;
-    this.callbacks.onManualNavigation?.();
+    if (!filming) {
+      this.userNavigated = true;
+      this.callbacks.onManualNavigation?.();
+    }
     this.programmaticMove(() => this.map.fitBounds(bounds.pad(0.35), {
       paddingTopLeft: [340, 60],
       paddingBottomRight: [340, 120],
@@ -471,10 +500,51 @@ export class MapSceneController {
   }
 
   clearBriefingFocus() {
+    this.removeBriefingFocusLayer();
+    this.releaseFilmFocus();
+  }
+
+  removeBriefingFocusLayer() {
     if (this.briefingFocus) {
       this.briefingFocus.remove();
       this.briefingFocus = null;
     }
+  }
+
+  /** Event bubble closed or replaced: end the focus it started during the film. */
+  releaseBubbleFocus() {
+    if (this.filmFocusHold?.fromBubble) this.clearBriefingFocus();
+  }
+
+  /** Hand the camera back to the film: its boat, at the zoom it had before the focus. */
+  releaseFilmFocus() {
+    const hold = this.filmFocusHold;
+    if (!hold) return;
+    this.filmFocusHold = null;
+    if (!this.config?.filmActive) return;
+    this.camera.filmZoomHold = hold.zoomHold;
+    Object.assign(this.camera, filmTrackAfterFocus());
+    this.filmSamples = [];
+    const boat = filmFocusAnchor(this.filmPose, typeof window !== "undefined" ? window.__naviguideFilm : null);
+    if (boat && Number.isFinite(hold.zoom)) {
+      this.programmaticMove(() => this.map.setView([boat.lat, boat.lon], hold.zoom, { animate: false }));
+    }
+  }
+
+  /** Film stopped, view reset or teardown: forget a film focus without moving the camera. */
+  dropFilmFocus() {
+    if (!this.filmFocusHold) return;
+    this.filmFocusHold = null;
+    this.removeBriefingFocusLayer();
+  }
+
+  /** While the camera is held on the place, the boat keeps sailing on the film's own position. */
+  holdFilmBoat() {
+    const film = typeof window !== "undefined" ? window.__naviguideFilm : null;
+    if (!Number.isFinite(film?.lat) || !Number.isFinite(film?.lon)) return;
+    const lon = stabilizeWorldLng(film.lon, this.map.getCenter()?.lng, this.filmPose?.lon ?? null);
+    this.filmPose = heldFilmPose(this.filmPose, film, lon);
+    this.syncFilmBoat(this.filmPose);
   }
 
   setCallbacks(callbacks) {
@@ -516,9 +586,13 @@ export class MapSceneController {
       this.filmSamples = [];
       this.filmPose = null;
       this.filmPreload = { key: "", images: [] };
+      this.dropFilmFocus();
       this.ensureFilmCameraLoop();
     }
     if (previous.filmActive && !this.config.filmActive) {
+      const focusZoom = filmExitZoomHold(this.filmFocusHold);
+      this.dropFilmFocus();
+      if (Number.isFinite(focusZoom)) this.camera.filmZoomHold = focusZoom;
       this.stopFilmCameraLoop();
       this.filmSamples = [];
       this.filmPose = null;
@@ -1289,6 +1363,7 @@ export class MapSceneController {
       exitHoldUntil: null,
       exitHoldZoom: null,
     };
+    this.dropFilmFocus();
     this.stopFilmCameraLoop();
     this.filmSamples = [];
     this.filmPose = null;
@@ -1341,7 +1416,9 @@ export class MapSceneController {
         this.filmLoopRaf = 0;
         return;
       }
-      this.syncFilmCamera(this.config, now);
+      if (filmFocusExpired(this.filmFocusHold, now)) this.clearBriefingFocus();
+      if (this.filmFocusHold) this.holdFilmBoat();
+      else this.syncFilmCamera(this.config, now);
       this.renderDynamic(this.currentPlayback || this.playback.snapshot());
       this.filmLoopRaf = requestAnimationFrame(tick);
     };
@@ -1608,6 +1685,7 @@ export class MapSceneController {
   }
 
   dispose() {
+    this.filmFocusHold = null;
     this.stopFilmCameraLoop();
     this.eventBubble?.dispose();
     this.eventBubble = null;
