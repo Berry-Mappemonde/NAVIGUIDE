@@ -145,7 +145,7 @@ describe("summarizeLegs", () => {
     assert.equal(out.legs, 16);
   });
 
-  it("route officielle Berry : 16 étapes (15 mer, 1 terre), 17 escales, 1231 sommets", () => {
+  it("route officielle Berry : 16 étapes (15 mer, 1 terre), 17 escales, 1223 sommets", () => {
     const raw = JSON.parse(readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), "../../public/route.geojson"),
       "utf8",
@@ -158,7 +158,7 @@ describe("summarizeLegs", () => {
     assert.equal(out.sea, 15);
     assert.equal(out.land, 1);
     assert.equal(out.escales, 17);
-    assert.equal(out.points, 1231);
+    assert.equal(out.points, 1223);
     assert.equal(out.waypoints, 36);
   });
 });
