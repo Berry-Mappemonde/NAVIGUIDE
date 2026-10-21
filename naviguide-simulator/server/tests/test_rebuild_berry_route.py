@@ -9,8 +9,11 @@ from pathlib import Path
 import pytest
 
 from rebuild_berry_route import (
+    build_manifest,
     dest_targets_public_route,
+    land_hit_counts,
     main,
+    manifest_path_for,
     public_route_file,
     rebuild_collection,
 )
@@ -129,8 +132,15 @@ def test_collection_argument_does_not_touch_the_public_file(tmp_path, monkeypatc
     before = _public_digest()
     calls: list = []
     source = sample_collection()
-    candidate, violations = rebuild_collection(source, _engine(calls))
+    candidate, violations, manifest = rebuild_collection(source, _engine(calls))
     assert violations == []
+    assert [row["from"] for row in manifest] == [
+        "Cayenne",
+        "Halifax",
+        "Saint-Pierre",
+        "Le Cap",
+        "Saint-Maur-des-Fossés",
+    ]
     assert len(calls) == 4
     assert not list(tmp_path.iterdir())
     assert _public_digest() == before
@@ -166,10 +176,53 @@ def test_dry_run_report_is_compliant_and_writes_nothing(tmp_path, monkeypatch, c
     assert "Cayenne ↔ Halifax : aucune" in out
     assert "contraintes ouvertes : aucune" in out
     assert "écriture : non" in out
+    assert "manifeste : non" in out
     assert "verdict : conforme" in out
     assert src.read_text(encoding="utf-8") == raw
     assert _public_digest() == before
     assert list(tmp_path.glob("*.geojson")) == [src]
+    assert list(tmp_path.glob("*.manifest.json")) == []
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def _assert_compliant_manifest(rows: list, written: dict) -> None:
+    from route_engine import route_length_km
+
+    lines = [
+        feature
+        for feature in written["features"]
+        if (feature.get("geometry") or {}).get("type") == "LineString"
+    ]
+    assert len(rows) == len(lines) == 5
+    for row, feature in zip(rows, lines):
+        props = feature.get("properties") or {}
+        coords = feature["geometry"]["coordinates"]
+        assert row["from"] == props.get("from")
+        assert row["to"] == props.get("to")
+        assert row["longueur"] == round(route_length_km(coords), 3)
+        assert row["longueur"] > 0
+        assert row["hitsTerre"] == land_hit_counts(coords)
+        assert isinstance(row["hitsTerre"]["echantillonneur"], int)
+        assert row["hitsTerre"]["oracle"] is None or isinstance(row["hitsTerre"]["oracle"], int)
+        assert row["hitsAires"] == 0
+        assert row["constraintStatus"] is None
+    by_leg = {(row["from"], row["to"]): row for row in rows}
+    assert by_leg[("Cayenne", "Papeete")]["passageNomme"] == "Panama"
+    assert by_leg[("Cayenne", "Papeete")]["jambeHalifax"] is False
+    assert by_leg[("Le Cap", "Melbourne")]["passageNomme"] == "Bonne Espérance"
+    halifax = [row for row in rows if row["jambeHalifax"]]
+    assert {(row["from"], row["to"]) for row in halifax} == {
+        ("Halifax", "Saint-Pierre"),
+        ("Saint-Pierre", "Halifax"),
+    }
+    assert all(row["passageNomme"] is None and row["overlandSaintMaur"] is False for row in halifax)
+    overland = [row for row in rows if row["overlandSaintMaur"]]
+    assert len(overland) == 1
+    assert overland[0]["from"] == "Saint-Maur-des-Fossés"
+    assert overland[0]["to"] == "La Rochelle"
+    assert overland[0]["passageNomme"] is None
+    assert overland[0]["jambeHalifax"] is False
+    assert overland[0]["hitsTerre"]["oracle"] >= 1
 
 
 def test_write_outside_public_keeps_contract(tmp_path, capsys):
@@ -182,9 +235,12 @@ def test_write_outside_public_keeps_contract(tmp_path, capsys):
         ["--src", str(src), "--write", "--dest", str(dest)],
         route_fn=_engine(calls),
     )
-    capsys.readouterr()
+    out = capsys.readouterr().out
+    manifest_path = manifest_path_for(dest)
     assert code == 0
     assert dest.is_file()
+    assert manifest_path.is_file()
+    assert f"manifeste : {manifest_path.name}" in out
     written = json.loads(dest.read_text(encoding="utf-8"))
     assert len(written["features"]) == len(source["features"])
     assert [f for f in written["features"] if (f.get("properties") or {}).get("type") == "overland"] == [
@@ -214,6 +270,9 @@ def test_write_outside_public_keeps_contract(tmp_path, capsys):
     assert halifax[0] is not spm[0]
     assert dest_targets_public_route(dest) is False
     assert _public_digest() == before
+    assert "hitsTerre" not in dest.read_text(encoding="utf-8")
+    rows = json.loads(manifest_path.read_text(encoding="utf-8"))
+    _assert_compliant_manifest(rows, written)
 
 
 @pytest.mark.parametrize(
@@ -246,6 +305,9 @@ def test_suez_or_lost_halifax_exits_nonzero_and_writes_nothing(tmp_path, capsys,
     assert "verdict : refusé" in out
     assert "écriture : non" in out
     assert not dest.exists()
+    assert not manifest_path_for(dest).exists()
+    assert list(tmp_path.glob("*.manifest.json")) == []
+    assert list(tmp_path.glob("*.tmp")) == []
     assert _public_digest() == before
     assert calls
 
@@ -258,16 +320,30 @@ def test_dry_run_refusal_writes_nothing(tmp_path, capsys):
     assert code != 0
     assert "sommet dans la boîte Suez" in out
     assert "écriture : non" in out
+    assert "manifeste : non" in out
     assert _public_digest() == before
     assert list(tmp_path.glob("*.geojson")) == [src]
+    assert list(tmp_path.glob("*.manifest.json")) == []
 
 
 def test_server_startup_and_ci_do_not_launch_the_tool():
     server = Path(__file__).resolve().parents[1]
     root = server.parents[1]
-    assert "rebuild_berry_route" not in (server / "main.py").read_text(encoding="utf-8")
+    main_py = (server / "main.py").read_text(encoding="utf-8")
+    voyage = (server / "voyage_api.py").read_text(encoding="utf-8")
+    assert "rebuild_berry_route" not in main_py
+    assert ".manifest.json" not in main_py
+    assert "hitsTerre" not in main_py
+    assert ".manifest.json" not in voyage
+    assert "hitsTerre" not in voyage
     workflow = root / ".github" / "workflows" / "ci.yml"
     assert "rebuild_berry_route" not in workflow.read_text(encoding="utf-8")
+    for path in (server.parent / "src").rglob("*"):
+        if path.suffix not in {".js", ".jsx"}:
+            continue
+        text = path.read_text(encoding="utf-8")
+        assert ".manifest.json" not in text, path
+        assert "hitsTerre" not in text, path
 
 
 def test_open_constraint_is_not_written(tmp_path, capsys):
@@ -283,6 +359,8 @@ def test_open_constraint_is_not_written(tmp_path, capsys):
     assert "constraintStatus open" in out
     assert "verdict : refusé" in out
     assert not dest.exists()
+    assert not manifest_path_for(dest).exists()
+    assert list(tmp_path.glob("*.tmp")) == []
     assert _public_digest() == before
 
 
@@ -331,3 +409,129 @@ def test_write_public_route_is_refused_before_compute(tmp_path, monkeypatch, cap
         assert public.read_bytes() == before
     assert dest_targets_public_route(link)
     assert dest_targets_public_route(linked_dir / "route.geojson")
+
+
+# Trait qui traverse North Chesterfield dans l'extrait figé : les bouts sont
+# dehors, un point du segment est dedans.
+_NC = [[158.084, -19.82437], [159.189, -19.82437]]
+
+
+def test_land_oracle_sees_iberia_when_shapely_is_present():
+    counts = land_hit_counts([[-9.0, 40.0], [-1.0, 40.0]])
+    assert counts["oracle"] is not None
+    assert counts["oracle"] >= 1
+    assert counts["echantillonneur"] >= 1
+
+
+def test_dateline_jump_is_not_a_north_chesterfield_hit():
+    feature = _line("Est", "Ouest", "maritime", [[170.0, -19.3], [-170.0, -19.3]])
+    rows = build_manifest([feature], [None])
+    assert rows[0]["hitsAires"] == 0
+
+
+def test_frozen_pin_counts_north_chesterfield_and_ignores_the_ocean():
+    nc = _line("Nouméa", "Lifou", "maritime", _NC)
+    hit = build_manifest([nc], [None])
+    assert hit[0]["hitsAires"] >= 1
+    assert hit[0]["passageNomme"] is None
+    ocean = _line("Cayenne", "Papeete", "maritime", [CAYENNE, PANAMA, PAPEETE])
+    clear = build_manifest([ocean], [None])
+    assert clear[0]["hitsAires"] == 0
+    assert clear[0]["passageNomme"] == "Panama"
+
+
+def test_area_hit_is_written_beside_a_compliant_candidate(tmp_path, capsys):
+    collection = sample_collection()
+    collection["features"].append(_line("Nouméa", "Lifou", "maritime", _NC))
+    src = tmp_path / "collection.geojson"
+    src.write_text(json.dumps(collection), encoding="utf-8")
+    dest = tmp_path / "candidat.geojson"
+    base = _engine([])
+
+    def route_fn(start, end, deadline=None):
+        if _key(start) == _key(_NC[0]) and _key(end) == _key(_NC[1]):
+            return _feature(_NC)
+        return base(start, end, deadline=deadline)
+
+    before = _public_digest()
+    code = main(
+        ["--src", str(src), "--write", "--dest", str(dest)],
+        route_fn=route_fn,
+    )
+    capsys.readouterr()
+    assert code == 0
+    rows = json.loads(manifest_path_for(dest).read_text(encoding="utf-8"))
+    nc = next(row for row in rows if row["from"] == "Nouméa" and row["to"] == "Lifou")
+    assert nc["hitsAires"] >= 1
+    assert nc["jambeHalifax"] is False
+    assert nc["overlandSaintMaur"] is False
+    others = [row for row in rows if row is not nc]
+    assert others
+    assert all(row["hitsAires"] == 0 for row in others)
+    assert _public_digest() == before
+
+
+def test_constraint_status_from_the_engine_is_kept_when_not_open(tmp_path, capsys):
+    src = _write_src(tmp_path)
+    dest = tmp_path / "candidat.geojson"
+    base = _engine([])
+
+    def route_fn(start, end, deadline=None):
+        route = base(start, end, deadline=deadline)
+        if _key(start) == _key(HALIFAX) and _key(end) == _key(SPM):
+            route = json.loads(json.dumps(route))
+            route["properties"]["constraintStatus"] = "tenue"
+        return route
+
+    code = main(
+        ["--src", str(src), "--write", "--dest", str(dest)],
+        route_fn=route_fn,
+    )
+    capsys.readouterr()
+    assert code == 0
+    rows = json.loads(manifest_path_for(dest).read_text(encoding="utf-8"))
+    halifax = next(row for row in rows if row["from"] == "Halifax")
+    assert halifax["constraintStatus"] == "tenue"
+    assert all(row["constraintStatus"] is None for row in rows if row["from"] != "Halifax")
+    written = json.loads(dest.read_text(encoding="utf-8"))
+    stored = next(
+        feature
+        for feature in written["features"]
+        if (feature.get("properties") or {}).get("from") == "Halifax"
+    )
+    assert "constraintStatus" not in (stored.get("properties") or {})
+
+
+def test_missing_pin_writes_neither_file(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("rebuild_berry_route.PIN_PATH", tmp_path / "absent.geojson")
+    src = _write_src(tmp_path)
+    dest = tmp_path / "candidat.geojson"
+    before = _public_digest()
+    code = main(
+        ["--src", str(src), "--write", "--dest", str(dest)],
+        route_fn=_engine([]),
+    )
+    out = capsys.readouterr().out
+    assert code != 0
+    assert "extrait d'aires illisible" in out
+    assert "écriture : non" in out
+    assert "manifeste : non" in out
+    assert not dest.exists()
+    assert not manifest_path_for(dest).exists()
+    assert _public_digest() == before
+
+
+def test_write_does_not_call_searoute(tmp_path, monkeypatch, capsys):
+    def boom(*_args, **_kwargs):
+        raise AssertionError("searoute")
+
+    monkeypatch.setattr("route_engine.searoute_with_exact_end", boom)
+    src = _write_src(tmp_path)
+    dest = tmp_path / "candidat.geojson"
+    code = main(
+        ["--src", str(src), "--write", "--dest", str(dest)],
+        route_fn=_engine([]),
+    )
+    capsys.readouterr()
+    assert code == 0
+    assert manifest_path_for(dest).is_file()
