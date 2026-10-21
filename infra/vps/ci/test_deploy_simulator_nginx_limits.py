@@ -101,11 +101,15 @@ class NginxLimitsFileTests(unittest.TestCase):
     def test_hsts_un_an_et_csp_complete_encore_en_report_only(self):
         text = VHOST.read_text(encoding="utf-8")
         self.assertIn(
-            'add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;',
+            'add_header Strict-Transport-Security "max-age=31536000" always;',
             text,
         )
         self.assertIn(
-            "add_header Content-Security-Policy \"default-src 'self';",
+            'add_header Content-Security-Policy "frame-ancestors \'self\' https://*.naviguide.fr https://blueintelligence.online https://www.blueintelligence.online" always;',
+            text,
+        )
+        self.assertIn(
+            "add_header Content-Security-Policy-Report-Only \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'\" always;",
             text,
         )
 
@@ -208,8 +212,6 @@ class DeploySimulatorNginxSequenceTests(unittest.TestCase):
             self.assertEqual(_zone_count(self.etc, zone), 1, zone)
 
     def test_contabo_apres_correctif_manuel_passe_sans_doublon(self):
-        # État de Contabo le 19 oct. : bootstrap sans zones, ancien vhost (avec
-        # zones) actif, redirections posées à la main et actives, certificat.
         self._bootstrap(with_zones=False)
         self._old_vhost(enabled=True)
         self._site("naviguide-443-redirects", "# manuel\n", enabled=True)
