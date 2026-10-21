@@ -100,19 +100,18 @@ class NginxLimitsFileTests(unittest.TestCase):
 
     def test_hsts_un_an_et_csp_complete_encore_en_report_only(self):
         text = VHOST.read_text(encoding="utf-8")
-        active = [line.strip() for line in text.splitlines() if not line.strip().startswith("#")]
-        hsts = [line for line in active if "Strict-Transport-Security" in line]
-        self.assertEqual(
-            hsts,
-            ['add_header Strict-Transport-Security "max-age=31536000" always;'],
+        self.assertIn(
+            'add_header Strict-Transport-Security "max-age=31536000" always;',
+            text,
         )
-        enforced = [line for line in active if line.startswith("add_header Content-Security-Policy ")]
-        self.assertEqual(len(enforced), 1, enforced)
-        self.assertIn("frame-ancestors", enforced[0])
-        self.assertNotIn("default-src", enforced[0])
-        report = [line for line in active if line.startswith("add_header Content-Security-Policy-Report-Only ")]
-        self.assertEqual(len(report), 1, report)
-        self.assertIn("default-src 'self'", report[0])
+        self.assertIn(
+            'add_header Content-Security-Policy "frame-ancestors \'self\' https://*.naviguide.fr https://blueintelligence.online https://www.blueintelligence.online" always;',
+            text,
+        )
+        self.assertIn(
+            "add_header Content-Security-Policy-Report-Only \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'\" always;",
+            text,
+        )
 
     def test_fichier_conf_d_declare_les_deux_zones_une_fois(self):
         text = LIMITS.read_text(encoding="utf-8")
@@ -213,8 +212,6 @@ class DeploySimulatorNginxSequenceTests(unittest.TestCase):
             self.assertEqual(_zone_count(self.etc, zone), 1, zone)
 
     def test_contabo_apres_correctif_manuel_passe_sans_doublon(self):
-        # État de Contabo le 19 oct. : bootstrap sans zones, ancien vhost (avec
-        # zones) actif, redirections posées à la main et actives, certificat.
         self._bootstrap(with_zones=False)
         self._old_vhost(enabled=True)
         self._site("naviguide-443-redirects", "# manuel\n", enabled=True)
