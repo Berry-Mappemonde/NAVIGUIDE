@@ -1,7 +1,7 @@
 # Versions installées par la CI de main (23be7ba8, Python 3.12, run 39069408395).
 # Aucune montée : chaque ligne est le paquet réellement testé. Dependabot
 # continue de proposer des mises à jour sur ces épingles ==.
-fastapi==0.142.2
+fastapi==0.143.2
 starlette==1.8.0
 uvicorn==0.54.0
 httpx==0.28.1
