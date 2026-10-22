@@ -24,13 +24,13 @@ function EscaleRowBody({ name, label, nmLabel, dateLabel, quayLabel, etaLabel, e
   return (
     <>
       <span className="font-medium leading-tight block truncate">{label || name}</span>
-      <span className="text-[9px] text-white/40">
+      <span className="text-[11px] text-white/40">
         {nmLabel}
         {dateLabel}
         {quayLabel}
       </span>
       {etaLabel ? (
-        <span className="text-[9px] text-white/40 block leading-tight" data-testid="eta-range" title={etaTitle || undefined}>{etaLabel}</span>
+        <span className="text-[11px] text-white/40 block leading-tight" data-testid="eta-range" title={etaTitle || undefined}>{etaLabel}</span>
       ) : null}
     </>
   );
@@ -101,13 +101,13 @@ export const EscaleLegend = memo(function EscaleLegend({
 
   return (
     <div className="rounded-lg border border-white/10 bg-slate-800/50 overflow-hidden" data-testid="escale-legend">
-      <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-200">
+      <div className="px-2 py-1 text-[11px] font-semibold text-slate-200">
         {t("escalesList")}
       </div>
       <div
         data-testid="escale-regime-legend"
         aria-label={t("regimeLegend")}
-        className="flex items-center gap-2 px-2 pb-1 text-[9px] text-slate-400"
+        className="flex items-center gap-2 px-2 pb-1 text-[11px] text-slate-400"
       >
         {REGIME_PILLS.map(([id, key, tip]) => (
           <span

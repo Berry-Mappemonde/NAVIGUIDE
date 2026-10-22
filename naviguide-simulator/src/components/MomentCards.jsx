@@ -45,7 +45,7 @@ function CardText({ text, unsupported, className, pending }) {
         )
       ))}
       {pending ? (
-        <span className="ml-1 text-[10px] text-white/45">{t("momentStoryPending")}</span>
+        <span className="ml-1 text-[11px] text-white/45">{t("momentStoryPending")}</span>
       ) : null}
     </p>
   );
@@ -60,7 +60,7 @@ function TruthBadge({ truth }) {
     ? t("truthBadgeUnverifiable")
     : t("truthBadgeVerified", { date: date || "—" });
   return (
-    <div data-testid="truth-badge" className="mt-1 text-[10px] text-white/55">
+    <div data-testid="truth-badge" className="mt-1 text-[11px] text-white/55">
       {label}
     </div>
   );
@@ -80,7 +80,7 @@ function CardLinks({ entity, onFocus, t, showLabels = true }) {
           data-testid="moment-focus"
           title={t("briefingSeeOnMap")}
           aria-label={t("momentSeeOnMap")}
-          className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold border border-sky-400/40 bg-sky-600/20 text-sky-100 hover:bg-sky-600/40"
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-semibold border border-sky-400/40 bg-sky-600/20 text-sky-100 hover:bg-sky-600/40"
         >
           <LocateFixed size={11} />
           {showLabels ? t("momentSeeOnMap") : null}
@@ -95,7 +95,7 @@ function CardLinks({ entity, onFocus, t, showLabels = true }) {
           data-testid={`moment-link-${l.kind}`}
           title={l.kind === "site" ? `${t("briefingOfficialSheet")} — ${l.host || ""}` : t("briefingGoogleMaps")}
           aria-label={l.kind === "site" ? t("briefingOfficialSheet") : t("briefingGoogleMaps")}
-          className="px-1.5 py-0.5 rounded-md text-[10px] border border-white/10 bg-white/5 text-sky-200 hover:text-white hover:bg-white/10 no-underline"
+          className="px-1.5 py-0.5 rounded-md text-[11px] border border-white/10 bg-white/5 text-sky-200 hover:text-white hover:bg-white/10 no-underline"
         >
           {l.kind === "site"
             ? (showLabels ? `↗ ${l.host || t("briefingOfficialSheet")}` : "↗")
@@ -137,7 +137,7 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
     <div data-testid="moment-now" data-type={shown.type} data-kind={shown.kind} data-inline={inline ? "1" : "0"} className={frame} style={style}>
       <div className="flex items-center gap-2 min-w-0">
         <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${alert ? "bg-amber-400 animate-pulse" : "bg-cyan-300"}`} />
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-white/70 min-w-0 truncate">
+        <span className="text-[11px] font-semibold text-white/70 min-w-0 truncate">
           {t("momentNowTitle")}
           <span className={`ml-1.5 ${alert ? "text-amber-300" : "text-cyan-200"}`}>
             · {alert ? t("momentNowAlert") : t("momentNowDecision")}
@@ -145,7 +145,7 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
           {ahead ? <span className="ml-1.5 text-white/50 normal-case tracking-normal">· {ahead}</span> : null}
         </span>
         <div className="ml-auto flex items-center gap-1 flex-shrink-0">
-          {left > 0 ? <span className="text-[9px] text-white/45">{t("momentLeft", { n: left })}</span> : null}
+          {left > 0 ? <span className="text-[11px] text-white/45">{t("momentLeft", { n: left })}</span> : null}
           {/* Pas de bouton « Écouter » ici (revue du 20 sept.) : la carte NOW se lit d'un coup d'œil, la voix est celle du récit. */}
           <button
             type="button"
@@ -158,7 +158,7 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
           </button>
         </div>
       </div>
-      {shown.title ? <div className="mt-1 text-[10px] font-semibold text-sky-200">{shown.title}</div> : null}
+      {shown.title ? <div className="mt-1 text-[11px] font-semibold text-sky-200">{shown.title}</div> : null}
       <CardText
         text={shown.text}
         unsupported={shown.truth?.unsupported}
@@ -195,7 +195,7 @@ export const FreeMomentBlock = memo(function FreeMomentBlock({ card, left = 0, o
   return (
     <div data-testid="moment-free" data-kind={shown.kind} data-inline={inline ? "1" : "0"} className={frame} style={style}>
       <div className="flex items-center gap-2 min-w-0">
-        <span className="text-[9px] font-semibold uppercase tracking-wider text-white/55 min-w-0 truncate">
+        <span className="text-[11px] font-semibold text-white/55 min-w-0 truncate">
           {t("momentFreeTitle")}
         </span>
         <div className="ml-auto flex items-center gap-1 flex-shrink-0">
@@ -205,14 +205,14 @@ export const FreeMomentBlock = memo(function FreeMomentBlock({ card, left = 0, o
             onClick={onNext}
             data-testid="moment-next"
             title={t("momentNext")}
-            className="flex items-center gap-0.5 px-1.5 h-6 rounded-md text-[10px] text-white/70 hover:text-white hover:bg-white/10"
+            className="flex items-center gap-0.5 px-1.5 h-6 rounded-md text-[11px] text-white/70 hover:text-white hover:bg-white/10"
           >
-            {left > 0 ? <span className="text-[9px] text-white/45">{left}</span> : null}
+            {left > 0 ? <span className="text-[11px] text-white/45">{left}</span> : null}
             <ChevronRight size={12} />
           </button>
         </div>
       </div>
-      {shown.title ? <div className="mt-1 text-[10px] font-semibold text-sky-200">{shown.title}</div> : null}
+      {shown.title ? <div className="mt-1 text-[11px] font-semibold text-sky-200">{shown.title}</div> : null}
       <CardText
         text={shown.text}
         unsupported={shown.truth?.unsupported}

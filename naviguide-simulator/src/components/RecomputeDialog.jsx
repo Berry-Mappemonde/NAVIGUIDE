@@ -29,7 +29,7 @@ export function RecomputeDialog({ draft, busy, onAccept, onReject }) {
         </p>
         <div className="grid grid-cols-2 gap-2 text-[11px] mb-3">
           <div className="rounded-lg bg-slate-800/80 p-2" data-testid="route-compare-today">
-            <div className="text-white/40 uppercase text-[9px]">{todayLabel}</div>
+            <div className="text-white/40 text-[11px]">{todayLabel}</div>
             <div>{vs.distance_nm ?? "—"} nm</div>
             <div>{hoursLabel(vs.hours)}</div>
             {best && Number.isFinite(Number(best.alertsBefore)) ? (
@@ -40,7 +40,7 @@ export function RecomputeDialog({ draft, busy, onAccept, onReject }) {
             ))}
           </div>
           <div className="rounded-lg bg-cyan-950/50 p-2 border border-cyan-500/30" data-testid="route-compare-advised">
-            <div className="text-cyan-300/70 uppercase text-[9px]">{advisedLabel}</div>
+            <div className="text-cyan-300/70 text-[11px]">{advisedLabel}</div>
             <div>{draft.distance_nm ?? "—"} nm</div>
             <div>{hoursLabel(draft.hours)}</div>
             {best && Number.isFinite(Number(best.alertsAfter)) ? (
@@ -52,7 +52,7 @@ export function RecomputeDialog({ draft, busy, onAccept, onReject }) {
           </div>
         </div>
         {draft.constraints ? (
-          <p data-testid="recompute-constraints" className="text-[10px] text-amber-200/80 mb-2">
+          <p data-testid="recompute-constraints" className="text-[11px] text-amber-200/80 mb-2">
             {draft.constraints.source === "skipper"
               ? t("recomputeConstraintsSkipper", {
                 wind: draft.constraints.windMaxKt != null ? `${Math.round(draft.constraints.windMaxKt)} kn` : "—",
@@ -62,7 +62,7 @@ export function RecomputeDialog({ draft, busy, onAccept, onReject }) {
           </p>
         ) : null}
         <RouteAdviceText draft={draft} />
-        <p className="text-[10px] text-white/45 mb-3">{t("recomputeHint")}</p>
+        <p className="text-[11px] text-white/45 mb-3">{t("recomputeHint")}</p>
         <div className="flex gap-2">
           <button
             type="button"

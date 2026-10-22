@@ -5,7 +5,7 @@ import { groupJournalByDay } from "../engine/journalFormat.js";
 function DayBlock({ group }) {
   return (
     <div data-testid="journal-day">
-      <div className="text-[10px] font-semibold text-blue-200 mt-1">{group.label}</div>
+      <div className="text-[11px] font-semibold text-blue-200 mt-1">{group.label}</div>
       <ul className="mt-0.5 space-y-0.5">
         {group.entries.map((e) => (
           <li key={e.id || `${group.day}-${e.time}-${e.kind}`} className="flex gap-1.5 text-[11px] text-slate-300 leading-snug" data-kind={e.kind}>
@@ -38,13 +38,13 @@ export const JournalPanel = memo(function JournalPanel({ journal, loading = fals
       <summary className="cursor-pointer select-none px-2 py-1.5 flex items-center gap-2 text-[11px] font-semibold text-slate-200">
         <span>📓</span>
         <span>{t("journalTitle")}</span>
-        <span className="ml-auto text-[10px] font-normal text-slate-400">
+        <span className="ml-auto text-[11px] font-normal text-slate-400">
           {loading && !journal ? "…" : (today ? today.label : t("journalCount", { n: count }))}
         </span>
       </summary>
       <div className="px-2 pb-2 space-y-1.5">
         {error && !journal ? (
-          <p className="text-[10px] text-amber-300/90">{t("journalUnavailable")}</p>
+          <p className="text-[11px] text-amber-300/90">{t("journalUnavailable")}</p>
         ) : null}
         {journal && groups.length === 0 ? (
           <p className="text-[11px] text-slate-400">{t("journalEmpty")}</p>
@@ -52,7 +52,7 @@ export const JournalPanel = memo(function JournalPanel({ journal, loading = fals
         {today ? <DayBlock group={today} /> : null}
         {earlier.length ? (
           <details className="mt-1" data-testid="journal-earlier">
-            <summary className="cursor-pointer select-none text-[10px] text-slate-400 hover:text-slate-200">
+            <summary className="cursor-pointer select-none text-[11px] text-slate-400 hover:text-slate-200">
               {t("journalEarlier", { n: earlier.length })}
             </summary>
             <div className="max-h-48 overflow-y-auto sidebar-scroll pr-1">
@@ -60,7 +60,7 @@ export const JournalPanel = memo(function JournalPanel({ journal, loading = fals
             </div>
           </details>
         ) : null}
-        <p className="text-[9px] text-slate-500 leading-snug">{t("journalHint")}</p>
+        <p className="text-[11px] text-slate-500 leading-snug">{t("journalHint")}</p>
       </div>
     </details>
   );

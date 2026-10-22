@@ -201,7 +201,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     >
         <div className={`naviguide-film-bar overflow-hidden rounded-xl border ${drawing ? "border-emerald-400/30" : "border-white/15"} bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm`}>
         <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0 font-semibold leading-tight text-[12px] truncate">
+          <div className="min-w-0 font-serif font-semibold leading-tight text-[12px] truncate">
             {drawing ? (
               <>
                 <span className="text-emerald-200">{t("drawingInProgress")}</span>
@@ -221,9 +221,9 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     </span>
                   ) : (
                     <>
-                      <span className="text-blue-200">{displayStopName(fromName, lang, t) || "—"}</span>
+                      <span className="text-white">{displayStopName(fromName, lang, t) || "—"}</span>
                       <span className="text-white/35 mx-1">→</span>
-                      <span className="text-cyan-200">{displayStopName(toName, lang, t) || "—"}</span>
+                      <span className="text-white">{displayStopName(toName, lang, t) || "—"}</span>
                     </>
                   )}
                 </span>
@@ -368,8 +368,9 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               <button
                 type="button"
                 onClick={onCinema}
+                aria-pressed={Boolean(cinema)}
                 className={`flex items-center gap-1 h-6 px-1.5 rounded-md text-[9px] font-semibold border whitespace-nowrap ${
-                  cinema ? "bg-cyan-700/70 border-cyan-400/50" : "bg-white/5 border-white/10 hover:bg-white/10"
+                  cinema ? "bg-slate-600/80 border-slate-400/50" : "bg-white/5 border-white/10 hover:bg-white/10"
                 }`}
                 title={t("cinemaTooltip")}
               >
@@ -386,7 +387,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 aria-label={filmFullscreen ? t("filmFullscreenExit") : t("filmFullscreen")}
                 className={`flex items-center justify-center w-6 h-6 rounded-md border ${
                   filmFullscreen
-                    ? "bg-sky-700/70 border-sky-300/40"
+                    ? "bg-slate-600/80 border-slate-400/50"
                     : "bg-white/5 border-white/10 hover:bg-white/10"
                 }`}
                 title={t("filmFullscreenTitle")}
@@ -449,7 +450,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                       }}
                       className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed ${
                         (replay.style || "raw") === id
-                          ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
+                          ? "bg-slate-600/80 text-white border border-slate-400/50"
                           : "text-white/70 hover:text-white border border-transparent"
                       }`}
                     >
@@ -478,7 +479,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     title={tip || undefined}
                     onClick={() => onView(id)}
                     className={`px-1.5 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${
-                      view === id ? "bg-cyan-700/70 text-cyan-50 border border-cyan-400/50" : "text-white/70 hover:text-white border border-transparent"
+                      view === id ? "bg-slate-600/80 text-white border border-slate-400/50" : "text-white/70 hover:text-white border border-transparent"
                     }`}
                   >
                     {label}
@@ -520,7 +521,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                       disabled={!replay.canStart}
                       aria-disabled={!replay.canStart}
                       data-testid="replay-start"
-                      className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 hover:bg-sky-600/70 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed"
+                      className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-600 border-sky-500/70 hover:bg-sky-700 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed"
                       title={replay.canStart ? t("replayStartTitle") : t("replayPreparing")}
                     >
                       ↺ {t("replayStart")}
@@ -569,7 +570,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                   disabled
                   aria-disabled="true"
                   data-testid="replay-start"
-                  className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-600 border-sky-500/70 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed"
                   title={t("replayPreparing")}
                 >
                   ↺ {t("replayStart")}

@@ -45,12 +45,12 @@ function AdviceCompare({ compare, todayLabel, advisedLabel }) {
     <div className="grid grid-cols-2 gap-1.5 mt-1.5" data-testid="plan-advice-compare">
       {[["today", compare.today, todayLabel], ["advised", compare.advised, advisedLabel]].map(([id, col, label]) => (
         <div key={id} className={`rounded-md p-1.5 ${id === "advised" ? "bg-cyan-950/40 border border-cyan-500/30" : "bg-slate-900/60"}`} data-testid={`plan-advice-col-${id}`}>
-          <div className="text-[9px] uppercase text-white/40">{label}</div>
-          <div className="text-[10px] tabular-nums">{col.distance}</div>
-          <div className="text-[10px] tabular-nums">{col.seaDays}</div>
-          <div className="text-[10px] tabular-nums">{col.alerts}</div>
+          <div className="text-[11px] text-white/40">{label}</div>
+          <div className="text-[11px] tabular-nums">{col.distance}</div>
+          <div className="text-[11px] tabular-nums">{col.seaDays}</div>
+          <div className="text-[11px] tabular-nums">{col.alerts}</div>
           {col.stops.map((line, i) => (
-            <div key={i} className="text-[10px] text-white/80">{line}</div>
+            <div key={i} className="text-[11px] text-white/80">{line}</div>
           ))}
         </div>
       ))}
@@ -80,12 +80,12 @@ export const PlanReview = memo(function PlanReview({
   const body = (
       <div className={startOpen ? "" : "border-t border-white/5"}>
         {summary ? (
-          <p className="px-2 pt-1 text-[9px] text-white/45 leading-snug">{summary}</p>
+          <p className="px-2 pt-1 text-[11px] text-white/45 leading-snug">{summary}</p>
         ) : null}
         <div
           data-testid="plan-review-regime-legend"
           aria-label={t("regimeLegend")}
-          className="flex items-center gap-2.5 px-2 pt-1 text-[9px] text-white/45 leading-tight"
+          className="flex items-center gap-2.5 px-2 pt-1 text-[11px] text-white/45 leading-tight"
         >
           {[["hindcast", "clockRegimeHindcast", "regimeTooltipHindcast"], ["forecast", "clockRegimeForecast", "regimeTooltipForecast"], ["climatology", "clockRegimeClimatology", "regimeTooltipClimatology"]].map(([id, key, tip]) => (
             <span key={id} className="inline-flex items-center gap-1" title={t(tip)} aria-label={t(key)}>
@@ -106,49 +106,49 @@ export const PlanReview = memo(function PlanReview({
               <div className="flex items-baseline gap-1.5 min-w-0">
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${LEVEL_DOT[leg.level] || LEVEL_DOT.info}`} />
                 <span className="text-[11px] font-medium text-white leading-tight truncate">{leg.title}</span>
-                <span className={`ml-auto px-1 py-0.5 rounded border text-[9px] leading-tight shrink-0 tabular-nums ${alertsTint(Number(leg.alertCount))}`} data-testid="plan-review-leg-alerts">
+                <span className={`ml-auto px-1 py-0.5 rounded border text-[11px] leading-tight shrink-0 tabular-nums ${alertsTint(Number(leg.alertCount))}`} data-testid="plan-review-leg-alerts">
                   {t("planReviewLegAlerts", { n: Number.isFinite(Number(leg.alertCount)) ? String(leg.alertCount) : "0" })}
                 </span>
-                <span className="text-[9px] text-white/40 shrink-0 tabular-nums" data-testid="plan-review-leg-dates">{leg.dates}</span>
+                <span className="text-[11px] text-white/40 shrink-0 tabular-nums" data-testid="plan-review-leg-dates">{leg.dates}</span>
               </div>
               {leg.antiShipping?.lanes?.length ? (
                 <p
                   data-testid="plan-review-lanes"
-                  className={`text-[9px] mt-0.5 pl-3 ${Number(leg.antiShipping.score) < 0.55 ? "text-amber-200" : "text-white/50"}`}
+                  className={`text-[11px] mt-0.5 pl-3 ${Number(leg.antiShipping.score) < 0.55 ? "text-amber-200" : "text-white/50"}`}
                 >
                   {t("planReviewLanes", { names: leg.antiShipping.lanes.join(", ") })}
                 </p>
               ) : null}
               {etaLabel ? (
-                <p className="text-[9px] text-white/40 mt-0.5 pl-3" data-testid="plan-review-eta-range" title={etaTitle || undefined}>{etaLabel}</p>
+                <p className="text-[11px] text-white/40 mt-0.5 pl-3" data-testid="plan-review-eta-range" title={etaTitle || undefined}>{etaLabel}</p>
               ) : null}
               <div className="flex flex-wrap gap-1 mt-1">
                 {leg.badges.map((b, i) => (
-                  <span key={`${b.kind}-${i}`} className={`px-1.5 py-0.5 rounded-md border text-[9px] leading-tight ${BADGE[b.level] || BADGE.info}`}>{b.text}</span>
+                  <span key={`${b.kind}-${i}`} className={`px-1.5 py-0.5 rounded-md border text-[11px] leading-tight ${BADGE[b.level] || BADGE.info}`}>{b.text}</span>
                 ))}
               </div>
               {leg.notes.map((n, i) => (
-                <p key={i} className="text-[10px] text-amber-100/80 leading-snug mt-1 break-words [overflow-wrap:anywhere]">{n}</p>
+                <p key={i} className="text-[11px] text-amber-100/80 leading-snug mt-1 break-words [overflow-wrap:anywhere]">{n}</p>
               ))}
             </li>
             );
           })}
-          {!legs.length && !loading ? <li className="px-2 py-1.5 text-[10px] text-white/50">{t("planReviewEmpty")}</li> : null}
+          {!legs.length && !loading ? <li className="px-2 py-1.5 text-[11px] text-white/50">{t("planReviewEmpty")}</li> : null}
         </ul>
         <div
           data-testid="plan-review-comment"
           data-source={source}
           className="px-2 py-1.5 border-t border-white/10"
         >
-          <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-300">{t("planReviewCommentTitle")}</p>
+          <p className="text-[11px] font-semibold text-slate-300">{t("planReviewCommentTitle")}</p>
           {sentence ? (
-            <p className="text-[10px] text-white/80 leading-snug mt-1 break-words [overflow-wrap:anywhere]" data-testid="plan-advice-sentence">{sentence}</p>
+            <p className="text-[11px] text-white/80 leading-snug mt-1 break-words [overflow-wrap:anywhere]" data-testid="plan-advice-sentence">{sentence}</p>
           ) : null}
           {pills ? (
             <div className="flex flex-wrap gap-1 mt-1" data-testid="plan-advice-pills">
-              <span className="px-1.5 py-0.5 rounded-md border border-rose-400/50 text-rose-100 text-[9px]">{pills.alerts}</span>
-              <span className="px-1.5 py-0.5 rounded-md border border-white/15 text-white/80 text-[9px]">{pills.nm}</span>
-              <span className="px-1.5 py-0.5 rounded-md border border-white/15 text-white/80 text-[9px]">{pills.days}</span>
+              <span className="px-1.5 py-0.5 rounded-md border border-rose-400/50 text-rose-100 text-[11px]">{pills.alerts}</span>
+              <span className="px-1.5 py-0.5 rounded-md border border-white/15 text-white/80 text-[11px]">{pills.nm}</span>
+              <span className="px-1.5 py-0.5 rounded-md border border-white/15 text-white/80 text-[11px]">{pills.days}</span>
             </div>
           ) : null}
           {best ? (
@@ -157,7 +157,7 @@ export const PlanReview = memo(function PlanReview({
               data-testid="plan-advice-apply"
               disabled={applyOff}
               onClick={() => { if (applyOff) return; setApplied(true); onApply?.(); }}
-              className="mt-1.5 w-full rounded-md bg-cyan-700/80 py-1 text-[10px] font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-white/40"
+              className="mt-1.5 w-full rounded-md bg-cyan-700/80 py-1 text-[11px] font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-white/40"
             >
               {t("planReviewApply")}
             </button>
@@ -174,13 +174,13 @@ export const PlanReview = memo(function PlanReview({
   return (
     <details className={shell} data-testid="plan-review">
       <summary className="cursor-pointer select-none list-none px-2 py-1 flex items-center gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-200">{t("planReviewTitle")}</span>
-        <span className="ml-auto text-[9px] text-white/50">
+        <span className="text-[11px] font-semibold text-slate-200">{t("planReviewTitle")}</span>
+        <span className="ml-auto text-[11px] text-white/50">
           {loading ? t("planReviewLoading") : error ? t("planReviewError") : (
             alerts ? `${alerts} ${t("planReviewAlerts")}` : watches ? `${watches} ${t("planReviewWatch")}` : t("planReviewOk")
           )}
         </span>
-        <span className="text-white/40 text-[10px] transition-transform group-open:rotate-90">›</span>
+        <span className="text-white/40 text-[11px] transition-transform group-open:rotate-90">›</span>
       </summary>
       {body}
     </details>

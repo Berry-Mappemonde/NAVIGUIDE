@@ -97,7 +97,7 @@ function NumberRow({ id, label, value, unit, field, forced, onChange, onReset, r
     <div className="flex items-center justify-between gap-2 py-1 border-b border-slate-700/40 last:border-0">
       <label htmlFor={`${testPrefix}-${id}`} className={`text-[11px] ${canReset ? "text-amber-200" : "text-slate-400"}`}>
         {label}
-        {hint ? <span className="ml-1 text-[9px] text-slate-500">{hint}</span> : null}
+        {hint ? <span className="ml-1 text-[11px] text-slate-500">{hint}</span> : null}
       </label>
       <span className="flex items-center gap-1">
         <input
@@ -126,7 +126,7 @@ function NumberRow({ id, label, value, unit, field, forced, onChange, onReset, r
             canReset ? "border-amber-500/60" : "border-slate-700"
           }`}
         />
-        <span className="text-[10px] text-slate-500 w-10">{unit}</span>
+        <span className="text-[11px] text-slate-500 w-10">{unit}</span>
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
@@ -161,7 +161,7 @@ function Pills({ items, value, onPick, label, disabled = false, testPrefix, rend
           aria-pressed={value === it}
           data-testid={`${testPrefix}-${it}`}
           className={`flex-1 px-2 py-1 rounded-full text-xs font-bold transition-colors ${
-            value === it ? "bg-sky-600 text-white" : "text-slate-400 hover:text-white"
+            value === it ? "bg-slate-600 text-white ring-1 ring-slate-400" : "text-slate-400 hover:text-white"
           } ${disabled ? "cursor-not-allowed hover:text-slate-400" : ""}`}
         >
           {render(it)}
@@ -279,7 +279,7 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
       {/* Caractère, confort, anticipation — sur trois lignes compactes. */}
       <div className="mt-2 space-y-2">
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">{t("skipperProfileTitle")}</div>
+          <div className="text-[11px] text-slate-500 mb-1">{t("skipperProfileTitle")}</div>
           <Pills
             items={PROFILES}
             value={profile}
@@ -288,22 +288,22 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
             testPrefix="skipper-profile"
             render={(p) => t(PROFILE_KEY[p])}
           />
-          <p className="mt-1 text-[10px] text-sky-200 italic leading-snug" data-testid="skipper-phrase">
+          <p className="mt-1 text-[11px] text-slate-300 italic leading-snug" data-testid="skipper-phrase">
             {lang === "en" ? orders.phrase.en : orders.phrase.fr}
           </p>
-          <p className="text-[10px] text-slate-300 leading-snug" data-testid="skipper-orders-line">
+          <p className="text-[11px] text-slate-300 leading-snug" data-testid="skipper-orders-line">
             {lang === "en"
               ? `Hs ${num(T.hsAlertM, lang, 1)} m · depth ${T.depthAlertM} m`
               : `Hs ${num(T.hsAlertM, lang, 1)} m · fond ${T.depthAlertM} m`}
           </p>
-          <p className="text-[10px] text-slate-400 leading-snug" data-testid="skipper-coastal-rule">
+          <p className="text-[11px] text-slate-400 leading-snug" data-testid="skipper-coastal-rule">
             {t("skipperCoastalRule")}
           </p>
         </div>
         <div data-testid="skipper-comfort">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] uppercase tracking-wide text-slate-500">{t("skipperComfortTitle")}</span>
-            <span className="text-[10px] text-slate-400" data-testid="skipper-comfort-effect">
+            <span className="text-[11px] text-slate-500">{t("skipperComfortTitle")}</span>
+            <span className="text-[11px] text-slate-400" data-testid="skipper-comfort-effect">
               {`+${num(T.windShiftKt, lang)} kn / ${num(T.windShiftDeg, lang)}° · Hs ${num(T.hsAlertM, lang, 1)} m`}
             </span>
           </div>
@@ -316,13 +316,13 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
             render={(c) => t(COMFORT_KEY[c])}
           />
           {comfortPhrase && (
-            <p className="mt-1 text-[10px] text-sky-200 italic leading-snug" data-testid="skipper-comfort-phrase">{comfortPhrase}</p>
+            <p className="mt-1 text-[11px] text-slate-300 italic leading-snug" data-testid="skipper-comfort-phrase">{comfortPhrase}</p>
           )}
         </div>
         <div data-testid="skipper-horizon">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] uppercase tracking-wide text-slate-500">{t("skipperSuivreWindow")}</span>
-            <span className="text-[10px] text-slate-400">
+            <span className="text-[11px] text-slate-500">{t("skipperSuivreWindow")}</span>
+            <span className="text-[11px] text-slate-400">
               {isSuivre
                 ? `${num(orders.budget.maxNm, lang)} nm · ${orders.budget.maxPearls} ${t("skipperPearls")}`
                 : t("skipperHorizonLeg")}
@@ -342,7 +342,7 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
 
       {/* S7 — « Chiffres », repliés eux aussi. */}
       <details className="mt-2 group/expert" data-testid="skipper-expert">
-        <summary className="cursor-pointer select-none text-[10px] uppercase tracking-wide text-slate-500 hover:text-slate-300 list-none flex items-center justify-between">
+        <summary className="cursor-pointer select-none text-[11px] text-slate-500 hover:text-slate-300 list-none flex items-center justify-between">
           <span>{t("skipperExpertTitle")}{expertCount ? ` · ${expertCount}` : ""}</span>
           <span className="text-slate-600 group-open/expert:rotate-90 transition-transform">›</span>
         </summary>
@@ -365,7 +365,7 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
       </details>
 
       {suggest && (
-        <div className="mt-2 text-[10px] rounded-md px-2 py-1 border border-amber-500/30 text-amber-200 leading-snug" data-testid="skipper-suggest">
+        <div className="mt-2 text-[11px] rounded-md px-2 py-1 border border-amber-500/30 text-amber-200 leading-snug" data-testid="skipper-suggest">
           <span>{t("skipperSuggestCoastal", { loa: num(boat.loaM, lang), draft: num(boat.draftM, lang, 1) })}</span>
           <span className="ml-2 inline-flex gap-1">
             <button type="button" onClick={onAcceptSuggest} className="px-1.5 rounded bg-amber-500/20 hover:bg-amber-500/40 text-amber-100">{t("skipperSuggestYes")}</button>
@@ -379,7 +379,7 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
           type="button"
           onClick={onReset}
           data-testid="skipper-reset"
-          className="mt-2 text-[10px] text-slate-500 underline underline-offset-2 hover:text-slate-300"
+          className="mt-2 text-[11px] text-slate-500 underline underline-offset-2 hover:text-slate-300"
         >
           {t("skipperResetBerry")}
         </button>

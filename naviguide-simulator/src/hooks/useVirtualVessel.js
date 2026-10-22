@@ -323,7 +323,7 @@ export function RouteAdviceText({ draft }) {
     "p",
     {
       "data-testid": "route-advice-text",
-      className: "text-[10px] text-cyan-100/85 leading-snug mb-2",
+      className: "text-[11px] text-cyan-100/85 leading-snug mb-2",
     },
     text,
   );

@@ -109,7 +109,7 @@ function LayersDrawer({ tracerLayout, layersOn, t, maritimeLayers }) {
       >
         <span className="text-[11px] font-semibold text-slate-200">{t("layersTitle")}</span>
         <span className="flex items-center gap-2">
-          <span className="text-[10px] text-slate-500">{layersOn ? t("layersOn", { n: layersOn }) : t("layersNone")}</span>
+          <span className="text-[11px] text-slate-500">{layersOn ? t("layersOn", { n: layersOn }) : t("layersNone")}</span>
           <span className={`text-slate-500 transition-transform ${open ? "rotate-90" : ""}`}>›</span>
         </span>
       </summary>
@@ -135,7 +135,7 @@ function formatPolarKn(kn, lang) {
 function PolarSpeedGrid({ raw, lang }) {
   return (
     <div className="mt-2 overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-900/40" data-testid="polar-table">
-      <table className="w-full text-[10px]">
+      <table className="w-full text-[11px]">
         <thead>
           <tr className="bg-slate-800/80 border-b border-slate-700/60">
             <th className="py-1 px-1 text-left text-slate-300">TWA</th>
@@ -281,11 +281,11 @@ function Toggle({ labelLeft, labelRight, active, onChange }) {
       aria-label={label}
       aria-pressed={active}
       title={label}
-      className={`w-10 h-5 rounded-full relative transition-colors ${active ? "bg-sky-500" : "bg-slate-600"}`}
+      className="w-10 h-5 rounded-full relative transition-colors bg-slate-600"
     >
       <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${active ? "left-5" : "left-0.5"}`} />
       <span className="sr-only">{label}</span>
-      <span aria-hidden="true" className={`absolute top-1 ${active ? "left-1" : "right-1"} text-white/90`}>
+      <span aria-hidden="true" className={`absolute top-1 ${active ? "left-1" : "right-1"} text-white`}>
         {active ? <Sun size={11} /> : <Moon size={11} />}
       </span>
     </button>
@@ -295,7 +295,7 @@ function Toggle({ labelLeft, labelRight, active, onChange }) {
 function SectionTitle({ children, right = null }) {
   return (
     <div className="flex items-center justify-between gap-2 mb-1">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{children}</span>
+      <span className="text-[11px] font-semibold text-slate-400">{children}</span>
       {right}
     </div>
   );
@@ -312,26 +312,26 @@ function DrawingBox({ drawing }) {
   const refusal = drawingRefusalPhrase(drawing?.notice, t);
   return (
     <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 overflow-hidden" data-testid="drawing-box">
-      <div className="px-3 py-1.5 text-[10px] text-slate-200 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="drawing-summary">
+      <div className="px-3 py-1.5 text-[11px] text-slate-200 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="drawing-summary">
         <span className="font-semibold text-emerald-200">{t("drawingInProgress")}</span>
         <span>· {pts.length} {t("drawingPoints")}</span>
         <span>· {Number(drawing?.distanceNm || 0).toLocaleString()} nm</span>
       </div>
       {refusal ? (
-        <p className="px-3 py-1 text-[10px] leading-snug text-rose-100 border-t border-white/5">{refusal}</p>
+        <p className="px-3 py-1 text-[11px] leading-snug text-rose-100 border-t border-white/5">{refusal}</p>
       ) : null}
       {pts.length ? (
         <ol className="max-h-36 overflow-y-auto sidebar-scroll border-t border-white/5">
           {pts.map((p, i) => (
             <li key={`${p.lat}-${p.lon}-${i}`} className="px-2 py-1 text-[11px] text-white/80 border-t border-white/5 first:border-t-0 flex items-baseline gap-1">
-              <span className="text-[9px] text-emerald-300/80 w-4 shrink-0">{i + 1}</span>
+              <span className="text-[11px] text-emerald-300/80 w-4 shrink-0">{i + 1}</span>
               <span className="truncate">{p.name}</span>
-              <span className="ml-auto text-[9px] text-white/40 tabular-nums shrink-0">{p.lat.toFixed(2)}° · {wrapLon(p.lon).toFixed(2)}°</span>
+              <span className="ml-auto text-[11px] text-white/40 tabular-nums shrink-0">{p.lat.toFixed(2)}° · {wrapLon(p.lon).toFixed(2)}°</span>
             </li>
           ))}
         </ol>
       ) : refusal ? null : (
-        <p className="px-3 pb-2 text-[10px] text-slate-400 leading-snug">{drawing?.message || t("drawStart")}</p>
+        <p className="px-3 pb-2 text-[11px] text-slate-400 leading-snug">{drawing?.message || t("drawStart")}</p>
       )}
     </div>
   );
@@ -367,7 +367,7 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
     <div className="space-y-2">
     {drawing ? <DrawingBox drawing={drawing} /> : null}
     <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 overflow-hidden" data-testid="expedition-box">
-      <div className="px-3 py-1.5 text-[10px] text-slate-300 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="route-summary" title={distanceHint}>
+      <div className="px-3 py-1.5 text-[11px] text-slate-300 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="route-summary" title={distanceHint}>
         <span className="font-semibold text-white cursor-help border-b border-dotted border-white/30" title={distanceHint}>{nm}</span>
         <span>· {summary.legs} {legsWord} ({summary.sea} {t("routeSeaShort")}, {summary.land} {t("routeLandShort")})</span>
         <span>· {summary.escales} {escalesWord}</span>
@@ -378,7 +378,7 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
       {ampTraffic.line ? (
         <div
           data-testid="amp-traffic-line"
-          className={`px-3 py-1 text-[10px] leading-snug border-t ${
+          className={`px-3 py-1 text-[11px] leading-snug border-t ${
             ampTraffic.kind === "forbidden-inside"
               ? "border-rose-500/30 text-rose-200 bg-rose-950/30"
               : "border-amber-500/30 text-amber-100 bg-amber-950/20"
@@ -529,7 +529,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
 
       <div
         className={`naviguide-sidebar-panel absolute top-0 right-0 h-full z-20 flex flex-col bg-slate-900/97
-          border-l-2 border-sky-400/40 shadow-2xl transition-transform duration-300
+          border-l border-slate-700/60 shadow-2xl transition-transform duration-300
           ${open ? "translate-x-0" : "translate-x-full"}`}
         style={{ width: 320, visibility: open ? "visible" : "hidden" }}
       >
@@ -537,8 +537,8 @@ export const ToolsSidebar = memo(function ToolsSidebar({
           <div className="px-4 py-3 border-b border-slate-700/60">
             <div className="flex items-center justify-between gap-3">
               <div className="flex bg-slate-800 rounded-full p-0.5 gap-0.5">
-                <button type="button" data-testid="lang-en" onClick={() => switchLang("en")} aria-label={t("language")} title={t("language")} className={`px-3 py-1 rounded-full text-xs font-bold ${lang === "en" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}>EN</button>
-                <button type="button" data-testid="lang-fr" onClick={() => switchLang("fr")} aria-label={t("language")} title={t("language")} className={`px-3 py-1 rounded-full text-xs font-bold ${lang === "fr" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}>FR</button>
+                <button type="button" data-testid="lang-en" onClick={() => switchLang("en")} aria-label={t("language")} title={t("language")} className={`px-3 py-1 rounded-full text-xs font-bold ${lang === "en" ? "bg-slate-600 text-white ring-1 ring-slate-400" : "text-slate-400 hover:text-white"}`}>EN</button>
+                <button type="button" data-testid="lang-fr" onClick={() => switchLang("fr")} aria-label={t("language")} title={t("language")} className={`px-3 py-1 rounded-full text-xs font-bold ${lang === "fr" ? "bg-slate-600 text-white ring-1 ring-slate-400" : "text-slate-400 hover:text-white"}`}>FR</button>
               </div>
               <Toggle labelLeft={t("dark")} labelRight={t("light")} active={isLightMode} onChange={onLightModeChange} />
             </div>
@@ -582,7 +582,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                 onClick={handleExportGeoJSON}
                 className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold border ${
                   canExport
-                    ? "border-sky-500/40 bg-sky-900/30 text-sky-100 hover:bg-sky-800/40"
+                    ? "border-slate-600 bg-slate-800/60 text-white hover:bg-white/10"
                     : "border-slate-700 bg-slate-800/40 text-slate-500 cursor-not-allowed"
                 }`}
               >
@@ -597,8 +597,8 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                 className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold border ${
                   canExport
                     ? (exportMode === "suivre"
-                      ? "border-teal-400 bg-teal-700 text-white hover:bg-teal-800"
-                      : "border-teal-500/40 bg-teal-900/30 text-teal-100 hover:bg-teal-800/40")
+                      ? "border-sky-500/70 bg-transparent text-sky-300 hover:bg-white/5"
+                      : "border-slate-600 bg-slate-800/60 text-white hover:bg-white/10")
                     : "border-slate-700 bg-slate-800/40 text-slate-500 cursor-not-allowed"
                 }`}
               >
@@ -643,7 +643,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                     }}
                     onClick={() => polarFileInputRef.current?.click()}
                     data-testid="polar-drop"
-                    className={`mt-1.5 flex items-center justify-center gap-1.5 px-2 py-1 border border-dashed rounded-lg cursor-pointer text-[10px]
+                    className={`mt-1.5 flex items-center justify-center gap-1.5 px-2 py-1 border border-dashed rounded-lg cursor-pointer text-[11px]
                       ${isDragging ? "border-blue-400 bg-blue-900/20 text-blue-200" : "border-slate-600 hover:border-slate-500 text-slate-400"}`}
                   >
                     <input
@@ -663,7 +663,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                       onClick={() => setShowPolar((v) => !v)}
                       aria-expanded={showPolar}
                       data-testid="polar-show"
-                      className="mt-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                      className="mt-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
                     >
                       {showPolar ? t("polarHide") : t("polarShow")}
                     </button>
@@ -707,7 +707,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                     onClick={() => setShowPolar((v) => !v)}
                     aria-expanded={showPolar}
                     data-testid="polar-show"
-                    className="ml-auto flex-shrink-0 px-2 py-0.5 rounded-md text-[10px] font-semibold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                    className="ml-auto flex-shrink-0 px-2 py-0.5 rounded-md text-[11px] font-semibold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
                   >
                     {showPolar ? t("polarHide") : t("polarShow")}
                   </button>
@@ -732,7 +732,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                 }}
                 onClick={() => polarFileInputRef.current?.click()}
                 data-testid="polar-drop"
-                className={`mt-1.5 flex items-center justify-center gap-1.5 px-2 py-1 border border-dashed rounded-lg cursor-pointer text-[10px]
+                className={`mt-1.5 flex items-center justify-center gap-1.5 px-2 py-1 border border-dashed rounded-lg cursor-pointer text-[11px]
                   ${isDragging ? "border-blue-400 bg-blue-900/20 text-blue-200" : "border-slate-600 hover:border-slate-500 text-slate-400"}`}
               >
                 <input

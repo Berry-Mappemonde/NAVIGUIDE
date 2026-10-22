@@ -74,8 +74,8 @@ function BerryCard({
     onRouteSwitchToBerry();
   };
 
-  const pillOn = "flex-1 min-w-0 px-2 py-1.5 rounded-lg text-[10px] font-semibold leading-tight border border-blue-400/60 bg-blue-600/30 text-blue-100";
-  const pillOff = "flex-1 min-w-0 px-2 py-1.5 rounded-lg text-[10px] font-semibold leading-tight border border-slate-600/50 bg-slate-800/50 text-slate-400 hover:text-white hover:border-slate-500";
+  const pillOn = "flex-1 min-w-0 px-2 py-1.5 rounded-lg text-[11px] font-semibold leading-tight border border-blue-400/60 bg-blue-600/30 text-blue-100";
+  const pillOff = "flex-1 min-w-0 px-2 py-1.5 rounded-lg text-[11px] font-semibold leading-tight border border-slate-600/50 bg-slate-800/50 text-slate-400 hover:text-white hover:border-slate-500";
 
   // Les pilules Berry-Mappemonde | <ma route> sont toujours rendues en
   // Tracer (VIEW_TRACER) ou pendant un tracé ; sans route perso, la seconde
@@ -118,7 +118,7 @@ function BerryCard({
               disabled={importBusy}
               onClick={() => importRef.current?.click()}
               className="flex-1 flex items-center justify-center gap-1.5 bg-slate-700/40 hover:bg-slate-700/70
-                border border-slate-500/50 rounded-lg px-2 py-1.5 text-[10px] text-slate-200 font-semibold
+                border border-slate-500/50 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-semibold
                 disabled:opacity-40 disabled:pointer-events-none"
             >
               {t("importRoute")}
@@ -143,7 +143,7 @@ function BerryCard({
                 onDrawCancel?.();
               }}
               className="flex-1 flex items-center justify-center gap-1.5 bg-slate-700/40 hover:bg-slate-700/70
-                border border-slate-500/50 rounded-lg px-2 py-1.5 text-[10px] text-slate-200 font-semibold"
+                border border-slate-500/50 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-semibold"
             >
               {t("cancel")}
             </button>
@@ -152,7 +152,7 @@ function BerryCard({
               onClick={handleFinishDrawing}
               disabled={!canFinishDraw}
               className="flex-1 flex items-center justify-center gap-1.5 bg-green-600/30 hover:bg-green-600/50
-                border border-green-500/50 rounded-lg px-2 py-1.5 text-[10px] text-green-300 font-semibold
+                border border-green-500/50 rounded-lg px-2 py-1.5 text-[11px] text-green-300 font-semibold
                 disabled:opacity-40 disabled:pointer-events-none"
             >
               <CheckCircle size={11} /> {t("finish")}
@@ -162,7 +162,7 @@ function BerryCard({
           <button
             onClick={startOrResumeDraw}
             className="w-full flex items-center justify-center gap-1.5 bg-violet-600/20 hover:bg-violet-600/40
-              border border-violet-500/40 rounded-lg px-2 py-1.5 text-[10px] text-violet-300 font-medium"
+              border border-violet-500/40 rounded-lg px-2 py-1.5 text-[11px] text-violet-300 font-medium"
           >
             <Pencil size={11} /> {t("drawOwnRoute")}
           </button>
@@ -176,7 +176,7 @@ function BerryCard({
   // bas reste tel quel en Suivre).
   if (isTracerView && !hasCustom) {
     return (
-      <div className="rounded-lg px-2 py-1.5 border border-blue-500/70 bg-blue-950/30">
+      <div className="rounded-lg px-2 py-1.5 border border-slate-700/60 bg-slate-800/40">
         {switcher}
         <button
           type="button"
@@ -184,7 +184,7 @@ function BerryCard({
           disabled={importBusy}
           onClick={() => importRef.current?.click()}
           className="w-full flex items-center justify-center gap-1.5 bg-slate-700/40 hover:bg-slate-700/70
-            border border-slate-500/50 rounded-lg px-2 py-1.5 text-[10px] text-slate-200 font-semibold
+            border border-slate-500/50 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-semibold
             disabled:opacity-40 disabled:pointer-events-none"
         >
           {t("importRoute")}
@@ -212,13 +212,13 @@ function BerryCard({
 
   if (cardMode === "file-active") {
     return (
-      <div className="rounded-lg px-2 py-1.5 border border-blue-500/70 bg-blue-950/30">
+      <div className="rounded-lg px-2 py-1.5 border border-slate-700/60 bg-slate-800/40">
         {switcher}
         <div className="flex gap-1">
           <button
             type="button"
             onClick={startOrResumeDraw}
-            className="flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-lg text-[10px]
+            className="flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-lg text-[11px]
               font-medium border border-violet-500/40 text-violet-300 hover:bg-violet-600/20"
           >
             <Pencil size={10} /> {canContinueDraw ? t("continueDrawing") : t("drawOwnRoute")}
@@ -227,7 +227,7 @@ function BerryCard({
             type="button"
             onClick={handleDelete}
             title={t("deleteCustomRoute")}
-            className="flex items-center justify-center px-2 py-1 rounded-lg text-[10px]
+            className="flex items-center justify-center px-2 py-1 rounded-lg text-[11px]
               border border-red-500/40 text-red-300 hover:bg-red-600/20"
           >
             <Trash2 size={10} />
@@ -238,17 +238,17 @@ function BerryCard({
   }
 
   return (
-    <div className="rounded-lg px-2 py-1.5 border border-blue-500/70 bg-blue-950/30">
+    <div className="rounded-lg px-2 py-1.5 border border-slate-700/60 bg-slate-800/40">
       {switcher}
       <button
         onClick={() => { setCardMode("draw-mode"); onDrawStart(); }}
         title={t("drawOwnRoute")}
-        className="w-full flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-blue-900/30 cursor-pointer"
+        className="w-full flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-white/5 cursor-pointer"
       >
         <img src={BERRY_LOGO} alt="Berry-Mappemonde" className="h-7 w-auto object-contain rounded flex-shrink-0" style={{ maxWidth: 48 }} /> {/* pragma: allowlist secret */}
         <div className="text-left">
-          <div className="text-white font-bold text-[11px] leading-tight tracking-wide">{t("berryMappemonde")}</div> {/* pragma: allowlist secret */}
-          <div className="text-[10px] text-violet-300">{t("drawOwnRoute")}</div>
+          <div className="text-white font-bold text-[11px] leading-tight">{t("berryMappemonde")}</div> {/* pragma: allowlist secret */}
+          <div className="text-[11px] text-violet-300">{t("drawOwnRoute")}</div>
         </div>
       </button>
     </div>
@@ -307,7 +307,7 @@ function BriefingText({ segments, onFocus, t }) {
             title={l.kind === "site" ? `${t("briefingOfficialSheet")} — ${l.host || ""}` : t("briefingGoogleMaps")}
             aria-label={l.kind === "site" ? t("briefingOfficialSheet") : t("briefingGoogleMaps")}
             data-testid={`briefing-link-${l.kind}`}
-            className="ml-0.5 text-[10px] text-sky-300/80 hover:text-white align-baseline no-underline"
+            className="ml-0.5 text-[11px] text-sky-300/80 hover:text-white align-baseline no-underline"
           >
             {l.kind === "site" ? "↗" : "◎"}
           </a>
@@ -413,7 +413,7 @@ export const Sidebar = memo(function Sidebar({
         <div className="px-2.5 pt-1.5 pb-1.5 border-b border-slate-700/60 flex-shrink-0">
           <div className="flex items-center gap-2 mb-1">
             <img src={NAVIGUIDE_LOGO} alt={t("brandTitle")} className="h-9 w-9 object-contain drop-shadow" />
-            <span className="text-white font-bold text-[11px] leading-tight tracking-wide">{t("brandTitle")}</span>
+            <span className="font-serif text-white font-semibold text-[16px] leading-tight">{t("brandTitle")}</span>
           </div>
 
           <BerryCard
@@ -442,8 +442,8 @@ export const Sidebar = memo(function Sidebar({
 
         <div className="naviguide-sidebar-drawer-body flex-1 min-h-0 overflow-hidden flex flex-col px-2.5 py-1.5 gap-1.5">
           {!isCockpit && !plan && !briefingLoading && !isDrawing && (
-            <div className="rounded-lg border border-blue-700/30 bg-blue-950/20 p-2 shrink-0">
-              <div className="text-[10px] font-semibold text-blue-300 mb-1">{t("gettingStarted")}</div>
+            <div className="rounded-lg border border-slate-700/60 bg-slate-800/40 p-2 shrink-0">
+              <div className="text-[11px] font-semibold text-slate-200 mb-1">{t("gettingStarted")}</div>
               <p className="text-[11px] text-slate-400 leading-snug">{t("gettingStartedText")}</p>
             </div>
           )}
@@ -456,11 +456,11 @@ export const Sidebar = memo(function Sidebar({
           {isDrawing && drawing ? (
             <div data-testid="drawing-points" className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-2 min-w-0 shrink-0">
               <div className="flex items-center gap-2 mb-1">
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200 leading-snug flex-1">
+                <div className="text-[11px] font-semibold text-emerald-200 leading-snug flex-1">
                   {t("drawingInProgress")} · {drawing.points.length} {t("drawingPoints")} · {Number(drawing.distanceNm || 0).toLocaleString(lang === "en" ? "en-US" : "fr-FR")} nm
                 </div>
                 {drawing.points.length && onDrawUndo ? (
-                  <button type="button" onClick={onDrawUndo} className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/5 border border-white/10 hover:bg-white/10 text-white/80" title={t("drawingUndoLast")}>
+                  <button type="button" onClick={onDrawUndo} className="text-[11px] px-1.5 py-0.5 rounded-md bg-white/5 border border-white/10 hover:bg-white/10 text-white/80" title={t("drawingUndoLast")}>
                     ↶ {t("drawingUndoLast")}
                   </button>
                 ) : null}
@@ -469,20 +469,20 @@ export const Sidebar = memo(function Sidebar({
                 <ol className="space-y-0.5">
                   {drawing.points.map((p, i) => (
                     <li key={`${p.lat}-${p.lon}-${i}`} className="text-[11px] text-slate-100 leading-snug flex items-baseline gap-1">
-                      <span className="text-[9px] text-emerald-300/80 w-4 shrink-0">{i + 1}</span>
+                      <span className="text-[11px] text-emerald-300/80 w-4 shrink-0">{i + 1}</span>
                       <span className="truncate">{p.name}</span>
-                      <span className="ml-auto text-[9px] text-slate-500 tabular-nums shrink-0">{p.lat.toFixed(2)}° · {wrapLon(p.lon).toFixed(2)}°</span>
+                      <span className="ml-auto text-[11px] text-slate-500 tabular-nums shrink-0">{p.lat.toFixed(2)}° · {wrapLon(p.lon).toFixed(2)}°</span>
                     </li>
                   ))}
                 </ol>
               ) : (
-                <p className="text-[10px] text-slate-400 leading-snug">{drawing.message}</p>
+                <p className="text-[11px] text-slate-400 leading-snug">{drawing.message}</p>
               )}
             </div>
           ) : null}
 
           {officialFallback && (
-            <p className="text-[10px] text-amber-300/90 border border-amber-500/30 rounded-md px-2 py-1 shrink-0">
+            <p className="text-[11px] text-amber-300/90 border border-amber-500/30 rounded-md px-2 py-1 shrink-0">
               {t("searouteUnavailable")}
             </p>
           )}
@@ -527,12 +527,12 @@ export const Sidebar = memo(function Sidebar({
               <div data-testid="here-product">
                 <div data-testid="briefing" className="sim-box-ici min-w-0 overflow-x-hidden h-auto">
                   {briefingTitle ? (
-                    <div className="text-[10px] font-semibold text-blue-200 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
+                    <div className="text-[11px] font-semibold text-slate-100 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
                       {briefingTitle}
                     </div>
                   ) : null}
                   {skipperNotice ? (
-                    <p data-testid="skipper-notice" className="text-[10px] font-semibold text-cyan-300 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
+                    <p data-testid="skipper-notice" className="text-[11px] font-semibold text-cyan-300 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
                       {skipperNotice}
                     </p>
                   ) : null}
@@ -551,9 +551,9 @@ export const Sidebar = memo(function Sidebar({
               </div>
             ) : null}
             story={(Array.isArray(story) ? story : []).some(Boolean) ? (
-              <div data-testid="expedition-story" data-replay={storyReplay ? "1" : "0"} className={`sim-box-story !h-auto rounded-lg border p-2 min-w-0 ${storyReplay ? "border-sky-400/60 bg-sky-900/40" : "border-sky-500/25 bg-sky-950/30"}`}>
-                <div className="text-[10px] font-semibold text-sky-200 leading-snug">
-                  {t("storyTitle")}{storyReplay ? <span className="ml-1 text-[9px] font-normal text-sky-100/80">· {t("replayBadge")}</span> : null}
+              <div data-testid="expedition-story" data-replay={storyReplay ? "1" : "0"} className={`sim-box-story !h-auto rounded-lg border p-2 min-w-0 ${storyReplay ? "border-sky-400/60 bg-sky-900/40" : "border-slate-700/60 bg-slate-800/40"}`}>
+                <div className="text-[11px] font-semibold text-slate-100 leading-snug">
+                  {t("storyTitle")}{storyReplay ? <span className="ml-1 text-[11px] font-normal text-sky-100/80">· {t("replayBadge")}</span> : null}
                 </div>
                 {(Array.isArray(story) ? story : []).filter(Boolean).map((paragraph, i, rows) => {
                   const current = storyReplay && i === rows.length - 1;
