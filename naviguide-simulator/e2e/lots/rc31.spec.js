@@ -49,7 +49,7 @@ const WAIT = /le catamaran attend à Cayenne|the catamaran waits at Cayenne/i;
 const SIDE_BOAT = /second voilier|second sailing boat/i;
 const RESUME_SEA = /reprend la mer|départ vers Papeete|puts to sea again|departure for Papeete/i;
 const FALSE_AIR = /s'envole de Cayenne pour Saint-Pierre|flies from Cayenne to Saint-Pierre/i;
-const SIDE_COLOR = "#67e8f9";
+const SIDE_COLOR = "#79c3d1";
 
 async function muteVoice(page) {
   const listen = page.getByTestId("listen");
@@ -259,7 +259,7 @@ test("Épisode SPM : quatre chapitres, second bateau, catamaran à Cayenne", asy
       if (!layer.getLatLngs || !layer.options) return;
       const color = norm(layer.options.color);
       const dash = layer.options.dashArray;
-      if (color === "#67e8f9" || color === "rgb(103,232,249)") stats.sideLines += 1;
+      if (color === "#79c3d1" || color === "rgb(121,195,209)") stats.sideLines += 1;
       if (dash && (color === "#111111" || color === "#111" || color === "black" || color === "rgb(17,17,17)")) {
         stats.airDash += 1;
       }

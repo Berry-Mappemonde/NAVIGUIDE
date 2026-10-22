@@ -86,9 +86,9 @@ describe("EscaleLegend — pastilles de régime", () => {
     assert.match(src, /data-testid="escale-regime-legend"/);
     assert.match(src, /data-testid="escale-regime-pill"/);
     assert.match(src, /data-regime=\{id\}/);
-    assert.match(colors, /hindcast:\s*"#2dd4bf"/);
-    assert.match(colors, /forecast:\s*"#38bdf8"/);
-    assert.match(colors, /climatology:\s*"#c084fc"/);
+    assert.match(colors, /hindcast:\s*"#e86aab"/);
+    assert.match(colors, /forecast:\s*"#5b9bd5"/);
+    assert.match(colors, /climatology:\s*"#a99bc9"/);
     assert.doesNotMatch(src, /<button/);
   });
 });

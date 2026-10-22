@@ -1,17 +1,89 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
-html, body, #root { height: 100%; margin: 0; overflow: hidden; }
+/*
+ * Chart: the palette of a nautical chart. Navy chrome, one magenta for the
+ * sailed course, links, the selection and the main action, and three status
+ * colours. The Tailwind families the components already use are mapped onto
+ * these five scales, so every panel follows without renaming a class:
+ *   slate → chart (neutrals)
+ *   sky, blue, cyan, indigo, violet, purple, fuchsia, pink → course (accent)
+ *   emerald, green, teal, lime → ok
+ *   amber, orange, yellow → caution
+ *   red, rose → danger
+ * Fonts are self-hosted (main.jsx): Atkinson Hyperlegible Next for the
+ * interface, Source Serif 4 for place names and titles (`font-serif`).
+ */
+:root {
+  --chart-50: #f2f6f8; --chart-100: #e8eff2; --chart-200: #d3dee3; --chart-300: #b6c7cf;
+  --chart-400: #9cb0ba; --chart-500: #8aa0ac; --chart-600: #557080; --chart-700: #2e4a5e;
+  --chart-800: #1b3448; --chart-900: #112635; --chart-950: #0a1a26;
+  --course-50: #fceef5; --course-100: #f9dceb; --course-200: #f5bcd9; --course-300: #f28bc0;
+  --course-400: #e86aab; --course-500: #e0589f; --course-600: #b8287f; --course-700: #96206a;
+  --course-800: #6b1c50; --course-900: #431a38; --course-950: #2c2440;
+  --ok-50: #e8f6f2; --ok-100: #cfece4; --ok-200: #a8dccd; --ok-300: #7fcab6;
+  --ok-400: #56b8a1; --ok-500: #3e9e88; --ok-600: #2f826f; --ok-700: #256858;
+  --ok-800: #1d5045; --ok-900: #163c35; --ok-950: #0f2a26;
+  --caution-50: #fdf6e9; --caution-100: #faeacc; --caution-200: #f4d49b; --caution-300: #eebf70;
+  --caution-400: #e6a84b; --caution-500: #d18e2f; --caution-600: #b07424; --caution-700: #8a5a1d;
+  --caution-800: #664318; --caution-900: #4a3214; --caution-950: #2e2010;
+  --danger-50: #fdeeec; --danger-100: #fad8d4; --danger-200: #f5b5ae; --danger-300: #ef9086;
+  --danger-400: #e8695d; --danger-500: #d44f43; --danger-600: #b23b31; --danger-700: #8e2f28;
+  --danger-800: #6a2420; --danger-900: #4a1c19; --danger-950: #2e1312;
+}
 
-.leaflet-container { background: #0f172a; font: inherit; z-index: 0; --map-control-h: 20px; }
+@theme inline {
+  --font-sans: "Atkinson Hyperlegible Next Variable", "Atkinson Hyperlegible Next", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Source Serif 4 Variable", "Source Serif 4", ui-serif, Georgia, serif;
+
+  --color-slate-50: var(--chart-50); --color-slate-100: var(--chart-100); --color-slate-200: var(--chart-200); --color-slate-300: var(--chart-300); --color-slate-400: var(--chart-400); --color-slate-500: var(--chart-500); --color-slate-600: var(--chart-600); --color-slate-700: var(--chart-700); --color-slate-800: var(--chart-800); --color-slate-900: var(--chart-900); --color-slate-950: var(--chart-950);
+  --color-sky-50: var(--course-50); --color-sky-100: var(--course-100); --color-sky-200: var(--course-200); --color-sky-300: var(--course-300); --color-sky-400: var(--course-400); --color-sky-500: var(--course-500); --color-sky-600: var(--course-600); --color-sky-700: var(--course-700); --color-sky-800: var(--course-800); --color-sky-900: var(--course-900); --color-sky-950: var(--course-950);
+  --color-blue-50: var(--course-50); --color-blue-100: var(--course-100); --color-blue-200: var(--course-200); --color-blue-300: var(--course-300); --color-blue-400: var(--course-400); --color-blue-500: var(--course-500); --color-blue-600: var(--course-600); --color-blue-700: var(--course-700); --color-blue-800: var(--course-800); --color-blue-900: var(--course-900); --color-blue-950: var(--course-950);
+  --color-cyan-50: var(--course-50); --color-cyan-100: var(--course-100); --color-cyan-200: var(--course-200); --color-cyan-300: var(--course-300); --color-cyan-400: var(--course-400); --color-cyan-500: var(--course-500); --color-cyan-600: var(--course-600); --color-cyan-700: var(--course-700); --color-cyan-800: var(--course-800); --color-cyan-900: var(--course-900); --color-cyan-950: var(--course-950);
+  --color-indigo-50: var(--course-50); --color-indigo-100: var(--course-100); --color-indigo-200: var(--course-200); --color-indigo-300: var(--course-300); --color-indigo-400: var(--course-400); --color-indigo-500: var(--course-500); --color-indigo-600: var(--course-600); --color-indigo-700: var(--course-700); --color-indigo-800: var(--course-800); --color-indigo-900: var(--course-900); --color-indigo-950: var(--course-950);
+  --color-violet-50: var(--course-50); --color-violet-100: var(--course-100); --color-violet-200: var(--course-200); --color-violet-300: var(--course-300); --color-violet-400: var(--course-400); --color-violet-500: var(--course-500); --color-violet-600: var(--course-600); --color-violet-700: var(--course-700); --color-violet-800: var(--course-800); --color-violet-900: var(--course-900); --color-violet-950: var(--course-950);
+  --color-purple-50: var(--course-50); --color-purple-100: var(--course-100); --color-purple-200: var(--course-200); --color-purple-300: var(--course-300); --color-purple-400: var(--course-400); --color-purple-500: var(--course-500); --color-purple-600: var(--course-600); --color-purple-700: var(--course-700); --color-purple-800: var(--course-800); --color-purple-900: var(--course-900); --color-purple-950: var(--course-950);
+  --color-fuchsia-50: var(--course-50); --color-fuchsia-100: var(--course-100); --color-fuchsia-200: var(--course-200); --color-fuchsia-300: var(--course-300); --color-fuchsia-400: var(--course-400); --color-fuchsia-500: var(--course-500); --color-fuchsia-600: var(--course-600); --color-fuchsia-700: var(--course-700); --color-fuchsia-800: var(--course-800); --color-fuchsia-900: var(--course-900); --color-fuchsia-950: var(--course-950);
+  --color-pink-50: var(--course-50); --color-pink-100: var(--course-100); --color-pink-200: var(--course-200); --color-pink-300: var(--course-300); --color-pink-400: var(--course-400); --color-pink-500: var(--course-500); --color-pink-600: var(--course-600); --color-pink-700: var(--course-700); --color-pink-800: var(--course-800); --color-pink-900: var(--course-900); --color-pink-950: var(--course-950);
+  --color-emerald-50: var(--ok-50); --color-emerald-100: var(--ok-100); --color-emerald-200: var(--ok-200); --color-emerald-300: var(--ok-300); --color-emerald-400: var(--ok-400); --color-emerald-500: var(--ok-500); --color-emerald-600: var(--ok-600); --color-emerald-700: var(--ok-700); --color-emerald-800: var(--ok-800); --color-emerald-900: var(--ok-900); --color-emerald-950: var(--ok-950);
+  --color-green-50: var(--ok-50); --color-green-100: var(--ok-100); --color-green-200: var(--ok-200); --color-green-300: var(--ok-300); --color-green-400: var(--ok-400); --color-green-500: var(--ok-500); --color-green-600: var(--ok-600); --color-green-700: var(--ok-700); --color-green-800: var(--ok-800); --color-green-900: var(--ok-900); --color-green-950: var(--ok-950);
+  --color-teal-50: var(--ok-50); --color-teal-100: var(--ok-100); --color-teal-200: var(--ok-200); --color-teal-300: var(--ok-300); --color-teal-400: var(--ok-400); --color-teal-500: var(--ok-500); --color-teal-600: var(--ok-600); --color-teal-700: var(--ok-700); --color-teal-800: var(--ok-800); --color-teal-900: var(--ok-900); --color-teal-950: var(--ok-950);
+  --color-lime-50: var(--ok-50); --color-lime-100: var(--ok-100); --color-lime-200: var(--ok-200); --color-lime-300: var(--ok-300); --color-lime-400: var(--ok-400); --color-lime-500: var(--ok-500); --color-lime-600: var(--ok-600); --color-lime-700: var(--ok-700); --color-lime-800: var(--ok-800); --color-lime-900: var(--ok-900); --color-lime-950: var(--ok-950);
+  --color-amber-50: var(--caution-50); --color-amber-100: var(--caution-100); --color-amber-200: var(--caution-200); --color-amber-300: var(--caution-300); --color-amber-400: var(--caution-400); --color-amber-500: var(--caution-500); --color-amber-600: var(--caution-600); --color-amber-700: var(--caution-700); --color-amber-800: var(--caution-800); --color-amber-900: var(--caution-900); --color-amber-950: var(--caution-950);
+  --color-orange-50: var(--caution-50); --color-orange-100: var(--caution-100); --color-orange-200: var(--caution-200); --color-orange-300: var(--caution-300); --color-orange-400: var(--caution-400); --color-orange-500: var(--caution-500); --color-orange-600: var(--caution-600); --color-orange-700: var(--caution-700); --color-orange-800: var(--caution-800); --color-orange-900: var(--caution-900); --color-orange-950: var(--caution-950);
+  --color-yellow-50: var(--caution-50); --color-yellow-100: var(--caution-100); --color-yellow-200: var(--caution-200); --color-yellow-300: var(--caution-300); --color-yellow-400: var(--caution-400); --color-yellow-500: var(--caution-500); --color-yellow-600: var(--caution-600); --color-yellow-700: var(--caution-700); --color-yellow-800: var(--caution-800); --color-yellow-900: var(--caution-900); --color-yellow-950: var(--caution-950);
+  --color-red-50: var(--danger-50); --color-red-100: var(--danger-100); --color-red-200: var(--danger-200); --color-red-300: var(--danger-300); --color-red-400: var(--danger-400); --color-red-500: var(--danger-500); --color-red-600: var(--danger-600); --color-red-700: var(--danger-700); --color-red-800: var(--danger-800); --color-red-900: var(--danger-900); --color-red-950: var(--danger-950);
+  --color-rose-50: var(--danger-50); --color-rose-100: var(--danger-100); --color-rose-200: var(--danger-200); --color-rose-300: var(--danger-300); --color-rose-400: var(--danger-400); --color-rose-500: var(--danger-500); --color-rose-600: var(--danger-600); --color-rose-700: var(--danger-700); --color-rose-800: var(--danger-800); --color-rose-900: var(--danger-900); --color-rose-950: var(--danger-950);
+
+  /* Two radii (controls 6 px, containers 8 px) and short, low shadows: no glow. */
+  --radius-lg: 0.375rem;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.5rem;
+  --shadow-lg: 0 4px 12px rgb(4 14 22 / 0.28);
+  --shadow-xl: 0 8px 20px rgb(4 14 22 / 0.32);
+  --shadow-2xl: 0 10px 28px rgb(4 14 22 / 0.36);
+}
+
+html, body, #root { height: 100%; margin: 0; overflow: hidden; }
+body { font-variant-numeric: tabular-nums; }
+
+.leaflet-container { background: #0e2232; font: inherit; z-index: 0; --map-control-h: 20px; }
 /* Zoom rapide : une tuile pas encore là reste couleur mer, pas un carré blanc. */
 .leaflet-container .leaflet-tile-pane,
 .leaflet-container .leaflet-map-pane,
-.leaflet-container img.leaflet-tile { background-color: #0f172a; }
+.leaflet-container img.leaflet-tile { background-color: #0e2232; }
 .leaflet-fade-anim .leaflet-tile { transition: none; }
 .light-mode .leaflet-container,
 .light-mode .leaflet-container .leaflet-tile-pane,
-.light-mode .leaflet-container img.leaflet-tile { background-color: #d6d3cd; }
+.light-mode .leaflet-container img.leaflet-tile { background-color: #c8dce6; }
+/* Base map tinted to the chart palette (filters from src/map/chartTiles.js). */
+.leaflet-container img.leaflet-tile[src*="World_Dark_Gray_Base"] { filter: url(#ng-chart-night); }
+.leaflet-container img.leaflet-tile[src*="World_Light_Gray_Base"] { filter: url(#ng-chart-day); }
+/* Leaflet hides fractional-zoom seams with plus-lighter blending, which the tint breaks.
+   Tinted base tiles blend normally, and overlap by 1 px only while the zoom is fractional
+   (chartTiles.js marks the container), so integer zooms stay pixel-sharp. */
+.leaflet-container img.leaflet-tile[src*="_Gray_Base"] { mix-blend-mode: normal; background-color: transparent; }
+.leaflet-container.ng-frac-zoom img.leaflet-tile[src*="_Gray_Base"] { width: 257px !important; height: 257px !important; }
 
 /*
  * Map credits stay inside the visible map: right of the tools panel's edge
@@ -60,7 +132,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   flex: 0 1 auto;
   overflow: visible;
 }
-.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-attribution a { color: #7dd3fc; }
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-attribution a { color: var(--course-200); }
 
 /*
  * Visible map under 260 px: the credits fold into an « ⓘ » button (bottom
@@ -97,9 +169,9 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   width: max-content;
   padding: 6px 26px 6px 10px;
   border-radius: 6px;
-  background: rgba(15, 23, 42, 0.96);
-  color: #e2e8f0;
-  font-size: 11px;
+  background: rgb(17 38 53 / 0.96);
+  color: var(--chart-100);
+  font-size: 12px;
   line-height: 1.45;
   text-align: right;
   white-space: normal;
@@ -107,7 +179,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   overflow: auto;
 }
 .naviguide-attrib-popover[hidden] { display: none; }
-.naviguide-attrib-popover a { color: #7dd3fc; }
+.naviguide-attrib-popover a { color: var(--course-300); }
 .naviguide-attrib-popover-close {
   position: absolute;
   top: 2px;
@@ -189,18 +261,20 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 .briefing-focus-pin { background: none !important; border: none !important; }
 .briefing-focus-dot {
   position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 9999px;
-  background: rgba(125, 211, 252, 0.95); border: 2px solid #0f172a;
-  box-shadow: 0 0 0 4px rgba(125, 211, 252, 0.35), 0 0 12px rgba(125, 211, 252, 0.9);
+  background: var(--course-500); border: 2px solid var(--chart-950);
+  box-shadow: 0 0 0 4px rgb(224 88 159 / 0.35);
   animation: briefing-focus-pulse 1.6s ease-out infinite;
 }
 .briefing-focus-label {
   position: absolute; left: 12px; top: -10px; white-space: nowrap;
-  font-size: 11px; font-weight: 600; color: #e0f2fe; background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(125, 211, 252, 0.5); border-radius: 6px; padding: 1px 6px;
+  font-size: 12px; font-weight: 600; color: var(--chart-100); background: rgb(17 38 53 / 0.92);
+  border: 1px solid var(--course-500); border-radius: 6px; padding: 1px 6px;
 }
+.light-mode .briefing-focus-label { background: rgb(255 255 255 / 0.95); color: var(--ng-light-fg); border-color: var(--ng-light-accent); }
+.light-mode .briefing-focus-dot { border-color: #fff; background: var(--ng-light-accent); }
 @keyframes briefing-focus-pulse {
-  0% { box-shadow: 0 0 0 4px rgba(125, 211, 252, 0.45), 0 0 12px rgba(125, 211, 252, 0.9); }
-  100% { box-shadow: 0 0 0 14px rgba(125, 211, 252, 0), 0 0 12px rgba(125, 211, 252, 0.9); }
+  0% { box-shadow: 0 0 0 4px rgb(224 88 159 / 0.45); }
+  100% { box-shadow: 0 0 0 14px rgb(224 88 159 / 0); }
 }
 .grib-barb { pointer-events: none; }
 .marker-rotatable {
@@ -208,63 +282,66 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   transform-origin: 50% 50%;
   transition: transform 0.35s ease;
 }
-.plane-icon { filter: drop-shadow(0 0 8px rgba(250, 250, 255, 0.95)); }
+.plane-icon { filter: drop-shadow(0 0 1px rgb(10 26 38 / 0.9)) drop-shadow(0 1px 2px rgb(10 26 38 / 0.6)); }
 .catamaran-divicon--side img,
-.catamaran-divicon--side svg { filter: drop-shadow(0 0 5px rgba(34, 211, 238, 0.9)); }
+.catamaran-divicon--side svg { filter: drop-shadow(0 0 1.5px #79c3d1) drop-shadow(0 1px 2px rgb(10 26 38 / 0.7)); }
 .catamaran-divicon--live img,
-.catamaran-divicon--live svg { filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.95)); }
+.catamaran-divicon--live svg { filter: drop-shadow(0 0 1.5px var(--course-500)) drop-shadow(0 1px 2px rgb(10 26 38 / 0.7)); }
 .catamaran-divicon--ghost img,
 .catamaran-divicon--ghost svg {
   opacity: 0.55;
-  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.85));
+  filter: drop-shadow(0 0 1.5px var(--chart-100));
 }
-.catamaran-divicon--draw svg { filter: drop-shadow(0 0 5px rgba(250, 204, 21, 0.85)); }
+.catamaran-divicon--draw svg { filter: drop-shadow(0 0 1.5px var(--caution-400)) drop-shadow(0 1px 2px rgb(10 26 38 / 0.7)); }
 
 .light-mode {
-  --ng-light-fg: #0f172a;
-  --ng-light-muted: #334155;
-  --ng-light-bg: #f8fafc;
+  --ng-light-fg: #14212b;
+  --ng-light-muted: #4c5b65;
+  --ng-light-bg: #f1f5f6;
   --ng-light-surface: #ffffff;
-  --ng-light-accent: #1d4ed8;
+  --ng-light-accent: #a3166c;
   --ng-light-on-accent: #ffffff;
-  --ng-light-ok: #047857;
-  --ng-light-warn: #9a3412;
-  --ng-light-danger: #b91c1c;
-  --ng-light-link: #075985;
-  --ng-light-teal: #0f766e;
+  --ng-light-ok: #19705e;
+  --ng-light-warn: #9a5900;
+  --ng-light-danger: #b5372b;
+  --ng-light-link: #a3166c;
+  --ng-light-teal: #19705e;
+  --ng-light-line: #d3dde1;
   color: var(--ng-light-fg);
 }
 .light-mode .naviguide-sidebar-panel {
-  background-color: rgb(248 250 252 / 0.98) !important;
+  background-color: rgb(242 246 248 / 0.98) !important;
   color: var(--ng-light-fg);
-  border-color: rgb(191 219 254) !important;
+  border-color: var(--ng-light-line) !important;
 }
 .light-mode .naviguide-sidebar-toggle {
   background-color: var(--ng-light-surface) !important;
   color: var(--ng-light-fg) !important;
-  border-color: rgb(148 163 184) !important;
+  border-color: rgb(156 176 186) !important;
 }
 .light-mode .naviguide-sidebar-panel [class*="bg-slate-950"],
 .light-mode .naviguide-sidebar-panel [class*="bg-slate-900"] {
   background-color: rgb(255 255 255 / 0.96) !important;
 }
 .light-mode .naviguide-sidebar-panel [class*="bg-slate-800"] {
-  background-color: rgb(241 245 249 / 0.9) !important;
+  background-color: rgb(241 245 246 / 0.9) !important;
 }
 .light-mode .naviguide-sidebar-panel [class*="bg-slate-700"] {
-  background-color: rgb(226 232 240 / 0.95) !important;
+  background-color: rgb(211 222 227 / 0.95) !important;
 }
 .light-mode .naviguide-sidebar-panel [class*="bg-blue-950"] {
-  background-color: rgb(239 246 255 / 0.92) !important;
+  background-color: rgb(248 228 239 / 0.92) !important;
 }
 .light-mode .naviguide-sidebar-panel [class*="bg-blue-900"] {
-  background-color: rgb(219 234 254 / 0.9) !important;
+  background-color: rgb(243 214 231 / 0.9) !important;
 }
 .light-mode .naviguide-sidebar-panel [class*="border-slate-"],
 .light-mode .naviguide-sidebar-panel [class*="border-white/"] {
-  border-color: rgb(203 213 225) !important;
+  border-color: rgb(211 221 225) !important;
 }
 .light-mode .naviguide-sidebar-panel .text-white,
+.light-mode .naviguide-sidebar-panel [class~="text-slate-50"],
+.light-mode .naviguide-sidebar-panel [class*="text-slate-100"],
 .light-mode .naviguide-sidebar-panel [class*="text-slate-200"],
 .light-mode .naviguide-sidebar-panel [class*="text-slate-300"] {
   color: var(--ng-light-fg) !important;
@@ -312,32 +389,33 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 }
 .light-mode .naviguide-sidebar-panel [class*="bg-teal-900"],
 .light-mode .naviguide-sidebar-panel [class*="bg-teal-800"] {
-  background-color: rgb(240 253 250 / 0.95) !important;
+  background-color: rgb(230 243 239 / 0.95) !important;
 }
-.light-mode .naviguide-departure-field input {
+.light-mode .naviguide-sidebar-panel .naviguide-departure-field input {
   background-color: rgb(255 255 255) !important;
-  border-color: rgb(148 163 184) !important;
-  color: rgb(15 23 42) !important;
+  border-color: rgb(156 176 186) !important;
+  color: rgb(20 33 43) !important;
 }
 .light-mode .naviguide-film-bar,
 .light-mode .naviguide-floating-card,
 .light-mode .naviguide-climo-banner {
   background-color: rgb(255 255 255 / 0.96) !important;
-  color: rgb(15 23 42) !important;
-  border-color: rgb(148 163 184 / 0.8) !important;
-  box-shadow: 0 12px 32px rgb(15 23 42 / 0.18) !important;
+  color: rgb(20 33 43) !important;
+  border-color: rgb(156 176 186 / 0.8) !important;
+  box-shadow: 0 12px 32px rgb(20 33 43 / 0.18) !important;
 }
 .light-mode .naviguide-film-bar [class*="text-white"],
 .light-mode .naviguide-floating-card [class*="text-white"] {
-  color: rgb(15 23 42) !important;
+  color: rgb(20 33 43) !important;
 }
 .light-mode .naviguide-film-bar [class*="bg-white/"],
+.light-mode .naviguide-film-bar [class*="bg-slate-800"],
 .light-mode .naviguide-floating-card [class*="bg-slate-800"] {
-  background-color: rgb(226 232 240 / 0.95) !important;
+  background-color: rgb(211 222 227 / 0.95) !important;
 }
 .light-mode .naviguide-film-bar [class*="border-white/"],
 .light-mode .naviguide-floating-card [class*="border-white/"] {
-  border-color: rgb(148 163 184 / 0.8) !important;
+  border-color: rgb(156 176 186 / 0.8) !important;
 }
 
 /* Mode clair — relecture des blocs du 19 sept. : cartes NOW / FREE,
@@ -346,37 +424,37 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
    deviennent leurs teintes foncées ; les fonds teintés translucides s'éclaircissent. */
 .light-mode .naviguide-sidebar-panel [class*="text-emerald-"],
 .light-mode .naviguide-film-bar [class*="text-emerald-"],
-.light-mode .naviguide-floating-card [class*="text-emerald-"] { color: rgb(4 120 87) !important; }
+.light-mode .naviguide-floating-card [class*="text-emerald-"] { color: var(--ng-light-ok) !important; }
 .light-mode .naviguide-sidebar-panel [class*="text-sky-"],
 .light-mode .naviguide-film-bar [class*="text-sky-"],
-.light-mode .naviguide-floating-card [class*="text-sky-"] { color: rgb(3 105 161) !important; }
+.light-mode .naviguide-floating-card [class*="text-sky-"] { color: var(--ng-light-link) !important; }
 .light-mode .naviguide-sidebar-panel [class*="text-cyan-"],
 .light-mode .naviguide-film-bar [class*="text-cyan-"],
-.light-mode .naviguide-floating-card [class*="text-cyan-"] { color: rgb(14 116 144) !important; }
+.light-mode .naviguide-floating-card [class*="text-cyan-"] { color: var(--ng-light-link) !important; }
 .light-mode .naviguide-sidebar-panel [class*="text-violet-"],
-.light-mode .naviguide-floating-card [class*="text-violet-"] { color: rgb(109 40 217) !important; }
+.light-mode .naviguide-floating-card [class*="text-violet-"] { color: var(--ng-light-link) !important; }
 .light-mode .naviguide-sidebar-panel [class*="text-amber-"],
 .light-mode .naviguide-film-bar [class*="text-amber-"],
-.light-mode .naviguide-floating-card [class*="text-amber-"] { color: rgb(180 83 9) !important; }
+.light-mode .naviguide-floating-card [class*="text-amber-"] { color: var(--ng-light-warn) !important; }
 .light-mode .naviguide-sidebar-panel [class*="text-blue-1"],
 .light-mode .naviguide-sidebar-panel [class*="text-blue-2"],
 .light-mode .naviguide-sidebar-panel [class*="text-blue-3"],
 .light-mode .naviguide-film-bar [class*="text-blue-1"],
 .light-mode .naviguide-film-bar [class*="text-blue-2"],
-.light-mode .naviguide-film-bar [class*="text-blue-3"] { color: rgb(29 78 216) !important; }
+.light-mode .naviguide-film-bar [class*="text-blue-3"] { color: var(--ng-light-link) !important; }
 .light-mode .naviguide-sidebar-panel [class*="bg-emerald-950"],
-.light-mode .naviguide-sidebar-panel [class*="bg-emerald-900"] { background-color: rgb(236 253 245 / 0.95) !important; }
+.light-mode .naviguide-sidebar-panel [class*="bg-emerald-900"] { background-color: rgb(230 243 239 / 0.95) !important; }
 .light-mode .naviguide-sidebar-panel [class*="bg-sky-950"],
-.light-mode .naviguide-sidebar-panel [class*="bg-sky-900"] { background-color: rgb(240 249 255 / 0.95) !important; }
-.light-mode .naviguide-sidebar-panel [class*="bg-violet-950"] { background-color: rgb(245 243 255 / 0.95) !important; }
+.light-mode .naviguide-sidebar-panel [class*="bg-sky-900"] { background-color: rgb(248 228 239 / 0.95) !important; }
+.light-mode .naviguide-sidebar-panel [class*="bg-violet-950"] { background-color: rgb(248 228 239 / 0.95) !important; }
 .light-mode .naviguide-sidebar-panel [class*="bg-amber-950"],
 .light-mode .naviguide-sidebar-panel [class*="bg-rose-950"] { background-color: rgb(255 251 235 / 0.95) !important; }
 .light-mode .naviguide-sidebar-panel [class*="bg-cyan-950"],
-.light-mode .naviguide-sidebar-panel [class*="bg-cyan-900"] { background-color: rgb(236 254 255 / 0.95) !important; }
+.light-mode .naviguide-sidebar-panel [class*="bg-cyan-900"] { background-color: rgb(248 228 239 / 0.95) !important; }
 .light-mode .naviguide-sidebar-panel input[type="text"] {
   background-color: rgb(255 255 255) !important;
-  color: rgb(15 23 42) !important;
-  border-color: rgb(148 163 184) !important;
+  color: rgb(20 33 43) !important;
+  border-color: rgb(156 176 186) !important;
 }
 .light-mode .naviguide-sidebar-panel input::placeholder { color: var(--ng-light-muted) !important; }
 .light-mode .naviguide-sidebar-panel [class*="bg-blue-600"],
@@ -404,8 +482,57 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   color: var(--ng-light-on-accent) !important;
 }
 .light-mode .naviguide-film-bar [class*="bg-slate-950"] { background-color: rgb(255 255 255 / 0.96) !important; }
+.light-mode .naviguide-sidebar-panel li[class*="bg-cyan-7"] { background-color: rgb(248 228 239) !important; }
+/* Day segmented controls (language, skipper settings): the selected chip is navy with white text. */
+.light-mode .naviguide-sidebar-panel :is([data-testid^="lang-"][class*="bg-slate-600"], [data-testid^="skipper-"][aria-pressed="true"]) {
+  background-color: var(--ng-light-fg) !important;
+  color: #fff !important;
+}
+/* Day film bar: a selected chip is navy with white text, so it stands out from the grey track. */
+.light-mode .naviguide-film-bar [class*="bg-slate-600"] {
+  background-color: var(--ng-light-fg) !important;
+  border-color: var(--ng-light-fg) !important;
+  color: #fff !important;
+}
 
-.sidebar-scroll { scrollbar-width: thin; scrollbar-color: rgb(71 85 105) transparent; }
+/* Faint white text stays readable on the chart panels (light mode maps it to --ng-light-muted).
+   Kept in the utilities layer so hover: and disabled: variants still win. */
+@layer utilities {
+  .text-white\/35, .text-white\/40, .text-white\/45 { color: var(--chart-400); }
+}
+
+/* Inputs show where the keyboard is, in both themes. */
+.naviguide-sidebar-panel input:focus-visible,
+.naviguide-sidebar-panel textarea:focus-visible { outline: 2px solid var(--course-300); outline-offset: 1px; }
+.light-mode .naviguide-sidebar-panel input:focus-visible,
+.light-mode .naviguide-sidebar-panel textarea:focus-visible { outline-color: var(--ng-light-accent); }
+
+/* Day chart: route lines are drawn for the night sea; darken their canvases so every line keeps 3:1 on the light tiles. */
+.light-mode .leaflet-route-pane canvas,
+.light-mode .leaflet-briefing-focus-pane canvas { filter: brightness(0.62); }
+
+/* Day popups: the stop sheet, the layer card and the credits popover leave the night palette. */
+.light-mode .leaflet-popup.escale-popup .escale-popup-card [class*="text-white"],
+.light-mode .leaflet-popup.escale-popup .escale-popup-card [class*="text-slate-100"],
+.light-mode .leaflet-popup.escale-popup .escale-popup-card [class*="text-slate-200"] { color: var(--ng-light-fg) !important; }
+.light-mode .leaflet-popup.escale-popup .escale-popup-card [class*="text-slate-4"],
+.light-mode .leaflet-popup.escale-popup .escale-popup-card [class*="text-slate-5"] { color: var(--ng-light-muted) !important; }
+.light-mode .leaflet-popup.escale-popup .escale-popup-card [class*="text-emerald-"] { color: var(--ng-light-ok) !important; }
+.light-mode .leaflet-popup.escale-popup .escale-popup-card :is([class^="text-cyan-"], [class*=" text-cyan-"], [class^="text-sky-"], [class*=" text-sky-"]) { color: var(--ng-light-link) !important; }
+.light-mode .leaflet-popup.escale-popup .escale-popup-card :is([class^="text-amber-"], [class*=" text-amber-"]) { color: var(--ng-light-warn) !important; }
+.light-mode .leaflet-popup.escale-popup .escale-popup-card [class*="bg-emerald-950"] { background-color: rgb(230 243 239 / 0.95) !important; }
+.light-mode .layer-fiche-popup { background: rgb(255 255 255 / 0.97); color: var(--ng-light-fg); border-color: var(--ng-light-line); }
+.light-mode .layer-fiche-popup h3 { color: var(--ng-light-fg); }
+.light-mode .layer-fiche-popup a { color: var(--ng-light-link); }
+.light-mode .layer-fiche-popup .muted { color: var(--ng-light-muted); }
+.light-mode .layer-fiche-popup button { color: var(--ng-light-muted); }
+.light-mode .layer-fiche-popup button:hover { color: var(--ng-light-fg); }
+/* The credits popover lives on <body>, outside .light-mode. */
+body:has(.light-mode) .naviguide-attrib-popover { background: rgb(255 255 255 / 0.97); color: #14212b; box-shadow: 0 4px 12px rgb(4 14 22 / 0.18); }
+body:has(.light-mode) .naviguide-attrib-popover a { color: #a3166c; }
+body:has(.light-mode) .naviguide-attrib-popover-close { color: #14212b; }
+
+.sidebar-scroll { scrollbar-width: thin; scrollbar-color: var(--chart-700) transparent; }
 
 /* Hauteurs fixes du panneau gauche (un seul réglage). */
 :root {
@@ -467,7 +594,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 }
 /* Journal : couleur explicite dans les deux thèmes (pas text-inherit). */
 .ici-maintenant [data-testid="ici-journal-entry"] {
-  color: rgb(226 232 240);
+  color: rgb(211 222 227);
 }
 .ici-maintenant-tabs {
   height: var(--sim-box-h-ici-tabs);
@@ -477,37 +604,37 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   min-height: 0;
   overflow: auto;
   background: rgb(255 255 255 / 0.94);
-  border-color: rgb(203 213 225);
-  color: rgb(15 23 42);
+  border-color: rgb(211 221 225);
+  color: rgb(20 33 43);
 }
 .light-mode .ici-maintenant-tabs {
   height: var(--sim-box-h-ici-tabs);
 }
 .light-mode .ici-maintenant [data-testid="ici-tabs"] [aria-selected="true"] {
-  color: rgb(15 23 42);
+  color: rgb(20 33 43);
 }
 .light-mode .ici-maintenant [data-testid="ici-tabs"] [aria-selected="false"] {
-  color: rgb(100 116 139);
+  color: rgb(93 115 128);
 }
 .light-mode .ici-maintenant .ici-maintenant-section > div:first-child {
-  color: rgb(71 85 105);
+  color: rgb(76 91 101);
 }
 .light-mode .ici-maintenant .ici-maintenant-section p,
 .light-mode .ici-maintenant .ici-maintenant-section details {
-  color: rgb(30 41 59);
+  color: rgb(27 42 53);
 }
 .light-mode .ici-maintenant [data-testid="ici-sources-line"] {
-  color: rgb(71 85 105);
+  color: rgb(76 91 101);
 }
 .light-mode .ici-maintenant [data-testid="ici-source-link"],
 .light-mode .ici-maintenant [data-testid="ici-around-link"] {
-  color: rgb(3 105 161);
+  color: var(--ng-light-link);
 }
 .light-mode .ici-maintenant [data-testid="ici-journal-entry"] {
-  color: rgb(30 41 59);
+  color: rgb(27 42 53);
 }
 .light-mode .ici-maintenant [data-testid="ici-journal-entry"]:hover {
-  background: rgb(15 23 42 / 0.05);
+  background: rgb(20 33 43 / 0.05);
 }
 
 /* Bulle événement ancrée au bateau (L.popup). */
@@ -520,19 +647,19 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 }
 .leaflet-popup.event-bubble .leaflet-popup-content-wrapper {
   width: 280px;
-  background: rgba(15, 23, 42, 0.88);
-  color: #f8fafc;
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  background: rgb(17 38 53 / 0.97);
+  color: var(--chart-100);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgb(4 14 22 / 0.35);
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--chart-700);
 }
 .leaflet-popup.event-bubble .leaflet-popup-content {
   margin: 8px 10px 10px;
   width: 260px !important;
 }
 .leaflet-popup.event-bubble .leaflet-popup-tip {
-  background: rgba(15, 23, 42, 0.88);
+  background: rgb(17 38 53 / 0.97);
 }
 .event-bubble-card { width: 100%; }
 .event-bubble-facts {
@@ -544,33 +671,33 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 .light-mode .leaflet-popup.event-bubble .leaflet-popup-content-wrapper,
 .light-mode .leaflet-popup.event-bubble .leaflet-popup-tip {
   background: rgba(255, 255, 255, 0.94);
-  color: rgb(15 23 42);
-  border-color: rgb(203 213 225);
+  color: rgb(20 33 43);
+  border-color: rgb(211 221 225);
 }
 .light-mode .leaflet-popup.event-bubble .event-bubble-card [class*="text-sky-"],
 .light-mode .leaflet-popup.event-bubble .event-bubble-card [class*="text-slate-100"] {
-  color: rgb(15 23 42) !important;
+  color: rgb(20 33 43) !important;
 }
 .light-mode .leaflet-popup.event-bubble .event-bubble-card [class*="bg-white/10"] {
-  background-color: rgb(241 245 249) !important;
-  color: rgb(15 23 42) !important;
-  border-color: rgb(203 213 225) !important;
+  background-color: rgb(241 245 246) !important;
+  color: rgb(20 33 43) !important;
+  border-color: rgb(211 221 225) !important;
 }
 .light-mode .leaflet-popup.event-bubble .event-bubble-card [class*="text-sky-200"],
 .light-mode .leaflet-popup.event-bubble .event-bubble-card [class*="text-sky-100"] {
-  color: rgb(3 105 161) !important;
+  color: var(--ng-light-link) !important;
 }
 
 /* Fiche d'escale ancrée au drapeau (L.popup). */
 .leaflet-popup.escale-popup .leaflet-popup-content-wrapper {
   width: 340px;
   max-width: 340px;
-  background: rgba(15, 23, 42, 0.92);
-  color: #f8fafc;
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  background: rgb(17 38 53 / 0.97);
+  color: var(--chart-100);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgb(4 14 22 / 0.35);
   padding: 0;
-  border: 1px solid rgba(16, 185, 129, 0.35);
+  border: 1px solid var(--chart-700);
 }
 .leaflet-popup.escale-popup .leaflet-popup-content {
   margin: 0;
@@ -579,14 +706,14 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   overflow: hidden;
 }
 .leaflet-popup.escale-popup .leaflet-popup-tip {
-  background: rgba(15, 23, 42, 0.92);
+  background: rgb(17 38 53 / 0.97);
 }
 .escale-popup-card { width: 100%; }
 .light-mode .leaflet-popup.escale-popup .leaflet-popup-content-wrapper,
 .light-mode .leaflet-popup.escale-popup .leaflet-popup-tip {
   background: rgba(255, 255, 255, 0.96);
-  color: rgb(15 23 42);
-  border-color: rgb(16 185 129 / 0.45);
+  color: rgb(20 33 43);
+  border-color: var(--ng-light-line);
 }
 
 /* Above the film bar, never over it: the bar height comes from --sim-inset-bottom.
@@ -598,17 +725,17 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   max-height: calc(100% - var(--sim-inset-bottom, 24px) - 72px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: rgba(15, 23, 42, 0.96);
-  color: #e2e8f0;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
+  background: rgb(17 38 53 / 0.97);
+  color: var(--chart-100);
+  border: 1px solid var(--chart-700);
+  border-radius: 8px;
   padding: 10px 12px;
   font-size: 12px;
   line-height: 1.4;
 }
-.layer-fiche-popup h3 { margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #fff; }
-.layer-fiche-popup a { color: #38bdf8; text-decoration: none; word-break: break-all; }
-.layer-fiche-popup .muted { color: #94a3b8; font-size: 11px; }
+.layer-fiche-popup h3 { margin: 0 0 4px; font-family: var(--font-serif); font-size: 15px; font-weight: 600; color: #fff; }
+.layer-fiche-popup a { color: var(--course-300); text-decoration: none; word-break: break-all; }
+.layer-fiche-popup .muted { color: var(--chart-400); font-size: 12px; }
 
 /*
  * Sous 600 px : le panneau gauche est un tiroir (il ne réserve pas la colonne
@@ -709,8 +836,15 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   .naviguide-sidebar-drawer button:focus-visible,
   .naviguide-sidebar-panel button:focus-visible,
   [data-testid="not-for-nav-modal"] button:focus-visible {
-    outline: 2px solid #7dd3fc !important;
+    outline: 2px solid var(--course-300) !important;
     outline-offset: 1px;
+  }
+  .light-mode .naviguide-sidebar-toggle:focus-visible,
+  .light-mode .naviguide-film-bar button:focus-visible,
+  .light-mode .naviguide-film-bar input:focus-visible,
+  .light-mode .naviguide-sidebar-drawer button:focus-visible,
+  .light-mode .naviguide-sidebar-panel button:focus-visible {
+    outline-color: var(--ng-light-accent) !important;
   }
 }
 

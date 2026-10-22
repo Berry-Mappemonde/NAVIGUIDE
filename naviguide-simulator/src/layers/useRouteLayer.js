@@ -74,7 +74,7 @@ export function useRouteLayer(mapRef, {
         (segments || []).forEach((s) => {
           if (!s.coords?.length) return;
           if (s.nonMaritime) {
-            addLine(group, s.coords, { color: "orange", weight: 4, dash: "6 6" });
+            addLine(group, s.coords, { color: "#e6a84b", weight: 4, dash: "6 6" });
           } else if (!hideMaritime) {
             addLine(group, s.coords, { color: ROUTE_CASING_COLOR, weight: ROUTE_CASING_WEIGHT });
             addLine(group, s.coords, { color: "#0077ff", weight: ROUTE_MAIN_WEIGHT });
