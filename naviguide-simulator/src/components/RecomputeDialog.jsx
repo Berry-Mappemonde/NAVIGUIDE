@@ -1,5 +1,6 @@
-import { RouteAdviceText } from "../hooks/useVirtualVessel.js";
+import { RouteAdviceText, routeAdviceText } from "../hooks/useVirtualVessel.js";
 import { useLang } from "../i18n/LangContext.jsx";
+import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 
 function hoursLabel(h) {
   if (h == null || Number.isNaN(h)) return "—";
@@ -62,6 +63,14 @@ export function RecomputeDialog({ draft, busy, onAccept, onReject }) {
           </p>
         ) : null}
         <RouteAdviceText draft={draft} />
+        {routeAdviceText(draft) ? (
+          // Phrase de la cascade (Lightning, un repli ou les règles) : sa source la suit.
+          <LlmSourceBadge
+            source={draft.advice?.source}
+            testId="route-advice-source"
+            className="-mt-1.5 mb-2 [&_span]:text-[10px] [&_span]:text-white/70"
+          />
+        ) : null}
         <p className="text-[10px] text-white/45 mb-3">{t("recomputeHint")}</p>
         <div className="flex gap-2">
           <button

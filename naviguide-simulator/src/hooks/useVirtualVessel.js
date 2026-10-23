@@ -312,12 +312,17 @@ export function useVirtualVessel({
   };
 }
 
+/** Phrase du recalcul, vide si absente : la phrase et sa source s'affichent ensemble. */
+export function routeAdviceText(draft) {
+  return typeof draft?.advice?.text === "string" ? draft.advice.text.trim() : "";
+}
+
 /**
  * Phrase d'explication du recalcul. Les nombres viennent du
  * serveur (`draft.advice.delta`) ; le LLM n'en invente pas.
  */
 export function RouteAdviceText({ draft }) {
-  const text = typeof draft?.advice?.text === "string" ? draft.advice.text.trim() : "";
+  const text = routeAdviceText(draft);
   if (!text) return null;
   return createElement(
     "p",
