@@ -13,6 +13,13 @@
  *   red, rose → danger
  * Fonts are self-hosted (main.jsx): Atkinson Hyperlegible Next for the
  * interface, Source Serif 4 for place names and titles (`font-serif`).
+ *
+ * Semantic tokens carry the names of the Figma variables (surface/panel →
+ * --surface-panel, accent/fill → --accent-fill, …) and are exposed to Tailwind
+ * as bg-surface-panel, text-text-primary, border-line-hairline, … New and
+ * refactored components use these; the family remap keeps the rest themed.
+ * Themes (src/constants/themes.js) set data-ng-theme on <html>:
+ *   night (default) · day (.light-mode) · watch (Night watch) · azur (Azur de Berry, day only)
  */
 :root {
   --chart-50: #f2f6f8; --chart-100: #e8eff2; --chart-200: #d3dee3; --chart-300: #b6c7cf;
@@ -30,11 +37,64 @@
   --danger-50: #fdeeec; --danger-100: #fad8d4; --danger-200: #f5b5ae; --danger-300: #ef9086;
   --danger-400: #e8695d; --danger-500: #d44f43; --danger-600: #b23b31; --danger-700: #8e2f28;
   --danger-800: #6a2420; --danger-900: #4a1c19; --danger-950: #2e1312;
+
+  --font-ui: "Atkinson Hyperlegible Next Variable", "Atkinson Hyperlegible Next", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Source Serif 4 Variable", "Source Serif 4", ui-serif, Georgia, serif;
+
+  --surface-panel: var(--chart-900);
+  --surface-raised: var(--chart-800);
+  --line-hairline: var(--chart-700);
+  --text-primary: var(--chart-100);
+  --text-muted: var(--chart-400);
+  --accent-fill: var(--course-600);
+  --accent-on: #ffffff;
+  --accent-line: var(--course-500);
+  --accent-text: var(--course-300);
+  --accent-soft: var(--course-950);
+  --status-ok: var(--ok-400);
+  --status-caution: var(--caution-400);
+  --status-danger: var(--danger-400);
+  --marker-stop: var(--chart-100);
+}
+
+/* Night watch: darker sea, IBM Plex Sans, and an instrument-cyan accent so amber
+   only ever means caution (review of 22 Oct). */
+:root[data-ng-theme="watch"] {
+  --chart-50: #f1f6f8; --chart-100: #e9f1f4; --chart-200: #cddbe1; --chart-300: #aec3cc;
+  --chart-400: #8ea6b1; --chart-500: #7690a0; --chart-600: #4f6b7c; --chart-700: #1e3a4b;
+  --chart-800: #12293a; --chart-900: #0b1c27; --chart-950: #06121a;
+  --course-50: #e6f7fc; --course-100: #c9eef8; --course-200: #a3e2f3; --course-300: #7fd5ee;
+  --course-400: #5cc7e6; --course-500: #3fb6da; --course-600: #16708f; --course-700: #125a73;
+  --course-800: #0f4256; --course-900: #0d2f3d; --course-950: #0b2430;
+  --ok-50: #ecf8f0; --ok-100: #d8f1e0; --ok-200: #b7e4c5; --ok-300: #91d4a7;
+  --ok-400: #6cc48a; --ok-500: #4fa86f; --ok-600: #3b8a57; --ok-700: #2e6c45;
+  --ok-800: #234f34; --ok-900: #1a3a27; --ok-950: #10261a;
+  --caution-50: #fdf5e6; --caution-100: #fbe9c7; --caution-200: #f8d79b; --caution-300: #f4c470;
+  --caution-400: #f0b044; --caution-500: #d9962a; --caution-600: #b47a1f; --caution-700: #8c5e18;
+  --caution-800: #664412; --caution-900: #4a310e; --caution-950: #2e1f09;
+  --font-ui: "IBM Plex Sans Variable", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-ui);
+}
+
+/* Azur de Berry: the province's azure, gold and gules on a light chart. Day only. */
+:root[data-ng-theme="azur"] {
+  --course-50: #eef2fb; --course-100: #dbe4f6; --course-200: #b8c9ec; --course-300: #8fa8dd;
+  --course-400: #5f7fc6; --course-500: #3a5fae; --course-600: #1c3f94; --course-700: #17357c;
+  --course-800: #132b63; --course-900: #10224d; --course-950: #0c1a3a;
+  --font-ui: "Public Sans Variable", "Public Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces Variable", "Fraunces", ui-serif, Georgia, serif;
 }
 
 @theme inline {
-  --font-sans: "Atkinson Hyperlegible Next Variable", "Atkinson Hyperlegible Next", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Source Serif 4 Variable", "Source Serif 4", ui-serif, Georgia, serif;
+  --font-sans: var(--font-ui);
+  --font-serif: var(--font-display);
+
+  --color-surface-panel: var(--surface-panel); --color-surface-raised: var(--surface-raised);
+  --color-line-hairline: var(--line-hairline);
+  --color-text-primary: var(--text-primary); --color-text-muted: var(--text-muted);
+  --color-accent-fill: var(--accent-fill); --color-accent-on: var(--accent-on); --color-accent-line: var(--accent-line);
+  --color-accent-text: var(--accent-text); --color-accent-soft: var(--accent-soft);
+  --color-status-ok: var(--status-ok); --color-status-caution: var(--status-caution); --color-status-danger: var(--status-danger);
 
   --color-slate-50: var(--chart-50); --color-slate-100: var(--chart-100); --color-slate-200: var(--chart-200); --color-slate-300: var(--chart-300); --color-slate-400: var(--chart-400); --color-slate-500: var(--chart-500); --color-slate-600: var(--chart-600); --color-slate-700: var(--chart-700); --color-slate-800: var(--chart-800); --color-slate-900: var(--chart-900); --color-slate-950: var(--chart-950);
   --color-sky-50: var(--course-50); --color-sky-100: var(--course-100); --color-sky-200: var(--course-200); --color-sky-300: var(--course-300); --color-sky-400: var(--course-400); --color-sky-500: var(--course-500); --color-sky-600: var(--course-600); --color-sky-700: var(--course-700); --color-sky-800: var(--course-800); --color-sky-900: var(--course-900); --color-sky-950: var(--course-950);
@@ -79,6 +139,15 @@ body { font-variant-numeric: tabular-nums; }
 /* Base map tinted to the chart palette (filters from src/map/chartTiles.js). */
 .leaflet-container img.leaflet-tile[src*="World_Dark_Gray_Base"] { filter: url(#ng-chart-night); }
 .leaflet-container img.leaflet-tile[src*="World_Light_Gray_Base"] { filter: url(#ng-chart-day); }
+:root[data-ng-theme="watch"] .leaflet-container img.leaflet-tile[src*="World_Dark_Gray_Base"] { filter: url(#ng-watch-night); }
+:root[data-ng-theme="azur"] .leaflet-container img.leaflet-tile[src*="World_Light_Gray_Base"] { filter: url(#ng-azur-day); }
+:root[data-ng-theme="watch"] .leaflet-container,
+:root[data-ng-theme="watch"] .leaflet-container .leaflet-tile-pane,
+:root[data-ng-theme="watch"] .leaflet-container .leaflet-map-pane { background-color: #06141e; }
+:root[data-ng-theme="azur"] .light-mode .leaflet-container,
+:root[data-ng-theme="azur"] .light-mode .leaflet-container .leaflet-tile-pane { background-color: #d5e2ec; }
+/* Public Sans draws a wider slash than the 10ch date field allows. */
+:root[data-ng-theme="azur"] .naviguide-film-bar .naviguide-departure-field input[name="departure-date"] { width: 10.6ch; }
 /* Leaflet hides fractional-zoom seams with plus-lighter blending, which the tint breaks.
    Tinted base tiles blend normally, and overlap by 1 px only while the zoom is fractional
    (chartTiles.js marks the container), so integer zooms stay pixel-sharp. */
@@ -169,8 +238,8 @@ body { font-variant-numeric: tabular-nums; }
   width: max-content;
   padding: 6px 26px 6px 10px;
   border-radius: 6px;
-  background: rgb(17 38 53 / 0.96);
-  color: var(--chart-100);
+  background: color-mix(in srgb, var(--surface-panel) 96%, transparent);
+  color: var(--text-primary);
   font-size: 12px;
   line-height: 1.45;
   text-align: right;
@@ -267,7 +336,7 @@ body { font-variant-numeric: tabular-nums; }
 }
 .briefing-focus-label {
   position: absolute; left: 12px; top: -10px; white-space: nowrap;
-  font-size: 12px; font-weight: 600; color: var(--chart-100); background: rgb(17 38 53 / 0.92);
+  font-size: 12px; font-weight: 600; color: var(--text-primary); background: color-mix(in srgb, var(--surface-panel) 92%, transparent);
   border: 1px solid var(--course-500); border-radius: 6px; padding: 1px 6px;
 }
 .light-mode .briefing-focus-label { background: rgb(255 255 255 / 0.95); color: var(--ng-light-fg); border-color: var(--ng-light-accent); }
@@ -307,7 +376,36 @@ body { font-variant-numeric: tabular-nums; }
   --ng-light-link: #a3166c;
   --ng-light-teal: #19705e;
   --ng-light-line: #d3dde1;
+  --ng-light-accent-soft: #f8e4ef;
+  --ng-light-accent-tint: #f3d6e7;
+  --surface-panel: #ffffff;
+  --surface-raised: #f1f5f6;
+  --line-hairline: var(--ng-light-line);
+  --text-primary: var(--ng-light-fg);
+  --text-muted: var(--ng-light-muted);
+  --accent-fill: var(--ng-light-accent);
+  --accent-on: var(--ng-light-on-accent);
+  --accent-line: var(--ng-light-accent);
+  --accent-text: var(--ng-light-link);
+  --accent-soft: var(--ng-light-accent-soft);
+  --status-ok: var(--ng-light-ok);
+  --status-caution: var(--ng-light-warn);
+  --status-danger: var(--ng-light-danger);
+  --marker-stop: var(--ng-light-fg);
   color: var(--ng-light-fg);
+}
+:root[data-ng-theme="azur"] .light-mode {
+  --ng-light-fg: #121a2b;
+  --ng-light-muted: #525d73;
+  --ng-light-bg: #f2f5fa;
+  --ng-light-accent: #1c3f94;
+  --ng-light-link: #1c3f94;
+  --ng-light-ok: #2f7d5b;
+  --ng-light-danger: #b3261e;
+  --ng-light-teal: #2f7d5b;
+  --ng-light-line: #d8dfea;
+  --ng-light-accent-soft: #e4eaf7;
+  --ng-light-accent-tint: #d6e0f3;
 }
 .light-mode .naviguide-sidebar-panel {
   background-color: rgb(242 246 248 / 0.98) !important;
@@ -330,10 +428,10 @@ body { font-variant-numeric: tabular-nums; }
   background-color: rgb(211 222 227 / 0.95) !important;
 }
 .light-mode .naviguide-sidebar-panel [class*="bg-blue-950"] {
-  background-color: rgb(248 228 239 / 0.92) !important;
+  background-color: color-mix(in srgb, var(--ng-light-accent-soft) 92%, transparent) !important;
 }
 .light-mode .naviguide-sidebar-panel [class*="bg-blue-900"] {
-  background-color: rgb(243 214 231 / 0.9) !important;
+  background-color: color-mix(in srgb, var(--ng-light-accent-tint) 90%, transparent) !important;
 }
 .light-mode .naviguide-sidebar-panel [class*="border-slate-"],
 .light-mode .naviguide-sidebar-panel [class*="border-white/"] {
@@ -445,12 +543,12 @@ body { font-variant-numeric: tabular-nums; }
 .light-mode .naviguide-sidebar-panel [class*="bg-emerald-950"],
 .light-mode .naviguide-sidebar-panel [class*="bg-emerald-900"] { background-color: rgb(230 243 239 / 0.95) !important; }
 .light-mode .naviguide-sidebar-panel [class*="bg-sky-950"],
-.light-mode .naviguide-sidebar-panel [class*="bg-sky-900"] { background-color: rgb(248 228 239 / 0.95) !important; }
-.light-mode .naviguide-sidebar-panel [class*="bg-violet-950"] { background-color: rgb(248 228 239 / 0.95) !important; }
+.light-mode .naviguide-sidebar-panel [class*="bg-sky-900"] { background-color: color-mix(in srgb, var(--ng-light-accent-soft) 95%, transparent) !important; }
+.light-mode .naviguide-sidebar-panel [class*="bg-violet-950"] { background-color: color-mix(in srgb, var(--ng-light-accent-soft) 95%, transparent) !important; }
 .light-mode .naviguide-sidebar-panel [class*="bg-amber-950"],
 .light-mode .naviguide-sidebar-panel [class*="bg-rose-950"] { background-color: rgb(255 251 235 / 0.95) !important; }
 .light-mode .naviguide-sidebar-panel [class*="bg-cyan-950"],
-.light-mode .naviguide-sidebar-panel [class*="bg-cyan-900"] { background-color: rgb(248 228 239 / 0.95) !important; }
+.light-mode .naviguide-sidebar-panel [class*="bg-cyan-900"] { background-color: color-mix(in srgb, var(--ng-light-accent-soft) 95%, transparent) !important; }
 .light-mode .naviguide-sidebar-panel input[type="text"] {
   background-color: rgb(255 255 255) !important;
   color: rgb(20 33 43) !important;
@@ -482,9 +580,9 @@ body { font-variant-numeric: tabular-nums; }
   color: var(--ng-light-on-accent) !important;
 }
 .light-mode .naviguide-film-bar [class*="bg-slate-950"] { background-color: rgb(255 255 255 / 0.96) !important; }
-.light-mode .naviguide-sidebar-panel li[class*="bg-cyan-7"] { background-color: rgb(248 228 239) !important; }
+.light-mode .naviguide-sidebar-panel li[class*="bg-cyan-7"] { background-color: var(--ng-light-accent-soft) !important; }
 /* Day segmented controls (language, skipper settings): the selected chip is navy with white text. */
-.light-mode .naviguide-sidebar-panel :is([data-testid^="lang-"][class*="bg-slate-600"], [data-testid^="skipper-"][aria-pressed="true"]) {
+.light-mode .naviguide-sidebar-panel :is([data-testid^="lang-"][class*="bg-slate-600"], [data-testid^="skipper-"][aria-pressed="true"], [data-testid^="theme-"][aria-checked="true"]) {
   background-color: var(--ng-light-fg) !important;
   color: #fff !important;
 }
@@ -508,8 +606,8 @@ body { font-variant-numeric: tabular-nums; }
 .light-mode .naviguide-sidebar-panel textarea:focus-visible { outline-color: var(--ng-light-accent); }
 
 /* Day chart: route lines are drawn for the night sea; darken their canvases so every line keeps 3:1 on the light tiles. */
-.light-mode .leaflet-route-pane canvas,
-.light-mode .leaflet-briefing-focus-pane canvas { filter: brightness(0.62); }
+:root:not([data-ng-theme="azur"]) .light-mode .leaflet-route-pane canvas,
+:root:not([data-ng-theme="azur"]) .light-mode .leaflet-briefing-focus-pane canvas { filter: brightness(0.62); }
 
 /* Day popups: the stop sheet, the layer card and the credits popover leave the night palette. */
 .light-mode .leaflet-popup.escale-popup .escale-popup-card [class*="text-white"],
@@ -647,19 +745,19 @@ body:has(.light-mode) .naviguide-attrib-popover-close { color: #14212b; }
 }
 .leaflet-popup.event-bubble .leaflet-popup-content-wrapper {
   width: 280px;
-  background: rgb(17 38 53 / 0.97);
-  color: var(--chart-100);
+  background: color-mix(in srgb, var(--surface-panel) 97%, transparent);
+  color: var(--text-primary);
   border-radius: 8px;
   box-shadow: 0 8px 20px rgb(4 14 22 / 0.35);
   padding: 0;
-  border: 1px solid var(--chart-700);
+  border: 1px solid var(--line-hairline);
 }
 .leaflet-popup.event-bubble .leaflet-popup-content {
   margin: 8px 10px 10px;
   width: 260px !important;
 }
 .leaflet-popup.event-bubble .leaflet-popup-tip {
-  background: rgb(17 38 53 / 0.97);
+  background: color-mix(in srgb, var(--surface-panel) 97%, transparent);
 }
 .event-bubble-card { width: 100%; }
 .event-bubble-facts {
@@ -692,12 +790,12 @@ body:has(.light-mode) .naviguide-attrib-popover-close { color: #14212b; }
 .leaflet-popup.escale-popup .leaflet-popup-content-wrapper {
   width: 340px;
   max-width: 340px;
-  background: rgb(17 38 53 / 0.97);
-  color: var(--chart-100);
+  background: color-mix(in srgb, var(--surface-panel) 97%, transparent);
+  color: var(--text-primary);
   border-radius: 8px;
   box-shadow: 0 8px 20px rgb(4 14 22 / 0.35);
   padding: 0;
-  border: 1px solid var(--chart-700);
+  border: 1px solid var(--line-hairline);
 }
 .leaflet-popup.escale-popup .leaflet-popup-content {
   margin: 0;
@@ -706,7 +804,7 @@ body:has(.light-mode) .naviguide-attrib-popover-close { color: #14212b; }
   overflow: hidden;
 }
 .leaflet-popup.escale-popup .leaflet-popup-tip {
-  background: rgb(17 38 53 / 0.97);
+  background: color-mix(in srgb, var(--surface-panel) 97%, transparent);
 }
 .escale-popup-card { width: 100%; }
 .light-mode .leaflet-popup.escale-popup .leaflet-popup-content-wrapper,
@@ -725,9 +823,9 @@ body:has(.light-mode) .naviguide-attrib-popover-close { color: #14212b; }
   max-height: calc(100% - var(--sim-inset-bottom, 24px) - 72px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: rgb(17 38 53 / 0.97);
-  color: var(--chart-100);
-  border: 1px solid var(--chart-700);
+  background: color-mix(in srgb, var(--surface-panel) 97%, transparent);
+  color: var(--text-primary);
+  border: 1px solid var(--line-hairline);
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 12px;

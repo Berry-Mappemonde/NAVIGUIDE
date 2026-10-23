@@ -61,6 +61,11 @@ test("chart tint: the CSS targets each base map by URL with a filter that exists
   assert.match(markup, /<filter id="ng-chart-night"/);
   assert.match(markup, /<filter id="ng-chart-day"/);
   assert.match(markup, /aria-hidden="true"/);
+  // Night watch and Azur de Berry swap the tint through data-ng-theme on <html>.
+  assert.match(css, /:root\[data-ng-theme="watch"\] \.leaflet-container img\.leaflet-tile\[src\*="World_Dark_Gray_Base"\] \{ filter: url\(#ng-watch-night\); \}/);
+  assert.match(css, /:root\[data-ng-theme="azur"\] \.leaflet-container img\.leaflet-tile\[src\*="World_Light_Gray_Base"\] \{ filter: url\(#ng-azur-day\); \}/);
+  assert.match(markup, /<filter id="ng-watch-night"/);
+  assert.match(markup, /<filter id="ng-azur-day"/);
 });
 
 test("chart tint: base tiles overlap only at fractional zoom", () => {

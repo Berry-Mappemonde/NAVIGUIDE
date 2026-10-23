@@ -91,7 +91,7 @@ export const PlanReview = memo(function PlanReview({
             <span key={id} className="inline-flex items-center gap-1" title={t(tip)} aria-label={t(key)}>
               <span
                 className="inline-block w-2 h-2 rounded-[2px]"
-                style={{ background: REGIME_COLORS[id] }}
+                style={{ background: `var(--route-${id}, ${REGIME_COLORS[id]})` }}
                 aria-hidden="true"
               />
             </span>

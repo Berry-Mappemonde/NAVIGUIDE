@@ -749,24 +749,28 @@ export class MapSceneController {
 
   syncWake(sailNm, enabled) {
     const flat = this.config.flat;
+    const colors = this.config.routeColors || null;
     const group = this.layers.add("wake", () => L.layerGroup().addTo(this.map));
     if (!enabled || !flat?.points?.length) {
       if (this.wakeGeometry) group.clearLayers();
       this.wakeGeometry = null;
       return;
     }
-    if (!this.wakeGeometry || this.wakeGeometry.flat !== flat) {
+    if (!this.wakeGeometry || this.wakeGeometry.flat !== flat || this.wakeGeometry.colors !== colors) {
       group.clearLayers();
       const geometry = staticWakeParts(flat);
       geometry.flat = flat;
+      geometry.colors = colors;
+      const restStyle = colors ? { ...REST_STYLE, color: colors.planned } : REST_STYLE;
+      const wakeStyle = colors ? { ...WAKE_STYLE, color: colors.sailed } : WAKE_STYLE;
       const offsets = worldCopyOffsets(geometry.parts.flat());
       geometry.worldOffsets = offsets;
       geometry.parts.forEach((part) => {
         if (part.length < 2) return;
-        offsets.forEach((offset) => L.polyline(latLngs(part, offset), REST_STYLE).addTo(group));
+        offsets.forEach((offset) => L.polyline(latLngs(part, offset), restStyle).addTo(group));
       });
-      geometry.doneLines = geometry.parts.map(() => createWorldLines(group, WAKE_STYLE, offsets));
-      geometry.tailLines = createWorldLines(group, WAKE_STYLE, offsets);
+      geometry.doneLines = geometry.parts.map(() => createWorldLines(group, wakeStyle, offsets));
+      geometry.tailLines = createWorldLines(group, wakeStyle, offsets);
       geometry.completedIndex = -1;
       this.wakeGeometry = geometry;
     }

@@ -11,6 +11,7 @@ import { summarizeLegs, wrapLon } from "../utils/geo.js";
 import { summarizeAmpTraffic } from "../engine/ampRules.js";
 import { polarBoatSpeed } from "../engine/polarSpeed.js";
 import { buildGeoJSON, buildKML, canExportRoute, downloadFile, exportFilename } from "../utils/routeExport.js";
+import { THEMES } from "../constants/themes.js";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
 const POLAR_EXPEDITION = "berry-mappemonde-2026"; // pragma: allowlist secret
@@ -292,6 +293,30 @@ function Toggle({ labelLeft, labelRight, active, onChange }) {
   );
 }
 
+/** Night, Day, Night watch, Azur de Berry: the four Chart themes, remembered per browser. */
+function ThemePicker({ theme, onChange, t }) {
+  return (
+    <div className="mt-3">
+      <div id="theme-picker-label" className="text-[11px] font-semibold text-slate-400 mb-1">{t("themeTitle")}</div>
+      <div role="radiogroup" aria-labelledby="theme-picker-label" className="grid grid-cols-2 gap-0.5 bg-slate-800 rounded-lg p-0.5">
+        {THEMES.map(({ id, labelKey }) => (
+          <button
+            key={id}
+            type="button"
+            role="radio"
+            aria-checked={theme === id}
+            data-testid={`theme-${id}`}
+            onClick={() => onChange(id)}
+            className={`px-2 py-1 rounded-md text-xs font-semibold ${theme === id ? "bg-slate-600 text-white ring-1 ring-slate-400" : "text-slate-400 hover:text-white"}`}
+          >
+            {t(labelKey)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SectionTitle({ children, right = null }) {
   return (
     <div className="flex items-center justify-between gap-2 mb-1">
@@ -396,6 +421,7 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
 export const ToolsSidebar = memo(function ToolsSidebar({
   segments, points, open, onToggle,
   isLightMode, onLightModeChange,
+  theme = "night", onThemeChange,
   polarData, onPolarDataLoaded,
   routeDistanceNm, routeSegmentCount,
   maritimeLayers = null,
@@ -528,8 +554,8 @@ export const ToolsSidebar = memo(function ToolsSidebar({
       </button>
 
       <div
-        className={`naviguide-sidebar-panel absolute top-0 right-0 h-full z-20 flex flex-col bg-slate-900/97
-          border-l border-slate-700/60 shadow-2xl transition-transform duration-300
+        className={`naviguide-sidebar-panel absolute top-0 right-0 h-full z-20 flex flex-col bg-surface-panel/97 text-text-primary
+          border-l border-line-hairline shadow-2xl transition-transform duration-300
           ${open ? "translate-x-0" : "translate-x-full"}`}
         style={{ width: 320, visibility: open ? "visible" : "hidden" }}
       >
@@ -542,6 +568,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               </div>
               <Toggle labelLeft={t("dark")} labelRight={t("light")} active={isLightMode} onChange={onLightModeChange} />
             </div>
+            {onThemeChange ? <ThemePicker theme={theme} onChange={onThemeChange} t={t} /> : null}
           </div>
 
           {/* ── L'expédition entière : la route en chiffres + les escales ── */}

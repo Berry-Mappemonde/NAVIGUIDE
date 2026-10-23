@@ -404,8 +404,8 @@ export const Sidebar = memo(function Sidebar({
 
       <div
         ref={drawerRef}
-        className={`naviguide-sidebar-panel naviguide-sidebar-drawer absolute top-0 left-0 h-full z-20 flex flex-col bg-slate-900/97
-          shadow-2xl transition-transform duration-300 border-r border-slate-700/60
+        className={`naviguide-sidebar-panel naviguide-sidebar-drawer absolute top-0 left-0 h-full z-20 flex flex-col bg-surface-panel/97 text-text-primary
+          shadow-2xl transition-transform duration-300 border-r border-line-hairline
           ${open ? "translate-x-0" : "-translate-x-full"}
           ${drawerSettled ? "naviguide-drawer-settled" : ""}`}
         style={{ width: 320 }}
@@ -525,7 +525,7 @@ export const Sidebar = memo(function Sidebar({
             ) : ""}
             hereBody={!drawingHidesBerry ? (
               <div data-testid="here-product">
-                <div data-testid="briefing" className="sim-box-ici min-w-0 overflow-x-hidden h-auto">
+                <div data-testid="briefing" className="sim-box-ici min-w-0 overflow-x-hidden h-auto [overflow-wrap:anywhere]">
                   {briefingTitle ? (
                     <div className="text-[11px] font-semibold text-slate-100 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
                       {briefingTitle}

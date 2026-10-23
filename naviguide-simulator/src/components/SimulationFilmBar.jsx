@@ -199,7 +199,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
       className="absolute bottom-5 z-[2020] pointer-events-auto"
       style={edge}
     >
-        <div className={`naviguide-film-bar overflow-hidden rounded-xl border ${drawing ? "border-emerald-400/30" : "border-white/15"} bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm`}>
+        <div className={`naviguide-film-bar overflow-hidden rounded-xl border ${drawing ? "border-status-ok/30" : "border-line-hairline"} bg-surface-panel/95 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm`}>
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 font-serif font-semibold leading-tight text-[12px] truncate">
             {drawing ? (

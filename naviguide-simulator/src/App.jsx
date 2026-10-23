@@ -95,6 +95,8 @@ import { loadOfficialBerryRoute } from "./utils/routeFromOfficial.js";
 import { isCinemaKey, restoreShowLayers, snapshotShowLayers } from "./utils/cinemaHotkey.js";
 import { weatherLine as buildWeatherLine } from "./utils/weatherLine.js";
 import { mapInsetVars, measureFilmBarOccupiedPx } from "./utils/filmBarLayout.js";
+import { useTheme } from "./hooks/useTheme.js";
+import { routePalette } from "./constants/themes.js";
 import { productHasData } from "./hooks/weatherSnapshot.js";
 import { useSatellitePopup } from "./hooks/useSatellitePopup.js";
 import { DRAW_MAX_POINTS, canFinishDrawnRoute, useRouteDrawing } from "./hooks/useRouteDrawing.js";
@@ -160,7 +162,8 @@ export default function App() {
   const [maritimeLayerState, setMaritimeLayerState] = useState(null);
   const maritimeLayers = maritimeLayerState || EMPTY_MARITIME_LAYERS;
   const [climoLayer, setClimoLayer] = useState({ loading: false, error: null, counts: null, source: null });
-  const [isLightMode, setIsLightMode] = useState(false);
+  const { theme, setTheme, isLightMode, setIsLightMode } = useTheme();
+  const routeColors = useMemo(() => routePalette(theme), [theme]);
 
   const [segments, setSegments] = useState([]);
   const [points, setPoints] = useState([]);
@@ -1745,6 +1748,7 @@ export default function App() {
   }), [suivreCustom, customReviewLegs, planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review, planReviewState.advice, handleRecompute]);
   const mapScene = useMemo(() => ({
     isLightMode,
+    routeColors,
     view,
     isTracer,
     isSuivre,
@@ -1786,6 +1790,7 @@ export default function App() {
     filmLeg: replay.filmLeg,
   }), [
     isLightMode,
+    routeColors,
     view,
     isTracer,
     isSuivre,
@@ -1981,6 +1986,8 @@ export default function App() {
         onToggle={toggleTools}
         isLightMode={isLightMode}
         onLightModeChange={setIsLightMode}
+        theme={theme}
+        onThemeChange={setTheme}
         polarData={polarData}
         onPolarDataLoaded={setPolarData}
         routeDistanceNm={stats.nm}

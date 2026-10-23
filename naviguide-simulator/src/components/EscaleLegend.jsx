@@ -121,7 +121,7 @@ export const EscaleLegend = memo(function EscaleLegend({
               data-testid="escale-regime-pill"
               data-regime={id}
               className="inline-block w-2 h-2 rounded-[2px]"
-              style={{ background: regimeLegendHex[id] }}
+              style={{ background: `var(--route-${id}, ${regimeLegendHex[id]})` }}
               aria-hidden="true"
             />
           </span>

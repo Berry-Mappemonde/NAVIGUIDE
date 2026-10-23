@@ -24,6 +24,23 @@ export const CHART_TILE_STOPS = Object.freeze({
     [239, "#f4edd8"],
     [255, "#f8f3e6"],
   ],
+  // Night watch: a darker, bluer sea for low glare.
+  "ng-watch-night": [
+    [0, "#06141e"],
+    [35, "#06141e"],
+    [63, "#16232c"],
+    [149, "#6e8995"],
+    [255, "#c9d6dc"],
+  ],
+  // Azur de Berry: pale azure sea, warm parchment land.
+  "ng-azur-day": [
+    [0, "#1f2b40"],
+    [110, "#2b3c5a"],
+    [190, "#8f9cb0"],
+    [208, "#d5e2ec"],
+    [239, "#eee7d3"],
+    [255, "#f6f1e3"],
+  ],
 });
 
 // One entry per grey level, so every stop renders exactly.
