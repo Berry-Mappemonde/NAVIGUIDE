@@ -1013,7 +1013,7 @@ def merge_preserve_moment_rows(
     existing: list[dict],
     rebuilt: list[dict],
     *,
-    refresh_from_rebuild: bool = False,
+    refresh_from_rebuild: bool = True,
 ) -> tuple[list[dict], list[dict]]:
     """Garde toutes les lignes existantes ; fusionne les champs du recalcul par seq."""
     by_seq: dict[int, dict] = {}
