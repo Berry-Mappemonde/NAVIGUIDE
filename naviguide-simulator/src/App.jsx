@@ -2049,12 +2049,12 @@ export default function App() {
             <div className="flex items-center gap-2 bg-slate-900/95 border border-green-500/50 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-2xl">
               <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
               <span>{drawingMessage}</span>
-              <span data-testid="draw-point-limit" className="text-[11px] font-medium text-white/70">{t("drawPointLimit", { max: DRAW_MAX_POINTS })}</span>
+              <span data-testid="draw-point-limit" className="text-[12px] font-medium text-white/70">{t("drawPointLimit", { max: DRAW_MAX_POINTS })}</span>
               {drawingLoading && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
               <div className="flex gap-1 ml-1 pointer-events-auto">
                 <button type="button" onClick={handleDrawUndo} disabled={!drawnPoints.length} className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 disabled:opacity-30" title={t("undoLastPoint")}><Undo2 size={13} /></button>
                 <button type="button" onClick={handleDrawRedo} disabled={!canRedo} className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 disabled:opacity-30" title={t("redo")}><Redo2 size={13} /></button>
-                <button type="button" onClick={handleDrawCancel} className="h-7 px-2 rounded-full bg-white/10 text-[11px] font-semibold" title={t("cancel")}>{t("cancel")}</button>
+                <button type="button" onClick={handleDrawCancel} className="h-7 px-2 rounded-full bg-white/10 text-[12px] font-semibold" title={t("cancel")}>{t("cancel")}</button>
               </div>
             </div>
             {drawNotice && (
@@ -2063,7 +2063,7 @@ export default function App() {
               <div
                 role="status"
                 data-testid={drawNotice.kind === "error" ? "route-import-error" : "route-import-notice"}
-                className={`border text-[11px] font-semibold px-3 py-1 rounded-full shadow-lg ${
+                className={`border text-[12px] font-semibold px-3 py-1 rounded-full shadow-lg ${
                   drawNotice.kind === "error"
                     ? "bg-rose-950/95 border-rose-400/60 text-rose-50"
                     : "bg-slate-900/95 border-sky-400/50 text-sky-50"

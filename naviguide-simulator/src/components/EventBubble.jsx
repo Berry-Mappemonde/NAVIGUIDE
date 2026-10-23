@@ -63,7 +63,7 @@ function CardLinks({ entity, t }) {
           data-testid="event-bubble-focus"
           title={t("briefingSeeOnMap")}
           aria-label={t("momentSeeOnMap")}
-          className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-semibold border border-sky-400/40 bg-sky-600/20 text-sky-100 hover:bg-sky-600/40"
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[12px] font-semibold border border-sky-400/40 bg-sky-600/20 text-sky-100 hover:bg-sky-600/40"
         >
           <LocateFixed size={11} />
         </button>
@@ -77,7 +77,7 @@ function CardLinks({ entity, t }) {
           data-testid={`event-bubble-link-${l.kind}`}
           title={l.kind === "site" ? `${t("briefingOfficialSheet")} — ${l.host || ""}` : t("briefingGoogleMaps")}
           aria-label={l.kind === "site" ? t("briefingOfficialSheet") : t("briefingGoogleMaps")}
-          className="px-1.5 py-0.5 rounded-md text-[11px] border border-white/10 bg-white/5 text-sky-200 hover:text-white hover:bg-white/10 no-underline"
+          className="px-1.5 py-0.5 rounded-md text-[12px] border border-white/10 bg-white/5 text-sky-200 hover:text-white hover:bg-white/10 no-underline"
         >
           {l.kind === "site" ? "↗" : "◎"}
         </a>
@@ -104,7 +104,7 @@ export function EventBubble({ card, onClose }) {
         <div className="min-w-0 flex-1">
           {title ? <div className="font-serif text-[15px] font-semibold text-slate-100 leading-snug">{title}</div> : null}
           {facts ? (
-            <p className="event-bubble-facts mt-0.5 text-[11px] leading-snug text-slate-100 break-words [overflow-wrap:anywhere]">
+            <p className="event-bubble-facts mt-0.5 text-[12px] leading-snug text-slate-100 break-words [overflow-wrap:anywhere]">
               {facts}
             </p>
           ) : null}
@@ -129,7 +129,7 @@ export function EventBubble({ card, onClose }) {
             <span
               key={c.id}
               data-testid={`event-bubble-chip-${c.id}`}
-              className="px-1.5 py-0.5 rounded-md text-[11px] font-semibold bg-white/10 text-white/85 border border-white/10"
+              className="px-1.5 py-0.5 rounded-md text-[12px] font-semibold bg-white/10 text-white/85 border border-white/10"
             >
               {c.id === "wind" ? `${t("eventBubbleChipWind")} ${c.kn} kn`
                 : c.id === "hs" ? `${t("eventBubbleChipHs")} ${Number(c.m).toFixed(1)} m`

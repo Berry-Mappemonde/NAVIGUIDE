@@ -32,7 +32,7 @@ export default function NotForNavModal({ open, onAccept, onCancel }) {
         <div className="mt-4 flex gap-2">
           <button
             type="button"
-            className="flex-1 px-3 py-2 text-[11px] border border-slate-600 text-slate-300 rounded-lg"
+            className="flex-1 px-3 py-2 text-[12px] border border-slate-600 text-slate-300 rounded-lg"
             onClick={onCancel}
           >
             {t("cancel")}
@@ -40,7 +40,7 @@ export default function NotForNavModal({ open, onAccept, onCancel }) {
           <button
             type="button"
             data-testid="not-for-nav-accept"
-            className="flex-1 px-3 py-2 text-[11px] border border-amber-400/60 bg-amber-400/15 text-amber-100 rounded-lg disabled:opacity-40"
+            className="flex-1 px-3 py-2 text-[12px] border border-amber-400/60 bg-amber-400/15 text-amber-100 rounded-lg disabled:opacity-40"
             disabled={!acked}
             onClick={() => { if (acked) onAccept(); }}
           >

@@ -95,6 +95,7 @@
   --color-accent-fill: var(--accent-fill); --color-accent-on: var(--accent-on); --color-accent-line: var(--accent-line);
   --color-accent-text: var(--accent-text); --color-accent-soft: var(--accent-soft);
   --color-status-ok: var(--status-ok); --color-status-caution: var(--status-caution); --color-status-danger: var(--status-danger);
+  --color-marker-stop: var(--marker-stop);
 
   --color-slate-50: var(--chart-50); --color-slate-100: var(--chart-100); --color-slate-200: var(--chart-200); --color-slate-300: var(--chart-300); --color-slate-400: var(--chart-400); --color-slate-500: var(--chart-500); --color-slate-600: var(--chart-600); --color-slate-700: var(--chart-700); --color-slate-800: var(--chart-800); --color-slate-900: var(--chart-900); --color-slate-950: var(--chart-950);
   --color-sky-50: var(--course-50); --color-sky-100: var(--course-100); --color-sky-200: var(--course-200); --color-sky-300: var(--course-300); --color-sky-400: var(--course-400); --color-sky-500: var(--course-500); --color-sky-600: var(--course-600); --color-sky-700: var(--course-700); --color-sky-800: var(--course-800); --color-sky-900: var(--course-900); --color-sky-950: var(--course-950);

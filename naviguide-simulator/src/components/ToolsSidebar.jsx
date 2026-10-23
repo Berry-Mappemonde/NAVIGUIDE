@@ -108,9 +108,9 @@ function LayersDrawer({ tracerLayout, layersOn, t, maritimeLayers }) {
           });
         }}
       >
-        <span className="text-[11px] font-semibold text-slate-200">{t("layersTitle")}</span>
+        <span className="text-[12px] font-semibold text-slate-200">{t("layersTitle")}</span>
         <span className="flex items-center gap-2">
-          <span className="text-[11px] text-slate-500">{layersOn ? t("layersOn", { n: layersOn }) : t("layersNone")}</span>
+          <span className="text-[12px] text-slate-500">{layersOn ? t("layersOn", { n: layersOn }) : t("layersNone")}</span>
           <span className={`text-slate-500 transition-transform ${open ? "rotate-90" : ""}`}>›</span>
         </span>
       </summary>
@@ -136,7 +136,7 @@ function formatPolarKn(kn, lang) {
 function PolarSpeedGrid({ raw, lang }) {
   return (
     <div className="mt-2 overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-900/40" data-testid="polar-table">
-      <table className="w-full text-[11px]">
+      <table className="w-full text-[12px]">
         <thead>
           <tr className="bg-slate-800/80 border-b border-slate-700/60">
             <th className="py-1 px-1 text-left text-slate-300">TWA</th>
@@ -297,8 +297,8 @@ function Toggle({ labelLeft, labelRight, active, onChange }) {
 function ThemePicker({ theme, onChange, t }) {
   return (
     <div className="mt-3">
-      <div id="theme-picker-label" className="text-[11px] font-semibold text-slate-400 mb-1">{t("themeTitle")}</div>
-      <div role="radiogroup" aria-labelledby="theme-picker-label" className="grid grid-cols-2 gap-0.5 bg-slate-800 rounded-lg p-0.5">
+      <div id="theme-picker-label" className="text-[12px] font-semibold text-text-muted mb-1">{t("themeTitle")}</div>
+      <div role="radiogroup" aria-labelledby="theme-picker-label" className="grid grid-cols-2 gap-0.5 bg-surface-raised rounded-lg p-0.5">
         {THEMES.map(({ id, labelKey }) => (
           <button
             key={id}
@@ -307,7 +307,7 @@ function ThemePicker({ theme, onChange, t }) {
             aria-checked={theme === id}
             data-testid={`theme-${id}`}
             onClick={() => onChange(id)}
-            className={`px-2 py-1 rounded-md text-xs font-semibold ${theme === id ? "bg-slate-600 text-white ring-1 ring-slate-400" : "text-slate-400 hover:text-white"}`}
+            className={`px-2 py-1 rounded-md text-xs font-semibold ${theme === id ? "bg-slate-600 text-white ring-1 ring-slate-400" : "text-text-muted hover:text-text-primary"}`}
           >
             {t(labelKey)}
           </button>
@@ -320,7 +320,7 @@ function ThemePicker({ theme, onChange, t }) {
 function SectionTitle({ children, right = null }) {
   return (
     <div className="flex items-center justify-between gap-2 mb-1">
-      <span className="text-[11px] font-semibold text-slate-400">{children}</span>
+      <span className="text-[12px] font-semibold text-slate-400">{children}</span>
       {right}
     </div>
   );
@@ -337,26 +337,26 @@ function DrawingBox({ drawing }) {
   const refusal = drawingRefusalPhrase(drawing?.notice, t);
   return (
     <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 overflow-hidden" data-testid="drawing-box">
-      <div className="px-3 py-1.5 text-[11px] text-slate-200 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="drawing-summary">
+      <div className="px-3 py-1.5 text-[12px] text-slate-200 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="drawing-summary">
         <span className="font-semibold text-emerald-200">{t("drawingInProgress")}</span>
         <span>· {pts.length} {t("drawingPoints")}</span>
         <span>· {Number(drawing?.distanceNm || 0).toLocaleString()} nm</span>
       </div>
       {refusal ? (
-        <p className="px-3 py-1 text-[11px] leading-snug text-rose-100 border-t border-white/5">{refusal}</p>
+        <p className="px-3 py-1 text-[12px] leading-snug text-rose-100 border-t border-white/5">{refusal}</p>
       ) : null}
       {pts.length ? (
         <ol className="max-h-36 overflow-y-auto sidebar-scroll border-t border-white/5">
           {pts.map((p, i) => (
-            <li key={`${p.lat}-${p.lon}-${i}`} className="px-2 py-1 text-[11px] text-white/80 border-t border-white/5 first:border-t-0 flex items-baseline gap-1">
-              <span className="text-[11px] text-emerald-300/80 w-4 shrink-0">{i + 1}</span>
+            <li key={`${p.lat}-${p.lon}-${i}`} className="px-2 py-1 text-[12px] text-white/80 border-t border-white/5 first:border-t-0 flex items-baseline gap-1">
+              <span className="text-[12px] text-emerald-300/80 w-4 shrink-0">{i + 1}</span>
               <span className="truncate">{p.name}</span>
-              <span className="ml-auto text-[11px] text-white/40 tabular-nums shrink-0">{p.lat.toFixed(2)}° · {wrapLon(p.lon).toFixed(2)}°</span>
+              <span className="ml-auto text-[12px] text-white/40 tabular-nums shrink-0">{p.lat.toFixed(2)}° · {wrapLon(p.lon).toFixed(2)}°</span>
             </li>
           ))}
         </ol>
       ) : refusal ? null : (
-        <p className="px-3 pb-2 text-[11px] text-slate-400 leading-snug">{drawing?.message || t("drawStart")}</p>
+        <p className="px-3 pb-2 text-[12px] text-slate-400 leading-snug">{drawing?.message || t("drawStart")}</p>
       )}
     </div>
   );
@@ -392,7 +392,7 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
     <div className="space-y-2">
     {drawing ? <DrawingBox drawing={drawing} /> : null}
     <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 overflow-hidden" data-testid="expedition-box">
-      <div className="px-3 py-1.5 text-[11px] text-slate-300 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="route-summary" title={distanceHint}>
+      <div className="px-3 py-1.5 text-[12px] text-slate-300 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="route-summary" title={distanceHint}>
         <span className="font-semibold text-white cursor-help border-b border-dotted border-white/30" title={distanceHint}>{nm}</span>
         <span>· {summary.legs} {legsWord} ({summary.sea} {t("routeSeaShort")}, {summary.land} {t("routeLandShort")})</span>
         <span>· {summary.escales} {escalesWord}</span>
@@ -403,7 +403,7 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
       {ampTraffic.line ? (
         <div
           data-testid="amp-traffic-line"
-          className={`px-3 py-1 text-[11px] leading-snug border-t ${
+          className={`px-3 py-1 text-[12px] leading-snug border-t ${
             ampTraffic.kind === "forbidden-inside"
               ? "border-rose-500/30 text-rose-200 bg-rose-950/30"
               : "border-amber-500/30 text-amber-100 bg-amber-950/20"
@@ -652,7 +652,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                 </summary>
                 <div className="px-3 pb-2">
                   {(polarData?.boat_name || polarData?.name) ? (
-                    <div className="mt-1 text-[11px] text-slate-200 truncate" data-testid="polar-boat">
+                    <div className="mt-1 text-[12px] text-slate-200 truncate" data-testid="polar-boat">
                       {polarData.boat_name || polarData.name}
                     </div>
                   ) : null}
@@ -670,7 +670,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                     }}
                     onClick={() => polarFileInputRef.current?.click()}
                     data-testid="polar-drop"
-                    className={`mt-1.5 flex items-center justify-center gap-1.5 px-2 py-1 border border-dashed rounded-lg cursor-pointer text-[11px]
+                    className={`mt-1.5 flex items-center justify-center gap-1.5 px-2 py-1 border border-dashed rounded-lg cursor-pointer text-[12px]
                       ${isDragging ? "border-blue-400 bg-blue-900/20 text-blue-200" : "border-slate-600 hover:border-slate-500 text-slate-400"}`}
                   >
                     <input
@@ -690,7 +690,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                       onClick={() => setShowPolar((v) => !v)}
                       aria-expanded={showPolar}
                       data-testid="polar-show"
-                      className="mt-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                      className="mt-1.5 px-2 py-0.5 rounded-md text-[12px] font-semibold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
                     >
                       {showPolar ? t("polarHide") : t("polarShow")}
                     </button>
@@ -734,14 +734,14 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                     onClick={() => setShowPolar((v) => !v)}
                     aria-expanded={showPolar}
                     data-testid="polar-show"
-                    className="ml-auto flex-shrink-0 px-2 py-0.5 rounded-md text-[11px] font-semibold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                    className="ml-auto flex-shrink-0 px-2 py-0.5 rounded-md text-[12px] font-semibold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
                   >
                     {showPolar ? t("polarHide") : t("polarShow")}
                   </button>
                 ) : null}
               </div>
               {(polarData?.boat_name || polarData?.name) ? (
-                <div className="mt-1 text-[11px] text-slate-200 truncate" data-testid="polar-boat">
+                <div className="mt-1 text-[12px] text-slate-200 truncate" data-testid="polar-boat">
                   {polarData.boat_name || polarData.name}
                 </div>
               ) : null}
@@ -759,7 +759,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                 }}
                 onClick={() => polarFileInputRef.current?.click()}
                 data-testid="polar-drop"
-                className={`mt-1.5 flex items-center justify-center gap-1.5 px-2 py-1 border border-dashed rounded-lg cursor-pointer text-[11px]
+                className={`mt-1.5 flex items-center justify-center gap-1.5 px-2 py-1 border border-dashed rounded-lg cursor-pointer text-[12px]
                   ${isDragging ? "border-blue-400 bg-blue-900/20 text-blue-200" : "border-slate-600 hover:border-slate-500 text-slate-400"}`}
               >
                 <input

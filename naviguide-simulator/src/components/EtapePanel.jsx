@@ -60,7 +60,7 @@ export function EtapePanel({
   if (!legContext) {
     return (
       <div className="bg-slate-800/60 rounded-lg p-2 border border-blue-700/30">
-        <div className="text-[11px] text-slate-400 text-center">
+        <div className="text-[12px] text-slate-400 text-center">
           {t("tracerDragPrompt")}
         </div>
       </div>
@@ -102,7 +102,7 @@ export function EtapePanel({
         <div className="bg-slate-800/60 px-2 py-1 flex flex-col">
           <div className="flex items-center gap-1">
             <MapIcon size={9} className="text-slate-400" />
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[12px] text-slate-400">
               {t("nmRemaining")}
             </span>
           </div>
@@ -112,12 +112,12 @@ export function EtapePanel({
         <div className="bg-slate-800/60 px-2 py-1 flex flex-col">
           <div className="flex items-center gap-1">
             <Clock size={9} className="text-slate-400" />
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[12px] text-slate-400">
               {t("eta")}
             </span>
           </div>
           <span className="text-xs font-bold text-white leading-tight">{formatEta(etaHours, lang)}</span>
-          <span className="text-[11px] text-slate-500 leading-tight">
+          <span className="text-[12px] text-slate-500 leading-tight">
             {clockSample?.vehicle === "plane"
               ? t("filmAirVehicle")
               : clockSample?.speedKnots != null
@@ -131,7 +131,7 @@ export function EtapePanel({
         <div className="bg-slate-800/60 px-2 py-1 flex flex-col">
           <div className="flex items-center gap-1">
             <Navigation size={9} className="text-slate-400" />
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[12px] text-slate-400">
               {t("nmCovered")}
             </span>
           </div>
@@ -141,7 +141,7 @@ export function EtapePanel({
         <div className="bg-slate-800/60 px-2 py-1 flex flex-col">
           <div className="flex items-center gap-1">
             <Compass size={9} className="text-slate-400" />
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[12px] text-slate-400">
               {t("bearing")}
             </span>
           </div>
@@ -151,7 +151,7 @@ export function EtapePanel({
       </div>
 
       {(kindLabel || clockSample?.twa != null || atQuay) && (
-        <div className="px-2 py-1 text-[11px] text-sky-100/90 border-t border-white/5 space-y-0 leading-tight">
+        <div className="px-2 py-1 text-[12px] text-sky-100/90 border-t border-white/5 space-y-0 leading-tight">
           <div className="flex flex-wrap gap-x-2 text-white/55">
             {kindLabel ? <span>{kindLabel}</span> : null}
             {clockSample?.twa != null && clockSample?.vehicle !== "plane" ? (
@@ -169,7 +169,7 @@ export function EtapePanel({
       {liveFollow && (clockSample?.status === "waiting" || (previewing && onGoLive)) && (
         <div className="px-2 py-1 border-t border-white/5 flex items-center justify-between gap-2">
           {clockSample?.status === "waiting" && clockSample.countdownHours != null ? (
-            <span className="text-[11px] text-amber-200/90">
+            <span className="text-[12px] text-amber-200/90">
               {t("departsIn", { hours: formatEta(clockSample.countdownHours, lang) })}
             </span>
           ) : null}
@@ -177,7 +177,7 @@ export function EtapePanel({
             <button
               type="button"
               onClick={onGoLive}
-              className="text-[11px] font-semibold text-cyan-200 hover:text-cyan-100"
+              className="text-[12px] font-semibold text-cyan-200 hover:text-cyan-100"
               title="L"
             >
               {t("returnToLive")}
@@ -187,10 +187,10 @@ export function EtapePanel({
       )}
 
       {forecastStatus === "pending" && (
-        <div className="px-2 py-1 text-[11px] text-sky-200/80 bg-sky-950/40">{t("forecastPending")}</div>
+        <div className="px-2 py-1 text-[12px] text-sky-200/80 bg-sky-950/40">{t("forecastPending")}</div>
       )}
       {forecastStatus === "unavailable" && (
-        <div className="px-2 py-1 text-[11px] text-amber-200/80 bg-amber-950/30">{t("forecastUnavailable")}</div>
+        <div className="px-2 py-1 text-[12px] text-amber-200/80 bg-amber-950/30">{t("forecastUnavailable")}</div>
       )}
 
       {showRecompute && (
@@ -200,7 +200,7 @@ export function EtapePanel({
             data-testid="ask-advice"
             disabled={!canRecompute || recomputeBusy || forecastStatus === "pending"}
             onClick={onRecompute}
-            className="w-full rounded-md border border-cyan-500/40 bg-cyan-900/30 py-1 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-800/40 disabled:opacity-40"
+            className="w-full rounded-md border border-cyan-500/40 bg-cyan-900/30 py-1 text-[12px] font-semibold text-cyan-100 hover:bg-cyan-800/40 disabled:opacity-40"
           >
             {recomputeBusy ? t("recomputeBusy") : t("recomputeButton")}
           </button>

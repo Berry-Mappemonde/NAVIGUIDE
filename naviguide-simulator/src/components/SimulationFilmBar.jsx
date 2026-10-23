@@ -624,7 +624,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 onClick={() => onStopAuto?.(!stopAuto)}
                 className={`h-6 px-1.5 rounded-md text-[9px] font-semibold border whitespace-nowrap ${
                   stopAuto
-                    ? "bg-amber-600/80 border-amber-300/50"
+                    ? "bg-slate-600/80 border-slate-400/50"
                     : "bg-white/5 border-white/10 text-white/70"
                 }`}
                 title={stopAuto ? t("stopAutoOn") : t("stopAutoOff")}

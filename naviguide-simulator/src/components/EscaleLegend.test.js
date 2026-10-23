@@ -29,7 +29,7 @@ describe("EscaleLegend — informative dans tous les modes (étend RE2)", () => 
     assert.doesNotMatch(src, /onClick/);
     assert.doesNotMatch(src, /<button/);
     assert.doesNotMatch(src, /cursor-pointer/);
-    assert.match(src, /<div className="flex-1 min-w-0 text-left px-2 py-1 text-\[11px\] cursor-default"/);
+    assert.match(src, /<div className="flex-1 min-w-0 text-left px-2 py-1 text-\[12px\] cursor-default"/);
     assert.match(src, /nmLabel/);
     assert.match(src, /dateLabel/);
     assert.match(src, /quayLabel/);
