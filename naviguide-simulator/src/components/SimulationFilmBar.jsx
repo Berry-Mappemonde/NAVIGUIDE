@@ -9,6 +9,7 @@ import { displayStopName, filmClockWithoutRoadNm, roadTransferLabel } from "../u
 import { ListenButton } from "./ListenButton.jsx";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 import { DepartureField } from "./DepartureField.jsx";
+import { FilmWriteStatus } from "./FilmWriteStatus.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
 import { filmDurationClass, filmDurationPill } from "../engine/playSpeeds.js";
 import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle, writtenPillEnabled } from "../hooks/useReplay.js";
@@ -199,6 +200,9 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
       className="absolute bottom-5 z-[2020] pointer-events-auto"
       style={edge}
     >
+        {replay && !replay.unavailable ? (
+          <FilmWriteStatus writing={Boolean(replay.writing)} since={replay.writingSince} notice={replay.writeNotice} />
+        ) : null}
         <div className={`naviguide-film-bar overflow-hidden rounded-xl border ${drawing ? "border-emerald-400/30" : "border-white/15"} bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm`}>
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 font-semibold leading-tight text-[12px] truncate">
