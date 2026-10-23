@@ -29,6 +29,9 @@ const CHART_ROUTE = Object.freeze({
  * Sailed track, route still to sail, and the three weather regimes of the
  * sailed track (the legend pills use the same values). Night watch follows
  * its cyan accent so amber means caution only; Azur de Berry its azure.
+ * `recolor` maps the other fixed route-pane colours (road leg, draft route,
+ * isochrones, briefing line) for the theme. On day themes index.css darkens
+ * the route canvas so every line keeps 3:1 on the light chart.
  */
 export const ROUTE_PALETTES = Object.freeze({
   night: CHART_ROUTE,
@@ -39,15 +42,30 @@ export const ROUTE_PALETTES = Object.freeze({
     hindcast: "#5cc7e6",
     forecast: "#9fb4ff",
     climatology: "#b4a9c9",
+    recolor: Object.freeze({
+      "#e6a84b": "#a3e2f3", // road leg: accent family, not caution amber
+      "#fbbf24": "#8ea6b1", // isochrones
+      "#22d3ee": "#7fd5ee", // draft route
+      "#e0589f": "#3fb6da", // briefing line
+    }),
   }),
   azur: Object.freeze({
     sailed: "#1c3f94",
-    planned: "#6f7f99",
+    planned: "#56667f",
     hindcast: "#2c56b8",
     forecast: "#0f7a8a",
-    climatology: "#7a6aa8",
+    climatology: "#65559a",
+    recolor: Object.freeze({
+      "#22d3ee": "#2c56b8",
+      "#e0589f": "#1c3f94",
+    }),
   }),
 });
+
+/** A fixed route-pane colour as the theme draws it (unchanged when the theme has no mapping). */
+export function themedRouteColor(palette, color) {
+  return palette?.recolor?.[String(color).toLowerCase()] || color;
+}
 
 export function isTheme(id) {
   return THEMES.some((theme) => theme.id === id);
@@ -95,6 +113,6 @@ export function applyThemeToDocument(id, doc = globalThis.document) {
   root.dataset.ngTheme = id;
   const palette = routePalette(id);
   for (const [name, color] of Object.entries(palette)) {
-    root.style.setProperty(`--route-${name}`, color);
+    if (typeof color === "string") root.style.setProperty(`--route-${name}`, color);
   }
 }

@@ -4,6 +4,7 @@ import { useLang } from "../i18n/LangContext.jsx";
 import { worldCopyLineCoords } from "../utils/geo.js";
 import { ROUTE_CASING_COLOR, ROUTE_CASING_WEIGHT, ROUTE_MAIN_COLOR, ROUTE_MAIN_WEIGHT } from "./styles.js";
 import { REGIME_COLORS, traveledEraSpeed, traveledRegimeSegments } from "./regimeRoute.js";
+import { themedRouteColor } from "../constants/themes.js";
 
 export { REGIME_COLORS, traveledEraSpeed, traveledRegimeSegments };
 
@@ -75,7 +76,7 @@ export function useRouteLayer(mapRef, {
         (segments || []).forEach((s) => {
           if (!s.coords?.length) return;
           if (s.nonMaritime) {
-            addLine(group, s.coords, { color: "#e6a84b", weight: 4, dash: "6 6" });
+            addLine(group, s.coords, { color: themedRouteColor(regimeColors, "#e6a84b"), weight: 4, dash: "6 6" });
           } else if (!hideMaritime) {
             addLine(group, s.coords, { color: ROUTE_CASING_COLOR, weight: ROUTE_CASING_WEIGHT });
             addLine(group, s.coords, { color: "#0077ff", weight: ROUTE_MAIN_WEIGHT });

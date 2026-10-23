@@ -29,9 +29,9 @@ export function catamaranSvg(bearing, { size = 64 } = {}) {
   <ellipse cx="32" cy="33" rx="21" ry="26" fill="#0a1a26"/>
   <path d="M23 11 L41 11 L42.2 21 L21.8 21 Z" fill="#2e4a5e"/>
   <path d="M24.2 12.2 L39.8 12.2 L40.4 19.6 L23.6 19.6 Z" fill="#1b3448"/>
-  <path d="M25 13.4 L28 13.4 L28 18.6 L25.4 18.6 Z" fill="#f5bcd9" opacity="0.35"/>
-  <path d="M30 13.4 L34 13.4 L34 18.6 L30 18.6 Z" fill="#f5bcd9" opacity="0.25"/>
-  <path d="M36 13.4 L39 13.4 L38.6 18.6 L36 18.6 Z" fill="#f5bcd9" opacity="0.35"/>
+  <path d="M25 13.4 L28 13.4 L28 18.6 L25.4 18.6 Z" fill="currentColor" opacity="0.35"/>
+  <path d="M30 13.4 L34 13.4 L34 18.6 L30 18.6 Z" fill="currentColor" opacity="0.25"/>
+  <path d="M36 13.4 L39 13.4 L38.6 18.6 L36 18.6 Z" fill="currentColor" opacity="0.35"/>
   <rect x="21.5" y="20.5" width="21" height="2.2" rx="1" fill="#9cb0ba"/>
   <rect x="22" y="22.4" width="20" height="22.2" rx="3.2" fill="#183246"/>
   <rect x="23.4" y="24" width="17.2" height="12.4" rx="2.2" fill="#1b3448" stroke="#9cb0ba" stroke-width="0.85"/>
@@ -46,7 +46,7 @@ export function catamaranSvg(bearing, { size = 64 } = {}) {
   <path d="${hullPath(44.8)}" fill="#f2f6f8" stroke="#0a1a26" stroke-width="1.2" stroke-linejoin="round"/>
   <path d="M17.4 12.5 L20.8 12.5 L21.3 50.5 L16.9 50.5 Z" fill="#557080" opacity="0.7"/>
   <path d="M43.2 12.5 L46.6 12.5 L47.1 50.5 L42.7 50.5 Z" fill="#557080" opacity="0.7"/>
-  <path d="M32 2.4 L37.2 11.2 L26.8 11.2 Z" fill="#e0589f" stroke="#0a1a26" stroke-width="0.75" stroke-linejoin="round"/>
+  <path d="M32 2.4 L37.2 11.2 L26.8 11.2 Z" fill="currentColor" stroke="#0a1a26" stroke-width="0.75" stroke-linejoin="round"/>
   <circle cx="32" cy="56.6" r="1.2" fill="#7e94a0"/>
 </svg>`;
 }

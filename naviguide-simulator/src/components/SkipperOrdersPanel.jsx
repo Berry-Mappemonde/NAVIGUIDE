@@ -368,7 +368,7 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
         <div className="mt-2 text-[12px] rounded-md px-2 py-1 border border-amber-500/30 text-amber-200 leading-snug" data-testid="skipper-suggest">
           <span>{t("skipperSuggestCoastal", { loa: num(boat.loaM, lang), draft: num(boat.draftM, lang, 1) })}</span>
           <span className="ml-2 inline-flex gap-1">
-            <button type="button" onClick={onAcceptSuggest} className="px-1.5 rounded bg-amber-500/20 hover:bg-amber-500/40 text-amber-100">{t("skipperSuggestYes")}</button>
+            <button type="button" onClick={onAcceptSuggest} className="px-1.5 rounded bg-sky-500/20 hover:bg-sky-500/40 text-sky-100">{t("skipperSuggestYes")}</button>
             <button type="button" onClick={onDismissSuggest} className="px-1.5 rounded hover:bg-white/10 text-amber-200/80">{t("skipperSuggestNo")}</button>
           </span>
         </div>

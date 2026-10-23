@@ -295,16 +295,31 @@ function Toggle({ labelLeft, labelRight, active, onChange }) {
 
 /** Night, Day, Night watch, Azur de Berry: the four Chart themes, remembered per browser. */
 function ThemePicker({ theme, onChange, t }) {
+  // Radio group keyboard pattern: one Tab stop, arrows move and select.
+  const onKeyDown = (event) => {
+    const ids = THEMES.map((item) => item.id);
+    const at = ids.indexOf(theme);
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+    let next = null;
+    if (step) next = ids[(at + step + ids.length) % ids.length];
+    else if (event.key === "Home") next = ids[0];
+    else if (event.key === "End") next = ids[ids.length - 1];
+    if (!next) return;
+    event.preventDefault();
+    onChange(next);
+    event.currentTarget.querySelector(`[data-testid="theme-${next}"]`)?.focus();
+  };
   return (
     <div className="mt-3">
       <div id="theme-picker-label" className="text-[12px] font-semibold text-text-muted mb-1">{t("themeTitle")}</div>
-      <div role="radiogroup" aria-labelledby="theme-picker-label" className="grid grid-cols-2 gap-0.5 bg-surface-raised rounded-lg p-0.5">
+      <div role="radiogroup" aria-labelledby="theme-picker-label" onKeyDown={onKeyDown} className="grid grid-cols-2 gap-0.5 bg-surface-raised rounded-lg p-0.5">
         {THEMES.map(({ id, labelKey }) => (
           <button
             key={id}
             type="button"
             role="radio"
             aria-checked={theme === id}
+            tabIndex={theme === id ? 0 : -1}
             data-testid={`theme-${id}`}
             onClick={() => onChange(id)}
             className={`px-2 py-1 rounded-md text-xs font-semibold ${theme === id ? "bg-slate-600 text-white ring-1 ring-slate-400" : "text-text-muted hover:text-text-primary"}`}

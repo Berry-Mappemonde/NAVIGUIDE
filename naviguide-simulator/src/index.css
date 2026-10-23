@@ -61,7 +61,7 @@
    only ever means caution (review of 22 Oct). */
 :root[data-ng-theme="watch"] {
   --chart-50: #f1f6f8; --chart-100: #e9f1f4; --chart-200: #cddbe1; --chart-300: #aec3cc;
-  --chart-400: #8ea6b1; --chart-500: #7690a0; --chart-600: #4f6b7c; --chart-700: #1e3a4b;
+  --chart-400: #8ea6b1; --chart-500: #7f99a9; --chart-600: #4f6b7c; --chart-700: #1e3a4b;
   --chart-800: #12293a; --chart-900: #0b1c27; --chart-950: #06121a;
   --course-50: #e6f7fc; --course-100: #c9eef8; --course-200: #a3e2f3; --course-300: #7fd5ee;
   --course-400: #5cc7e6; --course-500: #3fb6da; --course-600: #16708f; --course-700: #125a73;
@@ -326,25 +326,27 @@ body { font-variant-numeric: tabular-nums; }
 }
 
 .catamaran-divicon, .flag-divicon, .plane-divicon, .grib-barb { background: none !important; border: none !important; }
+/* The boat's bow and window highlights take the theme accent (currentColor in catamaranIcon.js). */
+.catamaran-divicon { color: var(--accent-line); }
 
 /* Briefing focus: the place named in the sidebar, pinned on the map. */
 .briefing-focus-pin { background: none !important; border: none !important; }
 .briefing-focus-dot {
   position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 9999px;
-  background: var(--course-500); border: 2px solid var(--chart-950);
-  box-shadow: 0 0 0 4px rgb(224 88 159 / 0.35);
+  background: var(--accent-line); border: 2px solid var(--chart-950);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-line) 35%, transparent);
   animation: briefing-focus-pulse 1.6s ease-out infinite;
 }
 .briefing-focus-label {
   position: absolute; left: 12px; top: -10px; white-space: nowrap;
   font-size: 12px; font-weight: 600; color: var(--text-primary); background: color-mix(in srgb, var(--surface-panel) 92%, transparent);
-  border: 1px solid var(--course-500); border-radius: 6px; padding: 1px 6px;
+  border: 1px solid var(--accent-line); border-radius: 6px; padding: 1px 6px;
 }
 .light-mode .briefing-focus-label { background: rgb(255 255 255 / 0.95); color: var(--ng-light-fg); border-color: var(--ng-light-accent); }
-.light-mode .briefing-focus-dot { border-color: #fff; background: var(--ng-light-accent); }
+.light-mode .briefing-focus-dot { border-color: #fff; }
 @keyframes briefing-focus-pulse {
-  0% { box-shadow: 0 0 0 4px rgb(224 88 159 / 0.45); }
-  100% { box-shadow: 0 0 0 14px rgb(224 88 159 / 0); }
+  0% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-line) 45%, transparent); }
+  100% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--accent-line) 0%, transparent); }
 }
 .grib-barb { pointer-events: none; }
 .marker-rotatable {
@@ -356,13 +358,13 @@ body { font-variant-numeric: tabular-nums; }
 .catamaran-divicon--side img,
 .catamaran-divicon--side svg { filter: drop-shadow(0 0 1.5px #79c3d1) drop-shadow(0 1px 2px rgb(10 26 38 / 0.7)); }
 .catamaran-divicon--live img,
-.catamaran-divicon--live svg { filter: drop-shadow(0 0 1.5px var(--course-500)) drop-shadow(0 1px 2px rgb(10 26 38 / 0.7)); }
+.catamaran-divicon--live svg { filter: drop-shadow(0 0 1.5px var(--accent-line)) drop-shadow(0 1px 2px rgb(10 26 38 / 0.7)); }
 .catamaran-divicon--ghost img,
 .catamaran-divicon--ghost svg {
   opacity: 0.55;
   filter: drop-shadow(0 0 1.5px var(--chart-100));
 }
-.catamaran-divicon--draw svg { filter: drop-shadow(0 0 1.5px var(--caution-400)) drop-shadow(0 1px 2px rgb(10 26 38 / 0.7)); }
+.catamaran-divicon--draw svg { filter: drop-shadow(0 0 1.5px var(--accent-text)) drop-shadow(0 1px 2px rgb(10 26 38 / 0.7)); }
 
 .light-mode {
   --ng-light-fg: #14212b;
@@ -607,8 +609,8 @@ body { font-variant-numeric: tabular-nums; }
 .light-mode .naviguide-sidebar-panel textarea:focus-visible { outline-color: var(--ng-light-accent); }
 
 /* Day chart: route lines are drawn for the night sea; darken their canvases so every line keeps 3:1 on the light tiles. */
-:root:not([data-ng-theme="azur"]) .light-mode .leaflet-route-pane canvas,
-:root:not([data-ng-theme="azur"]) .light-mode .leaflet-briefing-focus-pane canvas { filter: brightness(0.62); }
+.light-mode .leaflet-route-pane canvas,
+.light-mode .leaflet-briefing-focus-pane canvas { filter: brightness(0.62); }
 
 /* Day popups: the stop sheet, the layer card and the credits popover leave the night palette. */
 .light-mode .leaflet-popup.escale-popup .escale-popup-card [class*="text-white"],
@@ -630,6 +632,7 @@ body { font-variant-numeric: tabular-nums; }
 body:has(.light-mode) .naviguide-attrib-popover { background: rgb(255 255 255 / 0.97); color: #14212b; box-shadow: 0 4px 12px rgb(4 14 22 / 0.18); }
 body:has(.light-mode) .naviguide-attrib-popover a { color: #a3166c; }
 body:has(.light-mode) .naviguide-attrib-popover-close { color: #14212b; }
+:root[data-ng-theme="azur"] .naviguide-attrib-popover a { color: #1c3f94; }
 
 .sidebar-scroll { scrollbar-width: thin; scrollbar-color: var(--chart-700) transparent; }
 

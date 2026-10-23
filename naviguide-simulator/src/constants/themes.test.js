@@ -14,6 +14,7 @@ import {
   routePalette,
   storeTheme,
   themeForMode,
+  themedRouteColor,
 } from "./themes.js";
 import { WAKE_DONE_COLOR, WAKE_REST_COLOR } from "../layers/styles.js";
 import { REGIME_COLORS } from "../layers/regimeRoute.js";
@@ -64,14 +65,44 @@ describe("themes: the four Chart themes", () => {
 
   it("each give the route five colours, the Chart ones being the map constants", () => {
     for (const { id } of THEMES) {
-      const palette = routePalette(id);
+      const { recolor = {}, ...palette } = routePalette(id);
       assert.deepEqual(Object.keys(palette).sort(), ["climatology", "forecast", "hindcast", "planned", "sailed"]);
-      for (const color of Object.values(palette)) assert.match(color, /^#[0-9a-f]{6}$/);
+      for (const color of [...Object.values(palette), ...Object.keys(recolor), ...Object.values(recolor)]) {
+        assert.match(color, /^#[0-9a-f]{6}$/);
+      }
     }
     assert.equal(ROUTE_PALETTES.night.sailed, WAKE_DONE_COLOR);
     assert.equal(ROUTE_PALETTES.night.planned, WAKE_REST_COLOR);
     assert.equal(ROUTE_PALETTES.night.hindcast, REGIME_COLORS.hindcast);
     assert.equal(routePalette("unknown"), ROUTE_PALETTES.night);
+  });
+});
+
+describe("themes: other route-pane colours", () => {
+  it("Night watch draws no route line in amber, so amber stays caution only", () => {
+    const caution = themeBlock("watch").match(/--caution-400: (#[0-9a-f]{6})/)[1];
+    const watch = ROUTE_PALETTES.watch;
+    const colors = [watch.sailed, watch.planned, watch.hindcast, watch.forecast, watch.climatology, ...Object.values(watch.recolor)];
+    for (const color of colors) {
+      const distance = Math.abs(hue(color) - hue(caution));
+      assert.ok(Math.min(distance, 360 - distance) > 60, `${color} too close to caution ${caution}`);
+    }
+    assert.equal(themedRouteColor(watch, "#E6A84B"), watch.recolor["#e6a84b"]);
+  });
+
+  it("themes without a mapping keep the colour", () => {
+    assert.equal(themedRouteColor(ROUTE_PALETTES.night, "#e6a84b"), "#e6a84b");
+    assert.equal(themedRouteColor(null, "#123456"), "#123456");
+  });
+
+  it("day themes darken the route canvas, Azur included", () => {
+    assert.match(css, /\n\.light-mode \.leaflet-route-pane canvas,\n\.light-mode \.leaflet-briefing-focus-pane canvas \{ filter: brightness\(0\.62\); \}/);
+    assert.doesNotMatch(css, /:not\(\[data-ng-theme="azur"\]\) \.light-mode \.leaflet-route-pane/);
+  });
+
+  it("the theme picker follows the radio-group keyboard pattern", () => {
+    assert.match(sidebar, /tabIndex=\{theme === id \? 0 : -1\}/);
+    assert.match(sidebar, /ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1/);
   });
 });
 
