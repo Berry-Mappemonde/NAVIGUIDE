@@ -260,10 +260,26 @@ function BerryCard({
  *   - the name → "voir sur la carte" (layer on + fit boat & place), when it has coordinates
  *   - ↗ → official sheet (Sextant, douane, marina site…) when the bag has a URL
  *   - ◎ → Google Maps sheet, for real places (marinas, ports, anchorages, AtoN, PoE)
+ *   - a reason said in words keeps its raw engine code in a tooltip
  * Plain text is untouched: segments joined === narrateIci().
  */
 function BriefingText({ segments, onFocus, t }) {
   return segments.map((seg, i) => {
+    if (!seg.entity && seg.reason?.code) {
+      return (
+        <span
+          key={i}
+          title={t("briefingReasonCode", { code: seg.reason.code })}
+          data-testid="briefing-reason"
+          data-code={seg.reason.code}
+          tabIndex={0}
+          aria-label={`${seg.text} (${t("briefingReasonCode", { code: seg.reason.code })})`}
+          className="cursor-help underline decoration-dotted decoration-slate-500 underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-1"
+        >
+          {seg.text}
+        </span>
+      );
+    }
     if (!seg.entity) return <span key={i}>{seg.text}</span>;
     const e = seg.entity;
     if (e.kind === "source" && e.url) {
