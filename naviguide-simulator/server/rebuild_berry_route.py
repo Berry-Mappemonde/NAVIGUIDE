@@ -790,7 +790,7 @@ def main(argv: list[str] | None = None, route_fn=None) -> int:
     # Fix 3 : Auto-pré-écriture des variantes film
     if args.write_film and not violations and wrote:
         try:
-            from official_store import write_film_on_click, serve_film, put, get, READY
+            from official_store import write_film_on_click, serve_film, put, get, READY, _log_fill_written
             from datetime import datetime
             lg = "fr"
             secs = 150
