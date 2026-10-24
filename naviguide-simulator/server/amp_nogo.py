@@ -6,7 +6,10 @@ Un parc qui contient déjà le départ ou l'arrivée n'est pas bloqué : on peut
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
+from pathlib import Path
 import time
 from typing import Any, Callable, Iterable
 
@@ -41,6 +44,26 @@ def load_forbidden_nogo(*, fetch_fn=None, ttl: float = _NOGO_TTL) -> list[dict]:
     now = time.time()
     if _nogo_cache["items"] is not None and now - float(_nogo_cache["ts"] or 0) < ttl:
         return _nogo_cache["items"]
+    # Support source hors-ligne : NAVIGUIDE_NOGO_FILE pointe sur un dump local.
+    nogo_file = os.getenv("NAVIGUIDE_NOGO_FILE")
+    if nogo_file:
+        try:
+            data = json.loads(Path(nogo_file).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeError) as exc:
+            log.warning("Catalogue local %s illisible : %s", nogo_file, exc)
+            _nogo_cache["ts"] = now
+            _nogo_cache["items"] = []
+            _nogo_cache["available"] = False
+            return []
+        items = []
+        for feat in (data.get("features") if isinstance(data, dict) else None) or []:
+            item = _item_from_feature(feat)
+            if item:
+                items.append(item)
+        _nogo_cache["ts"] = now
+        _nogo_cache["items"] = items
+        _nogo_cache["available"] = True
+        return items
     fetch = fetch_fn or _fetch_nogo
     try:
         data = fetch()

@@ -130,7 +130,15 @@ def _constraint_open(route) -> bool:
     if not isinstance(route, dict):
         return False
     props = route.get("properties") or {}
-    return props.get("constraintStatus") == "open"
+    # Reject if constraint is open OR if avoidance status is unavailable
+    # (catalogue not loaded, meaning the route couldn't be properly checked).
+    constraint = props.get("constraintStatus")
+    amp = props.get("ampStatus")
+    if constraint == "open":
+        return True
+    if amp == "unavailable":
+        return True
+    return False
 
 
 def _blob(props: dict) -> str:
@@ -736,6 +744,7 @@ def main(argv: list[str] | None = None, route_fn=None) -> int:
     parser.add_argument("--src", required=True, help="FeatureCollection GeoJSON (pas un chemin figé)")
     parser.add_argument("--write", action="store_true", help="Écrit le candidat. Exige --dest.")
     parser.add_argument("--dest", default=None, help="Fichier candidat. Interdit : public/route.geojson.")
+    parser.add_argument("--write-film", action="store_true", help="Pré-écrit les variantes film (FR/EN) après rebuild.")
     args = parser.parse_args(argv)
     if args.write and not args.dest:
         print("refusé : --write exige --dest", file=sys.stderr)
@@ -778,6 +787,20 @@ def main(argv: list[str] | None = None, route_fn=None) -> int:
             manifest_name = written.name
         except OSError as exc:
             violations.append(f"écriture impossible : {exc}")
+    # Fix 3 : Auto-pré-écriture des variantes film
+    if args.write_film and not violations and wrote:
+        try:
+            from official_store import write_film_on_click, serve_film, put, get, READY, _log_fill_written
+            from datetime import datetime
+            lg = "fr"
+            secs = 150
+            cached = serve_film(lang=lg, seconds=secs, style="written")
+            if not (cached.get("hasWritten") and cached.get("status") == READY):
+                when = datetime.utcnow()
+                write_film_on_click(lang=lg, seconds=secs, cascade=None, now=when)
+                _log_fill_written(f"rebuild : film pré-écrit {lg} {secs}s")
+        except Exception as e:
+            _log_fill_written(f"rebuild : erreur film pré-écriture {e}")
     sys.stdout.write(format_report(candidate, violations, write=wrote, manifest=manifest_name))
     if violations:
         return 1

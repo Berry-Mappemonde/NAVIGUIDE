@@ -15,3 +15,9 @@ server/saildocs_inbox/
 test-results/
 playwright-report/
 e2e/.auth/
+
+# Dépendances Python installées localement (contournement sandbox) — NE JAMAIS committer
+../../.pip_packages/
+candidate.geojson
+amp-nogo.json
+PLAN.md

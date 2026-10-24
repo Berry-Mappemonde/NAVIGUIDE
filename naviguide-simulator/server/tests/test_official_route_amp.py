@@ -203,3 +203,5 @@ def test_public_route_hit_count_is_printed_and_not_required():
     legs = Counter((hit["from"], hit["to"]) for hit in hits)
     for (src, dst), count in sorted(legs.items(), key=lambda row: (-row[1], row[0])):
         print(f"AMP_PIN_LEG {count} {src} → {dst}")
+    # Bloquant : aucune traversée de réserve sur la route publiée
+    assert len(hits) == 0, f"La route publiée traverse {len(hits)} segment(s) d'aire(s) interdite(s)"
