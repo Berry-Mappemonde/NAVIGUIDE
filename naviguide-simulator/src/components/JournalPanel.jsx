@@ -1,6 +1,8 @@
 import { memo, useMemo } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
+import { NotebookText } from "lucide-react";
 import { groupJournalByDay } from "../engine/journalFormat.js";
+import { KindIcon } from "./kindIcon.js";
 
 function DayBlock({ group }) {
   return (
@@ -9,7 +11,9 @@ function DayBlock({ group }) {
       <ul className="mt-0.5 space-y-0.5">
         {group.entries.map((e) => (
           <li key={e.id || `${group.day}-${e.time}-${e.kind}`} className="flex gap-1.5 text-[11px] text-slate-300 leading-snug" data-kind={e.kind}>
-            <span className="flex-shrink-0 w-4 text-center">{e.icon}</span>
+            <span className="flex-shrink-0 w-4 h-[1lh] flex items-center justify-center text-slate-400" aria-hidden="true">
+              <KindIcon kind={e.kind} />
+            </span>
             <span className="flex-shrink-0 text-slate-500 tabular-nums">{e.time}</span>
             <span className="min-w-0 break-words [overflow-wrap:anywhere]">{e.text}</span>
           </li>
@@ -36,7 +40,7 @@ export const JournalPanel = memo(function JournalPanel({ journal, loading = fals
   return (
     <details className="bg-slate-800/50 rounded-lg border border-slate-700/50 group" data-testid="journal-panel" open={false}>
       <summary className="cursor-pointer select-none px-2 py-1.5 flex items-center gap-2 text-[11px] font-semibold text-slate-200">
-        <span>📓</span>
+        <NotebookText size={13} className="flex-shrink-0" aria-hidden="true" focusable="false" />
         <span>{t("journalTitle")}</span>
         <span className="ml-auto text-[10px] font-normal text-slate-400">
           {loading && !journal ? "…" : (today ? today.label : t("journalCount", { n: count }))}
