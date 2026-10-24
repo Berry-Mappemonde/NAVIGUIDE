@@ -667,6 +667,10 @@ export default {
   // ED2
   ed2WritingNemotron: "Writing…",
   ed2BrandLine: "NVIDIA · Nebius",
+  // Clic Rédigé : secondes de l'horloge du navigateur, issue sans raison inventée
+  filmWritingElapsed: "Writing… {n} s",
+  filmWriteNotWritten: "Not edited — Raw shown",
+  filmWritingAnnounce: "Writing the edited film",
 
   // FM1
   fm1VariantAbsent: "This cut is not ready yet",
