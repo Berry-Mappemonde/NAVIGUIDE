@@ -148,6 +148,7 @@ export default {
   briefingSeeOnMap: "See on the map: the boat and this place",
   briefingOfficialSheet: "Official sheet / website",
   briefingSourceLink: "Data source",
+  briefingReasonCode: "Technical code: {code}",
   briefingGoogleMaps: "Google Maps sheet",
 
   // ── Moment card (popups along the route) ─────────────────────────────────
