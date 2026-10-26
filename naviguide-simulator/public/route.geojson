@@ -27,7 +27,7 @@
       "type": "Feature",
       "properties": {
         "from": "La Rochelle",
-        "to": "Point intermédiaire Avant Corse",
+        "to": "Point interm\u00e9diaire Avant Corse",
         "type": "maritime"
       },
       "geometry": {
@@ -38,8 +38,8 @@
             46.1541
           ],
           [
-            -2.432276270782218,
-            45.53231079636471
+            -1.2141155000000001,
+            46.136630499999995
           ],
           [
             -1.261231,
@@ -315,7 +315,7 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Point intermédiaire Avant Corse",
+        "from": "Point interm\u00e9diaire Avant Corse",
         "to": "Ajaccio (Corse)",
         "type": "maritime"
       },
@@ -357,7 +357,7 @@
       "type": "Feature",
       "properties": {
         "from": "Ajaccio (Corse)",
-        "to": "Point intermédiaire Après Corse",
+        "to": "Point interm\u00e9diaire Apr\u00e8s Corse",
         "type": "maritime"
       },
       "geometry": {
@@ -397,8 +397,8 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Point intermédiaire Après Corse",
-        "to": "Point intermédiaire Après Corse",
+        "from": "Point interm\u00e9diaire Apr\u00e8s Corse",
+        "to": "Point interm\u00e9diaire Apr\u00e8s Corse",
         "type": "maritime"
       },
       "geometry": {
@@ -426,7 +426,7 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Point intermédiaire Après Corse",
+        "from": "Point interm\u00e9diaire Apr\u00e8s Corse",
         "to": "Iles Canari",
         "type": "maritime"
       },
@@ -664,7 +664,7 @@
       "type": "Feature",
       "properties": {
         "from": "Iles Canari",
-        "to": "Point intermédiaire Cap Verde",
+        "to": "Point interm\u00e9diaire Cap Verde",
         "type": "maritime"
       },
       "geometry": {
@@ -812,7 +812,7 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Point intermédiaire Cap Verde",
+        "from": "Point interm\u00e9diaire Cap Verde",
         "to": "Sainte Lucie",
         "type": "maritime"
       },
@@ -1139,7 +1139,7 @@
       "type": "Feature",
       "properties": {
         "from": "Fort-de-France (Martinique)",
-        "to": "Pointe-à-Pitre (Guadeloupe)",
+        "to": "Pointe-\u00e0-Pitre (Guadeloupe)",
         "type": "maritime"
       },
       "geometry": {
@@ -1179,8 +1179,8 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Pointe-à-Pitre (Guadeloupe)",
-        "to": "Gustavia (Saint-Barthélemy)",
+        "from": "Pointe-\u00e0-Pitre (Guadeloupe)",
+        "to": "Gustavia (Saint-Barth\u00e9lemy)",
         "type": "maritime"
       },
       "geometry": {
@@ -1236,7 +1236,7 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Gustavia (Saint-Barthélemy)",
+        "from": "Gustavia (Saint-Barth\u00e9lemy)",
         "to": "Marigot (Saint-Martin)",
         "type": "maritime"
       },
@@ -1442,7 +1442,7 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Halifax (Nouvelle-Écosse)",
+        "from": "Halifax (Nouvelle-\u00c9cosse)",
         "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
         "type": "maritime"
       },
@@ -1520,7 +1520,7 @@
       "type": "Feature",
       "properties": {
         "from": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
-        "to": "Halifax (Nouvelle-Écosse)",
+        "to": "Halifax (Nouvelle-\u00c9cosse)",
         "type": "maritime"
       },
       "geometry": {
@@ -1597,7 +1597,7 @@
       "type": "Feature",
       "properties": {
         "from": "Cayenne (Guyane)",
-        "to": "Papeete (Polynésie française)",
+        "to": "Papeete (Polyn\u00e9sie fran\u00e7aise)",
         "type": "maritime"
       },
       "geometry": {
@@ -2377,7 +2377,7 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Papeete (Polynésie française)",
+        "from": "Papeete (Polyn\u00e9sie fran\u00e7aise)",
         "to": "Mata-Utu (Wallis-et-Futuna)",
         "type": "maritime"
       },
@@ -2660,7 +2660,7 @@
       },
       "properties": {
         "from": "Mata-Utu (Wallis-et-Futuna)",
-        "to": "Nouméa (Nouvelle-Calédonie)",
+        "to": "Noum\u00e9a (Nouvelle-Cal\u00e9donie)",
         "type": "maritime",
         "antimeridian_part": 1
       }
@@ -2774,7 +2774,7 @@
       },
       "properties": {
         "from": "Mata-Utu (Wallis-et-Futuna)",
-        "to": "Nouméa (Nouvelle-Calédonie)",
+        "to": "Noum\u00e9a (Nouvelle-Cal\u00e9donie)",
         "type": "maritime",
         "antimeridian_part": 2
       }
@@ -2782,8 +2782,8 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Nouméa (Nouvelle-Calédonie)",
-        "to": "Point intermédiaire détroit de Torres",
+        "from": "Noum\u00e9a (Nouvelle-Cal\u00e9donie)",
+        "to": "Point interm\u00e9diaire d\u00e9troit de Torres",
         "type": "maritime"
       },
       "geometry": {
@@ -2991,8 +2991,8 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Point intermédiaire détroit de Torres",
-        "to": "Point intermédiaire haut Australie",
+        "from": "Point interm\u00e9diaire d\u00e9troit de Torres",
+        "to": "Point interm\u00e9diaire haut Australie",
         "type": "maritime"
       },
       "geometry": {
@@ -3052,8 +3052,8 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Point intermédiaire haut Australie",
-        "to": "Point intermédiaire haut Australie",
+        "from": "Point interm\u00e9diaire haut Australie",
+        "to": "Point interm\u00e9diaire haut Australie",
         "type": "maritime"
       },
       "geometry": {
@@ -3277,8 +3277,8 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Point intermédiaire haut Australie",
-        "to": "Point intermédiaire haut Australie",
+        "from": "Point interm\u00e9diaire haut Australie",
+        "to": "Point interm\u00e9diaire haut Australie",
         "type": "maritime"
       },
       "geometry": {
@@ -3466,7 +3466,7 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Point intermédiaire haut Australie",
+        "from": "Point interm\u00e9diaire haut Australie",
         "to": "Sri Lanka",
         "type": "maritime"
       },
@@ -4064,7 +4064,7 @@
       "type": "Feature",
       "properties": {
         "from": "Tromelin (TAAF)",
-        "to": "Saint-Gilles (La Réunion)",
+        "to": "Saint-Gilles (La R\u00e9union)",
         "type": "maritime"
       },
       "geometry": {
@@ -4128,7 +4128,7 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Saint-Gilles (La Réunion)",
+        "from": "Saint-Gilles (La R\u00e9union)",
         "to": "Europa (TAAF)",
         "type": "maritime"
       },
@@ -4270,7 +4270,7 @@
       "type": "Feature",
       "properties": {
         "from": "Europa (TAAF)",
-        "to": "Point intermédiaire Cap de la Bonne Espérance",
+        "to": "Point interm\u00e9diaire Cap de la Bonne Esp\u00e9rance",
         "type": "maritime"
       },
       "geometry": {
@@ -4498,8 +4498,8 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Point intermédiaire Cap de la Bonne Espérance",
-        "to": "Point intermédiaire Sainte Hélène",
+        "from": "Point interm\u00e9diaire Cap de la Bonne Esp\u00e9rance",
+        "to": "Point interm\u00e9diaire Sainte H\u00e9l\u00e8ne",
         "type": "maritime"
       },
       "geometry": {
@@ -4691,8 +4691,8 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Point intermédiaire Sainte Hélène",
-        "to": "Point intermédiaire Ascension",
+        "from": "Point interm\u00e9diaire Sainte H\u00e9l\u00e8ne",
+        "to": "Point interm\u00e9diaire Ascension",
         "type": "maritime"
       },
       "geometry": {
@@ -4796,8 +4796,8 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Point intermédiaire Ascension",
-        "to": "Point intermédiaire Ascension - Cap Verde",
+        "from": "Point interm\u00e9diaire Ascension",
+        "to": "Point interm\u00e9diaire Ascension - Cap Verde",
         "type": "maritime"
       },
       "geometry": {
@@ -4925,8 +4925,8 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Point intermédiaire Ascension - Cap Verde",
-        "to": "Point intermédiaire Cap Verde",
+        "from": "Point interm\u00e9diaire Ascension - Cap Verde",
+        "to": "Point interm\u00e9diaire Cap Verde",
         "type": "maritime"
       },
       "geometry": {
@@ -5030,7 +5030,7 @@
     {
       "type": "Feature",
       "properties": {
-        "from": "Point intermédiaire Cap Verde",
+        "from": "Point interm\u00e9diaire Cap Verde",
         "to": "La Rochelle",
         "type": "maritime"
       },
@@ -5358,8 +5358,8 @@
             46.239161
           ],
           [
-            -2.4311426041901134,
-            45.53130711496599
+            -1.2141155000000001,
+            46.136630499999995
           ],
           [
             -1.1669999999999991,
@@ -5401,7 +5401,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Point intermédiaire Avant Corse",
+        "name": "Point interm\u00e9diaire Avant Corse",
         "type": "waypoint",
         "point_type": "intermediate"
       },
@@ -5431,7 +5431,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Point intermédiaire Après Corse",
+        "name": "Point interm\u00e9diaire Apr\u00e8s Corse",
         "type": "waypoint",
         "point_type": "intermediate"
       },
@@ -5446,7 +5446,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Point intermédiaire Après Corse",
+        "name": "Point interm\u00e9diaire Apr\u00e8s Corse",
         "type": "waypoint",
         "point_type": "intermediate"
       },
@@ -5476,7 +5476,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Point intermédiaire Cap Verde",
+        "name": "Point interm\u00e9diaire Cap Verde",
         "type": "waypoint",
         "point_type": "intermediate"
       },
@@ -5521,7 +5521,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Pointe-à-Pitre (Guadeloupe)",
+        "name": "Pointe-\u00e0-Pitre (Guadeloupe)",
         "type": "waypoint",
         "point_type": "escale"
       },
@@ -5536,7 +5536,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Gustavia (Saint-Barthélemy)",
+        "name": "Gustavia (Saint-Barth\u00e9lemy)",
         "type": "waypoint",
         "point_type": "escale"
       },
@@ -5581,7 +5581,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Halifax (Nouvelle-Écosse)",
+        "name": "Halifax (Nouvelle-\u00c9cosse)",
         "type": "waypoint",
         "point_type": "intermediate"
       },
@@ -5611,7 +5611,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Papeete (Polynésie française)",
+        "name": "Papeete (Polyn\u00e9sie fran\u00e7aise)",
         "type": "waypoint",
         "point_type": "escale"
       },
@@ -5641,7 +5641,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Nouméa (Nouvelle-Calédonie)",
+        "name": "Noum\u00e9a (Nouvelle-Cal\u00e9donie)",
         "type": "waypoint",
         "point_type": "escale"
       },
@@ -5656,7 +5656,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Point intermédiaire détroit de Torres",
+        "name": "Point interm\u00e9diaire d\u00e9troit de Torres",
         "type": "waypoint",
         "point_type": "intermediate"
       },
@@ -5671,7 +5671,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Point intermédiaire haut Australie",
+        "name": "Point interm\u00e9diaire haut Australie",
         "type": "waypoint",
         "point_type": "intermediate"
       },
@@ -5686,7 +5686,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Point intermédiaire haut Australie",
+        "name": "Point interm\u00e9diaire haut Australie",
         "type": "waypoint",
         "point_type": "intermediate"
       },
@@ -5701,7 +5701,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Point intermédiaire haut Australie",
+        "name": "Point interm\u00e9diaire haut Australie",
         "type": "waypoint",
         "point_type": "intermediate"
       },
@@ -5791,7 +5791,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Saint-Gilles (La Réunion)",
+        "name": "Saint-Gilles (La R\u00e9union)",
         "type": "waypoint",
         "point_type": "escale"
       },
@@ -5821,7 +5821,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Point intermédiaire Cap de la Bonne Espérance",
+        "name": "Point interm\u00e9diaire Cap de la Bonne Esp\u00e9rance",
         "type": "waypoint",
         "point_type": "intermediate"
       },
@@ -5836,7 +5836,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Point intermédiaire Sainte Hélène",
+        "name": "Point interm\u00e9diaire Sainte H\u00e9l\u00e8ne",
         "type": "waypoint",
         "point_type": "intermediate"
       },
@@ -5851,7 +5851,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Point intermédiaire Ascension",
+        "name": "Point interm\u00e9diaire Ascension",
         "type": "waypoint",
         "point_type": "intermediate"
       },
@@ -5866,7 +5866,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Point intermédiaire Ascension - Cap Verde",
+        "name": "Point interm\u00e9diaire Ascension - Cap Verde",
         "type": "waypoint",
         "point_type": "intermediate"
       },
@@ -5881,7 +5881,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Point intermédiaire Cap Verde",
+        "name": "Point interm\u00e9diaire Cap Verde",
         "type": "waypoint",
         "point_type": "intermediate"
       },
