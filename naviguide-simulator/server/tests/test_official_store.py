@@ -590,6 +590,39 @@ def test_frozen_archive_serves_film_under_new_rev_when_worker_off(tmp_path, monk
     assert len(chapters) > 0
 
 
+def test_frozen_archive_is_paired_with_its_route(monkeypatch):
+    """La recette hors ligne sert official_store.route.geojson : chaque clé de l'archive
+    doit porter l'empreinte de cette route, sinon l'API ne sert rien (bateau, horloge, film)."""
+    import json
+    import tarfile
+
+    import voyage_api
+
+    fixtures = Path(__file__).resolve().parent / "fixtures"
+    monkeypatch.setattr(voyage_api, "_ROUTE_GEOJSON", fixtures / "official_store.route.geojson")
+    monkeypatch.setattr(voyage_api, "_OFFICIAL_BODY_CACHE", None)
+    body = voyage_api.official_itinerary_body()
+    fp = voyage_api._route_fp(body.points, body.marks, voyage_api.OFFICIAL_T0)
+    with tarfile.open(fixtures / "official_store.tar.gz", "r:gz") as tf:
+        keys = {
+            json.load(tf.extractfile(m))["key"]
+            for m in tf.getmembers()
+            if m.isfile() and m.name.endswith(".json")
+        }
+    assert keys
+    assert all(k.startswith(f"{fp}:") for k in keys), (fp, sorted(keys))
+
+
+def test_route_override_only_when_offline(monkeypatch):
+    import voyage_api
+
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_ROUTE_FILE", "/tmp/route-du-gel.geojson")
+    monkeypatch.delenv("NAVIGUIDE_OFFLINE", raising=False)
+    assert voyage_api._route_geojson_path() == voyage_api._PUBLIC_ROUTE_GEOJSON
+    monkeypatch.setenv("NAVIGUIDE_OFFLINE", "1")
+    assert voyage_api._route_geojson_path() == Path("/tmp/route-du-gel.geojson")
+
+
 def test_stale_film_refreshed_when_marks_have_air_pair(tmp_path):
     store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
     voy = _air_voy()

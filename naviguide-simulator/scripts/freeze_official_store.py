@@ -23,6 +23,9 @@ SERVER = ROOT / "server"
 FIXTURES = SERVER / "tests" / "fixtures"
 ARCHIVE = FIXTURES / "official_store.tar.gz"
 README = FIXTURES / "official_store.README.md"
+# La route sur laquelle le stock a été calculé : la recette hors ligne la sert avec lui.
+ROUTE = ROOT / "public" / "route.geojson"
+ROUTE_FIXTURE = FIXTURES / "official_store.route.geojson"
 DEFAULT_SRC = Path.home() / ".cache" / "naviguide" / "voyage-store"
 MAX_BYTES = 3 * 1024 * 1024
 FAMILIES = ("moments", "film", "eta", "climo", "ici", "plan_review")
@@ -127,6 +130,8 @@ def freeze(src: Path, archive: Path = ARCHIVE) -> dict:
             write_tree(docs, tree, thin_climo=True)
             size = pack_tree(tree, archive)
             thinned = True
+    if archive == ARCHIVE:
+        ROUTE_FIXTURE.write_bytes(ROUTE.read_bytes())
     return {
         "src": str(src),
         "archive": str(archive),
@@ -155,13 +160,20 @@ Clés :
 
 {keys}
 
+Route du gel : `server/tests/fixtures/official_store.route.geojson`, copie de
+`public/route.geojson` au moment du gel. La recette hors ligne sert les deux
+ensemble ; `test_frozen_archive_is_paired_with_its_route` échoue s'ils divergent.
+
 Commande pour régénérer (après un vrai calcul, si la route ou t0 change) :
 
 ```bash
 cd naviguide-simulator
-.venv/bin/python scripts/prepare_official_store.py
+NAVIGUIDE_LLM_MODE=off .venv/bin/python scripts/prepare_official_store.py
 .venv/bin/python scripts/freeze_official_store.py
 ```
+
+`NAVIGUIDE_LLM_MODE=off` : sans lui, une clé présente sur le poste fait des
+appels Nano/Lightning payants pendant le calcul.
 
 Le script lit `~/.cache/naviguide/voyage-store` (ou `NAVIGUIDE_OFFICIAL_STORE_DIR`).
 Aucune donnée n'est inventée : on gèle le stock déjà calculé.
