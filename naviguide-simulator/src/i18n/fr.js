@@ -148,6 +148,7 @@ export default {
   briefingSeeOnMap: "Voir sur la carte : le bateau et ce lieu",
   briefingOfficialSheet: "Fiche / site officiel",
   briefingSourceLink: "Source des données",
+  briefingReasonCode: "Code technique : {code}",
   briefingGoogleMaps: "Fiche Google Maps",
 
   // ── Carte du moment (popups le long de la route) ─────────────────────────
