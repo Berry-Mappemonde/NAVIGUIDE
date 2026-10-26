@@ -3,7 +3,7 @@
 Ce manuel décrit **chaque bouton** que vous voyez à l’écran, en une ligne.
 Aucun jargon. L’application **ne convient pas à la navigation**.
 
-En ligne : [simulator.naviguide.fr](https://naviguide.fr).
+En ligne : [naviguide.fr](https://naviguide.fr).
 Version anglaise : [USER_MANUAL.md](USER_MANUAL.md).
 
 Au premier lancement, une fenêtre **Ne convient pas à la navigation**
