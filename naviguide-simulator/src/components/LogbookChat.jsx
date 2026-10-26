@@ -56,40 +56,40 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
   };
 
   return (
-    <div data-testid="logbook-chat" className="sim-box-chat rounded-lg border border-violet-500/25 bg-violet-950/25 p-2 min-w-0">
+    <div data-testid="logbook-chat" className="sim-box-chat rounded-lg border border-line-hairline bg-surface-raised/40 p-2 min-w-0">
       <div className="flex items-center gap-1.5 mb-1 flex-shrink-0">
-        <MessageSquare size={12} className="text-violet-200" />
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-violet-200 leading-snug">{t("logbookChatTitle")}</div>
-        <span className="ml-auto text-[9px] text-violet-100/60">{admin ? t("logbookChatLogged") : t("logbookChatNotLogged")}</span>
+        <MessageSquare size={12} className="text-text-muted" />
+        <div className="text-[12px] font-semibold text-text-primary leading-snug">{t("logbookChatTitle")}</div>
+        <span className="ml-auto text-[12px] text-text-muted">{admin ? t("logbookChatLogged") : t("logbookChatNotLogged")}</span>
       </div>
       <div
         data-testid="logbook-chat-reply"
-        className="flex-1 min-h-0 rounded-md border border-violet-300/30 bg-slate-950/55 px-1.5 py-1"
+        className="flex-1 min-h-0 rounded-md border border-line-hairline bg-surface-panel/55 px-1.5 py-1"
       >
         <div ref={listRef} className="h-full overflow-y-auto sidebar-scroll space-y-1 min-w-0" data-testid="logbook-chat-list">
           {messages.map((m, i) => (
-            <div key={`${m.t}-${i}`} className={`text-[11px] leading-snug break-words [overflow-wrap:anywhere] ${m.role === "skipper" ? "text-slate-100" : "text-violet-100"}`}>
-              <span className="text-[9px] text-slate-500 mr-1">{formatTimeUtc(m.t)}</span>
+            <div key={`${m.t}-${i}`} className={`text-[12px] leading-snug break-words [overflow-wrap:anywhere] ${m.role === "skipper" ? "text-text-primary" : "text-text-primary/90"}`}>
+              <span className="text-[12px] text-text-muted mr-1">{formatTimeUtc(m.t)}</span>
               <span className="font-semibold mr-1">{m.role === "skipper" ? t("logbookChatYou") : t("logbookChatBot")}</span>
               {m.status === "failed"
-                ? <span className="text-amber-300/90">{t("logbookChatFailed")}</span>
+                ? <span className="text-status-caution">{t("logbookChatFailed")}</span>
                 : m.text}
               {m.role === "logbook" && m.status === "ready" ? (
-                <span className="ml-1 text-[9px] text-slate-500">{m.logged ? "💬 " + t("logbookChatSaved") : t("logbookChatUnsaved")}</span>
+                <span className="ml-1 text-[12px] text-text-muted">{m.logged ? "💬 " + t("logbookChatSaved") : t("logbookChatUnsaved")}</span>
               ) : null}
               {m.role === "logbook" && (m.source || m.engine) ? (
                 <LlmSourceBadge source={m.source || m.engine} testId="chat-source" className="mt-0.5" />
               ) : null}
             </div>
           ))}
-          {pending ? <p className="text-[10px] text-slate-400 leading-snug">{t("logbookChatPending")}</p> : null}
-          {error ? <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p> : null}
+          {pending ? <p className="text-[12px] text-text-muted leading-snug">{t("logbookChatPending")}</p> : null}
+          {error ? <p className="text-[12px] text-status-caution leading-snug">{error}</p> : null}
         </div>
       </div>
       {showAiNotice ? (
         <div
           data-testid="logbook-chat-ai-notice"
-          className="mt-1.5 rounded-md border border-violet-300/45 bg-violet-950 px-2 py-1.5 text-xs leading-snug text-violet-50"
+          className="mt-1.5 rounded-md border border-accent-line/45 bg-accent-soft px-2 py-1.5 text-xs leading-snug text-text-primary"
           role="note"
         >
           <p>{t("aiActChatNotice")}</p>
@@ -97,7 +97,7 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
             type="button"
             data-testid="logbook-chat-ai-notice-dismiss"
             onClick={dismissAiNotice}
-            className="mt-1 text-xs font-semibold text-white underline underline-offset-2 hover:text-violet-100"
+            className="mt-1 text-xs font-semibold text-text-primary underline underline-offset-2 hover:text-accent-text"
           >
             {t("aiActChatNoticeDismiss")}
           </button>
@@ -112,14 +112,14 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
           placeholder={t("logbookChatPlaceholder")}
           maxLength={500}
           data-testid="logbook-chat-input"
-          className="flex-1 min-w-0 h-7 rounded-md bg-slate-900/70 border border-white/10 px-2 text-[11px] text-white placeholder:text-slate-500 focus:outline-none focus:border-violet-400/60"
+          className="flex-1 min-w-0 h-7 rounded-md bg-surface-panel/70 border border-line-hairline px-2 text-[12px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-line/60"
         />
         <button
           type="submit"
           disabled={pending || !draft.trim()}
           title={t("logbookChatSend")}
           data-testid="logbook-chat-send"
-          className="h-7 w-7 rounded-md bg-violet-600 hover:bg-violet-500 disabled:opacity-40 flex items-center justify-center text-white"
+          className="h-7 w-7 rounded-md bg-accent-fill hover:bg-accent-fill/85 disabled:opacity-40 flex items-center justify-center text-accent-on"
         >
           <Send size={12} />
         </button>

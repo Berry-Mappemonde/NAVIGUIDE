@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { wakeCursorAt } from "../engine/filmWake.js";
-import { WAKE_DONE_COLOR, WAKE_REST_COLOR } from "../layers/styles.js";
+import { WAKE_DONE_COLOR, WAKE_REST_COLOR, WAKE_REST_DASH } from "../layers/styles.js";
 import { unwrapLon } from "../utils/geo.js";
 
 const WORLD_OFFSETS = [0, 360, -360];
@@ -16,8 +16,9 @@ const WAKE_STYLE = {
 
 const REST_STYLE = {
   color: WAKE_REST_COLOR,
-  weight: 4,
-  opacity: 0.88,
+  weight: 2.5,
+  dashArray: WAKE_REST_DASH,
+  opacity: 0.9,
   pane: "route",
   interactive: false,
 };
