@@ -2,7 +2,7 @@
 // Sans API : le décompte innerText tient seul (repli route interne).
 // GET /voyage/official : sondé ; nom du bateau / polaire chargée seulement si l'API répond.
 import { expect, test } from "@playwright/test";
-import { dismissNotForNav } from "../helpers.js";
+import { dismissNotForNav, openLeftDrawer } from "../helpers.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,13 +49,6 @@ function formatReport(labels, data) {
   ].join("\n");
 }
 
-async function showLeftPanel(page) {
-  const brand = page.getByText(/NAVIGUIDE simulator/i).first();
-  if (await brand.isVisible({ timeout: 1500 }).catch(() => false)) return;
-  await page.locator(".naviguide-sidebar-toggle--left").click();
-  await expect(brand).toBeVisible({ timeout: 15_000 });
-}
-
 async function showToolsPanel(page) {
   const theme = page.getByRole("button", { name: /^(sombre|clair|dark|light)$/i });
   if (await theme.isVisible({ timeout: 1500 }).catch(() => false)) return;
@@ -64,7 +57,7 @@ async function showToolsPanel(page) {
 }
 
 async function showBothPanels(page) {
-  await showLeftPanel(page);
+  await openLeftDrawer(page);
   await showToolsPanel(page);
 }
 
@@ -135,11 +128,9 @@ function writeReport(screen, rows) {
 
 async function enterDraw(page) {
   const drawBtn = page.getByRole("button", { name: /Berry-Mappemonde.*Tracer votre propre route|Draw your own route/i });
-  if (!(await drawBtn.isVisible().catch(() => false))) {
-    await page.locator(".naviguide-sidebar-toggle--left").evaluate((el) => el.click());
-  }
-  await expect(drawBtn).toBeAttached({ timeout: 15_000 });
-  await drawBtn.evaluate((el) => el.click());
+  await openLeftDrawer(page);
+  await expect(drawBtn).toBeVisible({ timeout: 15_000 });
+  await drawBtn.click();
   await expect(page.getByTestId("drawing-box")).toBeVisible({ timeout: 15_000 });
 }
 
