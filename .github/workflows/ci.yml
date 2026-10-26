@@ -66,6 +66,10 @@ jobs:
         env:
           # Aucun secret : Copernicus et les LLM restent en repli / mock.
           PYTHONDONTWRITEBYTECODE: "1"
+      # Le stock figé de la recette et sa route : refus s'ils divergent, ::warning:: tant que
+      # la route publiée a changé depuis le gel (lancé ici car Playwright avale la sortie de l'API).
+      - name: Stock figé de la recette et route publiée
+        run: python scripts/e2e_store_preflight.py server/tests/fixtures/official_store.tar.gz server/tests/fixtures/official_store.route.geojson
       # Sécurité P1 : une dépendance avec une faille connue bloque la
       # PR — critique côté npm (prod seulement), toute faille côté pip.
       - name: Audit npm (dépendances de prod, critique = bloquant)

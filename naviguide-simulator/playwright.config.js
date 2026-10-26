@@ -12,9 +12,12 @@ const apiPort = Number(
 const apiOrigin = `http://127.0.0.1:${apiPort}`;
 
 const viteServer = {
-  command: `npx vite preview --host 127.0.0.1 --port ${port} --strictPort`,
+  // Avec l'API hors ligne, le build est servi avec la route du stock figé (scripts/e2e-preview.sh).
+  command: withApi
+    ? `bash scripts/e2e-preview.sh ${port}`
+    : `npx vite preview --host 127.0.0.1 --port ${port} --strictPort`,
   url: origin,
-  reuseExistingServer: !process.env.CI && !process.env.PW_PORT,
+  reuseExistingServer: !withApi && !process.env.CI && !process.env.PW_PORT,
   timeout: 60_000,
   env: withApi
     ? { ...process.env, API_PROXY_TARGET: apiOrigin }

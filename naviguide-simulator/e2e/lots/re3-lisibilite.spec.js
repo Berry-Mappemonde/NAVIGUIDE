@@ -8,7 +8,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { dismissNotForNav } from "../helpers.js";
+import { dismissNotForNav, openLeftDrawer } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-re3");
 mkdirSync(recetteDir, { recursive: true });
@@ -52,11 +52,9 @@ function panelOnScreen(page, side) {
 
 async function showPanel(page, side) {
   await leaveCinema(page);
+  if (side === "left") return openLeftDrawer(page);
   if (await panelOnScreen(page, side)) return;
-  const toggle = side === "left"
-    ? ".naviguide-sidebar-toggle--left"
-    : ".naviguide-sidebar-toggle--right";
-  await page.locator(toggle).click();
+  await page.locator(".naviguide-sidebar-toggle--right").click();
   await expect.poll(() => panelOnScreen(page, side), { timeout: 10_000 }).toBe(true);
   await page.waitForTimeout(350);
 }

@@ -82,7 +82,24 @@ STALE_VOYAGE_DAYS = 7
 # le même fichier que le client charge en /route.geojson. Après la
 # séparation, NAVIGUIDE remplace ce lien par le fichier récupéré
 # depuis GET /api/export/route.geojson. Pas une seconde copie ici.
-_ROUTE_GEOJSON = Path(__file__).resolve().parent.parent / "public" / "route.geojson"
+# Seule exception : la recette hors ligne (NAVIGUIDE_OFFLINE, posé par
+# scripts/e2e-store-api.sh) lit la route sur laquelle le stock figé a été
+# calculé (NAVIGUIDE_OFFICIAL_ROUTE_FILE), pour que l'empreinte de la route
+# corresponde aux clés de l'archive. Jamais en production ni en dev.
+_PUBLIC_ROUTE_GEOJSON = Path(__file__).resolve().parent.parent / "public" / "route.geojson"
+
+
+def _route_geojson_path() -> Path:
+    override = (os.environ.get("NAVIGUIDE_OFFICIAL_ROUTE_FILE") or "").strip()
+    if override:
+        import offline  # noqa: PLC0415
+
+        if offline.enabled():
+            return Path(override)
+    return _PUBLIC_ROUTE_GEOJSON
+
+
+_ROUTE_GEOJSON = _route_geojson_path()
 _AIR_JUMP_NM = 120.0
 _AIR_FILM_NM = 80.0
 _create_limited = rate_limited("voyage-create", 6, 60.0, global_limit=60)
