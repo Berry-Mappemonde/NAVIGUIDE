@@ -814,15 +814,15 @@ def avoid_forbidden_amps(coords: list, start, end, inside=None) -> list:
 
 
 def _stamp_avoidance_status(props: dict, coords: list, inside) -> None:
-    """Après le dernier détour. Ne lève pas : Tracer reçoit la ligne et le statut.
+    """After the last detour. Does not raise: the tracer receives the line and status.
 
-    Catalogue absent : ``ampStatus = unavailable`` ET ``constraintStatus = open``.
-    Catalogue présent et un segment encore dans l'aire : ``constraintStatus = open``.
-    Un hit de terre seul ne marque pas l'aire comme ouverte.
+    Missing catalogue: ``ampStatus = unavailable`` AND ``constraintStatus = fail`` (fail-closed).
+    Catalogue present and a segment still inside the area: ``constraintStatus = open``.
+    A land hit alone does not mark the area as open.
     """
     if inside is None:
         props["ampStatus"] = "unavailable"
-        props["constraintStatus"] = "open"
+        props["constraintStatus"] = "fail"
         return
     try:
         hits = route_open_hits(coords, inside)

@@ -252,7 +252,7 @@ def test_missing_catalog_marks_amp_unavailable_and_keeps_the_land_line(monkeypat
     assert coords[-1][0] == pytest.approx(end[0])
     assert land_calls["n"] >= 1
     assert route["properties"]["ampStatus"] == "unavailable"
-    assert "constraintStatus" not in route["properties"]
+    assert route["properties"]["constraintStatus"] == "fail"
 
 
 def test_antimeridian_segment_enters_box_glued_at_179():
