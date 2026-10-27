@@ -3479,6 +3479,9 @@ def _event_char_idx(ev: dict, chapter: dict, fact: str) -> int:
             return text.index(needle)
     t_a, t_b = _ms(chapter.get("tA")), _ms(chapter.get("tB"))
     t = ev.get("tMs")
+    if t is None:
+        card = ev.get("card") if isinstance(ev.get("card"), dict) else {}
+        t = _ms(ev.get("t") or card.get("at"))
     if t_a is not None and t_b is not None and t is not None and t_b > t_a:
         frac = max(0.0, min(1.0, (t - t_a) / (t_b - t_a)))
         return int(round(frac * max(0, len(text) - 1)))
@@ -6261,6 +6264,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 "tB": _iso(w["tB"]),
                 "text": text,
                 "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "_anchorInputs": list(anchored),
                 "events": placed,
                 "fromName": w.get("fromName") or "",
                 "toName": w.get("toName") or "",
@@ -8891,6 +8895,7 @@ def build_raw_from_moments(
                 "tB": _iso(w["tB"]),
                 "text": text,
                 "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "_anchorInputs": list(anchored),
                 "events": placed,
                 "fromName": w.get("fromName") or "",
                 "toName": w.get("toName") or "",
@@ -8966,6 +8971,7 @@ def build_raw_from_moments(
             "tB": _iso(w["tB"]),
             "text": text,
             "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "_anchorInputs": list(anchored),
             "events": placed,
             "fromName": w.get("fromName") or "",
             "toName": w.get("toName") or "",
@@ -8994,6 +9000,7 @@ def build_raw_from_moments(
     if has_budget and target > 0:
         _film_apply_char_budget(chapters, seconds)
     chapters[:] = _drop_degenerate_chapters(chapters)
+    _reconcile_film_indices(chapters, lang=lang)
     chars = script_chars(chapters)
     return _with_dc_subjects({
         "chapters": chapters,
@@ -9067,6 +9074,7 @@ def build_raw_script(
     )
     if _film_seconds(seconds) > 0:
         _film_apply_char_budget(chapters, seconds)
+    _reconcile_film_indices(chapters, lang=lang)
     chars = script_chars(chapters)
     return _with_dc_subjects({
         "chapters": chapters,
@@ -9319,6 +9327,74 @@ def _trim_written_to_budget(raw_text: str, written_text: str, cap: int) -> tuple
         if not reverted:
             break
     return " ".join(kept), fallen
+
+
+def _reconcile_film_indices(chapters: list[dict], *, lang: str = "fr") -> None:
+    """Rebuild text-linked indices after cuts/injections; repair legacy snapshots too.
+
+    The builders keep their source anchor tuples privately until all character-budget
+    and air-sentence edits are complete. Public payloads never include that private
+    field. Cached legacy plans without source tuples get bounded, monotone anchors.
+    """
+    for chapter in chapters or []:
+        if not isinstance(chapter, dict):
+            continue
+        text = str(chapter.get("text") or "")
+        size = len(text)
+        source_anchors = chapter.pop("_anchorInputs", None)
+        if source_anchors is not None:
+            ta, tb = _ms(chapter.get("tA")), _ms(chapter.get("tB"))
+            rebuilt = chapter_anchors(text, source_anchors, ta, tb, lang) if text and ta is not None and tb is not None else []
+            chapter["anchors"] = rebuilt
+        else:
+            old = [a for a in (chapter.get("anchors") or []) if isinstance(a, dict)]
+            if not text:
+                chapter["anchors"] = []
+            elif old:
+                parsed = []
+                for a in old:
+                    try:
+                        idx = int(a.get("charIdx") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    parsed.append((idx, a))
+                if any(idx < 0 or idx >= size for idx, _ in parsed):
+                    old_span = max(1, max((idx for idx, _ in parsed), default=size - 1))
+                    parsed = [
+                        (int(round(max(0, idx) * (size - 1) / old_span)), a)
+                        for idx, a in parsed
+                    ]
+                parsed.sort(key=lambda pair: pair[0])
+                bounded = []
+                last_idx = -1
+                last_t = None
+                for idx, row in parsed:
+                    idx = max(0, min(size - 1, idx))
+                    if idx <= last_idx:
+                        idx = last_idx + 1
+                    if idx >= size:
+                        continue
+                    t_ms = _ms(row.get("t"))
+                    if t_ms is not None and last_t is not None and t_ms < last_t:
+                        t_ms = last_t
+                    if t_ms is not None:
+                        last_t = t_ms
+                    bounded.append({**row, "charIdx": idx, **({"t": _iso(t_ms)} if t_ms is not None else {})})
+                    last_idx = idx
+                chapter["anchors"] = bounded
+        # Event bubbles use text positions too. Re-find the named fact in the final
+        # text; fall back to the event timestamp interpolated over this chapter.
+        for event in chapter.get("events") or []:
+            if not isinstance(event, dict):
+                continue
+            card = event.get("card") if isinstance(event.get("card"), dict) else {}
+            fact = str(event.get("fact") or card.get("text") or "")
+            idx = _event_char_idx(event, chapter, fact)
+            event["charIdx"] = max(0, min(max(0, size - 1), int(idx or 0)))
+        chapter["events"] = sorted(
+            [e for e in (chapter.get("events") or []) if isinstance(e, dict)],
+            key=lambda e: (int(e.get("charIdx") or 0), str(e.get("id") or "")),
+        )
 
 
 def reanchor_written_chapter(chapter: dict, written_text: str, lang: str) -> list[dict]:
