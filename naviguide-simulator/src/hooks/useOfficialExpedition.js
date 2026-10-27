@@ -153,6 +153,7 @@ export function useOfficialExpedition({
         }
         // HTTP 200 with status=preparing may contain t0 but no vertices. Keep
         // the hook pending so the spaced retry continues instead of freezing Follow.
+        if (ck && !cancelled) setClockStatus("pending");
         return null;
       })
       .catch(() => { if (!cancelled) setClockStatus("absent"); return null; });
