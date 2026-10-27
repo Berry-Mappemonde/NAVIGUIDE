@@ -22,11 +22,12 @@ jobs:
       branch: ${{ steps.integrate.outputs.branch }}
       sha: ${{ steps.integrate.outputs.sha }}
     steps:
-      - name: Checkout helper branch
+      - name: Checkout helper branch without persisted credentials
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Merge PRs into an isolated integration tree
         id: integrate
@@ -42,8 +43,8 @@ jobs:
           git fetch origin "+refs/heads/chatgpt/integration-laziz-film-audit-20261027:refs/remotes/origin/film-audit-helper"
           git merge --no-ff --no-edit refs/remotes/origin/film-audit-helper
 
-          # #114 is stacked on #108, so the design-system base must be merged first.
-          # If Git reports a conflict, stop and keep main untouched; no automatic conflict resolution.
+          # #114 is stacked on #108, so merge the design-system base first.
+          # Any conflict stops the run. No automatic conflict resolution is attempted.
           for pr in 108 114 99 107 109 110 111 112 113; do
             echo "::group::Merging PR #${pr}"
             git fetch origin "+refs/pull/${pr}/head:refs/remotes/integration/pr-${pr}"
@@ -57,15 +58,29 @@ jobs:
 
           branch="integration/laziz-film-audit-${GITHUB_RUN_ID}"
           sha="$(git rev-parse HEAD)"
-          git push origin "HEAD:refs/heads/${branch}"
           echo "branch=${branch}" >> "$GITHUB_OUTPUT"
           echo "sha=${sha}" >> "$GITHUB_OUTPUT"
           {
-            echo "### Integration branch created"
-            echo "- Branch: `${branch}`"
+            echo "### Integration tree prepared"
+            echo "- Planned branch: `${branch}`"
             echo "- Commit: `${sha}`"
-            echo "- Includes PRs: #108, #114, #99, #107, #109, #110, #111, #112, #113"
+            echo "- Included PRs: #108, #114, #99, #107, #109, #110, #111, #112, #113"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Write access is used only in this step. It is not persisted to the checkout
+      # and is not available to npm/pytest/Playwright commands below.
+      - name: Publish isolated integration branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INTEGRATION_BRANCH: ${{ steps.integrate.outputs.branch }}
+          INTEGRATION_SHA: ${{ steps.integrate.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" \
+            push origin "HEAD:refs/heads/${INTEGRATION_BRANCH}"
+          echo "Published `${INTEGRATION_BRANCH}` at `${INTEGRATION_SHA}`." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Node
         uses: actions/setup-node@v7
