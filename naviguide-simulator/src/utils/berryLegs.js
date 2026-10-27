@@ -2,7 +2,7 @@ import { ROUTE_MAIN_WEIGHT } from "../layers/styles.js";
 
 export const SEGMENT_BATCH_SIZE = 4;
 /** Trace du second bateau : plus claire que le sillage, même épaisseur. */
-export const SIDE_ROUTE_COLOR = "#67e8f9";
+export const SIDE_ROUTE_COLOR = "#79c3d1";
 
 /** 1 mille nautique = 1,852 km (étape terrestre). */
 export const NM_TO_KM = 1.852;
@@ -111,7 +111,7 @@ export function legKind(fromName, toName) {
   return "sea";
 }
 
-/** Style du trait officiel : mer = sillage ; terre = orange ; air = noir pointillé ; side = cyan. */
+/** Style du trait officiel : mer = sillage ; terre = ambre ; air = noir pointillé ; side = cyan de carte. */
 export function officialRouteLineStyle(segment) {
   if (isAirSegment(segment)) {
     return { color: "#111111", weight: 2.5, dash: "7 7", interactive: false };
@@ -120,7 +120,7 @@ export function officialRouteLineStyle(segment) {
     return { color: SIDE_ROUTE_COLOR, weight: ROUTE_MAIN_WEIGHT, dash: null, interactive: false };
   }
   if (segment?.nonMaritime) {
-    return { color: "orange", weight: 4, dash: "6 6", interactive: true };
+    return { color: "#e6a84b", weight: 4, dash: "6 6", interactive: true };
   }
   return null;
 }
