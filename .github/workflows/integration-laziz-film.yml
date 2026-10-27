@@ -150,6 +150,21 @@ jobs:
             echo "::endgroup::"
           done
 
+          # The combined PRs exposed one remaining hard-coded palette class in the
+          # event-bubble icon. Use the semantic theme token expected by PR #114.
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("naviguide-simulator/src/components/EventBubble.jsx")
+          text = p.read_text(encoding="utf-8")
+          old = 'text-sky-200'
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"Expected exactly one legacy EventBubble color, found {count}")
+          p.write_text(text.replace(old, "text-accent-text", 1), encoding="utf-8")
+          PY
+          git add naviguide-simulator/src/components/EventBubble.jsx
+          git commit -m "fix: use semantic accent token for event bubble icon"
+
           branch="integration/laziz-film-audit-${GITHUB_RUN_ID}"
           sha="$(git rev-parse HEAD)"
           echo "branch=${branch}" >> "$GITHUB_OUTPUT"
