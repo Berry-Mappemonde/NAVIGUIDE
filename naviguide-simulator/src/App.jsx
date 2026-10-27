@@ -1302,12 +1302,14 @@ export default function App() {
         setToolsOpen(true);
         break;
       case "return":
+        // Return to the official Berry route without cancelling the user's draft.
+        handleRouteSwitchToBerry();
         showFollow(true, false);
         break;
       default:
         break;
     }
-  }, [selectView, stopDemoOwnedReplay, view]);
+  }, [handleRouteSwitchToBerry, selectView, stopDemoOwnedReplay, view]);
 
   const startDemoReplay = useCallback(() => {
     if (replay.active || !replayControls?.canStart || typeof replayControls.onStart !== "function") return;
