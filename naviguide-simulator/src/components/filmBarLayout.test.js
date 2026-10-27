@@ -186,6 +186,22 @@ describe("film bar", () => {
   });
 });
 
+describe("film bar — issue du clic Rédigé hors de la barre", () => {
+  it("pose FilmWriteStatus avant la boîte naviguide-film-bar, la rangée garde « Rédaction en cours… »", () => {
+    const statusAt = firstIndex(bar, /<FilmWriteStatus /);
+    const boxAt = firstIndex(bar, /className=\{`naviguide-film-bar /);
+    assert.ok(statusAt < boxAt, "la ligne vit hors de la boîte mesurée, pas dans ses rangées");
+    assert.match(bar, /<FilmWriteStatus writing=\{Boolean\(replay\.writing\)\} since=\{replay\.writingSince\} notice=\{replay\.writeNotice\} \/>/);
+    assert.match(bar, /\{t\("ed2WritingNemotron"\)\}/);
+    assert.doesNotMatch(bar, /filmWriteNotWritten|filmWritingElapsed/);
+    const status = readFileSync(join(here, "FilmWriteStatus.jsx"), "utf8");
+    assert.match(status, /className="absolute bottom-full left-0 mb-\[26px\] max-\[599px\]:mb-\[48px\] max-w-\[60%\] pointer-events-none"/);
+    assert.doesNotMatch(status, /filmStorySource/);
+    assert.match(app, /writingSince: replay\.filmWritingSince/);
+    assert.match(app, /writeNotice: replay\.filmWriteNotice/);
+  });
+});
+
 describe("crédits au-dessus de la barre", () => {
   it("App mesure la barre film et SimulationFilmBar expose la racine", () => {
     assert.match(app, /ref=\{filmBarRef\}/);
