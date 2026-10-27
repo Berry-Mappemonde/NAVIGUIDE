@@ -12,6 +12,7 @@ import { SatelliteMetPanel } from "./components/SatelliteMetPanel.jsx";
 import { useLang } from "./i18n/LangContext.jsx";
 import { ITINERARY_POINTS } from "./constants/itineraryPoints";
 import { SimulationFilmBar } from "./components/SimulationFilmBar.jsx";
+import { DemoWalkthrough } from "./components/DemoWalkthrough.jsx";
 import { RecomputeDialog } from "./components/RecomputeDialog.jsx";
 import { useRouteWindProfile } from "./hooks/useRouteWindProfile.js";
 import { useExpeditionSpeed } from "./hooks/useExpeditionSpeed.js";
@@ -179,6 +180,7 @@ export default function App() {
   const [cinemaMode, setCinemaMode] = useState(true);
   const [filmFullscreen, setFilmFullscreen] = useState(false);
   const filmLayerSnapRef = useRef(null);
+  const demoReplayStartedRef = useRef(false);
   const [hideFilmBar, setHideFilmBar] = useState(false);
   const [filmBarNode, setFilmBarNode] = useState(null);
   const [filmBarMeasuredPx, setFilmBarMeasuredPx] = useState(null);
@@ -1247,6 +1249,83 @@ export default function App() {
     voyage.setStartAt,
   ]);
 
+
+  // The guided demo changes only visible app state. It does not inject sample data
+  // or reset a user-created route.
+  const stopDemoOwnedReplay = useCallback(() => {
+    if (!demoReplayStartedRef.current) return;
+    demoReplayStartedRef.current = false;
+    if (typeof replayControls?.onStop === "function") {
+      replayControls.onStop();
+      return;
+    }
+    setFilmFullscreen(false);
+    setCameraFollow(true);
+    restoreShowLayers(maritimeLayers, filmLayerSnapRef.current);
+    filmLayerSnapRef.current = null;
+    replay.stop();
+  }, [maritimeLayers, replay.stop, replayControls]);
+
+  const applyDemoAction = useCallback((action) => {
+    if (action !== "replay") stopDemoOwnedReplay();
+    const showFollow = (leftOpen, rightOpen) => {
+      if (view !== VIEW_SUIVRE) selectView(VIEW_SUIVRE);
+      setCameraFollow(true);
+      setCinemaMode(false);
+      setFilmFullscreen(false);
+      setHideFilmBar(false);
+      setSidebarOpen(leftOpen);
+      setToolsOpen(rightOpen);
+    };
+
+    switch (action) {
+      case "welcome":
+      case "live":
+        showFollow(false, false);
+        break;
+      case "briefing":
+        showFollow(true, false);
+        break;
+      case "layers":
+        showFollow(false, true);
+        break;
+      case "replay":
+        showFollow(true, false);
+        break;
+      case "trace":
+        if (view !== VIEW_TRACER) selectView(VIEW_TRACER);
+        setCameraFollow(true);
+        setCinemaMode(false);
+        setFilmFullscreen(false);
+        setHideFilmBar(false);
+        setSidebarOpen(true);
+        setToolsOpen(true);
+        break;
+      case "return":
+        showFollow(true, false);
+        break;
+      default:
+        break;
+    }
+  }, [selectView, stopDemoOwnedReplay, view]);
+
+  const startDemoReplay = useCallback(() => {
+    if (replay.active || !replayControls?.canStart || typeof replayControls.onStart !== "function") return;
+    demoReplayStartedRef.current = true;
+    replayControls.onStart();
+  }, [replay.active, replayControls]);
+
+  const closeDemo = useCallback(() => {
+    stopDemoOwnedReplay();
+    if (view !== VIEW_SUIVRE) selectView(VIEW_SUIVRE);
+    setCameraFollow(true);
+    setCinemaMode(false);
+    setFilmFullscreen(false);
+    setHideFilmBar(false);
+    setSidebarOpen(true);
+    setToolsOpen(false);
+  }, [selectView, stopDemoOwnedReplay, view]);
+
   useEffect(() => {
     if (isSuivre) voyage.setStartAt(routeSource === "custom" ? "saint-maur" : DEFAULT_START_AT);
   }, [isSuivre, routeSource, voyage.setStartAt]);
@@ -2228,6 +2307,15 @@ export default function App() {
         onFocus={handleBriefingFocus}
       />
       <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
+
+      <DemoWalkthrough
+        lang={lang}
+        replayReady={Boolean(replayControls?.canStart || replay.active)}
+        replayActive={Boolean(replay.active)}
+        onStepChange={applyDemoAction}
+        onPlayReplay={startDemoReplay}
+        onClose={closeDemo}
+      />
 
       {selectedSatellite && (
         <div data-testid="satellite-popup" className="naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2100] w-[360px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl bottom-52">

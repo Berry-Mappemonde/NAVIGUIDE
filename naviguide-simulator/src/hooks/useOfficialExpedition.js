@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_T0_ISO, OFFICIAL_VOYAGE_ID, sampleClockAtTime } from "../engine/voyageClock.js";
 import { pickOfficialLiveClock } from "../utils/sceneGate.js";
-import { adminHeaders } from "../utils/adminSecret.js";
+import { adminHeaders, hasAdminSecret } from "../utils/adminSecret.js";
 import { officialGribQuery, officialGribStatus, officialGribWarning } from "./gribStatus.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
@@ -15,6 +15,14 @@ export function officialRetryDelayMs(attempt) {
 }
 
 /** A client clock is "official" when it starts on the expedition's fixed t0. */
+/**
+ * Existing public clock = read-only for visitors. Admins may update the official route;
+ * when the clock is absent, the visitor still gets the one-time repair path.
+ */
+export function shouldWriteOfficialVoyage({ hasClock, hasAdminSecret: admin } = {}) {
+  return Boolean(admin || !hasClock);
+}
+
 export function isOfficialClock(clock) {
   const t0 = Date.parse(clock?.t0 ?? "");
   return Number.isFinite(t0) && t0 === Date.parse(DEFAULT_T0_ISO);
@@ -166,9 +174,27 @@ export function useOfficialExpedition({
         // Horloge déjà là (rendu suivant du hook : meta, marques) : on ne la retélécharge pas ; le PUT
         // ne repart que si l'empreinte de la route a changé (putOfficial rend sinon la réponse mémorisée).
         const haveClock = Boolean(serverClockRef.current);
-        const [ck, data] = await Promise.all([haveClock ? null : readClock(), putOfficial().catch(() => null)]);
-        if (cancelled) return;
-        gotClock = haveClock || Boolean(ck) || Boolean(data?.clock?.t0);
+        const adminWrite = hasAdminSecret();
+        if (!shouldWriteOfficialVoyage({ hasClock: haveClock, hasAdminSecret: adminWrite })) {
+          // A visitor only needs the published clock; do not wake the server's store worker.
+          gotClock = true;
+        } else if (adminWrite) {
+          // Admins retain route-write capability. Read and write together to avoid a startup gap.
+          const [ck, data] = await Promise.all([haveClock ? null : readClock(), putOfficial().catch(() => null)]);
+          if (cancelled) return;
+          gotClock = haveClock || Boolean(ck) || Boolean(data?.clock?.t0);
+        } else {
+          // Anonymous repair is attempted only when the published clock is absent.
+          const ck = haveClock ? null : await readClock();
+          if (cancelled) return;
+          if (haveClock || Boolean(ck) || serverClockRef.current) {
+            gotClock = true;
+          } else {
+            const data = await putOfficial().catch(() => null);
+            if (cancelled) return;
+            gotClock = Boolean(data?.clock?.t0 || serverClockRef.current);
+          }
+        }
       } finally {
         inflightRef.current = false;
       }
