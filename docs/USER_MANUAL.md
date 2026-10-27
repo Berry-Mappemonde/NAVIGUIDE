@@ -35,7 +35,7 @@ it in this mode.
 | **Listen** | Reads the story aloud. |
 | **Stop** (next to Listen) | Mutes the voice. |
 | **Send** | Sends your question to the logbook. |
-| **See on the map** | Frames the boat and the place the card is about. |
+| **See on the map** | Frames the boat and the place the card is about. During the film, the view stays there until the card closes, then returns to the boat. |
 | **Official sheet / site** | Opens the official page (port of entry, protected area…). |
 | **Data source** | Opens the source of the number on screen. |
 | **Google Maps sheet** | Opens the place in Google Maps. |

@@ -119,6 +119,11 @@ export function isBubbleSuppressed(closedId, nextCard) {
   return Boolean(closedId && nextCard && bubbleId(nextCard) === closedId);
 }
 
+/** « Voir sur la carte » lancé depuis une bulle (#102) : il prend fin quand la bulle se ferme ou change de carte. */
+export function bubbleFocusEnds(shownId, nextCard) {
+  return Boolean(shownId) && bubbleId(nextCard) !== shownId;
+}
+
 /**
  * Une seule candidature à la fois : score ≥ 2, ou somme des scores
  * non montrés depuis 20 s ≥ 3.
