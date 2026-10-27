@@ -31,7 +31,9 @@ describe("useOfficialExpedition — position officielle", () => {
   it("lit l’horloge serveur même quand le PUT officiel est refusé", () => {
     // L'horloge part avant / avec le PUT (pas après lui) ; 29 sept. : une seule fois par tentative.
     assert.match(source, /Promise\.all\(\[haveClock \? null : readClock\(\), putOfficial\(\)\.catch\(\(\) => null\)\]\)/);
-    assert.match(source, /gotClock = haveClock \|\| Boolean\(ck\) \|\| Boolean\(data\?\.clock\?\.t0\);/);
+    assert.match(source, /gotClock = haveClock \\|\\| isUsableOfficialClock\\(ck\\) \\|\\| isUsableOfficialClock\\(data\\?\\.clock\\);/);
+    assert.match(source, /if \\(isUsableOfficialClock\\(ck\\) && !cancelled\\)/);
+    assert.match(source, /if \\(isUsableOfficialClock\\(data\\.clock\\)\\)/);
   });
 
   it("une seule lecture de l’horloge à la fois, relance espacée — jamais une pile de requêtes (29 sept.)", () => {
@@ -63,5 +65,16 @@ describe("isOfficialClock", () => {
     assert.equal(isOfficialClock({ t0: "2026-09-19T08:00:00.000Z" }), false);
     assert.equal(isOfficialClock(null), false);
     assert.equal(isOfficialClock({}), false);
+  });
+});
+
+
+describe("isUsableOfficialClock", () => {
+  it("rejects a t0-only preparing payload and accepts an official clock with vertices", async () => {
+    const { isUsableOfficialClock } = await import("./useOfficialExpedition.js");
+    assert.equal(isUsableOfficialClock({ t0: "2026-05-15T08:00:00Z", status: "preparing" }), false);
+    assert.equal(isUsableOfficialClock({ t0: "2026-09-19T08:00:00Z", vertices: [{ lat: 1 }, { lat: 2 }] }), false);
+    assert.equal(isUsableOfficialClock({ t0: "2026-05-15T08:00:00Z", vertices: [{ lat: 1 }] }), false);
+    assert.equal(isUsableOfficialClock({ t0: "2026-05-15T08:00:00Z", vertices: [{ lat: 1 }, { lat: 2 }] }), true);
   });
 });
