@@ -1369,7 +1369,7 @@ export default function App() {
     if (action !== "replay") stopDemoOwnedReplay();
     const showFollow = (leftOpen, rightOpen) => {
       if (view !== VIEW_SUIVRE) selectView(VIEW_SUIVRE);
-      setCameraFollow(true);
+      recaptureBoat();
       setCinemaMode(false);
       setFilmFullscreen(false);
       setHideFilmBar(false);
@@ -1393,7 +1393,8 @@ export default function App() {
         break;
       case "trace":
         if (view !== VIEW_TRACER) selectView(VIEW_TRACER);
-        setCameraFollow(true);
+        // Drawing mode needs a free map; don't keep the camera locked to the boat.
+        setCameraFollow(false);
         setCinemaMode(false);
         setFilmFullscreen(false);
         setHideFilmBar(false);
@@ -1408,7 +1409,7 @@ export default function App() {
       default:
         break;
     }
-  }, [handleRouteSwitchToBerry, selectView, stopDemoOwnedReplay, view]);
+  }, [handleRouteSwitchToBerry, recaptureBoat, selectView, stopDemoOwnedReplay, view]);
 
   const startDemoReplay = useCallback(() => {
     if (replay.active || !replayControls?.canStart || typeof replayControls.onStart !== "function") return;
@@ -1419,13 +1420,13 @@ export default function App() {
   const closeDemo = useCallback(() => {
     stopDemoOwnedReplay();
     if (view !== VIEW_SUIVRE) selectView(VIEW_SUIVRE);
-    setCameraFollow(true);
+    recaptureBoat();
     setCinemaMode(false);
     setFilmFullscreen(false);
     setHideFilmBar(false);
     setSidebarOpen(true);
     setToolsOpen(false);
-  }, [selectView, stopDemoOwnedReplay, view]);
+  }, [recaptureBoat, selectView, stopDemoOwnedReplay, view]);
 
   const fetchCustomPlan = useCallback((geojson) => {
     const applyFallback = () => setExpeditionPlan(buildLocalCustomBriefing(geojson, lang));
