@@ -38,7 +38,7 @@ export function DepartureField({
 
   const inputClass = compact
     ? "h-5 min-w-0 bg-transparent border-0 p-0 text-[9px] text-white tabular-nums disabled:opacity-40"
-    : "h-5 min-w-0 w-full bg-slate-900/80 border border-white/10 rounded px-1 text-[10px] text-white tabular-nums disabled:opacity-40";
+    : "h-5 min-w-0 w-full bg-slate-900/80 border border-white/10 rounded px-1 text-[12px] text-white tabular-nums disabled:opacity-40";
 
   return (
     <div
@@ -51,13 +51,13 @@ export function DepartureField({
       {compact ? (
         <span className="sr-only">{t("departureTitle")}</span>
       ) : (
-        <div className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+        <div className="text-[12px] leading-tight font-semibold text-slate-400">
           {t("departureTitle")}
         </div>
       )}
       <div className={compact ? "flex items-center gap-[1ch] w-max" : "grid grid-cols-[1.35fr_0.85fr] gap-1 mt-0.5"}>
         <label className="flex items-center gap-1 min-w-0">
-          {compact ? null : <span className="text-[8px] text-slate-500 whitespace-nowrap">{t("departureDate")}</span>}
+          {compact ? null : <span className="text-[12px] text-slate-500 whitespace-nowrap">{t("departureDate")}</span>}
           <input
             name="departure-date"
             type="text"
@@ -73,7 +73,7 @@ export function DepartureField({
           />
         </label>
         <label className="flex items-center gap-1 min-w-0">
-          {compact ? null : <span className="text-[8px] text-slate-500 whitespace-nowrap">{t("departureTimeUtc")}</span>}
+          {compact ? null : <span className="text-[12px] text-slate-500 whitespace-nowrap">{t("departureTimeUtc")}</span>}
           <input
             name="departure-time-utc"
             type="text"
