@@ -4,6 +4,19 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      capture_real_film:
+        description: "Demander une nouvelle rédaction réelle (peut consommer des crédits modèle)"
+        required: true
+        type: boolean
+        default: false
+      seconds:
+        description: "Durée du film à demander"
+        required: true
+        type: choice
+        options: ["150", "180", "0"]
+        default: "150"
 
 permissions:
   contents: write
@@ -238,7 +251,7 @@ jobs:
   real-film-audit:
     name: Capture actual production film after integration checks pass
     needs: integrate-and-test
-    if: needs.integrate-and-test.result == 'success'
+    if: needs.integrate-and-test.result == 'success' && github.event_name == 'workflow_dispatch' && inputs.capture_real_film
     uses: ./.github/workflows/film-audit.yml
     with:
-      seconds: "150"
+      seconds: ${{ inputs.seconds || '150' }}
