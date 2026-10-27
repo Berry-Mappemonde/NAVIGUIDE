@@ -1250,84 +1250,6 @@ export default function App() {
   ]);
 
 
-  // The guided demo changes only visible app state. It does not inject sample data
-  // or reset a user-created route.
-  const stopDemoOwnedReplay = useCallback(() => {
-    if (!demoReplayStartedRef.current) return;
-    demoReplayStartedRef.current = false;
-    if (typeof replayControls?.onStop === "function") {
-      replayControls.onStop();
-      return;
-    }
-    setFilmFullscreen(false);
-    setCameraFollow(true);
-    restoreShowLayers(maritimeLayers, filmLayerSnapRef.current);
-    filmLayerSnapRef.current = null;
-    replay.stop();
-  }, [maritimeLayers, replay.stop, replayControls]);
-
-  const applyDemoAction = useCallback((action) => {
-    if (action !== "replay") stopDemoOwnedReplay();
-    const showFollow = (leftOpen, rightOpen) => {
-      if (view !== VIEW_SUIVRE) selectView(VIEW_SUIVRE);
-      setCameraFollow(true);
-      setCinemaMode(false);
-      setFilmFullscreen(false);
-      setHideFilmBar(false);
-      setSidebarOpen(leftOpen);
-      setToolsOpen(rightOpen);
-    };
-
-    switch (action) {
-      case "welcome":
-      case "live":
-        showFollow(false, false);
-        break;
-      case "briefing":
-        showFollow(true, false);
-        break;
-      case "layers":
-        showFollow(false, true);
-        break;
-      case "replay":
-        showFollow(true, false);
-        break;
-      case "trace":
-        if (view !== VIEW_TRACER) selectView(VIEW_TRACER);
-        setCameraFollow(true);
-        setCinemaMode(false);
-        setFilmFullscreen(false);
-        setHideFilmBar(false);
-        setSidebarOpen(true);
-        setToolsOpen(true);
-        break;
-      case "return":
-        // Return to the official Berry route without cancelling the user's draft.
-        handleRouteSwitchToBerry();
-        showFollow(true, false);
-        break;
-      default:
-        break;
-    }
-  }, [handleRouteSwitchToBerry, selectView, stopDemoOwnedReplay, view]);
-
-  const startDemoReplay = useCallback(() => {
-    if (replay.active || !replayControls?.canStart || typeof replayControls.onStart !== "function") return;
-    demoReplayStartedRef.current = true;
-    replayControls.onStart();
-  }, [replay.active, replayControls]);
-
-  const closeDemo = useCallback(() => {
-    stopDemoOwnedReplay();
-    if (view !== VIEW_SUIVRE) selectView(VIEW_SUIVRE);
-    setCameraFollow(true);
-    setCinemaMode(false);
-    setFilmFullscreen(false);
-    setHideFilmBar(false);
-    setSidebarOpen(true);
-    setToolsOpen(false);
-  }, [selectView, stopDemoOwnedReplay, view]);
-
   useEffect(() => {
     if (isSuivre) voyage.setStartAt(routeSource === "custom" ? "saint-maur" : DEFAULT_START_AT);
   }, [isSuivre, routeSource, voyage.setStartAt]);
@@ -1426,6 +1348,84 @@ export default function App() {
     sceneApiRef.current?.playback.pause();
     applyBerryBriefing();
   }, [applyBerryBriefing, closeSatellite]);
+
+  // The guided demo changes only visible app state. It does not inject sample data
+  // or reset a user-created route.
+  const stopDemoOwnedReplay = useCallback(() => {
+    if (!demoReplayStartedRef.current) return;
+    demoReplayStartedRef.current = false;
+    if (typeof replayControls?.onStop === "function") {
+      replayControls.onStop();
+      return;
+    }
+    setFilmFullscreen(false);
+    setCameraFollow(true);
+    restoreShowLayers(maritimeLayers, filmLayerSnapRef.current);
+    filmLayerSnapRef.current = null;
+    replay.stop();
+  }, [maritimeLayers, replay.stop, replayControls]);
+
+  const applyDemoAction = useCallback((action) => {
+    if (action !== "replay") stopDemoOwnedReplay();
+    const showFollow = (leftOpen, rightOpen) => {
+      if (view !== VIEW_SUIVRE) selectView(VIEW_SUIVRE);
+      setCameraFollow(true);
+      setCinemaMode(false);
+      setFilmFullscreen(false);
+      setHideFilmBar(false);
+      setSidebarOpen(leftOpen);
+      setToolsOpen(rightOpen);
+    };
+
+    switch (action) {
+      case "welcome":
+      case "live":
+        showFollow(false, false);
+        break;
+      case "briefing":
+        showFollow(true, false);
+        break;
+      case "layers":
+        showFollow(false, true);
+        break;
+      case "replay":
+        showFollow(true, false);
+        break;
+      case "trace":
+        if (view !== VIEW_TRACER) selectView(VIEW_TRACER);
+        setCameraFollow(true);
+        setCinemaMode(false);
+        setFilmFullscreen(false);
+        setHideFilmBar(false);
+        setSidebarOpen(true);
+        setToolsOpen(true);
+        break;
+      case "return":
+        // Return to the official Berry route without cancelling the user's draft.
+        handleRouteSwitchToBerry();
+        showFollow(true, false);
+        break;
+      default:
+        break;
+    }
+  }, [handleRouteSwitchToBerry, selectView, stopDemoOwnedReplay, view]);
+
+  const startDemoReplay = useCallback(() => {
+    if (replay.active || !replayControls?.canStart || typeof replayControls.onStart !== "function") return;
+    demoReplayStartedRef.current = true;
+    replayControls.onStart();
+  }, [replay.active, replayControls]);
+
+  const closeDemo = useCallback(() => {
+    stopDemoOwnedReplay();
+    if (view !== VIEW_SUIVRE) selectView(VIEW_SUIVRE);
+    setCameraFollow(true);
+    setCinemaMode(false);
+    setFilmFullscreen(false);
+    setHideFilmBar(false);
+    setSidebarOpen(true);
+    setToolsOpen(false);
+  }, [selectView, stopDemoOwnedReplay, view]);
 
   const fetchCustomPlan = useCallback((geojson) => {
     const applyFallback = () => setExpeditionPlan(buildLocalCustomBriefing(geojson, lang));
