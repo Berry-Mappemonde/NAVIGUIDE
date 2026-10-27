@@ -107,6 +107,40 @@ jobs:
                 git add naviguide-simulator/src/components/RecomputeDialog.jsx naviguide-simulator/src/components/SimulationFilmBar.jsx
                 git commit --no-edit
                 echo "Resolved PR #110 by preserving #108's theme styling and applying #110's status/source additions."
+              elif [[ "${pr}" == "112" ]]; then
+                git checkout --ours -- naviguide-simulator/src/components/JournalPanel.jsx
+                python - <<'PY'
+          from pathlib import Path
+
+          path = Path("naviguide-simulator/src/components/JournalPanel.jsx")
+          text = path.read_text(encoding="utf-8")
+
+          def replace_once(old, new):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one insertion point in JournalPanel.jsx, found {count}: {old!r}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              'import { useLang } from "../i18n/LangContext.jsx";',
+              'import { useLang } from "../i18n/LangContext.jsx";\nimport { NotebookText } from "lucide-react";\nimport { KindIcon } from "./kindIcon.js";',
+          )
+          replace_once(
+              '<span className="flex-shrink-0 w-4 text-center">{e.icon}</span>',
+              '''<span className="flex-shrink-0 w-4 h-[1lh] flex items-center justify-center text-slate-400" aria-hidden="true">
+                        <KindIcon kind={e.kind} />
+                      </span>''',
+          )
+          replace_once(
+              '<span>📓</span>',
+              '<NotebookText size={13} className="flex-shrink-0" aria-hidden="true" focusable="false" />',
+          )
+          path.write_text(text, encoding="utf-8")
+          PY
+                git add naviguide-simulator/src/components/JournalPanel.jsx
+                git commit --no-edit
+                echo "Resolved PR #112 by preserving #108's typography changes and applying Lucide icons."
               else
                 echo "::error::Merge conflict while integrating PR #${pr}. Resolve it explicitly before rerunning."
                 git status --short
