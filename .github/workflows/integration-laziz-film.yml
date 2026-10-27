@@ -178,6 +178,10 @@ jobs:
           git add naviguide-simulator/src/components/EventBubble.jsx
           git commit -m "fix: use semantic accent token for event bubble icon"
 
+          python .github/scripts/apply-film-audit-fixes.py
+          git add naviguide-simulator/server/film_script.py naviguide-simulator/server/tests/test_film_script.py naviguide-simulator/server/official_store.py
+          git commit -m "fix: keep film indices aligned and report write fallback"
+
           branch="integration/laziz-film-audit-${GITHUB_RUN_ID}"
           sha="$(git rev-parse HEAD)"
           echo "branch=${branch}" >> "$GITHUB_OUTPUT"
@@ -239,6 +243,54 @@ jobs:
         run: python -m pytest -q
         env:
           PYTHONDONTWRITEBYTECODE: "1"
+
+      - name: Diagnose the live raw film against the local write gate (read-only)
+        working-directory: naviguide-simulator
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --connect-timeout 10 --max-time 60 \
+            "https://naviguide.fr/voyage/official/film?lang=fr&seconds=150&style=raw" \
+            --output /tmp/naviguide-film-raw.json
+          PYTHONPATH=server python - <<'PY'
+          import json
+          from pathlib import Path
+          from film_script import nemotron_reread_report
+
+          film = json.loads(Path("/tmp/naviguide-film-raw.json").read_text(encoding="utf-8"))
+          chapters = [ch for ch in film.get("chapters", []) if isinstance(ch, dict)]
+          stops = []
+          for ch in chapters:
+              for name in (ch.get("fromName"), ch.get("toName")):
+                  name = str(name or "").strip()
+                  if name and (not stops or stops[-1]["name"] != name):
+                      stops.append({"name": name})
+          report = nemotron_reread_report(
+              " ".join(ch.get("text") or "" for ch in chapters),
+              stops,
+              lang="fr",
+              chapters=chapters,
+          )
+          text_issues = []
+          for i, ch in enumerate(chapters):
+              text = ch.get("text") or ""
+              for ev in ch.get("events") or []:
+                  if isinstance(ev, dict) and not (0 <= int(ev.get("charIdx") or 0) < max(1, len(text))):
+                      text_issues.append({"chapter": i, "type": "event", "index": ev.get("charIdx"), "chars": len(text)})
+              for a in ch.get("anchors") or []:
+                  if isinstance(a, dict) and not (0 <= int(a.get("charIdx") or 0) < max(1, len(text))):
+                      text_issues.append({"chapter": i, "type": "anchor", "index": a.get("charIdx"), "chars": len(text)})
+          print(json.dumps({
+              "source": film.get("source"),
+              "hasWritten": film.get("hasWritten"),
+              "chapterCount": len(chapters),
+              "localReread": report,
+              "textIndexIssues": text_issues,
+          }, ensure_ascii=False, indent=2))
+          if not report.get("ok"):
+              print("::warning::The currently served raw film already fails the local narrative gate; see localReread.faults above.")
+          if text_issues:
+              print("::warning::The currently served snapshot contains text-index overflow; fixes are applied only in this PR integration tree until deployed.")
+          PY
 
       - name: Install Chromium for Playwright
         working-directory: naviguide-simulator
