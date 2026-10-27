@@ -20,6 +20,11 @@ export function isOfficialClock(clock) {
   return Number.isFinite(t0) && t0 === Date.parse(DEFAULT_T0_ISO);
 }
 
+/** A t0-only "preparing" response is not a usable live clock. */
+export function isUsableOfficialClock(clock) {
+  return isOfficialClock(clock) && Array.isArray(clock?.vertices) && clock.vertices.length > 1;
+}
+
 /**
  * Voyage officiel unique. Pas de localStorage visiteur.
  * Position = horloge serveur à maintenant (1 s = 1 s), avec repli figé
@@ -116,7 +121,7 @@ export function useOfficialExpedition({
     if (!res.ok) return null;
     putRef.current = fp;
     setMeta(data);
-    if (data.clock) {
+    if (isUsableOfficialClock(data.clock)) {
       setServerClock(data.clock);
       setClockStatus("ready");
     }
@@ -141,11 +146,13 @@ export function useOfficialExpedition({
         return null;
       })
       .then((ck) => {
-        if (ck?.t0 && !cancelled) {
+        if (isUsableOfficialClock(ck) && !cancelled) {
           setServerClock(ck);
           setClockStatus("ready");
           return ck;
         }
+        // HTTP 200 with status=preparing may contain t0 but no vertices. Keep
+        // the hook pending so the spaced retry continues instead of freezing Follow.
         return null;
       })
       .catch(() => { if (!cancelled) setClockStatus("absent"); return null; });
@@ -168,7 +175,7 @@ export function useOfficialExpedition({
         const haveClock = Boolean(serverClockRef.current);
         const [ck, data] = await Promise.all([haveClock ? null : readClock(), putOfficial().catch(() => null)]);
         if (cancelled) return;
-        gotClock = haveClock || Boolean(ck) || Boolean(data?.clock?.t0);
+        gotClock = haveClock || isUsableOfficialClock(ck) || isUsableOfficialClock(data?.clock);
       } finally {
         inflightRef.current = false;
       }
