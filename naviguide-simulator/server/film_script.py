@@ -10613,6 +10613,13 @@ async def write_film_chain(
     raw["targetSeconds"] = _film_seconds(seconds if seconds is not None else plan.get("targetSeconds"))
     super_plan, super_stats = await write_stored_plan(raw, lang="fr", cascade=cascade, seconds=seconds)
     if super_plan is None or int((super_stats or {}).get("rewritten") or 0) <= 0:
+        stats["reason"] = "no-rewritten-sentences"
+        stats["writeStats"] = {
+            "rewritten": int((super_stats or {}).get("rewritten") or 0),
+            "fallen": int((super_stats or {}).get("fallen") or 0),
+            "source": str((super_stats or {}).get("source") or "rules"),
+        }
+        stats["source"] = str((super_stats or {}).get("source") or "rules")
         return None, None, stats
     stats["super"] = 1
     origin = public_written_source(super_plan.get("source") or (super_stats or {}).get("source"))
@@ -10645,6 +10652,7 @@ async def write_film_chain(
     ok_fr, review_fr = await reread_before_store(accepted, stops, cascade=cascade, lang="fr")
     stats["reread"] = "pass" if ok_fr else "fail"
     if not ok_fr:
+        stats["reason"] = "local-reread-rejected"
         stats["faults"] = review_fr.get("faults") or []
         return None, None, stats
 
