@@ -31,7 +31,9 @@ describe("useOfficialExpedition — position officielle", () => {
   it("lit l’horloge serveur même quand le PUT officiel est refusé", () => {
     // L'horloge part avant / avec le PUT (pas après lui) ; 29 sept. : une seule fois par tentative.
     assert.match(source, /Promise\.all\(\[haveClock \? null : readClock\(\), putOfficial\(\)\.catch\(\(\) => null\)\]\)/);
-    assert.match(source, /gotClock = haveClock \\|\\| isUsableOfficialClock\\(ck\\) \\|\\| isUsableOfficialClock\\(data\\?\\.clock\\);/);
+    assert.ok(source.includes("gotClock = haveClock || isUsableOfficialClock(ck) || isUsableOfficialClock(data?.clock);"));
+    assert.ok(source.includes("if (isUsableOfficialClock(ck) && !cancelled)"));
+    assert.ok(source.includes("if (isUsableOfficialClock(data.clock))"));
     assert.match(source, /if \\(isUsableOfficialClock\\(ck\\) && !cancelled\\)/);
     assert.match(source, /if \\(isUsableOfficialClock\\(data\\.clock\\)\\)/);
   });
