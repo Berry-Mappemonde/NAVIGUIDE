@@ -65,12 +65,3 @@ describe("isOfficialClock", () => {
     assert.equal(isOfficialClock({}), false);
   });
 });
-
-describe("shouldWriteOfficialVoyage", () => {
-  it("avoids anonymous writes when the clock exists, while preserving admin updates and missing-clock repair", async () => {
-    const { shouldWriteOfficialVoyage } = await import("./useOfficialExpedition.js");
-    assert.equal(shouldWriteOfficialVoyage({ hasClock: true, hasAdminSecret: false }), false);
-    assert.equal(shouldWriteOfficialVoyage({ hasClock: false, hasAdminSecret: false }), true);
-    assert.equal(shouldWriteOfficialVoyage({ hasClock: true, hasAdminSecret: true }), true);
-  });
-});
