@@ -14,7 +14,6 @@ export function officialRetryDelayMs(attempt) {
   return OFFICIAL_RETRY_MS[i - 1];
 }
 
-/** A client clock is "official" when it starts on the expedition's fixed t0. */
 /**
  * Existing public clock = read-only for visitors. Admins may update the official route;
  * when the clock is absent, the visitor still gets the one-time repair path.
@@ -23,6 +22,7 @@ export function shouldWriteOfficialVoyage({ hasClock, hasAdminSecret: admin } = 
   return Boolean(admin || !hasClock);
 }
 
+/** A client clock is "official" when it starts on the expedition's fixed t0. */
 export function isOfficialClock(clock) {
   const t0 = Date.parse(clock?.t0 ?? "");
   return Number.isFinite(t0) && t0 === Date.parse(DEFAULT_T0_ISO);
