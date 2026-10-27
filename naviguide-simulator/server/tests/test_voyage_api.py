@@ -836,3 +836,29 @@ def test_ici_fill_failure_is_dated_200(client, monkeypatch):
     assert body["status"] == "unavailable"
     assert "bi down" in body["reason"]
     assert body["at"].endswith("Z")
+
+
+def test_anonymous_official_put_does_not_kick_worker_for_noop_visit(client, monkeypatch):
+    """Le PUT garde son auto-réparation, mais une visite anonyme ne réveille pas le store si rien ne change."""
+    import official_store
+
+    monkeypatch.setenv("NAVIGUIDE_ADMIN_SECRET", "test-secret")
+    kicks = []
+    monkeypatch.setattr(official_store, "kick_worker", lambda: kicks.append("kick"))
+    payload = _payload("2026-05-15T08:00:00Z")
+
+    created = client.put("/voyage/official", json=payload)
+    assert created.status_code == 200
+    assert kicks == ["kick"]  # A voyage created from an empty store still starts the worker.
+
+    repeated = client.put("/voyage/official", json=payload)
+    assert repeated.status_code == 200
+    assert kicks == ["kick"]  # Anonymous no-op: no second worker wake-up.
+
+    admin = client.put(
+        "/voyage/official",
+        json=payload,
+        headers={"X-Naviguide-Admin": "test-secret"},
+    )
+    assert admin.status_code == 200
+    assert kicks == ["kick", "kick"]  # Admin behavior remains unchanged.
