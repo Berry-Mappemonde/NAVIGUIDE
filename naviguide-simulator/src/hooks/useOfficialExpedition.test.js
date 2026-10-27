@@ -34,8 +34,6 @@ describe("useOfficialExpedition — position officielle", () => {
     assert.ok(source.includes("gotClock = haveClock || isUsableOfficialClock(ck) || isUsableOfficialClock(data?.clock);"));
     assert.ok(source.includes("if (isUsableOfficialClock(ck) && !cancelled)"));
     assert.ok(source.includes("if (isUsableOfficialClock(data.clock))"));
-    assert.match(source, /if \\(isUsableOfficialClock\\(ck\\) && !cancelled\\)/);
-    assert.match(source, /if \\(isUsableOfficialClock\\(data\\.clock\\)\\)/);
   });
 
   it("une seule lecture de l’horloge à la fois, relance espacée — jamais une pile de requêtes (29 sept.)", () => {
