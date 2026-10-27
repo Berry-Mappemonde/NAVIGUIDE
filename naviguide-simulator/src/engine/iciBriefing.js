@@ -13,6 +13,7 @@ import { haversineNm } from "../utils/geo.js";
 import { localizePlaceName } from "../utils/placeNames.js";
 import { filmZeeBucket, filmZeeForBucket } from "./filmZeeStep.js";
 import { displayStopName } from "../utils/stopLabels.js";
+import { markReasons, reasonWords } from "./reasonWords.js";
 
 const TERRITORY = {
   fr: {
@@ -99,39 +100,17 @@ function longDate(iso, lang) {
   return isEn(lang) ? `${day} ${month} ${d.getUTCFullYear()}` : `${day} ${month} ${d.getUTCFullYear()}`;
 }
 
-/** Engine reason codes → words. Unknown codes are kept as they are (honest, not hidden). */
-const REASONS = {
-  off_grid: ["hors de la grille du modèle", "outside the model grid"],
-  no_feature_at_point: ["rien au point", "nothing at this point"],
-  no_substrate_class: ["nature du fond non classée ici", "seabed class not mapped here"],
-  not_generated: ["pas encore calculé", "not computed yet"],
-  no_scene_in_bbox: ["aucune image récente ici", "no recent image here"],
-  review_requires_admin: ["réservée à l’administration", "administrators only"],
-  no_entity: ["rien à vérifier ici", "nothing to check here"],
-  not_in_along_pearl: ["non collecté sur cette perle", "not collected on this pearl"],
-  rtofs_not_ingested: ["RTOFS pas encore ingéré", "RTOFS not ingested yet"],
-  null: ["pas de donnée", "no data"],
-};
+/**
+ * While `narrateIciSegments` narrates, the reasons said in words (with their
+ * raw code) land here, so the UI can show the code on hover. Synchronous only.
+ */
+let reasonSink = null;
 
-function cleanReason(code) {
-  let key = String(code ?? "null");
-  key = key.replace(/Traceback \(most recent call last\):[\s\S]*/g, "");
-  key = key.replace(/<class ['"][^'"]+['"]>/g, "");
-  key = key.replace(/:?\bHTTPStatusError\b/g, "");
-  key = key.replace(/:+/g, ":").replace(/^:+|:+$/g, "");
-  return key || "unavailable";
-}
-
+/** Engine reason code → plain words (reasonWords.js); unknown codes get a generic phrase. */
 function why(code, lang) {
-  const key = cleanReason(code);
-  const table = isEn(lang) ? enDict : frDict;
-  if (key === "unavailable") return table.iciReasonUnavailable;
-  if (key === "no_data") return table.iciReasonNoData;
-  const row = REASONS[key];
-  if (row) return row[isEn(lang) ? 1 : 0];
-  if (/^openmeteo_unavailable/.test(key)) return isEn(lang) ? "Open-Meteo did not answer" : "Open-Meteo n’a pas répondu";
-  if (/^rtofs_unavailable/.test(key)) return isEn(lang) ? "RTOFS did not answer" : "RTOFS n’a pas répondu";
-  return key;
+  const said = reasonWords(code, lang);
+  if (reasonSink && said.code) reasonSink.push(said);
+  return said.text;
 }
 
 function joinList(parts, lang) {
@@ -1167,9 +1146,17 @@ export function climatologyShownOnBanner(dossier) {
  * Same briefing, split around the places it names so the UI can link them
  * (map focus + official sheet / Google Maps). Plain text is unchanged:
  * `segments.map((s) => s.text).join("")` === `narrateIci(dossier, lang)`.
+ * A reason said in words carries its raw code (`seg.reason.code`, tooltip).
  */
 export function narrateIciSegments(dossier, lang = "fr", opts = {}) {
-  const text = narrateIci(dossier, lang, opts);
+  const reasons = [];
+  reasonSink = reasons;
+  let text;
+  try {
+    text = narrateIci(dossier, lang, opts);
+  } finally {
+    reasonSink = null;
+  }
   if (!text) return [];
-  return segmentBriefingWithSources(text, briefingEntities(dossier, lang));
+  return markReasons(segmentBriefingWithSources(text, briefingEntities(dossier, lang)), reasons);
 }
