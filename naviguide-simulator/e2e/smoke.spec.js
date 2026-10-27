@@ -12,7 +12,7 @@ test.describe("simulateur — fumée", () => {
     await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
     const cinema = page.getByRole("button", { name: /^(cinéma|cinema)$/i });
     await expect(cinema).toBeVisible();
-    expect((await cinema.getAttribute("class")) || "").toMatch(/bg-cyan-700/);
+    await expect(cinema).toHaveAttribute("aria-pressed", "true");
     expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);
   });
 
