@@ -26,6 +26,7 @@ import {
   portHoldHours,
   sampleClockAtHours,
   sampleClockAtTime,
+  seaDayNumber,
   splitDepartureUtc,
 } from "./voyageClock.js";
 
@@ -318,9 +319,9 @@ describe("clockTickLabelsFromClock", () => {
     assert.equal(ticks.length, 3);
     assert.equal(ticks[0].label.includes("j"), false);
     assert.equal(ticks[2].label.includes("j"), false);
-    const hudJ = `j${Math.floor(live.seaHours / 24)}`;
+    const hudJ = `j${seaDayNumber(live.seaHours)}`;
     assert.match(ticks[1].label, new RegExp(hudJ));
-    const midJ = `j${Math.floor(mid.seaHours / 24)}`;
+    const midJ = `j${seaDayNumber(mid.seaHours)}`;
     if (midJ !== hudJ) {
       assert.equal(ticks[1].label.includes(midJ), false);
     }
@@ -335,9 +336,9 @@ describe("clockTickLabelsFromClock", () => {
       sailNm: live.sailNm,
       seaHours: live.seaHours,
     });
-    const hudD = `d${Math.floor(live.seaHours / 24)}`;
+    const hudD = `d${seaDayNumber(live.seaHours)}`;
     assert.match(ticks[1].label, new RegExp(hudD));
-    assert.equal(ticks[1].label.includes(`j${Math.floor(live.seaHours / 24)}`), false);
+    assert.equal(ticks[1].label.includes(`j${seaDayNumber(live.seaHours)}`), false);
   });
 });
 
@@ -362,7 +363,7 @@ describe("filmBarTicks", () => {
       iso: live.iso,
       lang: "fr",
     });
-    const clockJ = `j${Math.floor(live.seaHours / 24)}`;
+    const clockJ = `j${seaDayNumber(live.seaHours)}`;
     assert.match(ticks[1].label, new RegExp(clockJ));
     assert.match(line, new RegExp(clockJ));
     const fallback = clockTickLabels({
@@ -372,7 +373,7 @@ describe("filmBarTicks", () => {
       scale: "both",
     });
     const fallbackJ = fallback[2].label.match(/j(\d+)/)?.[1];
-    const clockDay = String(Math.floor(live.seaHours / 24));
+    const clockDay = String(seaDayNumber(live.seaHours));
     assert.ok(fallbackJ);
     assert.notEqual(fallbackJ, clockDay);
   });
@@ -473,6 +474,19 @@ describe("Voile hors avion", () => {
   });
 });
 
+describe("seaDayNumber", () => {
+  it("J1 = les 24 premières heures de mer ; J0 tant qu'aucune heure de mer", () => {
+    assert.equal(seaDayNumber(0), 0);
+    assert.equal(seaDayNumber(-3), 0);
+    assert.equal(seaDayNumber(Number.NaN), 0);
+    assert.equal(seaDayNumber(null), 0);
+    assert.equal(seaDayNumber(0.1), 1);
+    assert.equal(seaDayNumber(23.99), 1);
+    assert.equal(seaDayNumber(24), 2);
+    assert.equal(seaDayNumber(130.4 * 24), 131);
+  });
+});
+
 describe("formatFilmClockLine", () => {
   it("compose nm · j · date UTC", () => {
     const line = formatFilmClockLine({
@@ -482,7 +496,8 @@ describe("formatFilmClockLine", () => {
       lang: "fr",
     });
     assert.match(line, /4[\s ]?210 nm/);
-    assert.match(line, /j18/);
+    // 18 j 2 h de mer : on est dans le 19ᵉ jour en mer (J1 = premières 24 h).
+    assert.match(line, /\bj19\b/);
     assert.match(line, /3 juil\. 2026 · 14:00 UTC/);
   });
 
