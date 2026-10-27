@@ -1286,7 +1286,11 @@ def ensure_official(body: VoyageCreate, background: BackgroundTasks, request: Re
         if changed:
             save_voyage(existing)
             log.info("voyage officiel mis à jour par l'admin (%s points)", len(existing["points"]))
-        background.add_task(official_store.kick_worker)
+        # A visitor's idempotent PUT is an auto-repair check, not a request to
+        # recompute the store. Avoid waking the official filler on every page view.
+        # Keep the historical kick for admin requests and for newly-created voyages.
+        if changed or is_admin(request):
+            background.add_task(official_store.kick_worker)
         clock = official_store.stored_clock() or existing.get("clock")
         meta = _public_meta(existing)
         if clock:
