@@ -101,7 +101,7 @@ export function EventBubble({ card, onClose }) {
       className="event-bubble-card"
     >
       <div className="flex items-start gap-2 min-w-0">
-        <span className="flex text-[16px] leading-none flex-shrink-0 text-sky-200" aria-hidden="true">
+        <span className="flex text-[16px] leading-none flex-shrink-0 text-accent-text" aria-hidden="true">
           <KindIcon kind={card.kind} />
         </span>
         <div className="min-w-0 flex-1">
