@@ -8,6 +8,7 @@ import { useRouteLayer } from "../layers/useRouteLayer.js";
 import { useWeatherPipeline } from "../hooks/useWeatherPipeline.js";
 import { MapSceneController } from "./MapSceneController.js";
 import { isNearRoute } from "./routeClick.js";
+import { sceneCallbacks } from "./sceneCallbacks.js";
 
 /**
  * React boundary for the map. Its controller owns all mobile Leaflet objects;
@@ -30,6 +31,7 @@ export function MapScene({
   onWaypointHover,
   onDrawingWaypointClick,
   onWaypointClick,
+  onBriefingFocus,
 }) {
   const containerRef = useRef(null);
   const controllerRef = useRef(null);
@@ -48,19 +50,12 @@ export function MapScene({
     onWaypointHover,
     onDrawingWaypointClick,
     onWaypointClick,
+    onBriefingFocus,
   };
 
   useEffect(() => {
     if (!containerRef.current) return undefined;
-    const controller = MapSceneController.mount(containerRef.current, {
-      onPlayback: (snapshot) => callbacksRef.current.onPlayback?.(snapshot),
-      onCameraPlaced: (placed) => callbacksRef.current.onCameraPlaced?.(placed),
-      onManualNavigation: () => callbacksRef.current.onManualNavigation?.(),
-      onBoatDrag: (position) => callbacksRef.current.onBoatDrag?.(position),
-      onWaypointHover: (point) => callbacksRef.current.onWaypointHover?.(point),
-      onDrawingWaypointClick: (point, index) => callbacksRef.current.onDrawingWaypointClick?.(point, index),
-      onWaypointClick: (point, index) => callbacksRef.current.onWaypointClick?.(point, index),
-    });
+    const controller = MapSceneController.mount(containerRef.current, sceneCallbacks(callbacksRef));
     controllerRef.current = controller;
     mapRef.current = controller.map;
     // Recette / e2e : le contrôleur de scène est exposé (zoom, carte).
@@ -134,15 +129,7 @@ export function MapScene({
   useEffect(() => {
     const controller = controllerRef.current;
     if (!controller || !mapReady) return;
-    controller.setCallbacks({
-      onPlayback: (snapshot) => callbacksRef.current.onPlayback?.(snapshot),
-      onCameraPlaced: (placed) => callbacksRef.current.onCameraPlaced?.(placed),
-      onManualNavigation: () => callbacksRef.current.onManualNavigation?.(),
-      onBoatDrag: (position) => callbacksRef.current.onBoatDrag?.(position),
-      onWaypointHover: (point) => callbacksRef.current.onWaypointHover?.(point),
-      onDrawingWaypointClick: (point, index) => callbacksRef.current.onDrawingWaypointClick?.(point, index),
-      onWaypointClick: (point, index) => callbacksRef.current.onWaypointClick?.(point, index),
-    });
+    controller.setCallbacks(sceneCallbacks(callbacksRef));
     controller.update(scene);
   }, [mapReady, scene]);
 
