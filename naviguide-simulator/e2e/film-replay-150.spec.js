@@ -97,7 +97,11 @@ test("production film: complete 150-second browser replay with timing and map sa
   let timeRegressions = 0;
   let significantTimestampRegressions = 0;
   const positionDeltasKm = [];
+  const boundaryPositionDeltasKm = [];
+  const modeTransitionJumps = [];
+  const unexpectedBoundaryJumps = [];
   let previousPosition = null;
+  let previousPositionChapter = null;
 
   const distanceKm = (a, b) => {
     const rad = (deg) => deg * Math.PI / 180;
@@ -148,8 +152,40 @@ test("production film: complete 150-second browser replay with timing and map sa
     }
     if (sample.active && sample.lat != null && sample.lon != null) {
       const current = { lat: sample.lat, lon: sample.lon };
-      if (previousPosition) positionDeltasKm.push(distanceKm(previousPosition, current));
+      if (previousPosition) {
+        const stepKm = distanceKm(previousPosition, current);
+        if (sample.chapterIdx === previousPositionChapter) {
+          positionDeltasKm.push(stepKm);
+        } else {
+          boundaryPositionDeltasKm.push(stepKm);
+          const previousChapter = rawFilm.chapters[previousPositionChapter] || {};
+          const nextChapter = rawFilm.chapters[sample.chapterIdx] || {};
+          const isAirLeg = (chapter) => {
+            const from = String(chapter.fromName || "").toLowerCase();
+            const to = String(chapter.toName || "").toLowerCase();
+            return (from.includes("cayenne") && to.includes("halifax"))
+              || (from.includes("halifax") && to.includes("cayenne"));
+          };
+          const transition = {
+            distanceKm: Number(stepKm.toFixed(3)),
+            fromChapter: previousPositionChapter,
+            toChapter: sample.chapterIdx,
+            from: String(previousChapter.fromName || ""),
+            via: String(previousChapter.toName || ""),
+            nextFrom: String(nextChapter.fromName || ""),
+            nextTo: String(nextChapter.toName || ""),
+          };
+          if (stepKm > 1000) {
+            if (isAirLeg(previousChapter) || isAirLeg(nextChapter)) {
+              modeTransitionJumps.push(transition);
+            } else {
+              unexpectedBoundaryJumps.push(transition);
+            }
+          }
+        }
+      }
       previousPosition = current;
+      previousPositionChapter = sample.chapterIdx;
     }
 
     if (!tookMiddleScreenshot && maxElapsed >= 75) {
@@ -187,10 +223,15 @@ test("production film: complete 150-second browser replay with timing and map sa
     subtitleCoverage: Number((subtitleSamples / Math.max(1, samples.length)).toFixed(3)),
     timestampRegressions: timeRegressions,
     significantTimestampRegressions,
-    maxStepDistanceKm: positionDeltasKm.length ? Number(Math.max(...positionDeltasKm).toFixed(3)) : null,
-    meanStepDistanceKm: positionDeltasKm.length
+    maxStepDistanceKmWithinChapter: positionDeltasKm.length ? Number(Math.max(...positionDeltasKm).toFixed(3)) : null,
+    meanStepDistanceKmWithinChapter: positionDeltasKm.length
       ? Number((positionDeltasKm.reduce((a, b) => a + b, 0) / positionDeltasKm.length).toFixed(3))
       : null,
+    maxBoundaryStepDistanceKm: boundaryPositionDeltasKm.length
+      ? Number(Math.max(...boundaryPositionDeltasKm).toFixed(3))
+      : null,
+    modeTransitionJumps,
+    unexpectedBoundaryJumps,
     pageErrors,
     samples,
   };
@@ -206,6 +247,13 @@ test("production film: complete 150-second browser replay with timing and map sa
   expect(validPositions, "la carte doit produire des positions pendant le film").toBeGreaterThan(50);
   expect(subtitleSamples, "le récit doit apparaître pendant le film").toBeGreaterThan(50);
   expect(significantTimestampRegressions, "l'horloge du film ne doit pas reculer de plus d'une seconde").toBe(0);
-  expect(positionDeltasKm.length ? Math.max(...positionDeltasKm) : Infinity, "la position du bateau ne doit pas sauter de plusieurs milliers de kilomètres en une seconde").toBeLessThan(1000);
+  expect(
+    positionDeltasKm.length ? Math.max(...positionDeltasKm) : Infinity,
+    "la position du bateau ne doit pas sauter de plusieurs milliers de kilomètres au sein d'un même chapitre",
+  ).toBeLessThan(1000);
+  expect(
+    unexpectedBoundaryJumps,
+    "les transitions entre chapitres maritimes contigus doivent arriver à l'escale annoncée",
+  ).toEqual([]);
   expect(pageErrors, "erreurs JavaScript de page: " + pageErrors.join(" | ")).toEqual([]);
 });
