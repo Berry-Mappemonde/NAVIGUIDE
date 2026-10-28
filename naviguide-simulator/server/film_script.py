@@ -3479,6 +3479,9 @@ def _event_char_idx(ev: dict, chapter: dict, fact: str) -> int:
             return text.index(needle)
     t_a, t_b = _ms(chapter.get("tA")), _ms(chapter.get("tB"))
     t = ev.get("tMs")
+    if t is None:
+        card = ev.get("card") if isinstance(ev.get("card"), dict) else {}
+        t = _ms(ev.get("t") or card.get("at"))
     if t_a is not None and t_b is not None and t is not None and t_b > t_a:
         frac = max(0.0, min(1.0, (t - t_a) / (t_b - t_a)))
         return int(round(frac * max(0, len(text) - 1)))
@@ -6261,6 +6264,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 "tB": _iso(w["tB"]),
                 "text": text,
                 "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "_anchorInputs": list(anchored),
                 "events": placed,
                 "fromName": w.get("fromName") or "",
                 "toName": w.get("toName") or "",
@@ -6311,7 +6315,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 "name": ev.get("name"),
             }
             sentence = event_sentence(rich, lang, display_t0=display_t0).strip()
-            if not sentence:
+            if not sentence or _spoken_before_anchor(sentence, ev.get("tMs"), lang):
                 return
             char_idx = len(" ".join(bits)) + (1 if bits else 0)
             bits.append(sentence)
@@ -7596,7 +7600,7 @@ def _spoken_before_anchor(sentence: str, t_ms: Any, lang: str) -> bool:
         except ValueError:
             return False
     delta = (bar.date() - spoken.date()).days
-    return 1 <= delta <= 60
+    return 1 <= delta <= 365
 
 
 def _is_arrival_sentence(text: str) -> bool:
@@ -8839,7 +8843,7 @@ def build_raw_from_moments(
                 marks,
             )
             # Une date dite avant le jour de l'ancre : la barre serait déjà plus loin.
-            if _known_stop(place, route_rows) and _spoken_before_anchor(sentence, t_ms, lang):
+            if _spoken_before_anchor(sentence, t_ms, lang):
                 return
             # L'instant du jalon, pas le plus proche homonyme plus
             # loin sur l'horloge (Gibraltar recollé après le Maroc ; Mata-Utu /
@@ -8891,6 +8895,7 @@ def build_raw_from_moments(
                 "tB": _iso(w["tB"]),
                 "text": text,
                 "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "_anchorInputs": list(anchored),
                 "events": placed,
                 "fromName": w.get("fromName") or "",
                 "toName": w.get("toName") or "",
@@ -8966,6 +8971,7 @@ def build_raw_from_moments(
             "tB": _iso(w["tB"]),
             "text": text,
             "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "_anchorInputs": list(anchored),
             "events": placed,
             "fromName": w.get("fromName") or "",
             "toName": w.get("toName") or "",
@@ -8994,6 +9000,8 @@ def build_raw_from_moments(
     if has_budget and target > 0:
         _film_apply_char_budget(chapters, seconds)
     chapters[:] = _drop_degenerate_chapters(chapters)
+    _drop_stale_dated_sentences(chapters, lang=lang)
+    _reconcile_film_indices(chapters, lang=lang)
     chars = script_chars(chapters)
     return _with_dc_subjects({
         "chapters": chapters,
@@ -9067,6 +9075,8 @@ def build_raw_script(
     )
     if _film_seconds(seconds) > 0:
         _film_apply_char_budget(chapters, seconds)
+    _drop_stale_dated_sentences(chapters, lang=lang)
+    _reconcile_film_indices(chapters, lang=lang)
     chars = script_chars(chapters)
     return _with_dc_subjects({
         "chapters": chapters,
@@ -9319,6 +9329,136 @@ def _trim_written_to_budget(raw_text: str, written_text: str, cap: int) -> tuple
         if not reverted:
             break
     return " ".join(kept), fallen
+
+
+def _drop_stale_dated_sentences(chapters: list[dict], *, lang: str = "fr") -> None:
+    """Drop a dated sentence when it contradicts its chapter's actual start date.
+
+    A stale observation date should not invalidate the entire written film.
+    Unreconcilable dated statements are omitted rather than silently rewritten.
+    """
+    for chapter in chapters or []:
+        if not isinstance(chapter, dict):
+            continue
+        text = str(chapter.get("text") or "")
+        sentences = _sentences(text)
+        start_ms = _ms(chapter.get("tA"))
+        if not text or not sentences or start_ms is None:
+            continue
+        kept = []
+        kept_old_indices = []
+        for i, sentence in enumerate(sentences):
+            if _spoken_before_anchor(sentence, start_ms, lang):
+                continue
+            kept.append(sentence)
+            kept_old_indices.append(i)
+        if len(kept) == len(sentences):
+            continue
+        new_text = " ".join(kept).strip()
+        chapter["text"] = new_text
+        # Current builders retain semantic anchor inputs and rebuild them later.
+        # For legacy snapshots, move surviving anchors with their sentences.
+        if "_anchorInputs" not in chapter:
+            old_starts = _sentence_starts(text, sentences)
+            new_starts = _sentence_starts(new_text, kept)
+            old_to_new = {old_i: new_i for new_i, old_i in enumerate(kept_old_indices)}
+            moved = []
+            for anchor in chapter.get("anchors") or []:
+                if not isinstance(anchor, dict):
+                    continue
+                try:
+                    idx = int(anchor.get("charIdx") or 0)
+                except (TypeError, ValueError):
+                    continue
+                hit = next(
+                    (i for i, start in enumerate(old_starts)
+                     if start <= idx < start + max(1, len(sentences[i]))),
+                    len(sentences) - 1,
+                )
+                if hit not in old_to_new:
+                    continue
+                new_i = old_to_new[hit]
+                local = max(0, idx - old_starts[hit])
+                moved.append({
+                    **anchor,
+                    "charIdx": new_starts[new_i] + min(local, max(0, len(kept[new_i]) - 1)),
+                })
+            chapter["anchors"] = moved
+
+
+def _reconcile_film_indices(chapters: list[dict], *, lang: str = "fr") -> None:
+    """Rebuild text-linked indices after cuts/injections; repair legacy snapshots too.
+
+    Builders keep source anchor tuples privately until all character-budget and
+    air-sentence edits are complete. Public payloads never include that field.
+    Cached legacy plans without source tuples get bounded, monotone anchors.
+    """
+    for chapter in chapters or []:
+        if not isinstance(chapter, dict):
+            continue
+        text = str(chapter.get("text") or "")
+        size = len(text)
+        source_anchors = chapter.pop("_anchorInputs", None)
+        if source_anchors is not None:
+            ta, tb = _ms(chapter.get("tA")), _ms(chapter.get("tB"))
+            chapter["anchors"] = (
+                chapter_anchors(text, source_anchors, ta, tb, lang)
+                if text and ta is not None and tb is not None else []
+            )
+        else:
+            old = [a for a in (chapter.get("anchors") or []) if isinstance(a, dict)]
+            if not text:
+                chapter["anchors"] = []
+            elif old:
+                parsed = []
+                for a in old:
+                    try:
+                        idx = int(a.get("charIdx") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    parsed.append((idx, a))
+                if any(idx < 0 or idx >= size for idx, _ in parsed):
+                    old_span = max(1, max((idx for idx, _ in parsed), default=size - 1))
+                    parsed = [
+                        (int(round(max(0, idx) * (size - 1) / old_span)), a)
+                        for idx, a in parsed
+                    ]
+                parsed.sort(key=lambda pair: pair[0])
+                bounded = []
+                last_idx = -1
+                last_t = None
+                for idx, row in parsed:
+                    idx = max(0, min(size - 1, idx))
+                    if idx <= last_idx:
+                        idx = last_idx + 1
+                    if idx >= size:
+                        continue
+                    t_ms = _ms(row.get("t"))
+                    if t_ms is not None and last_t is not None and t_ms < last_t:
+                        t_ms = last_t
+                    if t_ms is not None:
+                        last_t = t_ms
+                    bounded.append({
+                        **row,
+                        "charIdx": idx,
+                        **({"t": _iso(t_ms)} if t_ms is not None else {}),
+                    })
+                    last_idx = idx
+                chapter["anchors"] = bounded
+
+        # Event bubbles use text positions too. Re-find their named fact in the
+        # final text; fall back to the event timestamp interpolated over the leg.
+        for event in chapter.get("events") or []:
+            if not isinstance(event, dict):
+                continue
+            card = event.get("card") if isinstance(event.get("card"), dict) else {}
+            fact = str(event.get("fact") or card.get("text") or "")
+            idx = _event_char_idx(event, chapter, fact)
+            event["charIdx"] = max(0, min(max(0, size - 1), int(idx or 0)))
+        chapter["events"] = sorted(
+            [e for e in (chapter.get("events") or []) if isinstance(e, dict)],
+            key=lambda e: (int(e.get("charIdx") or 0), str(e.get("id") or "")),
+        )
 
 
 def reanchor_written_chapter(chapter: dict, written_text: str, lang: str) -> list[dict]:
@@ -10533,10 +10673,21 @@ async def write_film_chain(
         "super": 0, "ultra_edit": 0, "ultra_judge": 0, "lightning": 0,
         "source": "rules", "reviewed": False,
     }
-    raw = dict(plan)
+    raw = {
+        **plan,
+        "chapters": [dict(ch) for ch in (plan.get("chapters") or []) if isinstance(ch, dict)],
+    }
+    _drop_stale_dated_sentences(raw["chapters"], lang="fr")
     raw["targetSeconds"] = _film_seconds(seconds if seconds is not None else plan.get("targetSeconds"))
     super_plan, super_stats = await write_stored_plan(raw, lang="fr", cascade=cascade, seconds=seconds)
     if super_plan is None or int((super_stats or {}).get("rewritten") or 0) <= 0:
+        stats["reason"] = "no-rewritten-sentences"
+        stats["writeStats"] = {
+            "rewritten": int((super_stats or {}).get("rewritten") or 0),
+            "fallen": int((super_stats or {}).get("fallen") or 0),
+            "source": str((super_stats or {}).get("source") or "rules"),
+        }
+        stats["source"] = str((super_stats or {}).get("source") or "rules")
         return None, None, stats
     stats["super"] = 1
     origin = public_written_source(super_plan.get("source") or (super_stats or {}).get("source"))
@@ -10569,6 +10720,7 @@ async def write_film_chain(
     ok_fr, review_fr = await reread_before_store(accepted, stops, cascade=cascade, lang="fr")
     stats["reread"] = "pass" if ok_fr else "fail"
     if not ok_fr:
+        stats["reason"] = "local-reread-rejected"
         stats["faults"] = review_fr.get("faults") or []
         return None, None, stats
 

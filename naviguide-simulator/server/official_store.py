@@ -2860,7 +2860,14 @@ async def write_film_on_click(
 
     fr_plan, en_plan, stats = await write_film_chain(fr_raw, seconds=secs, cascade=cascade_fn)
     if not isinstance(fr_plan, dict) or not (fr_plan.get("chapters") or []):
-        _log_fill_written(f"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})")
+        faults = ",".join(str(x) for x in (stats.get("faults") or [])) or "none"
+        write_stats = stats.get("writeStats") if isinstance(stats.get("writeStats"), dict) else {}
+        _log_fill_written(
+            f"written clic {lg} {secs}s : pas de rédigé "
+            f"reason={stats.get('reason') or 'unknown'} source={stats.get('source') or 'rules'} "
+            f"reread={stats.get('reread') or 'not-run'} faults={faults} "
+            f"rewritten={write_stats.get('rewritten', 'n/a')} fallen={write_stats.get('fallen', 'n/a')}"
+        )
         return serve_film(lang=lg, seconds=secs, style="written")
     body = _put_written_variant(body, "fr", secs, fr_plan, when, last_stop)
     if isinstance(en_plan, dict) and (en_plan.get("chapters") or []):
@@ -2868,7 +2875,8 @@ async def write_film_on_click(
     put("film", body, hit.get("key"))
     _log_fill_written(
         f"written clic {lg} {secs}s : source={stats.get('source')} "
-        f"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} lightning={stats.get('lightning')}"
+        f"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} lightning={stats.get('lightning')} "
+        f"reread={stats.get('reread') or 'n/a'}"
     )
     return serve_film(lang=lg, seconds=secs, style="written")
 
