@@ -178,9 +178,8 @@ jobs:
           git add naviguide-simulator/src/components/EventBubble.jsx
           git commit -m "fix: use semantic accent token for event bubble icon"
 
-          python .github/scripts/apply-film-audit-fixes.py
-          git add naviguide-simulator/server/film_script.py naviguide-simulator/server/tests/test_film_script.py naviguide-simulator/server/official_store.py naviguide-simulator/server/tests/test_official_store.py naviguide-simulator/src/hooks/useReplay.js naviguide-simulator/src/hooks/useReplay.test.js naviguide-simulator/e2e/film-replay-150.spec.js
-          git commit -m "fix: keep film indices aligned and report write fallback"
+          # Film fixes are committed directly; no runtime patch script is executed.
+
 
           branch="integration/laziz-film-audit-${GITHUB_RUN_ID}"
           sha="$(git rev-parse HEAD)"
