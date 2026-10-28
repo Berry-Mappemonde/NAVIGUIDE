@@ -1463,11 +1463,11 @@ export class MapSceneController {
     const film = typeof window !== "undefined" ? window.__naviguideFilm : null;
     const follow = this.currentCast?.follow;
     const subject = {
-      lat: Number.isFinite(film?.lat) ? film.lat
-        : (Number.isFinite(follow?.lat) ? follow.lat : cfg.live?.lat),
-      lon: Number.isFinite(film?.lon) ? film.lon
-        : (Number.isFinite(follow?.lon) ? follow.lon : cfg.live?.lon),
-      heading: film?.heading ?? film?.bearing ?? follow?.bearing ?? cfg.live?.bearing,
+      lat: Number.isFinite(follow?.lat) ? follow.lat
+        : (Number.isFinite(film?.lat) ? film.lat : cfg.live?.lat),
+      lon: Number.isFinite(follow?.lon) ? follow.lon
+        : (Number.isFinite(film?.lon) ? film.lon : cfg.live?.lon),
+      heading: follow?.heading ?? follow?.bearing ?? film?.heading ?? film?.bearing ?? cfg.live?.bearing,
     };
     if (!subject || !Number.isFinite(subject.lat) || !Number.isFinite(subject.lon)) return;
     const lonCam = stabilizeWorldLng(subject.lon, this.map.getCenter()?.lng, this.camera.followLon);
@@ -1685,12 +1685,41 @@ export class MapSceneController {
     this.currentPlayback = snapshot;
     const cast = interpolateCast(this.config.flat, this.filmPlayheadNm(snapshot), { stops: this.config.stops });
     this.currentCast = cast;
+    this.publishFilmCast(cast);
     const liveMode = this.config.isSuivre && this.config.live && !this.config.previewing;
     const sailNm = liveMode ? (this.config.live.sailNm ?? 0) : (cast?.sailNm ?? 0);
     this.syncWake(sailNm, this.config.sceneReady && !this.config.drawingMode && !this.config.customRoute);
     this.syncMarkers(cast, snapshot);
     this.syncAirHop(cast);
     this.syncCamera(cast, snapshot);
+  }
+
+  publishFilmCast(cast) {
+    if (typeof window === "undefined" || !this.config.filmActive || !cast) return;
+    const actor = (point, visible = Boolean(point?.visible)) => ({
+      lat: Number.isFinite(point?.lat) ? point.lat : null,
+      lon: Number.isFinite(point?.lon) ? point.lon : null,
+      visible: Boolean(visible && Number.isFinite(point?.lat) && Number.isFinite(point?.lon)),
+    });
+    const follow = cast.follow;
+    const previous = window.__naviguideFilm || {};
+    window.__naviguideFilm = {
+      ...previous,
+      phase: cast.phase || "sail",
+      vehicle: cast.vehicle || "main",
+      fromName: cast.fromName || previous.fromName || "",
+      toName: cast.toName || previous.toName || "",
+      actors: {
+        main: actor(cast.main, Boolean(cast.main?.visible)),
+        side: actor(cast.side, Boolean(cast.side?.visible)),
+        plane: actor(cast.plane, Boolean(cast.plane?.visible)),
+      },
+      // The legacy lat/lon pair is the camera subject, never necessarily a boat.
+      lat: Number.isFinite(follow?.lat) ? follow.lat : previous.lat ?? null,
+      lon: Number.isFinite(follow?.lon) ? follow.lon : previous.lon ?? null,
+      heading: follow?.heading ?? follow?.bearing ?? previous.heading ?? null,
+      filmNm: Number.isFinite(Number(cast.filmNm)) ? Number(cast.filmNm) : previous.filmNm ?? null,
+    };
   }
 
   syncDynamicWorldCopies() {

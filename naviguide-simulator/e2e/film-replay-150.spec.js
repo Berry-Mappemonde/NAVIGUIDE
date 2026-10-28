@@ -100,8 +100,15 @@ test("production film: complete 150-second browser replay with timing and map sa
   const boundaryPositionDeltasKm = [];
   const modeTransitionJumps = [];
   const unexpectedBoundaryJumps = [];
+  const actorVehicleChanges = [];
+  const mainBoatAirDriftsKm = [];
+  const sideBoatRates = [];
+  const phasesSeen = new Set();
+  const actorsByName = new Map();
   let previousPosition = null;
   let previousPositionChapter = null;
+  let previousVehicle = null;
+  let previousPhase = null;
 
   const distanceKm = (a, b) => {
     const rad = (deg) => deg * Math.PI / 180;
@@ -130,6 +137,14 @@ test("production film: complete 150-second browser replay with timing and map sa
         tMs: numberOrNull(film.tMs),
         lat: numberOrNull(film.lat),
         lon: numberOrNull(film.lon),
+        vehicle: film.vehicle == null ? null : String(film.vehicle),
+        phase: film.phase == null ? null : String(film.phase),
+        actors: film.actors && typeof film.actors === "object" ? {
+          main: film.actors.main || null,
+          side: film.actors.side || null,
+          plane: film.actors.plane || null,
+        } : null,
+        filmNm: numberOrNull(film.filmNm),
         subtitle,
         bubbleId: film.bubbleId == null ? null : String(film.bubbleId),
         bubbleKind: film.bubbleKind == null ? null : String(film.bubbleKind),
@@ -149,6 +164,63 @@ test("production film: complete 150-second browser replay with timing and map sa
       if (previousT != null && sample.tMs < previousT - 1) timeRegressions += 1;
       if (previousT != null && sample.tMs < previousT - 1000) significantTimestampRegressions += 1;
       previousT = sample.tMs;
+    }
+    if (sample.active && sample.phase) phasesSeen.add(sample.phase);
+    if (sample.active && sample.vehicle) {
+      if (previousVehicle && sample.vehicle !== previousVehicle) {
+        const airPhases = new Set(["air-out", "air-return", "air"]);
+        const declaredTransition = airPhases.has(previousPhase) || airPhases.has(sample.phase);
+        const transition = {
+          fromVehicle: previousVehicle,
+          toVehicle: sample.vehicle,
+          fromPhase: previousPhase,
+          toPhase: sample.phase,
+          fromChapter: previousPositionChapter,
+          toChapter: sample.chapterIdx,
+          wallElapsed: Number(((Date.now() - wallStart) / 1000).toFixed(2)),
+          declared: declaredTransition,
+        };
+        actorVehicleChanges.push(transition);
+        if (!declaredTransition) unexpectedBoundaryJumps.push({ ...transition, reason: "actor-change-without-declared-air-phase" });
+      }
+      previousVehicle = sample.vehicle;
+      previousPhase = sample.phase;
+    }
+    if (sample.active && sample.actors && sample.filmNm != null) {
+      for (const actorName of ["main", "side", "plane"]) {
+        const actor = sample.actors[actorName];
+        if (!actor || !actor.visible || actor.lat == null || actor.lon == null) continue;
+        const prior = actorsByName.get(actorName);
+        const current = { lat: actor.lat, lon: actor.lon, filmNm: sample.filmNm, phase: sample.phase };
+        if (prior) {
+          const stepKm = distanceKm(prior, current);
+          const filmDeltaNm = Math.abs(Number(current.filmNm) - Number(prior.filmNm));
+          const expectedKm = filmDeltaNm * 1.852;
+          if (actorName === "main" && ["air-out", "side-sail", "air-return"].includes(sample.phase)) {
+            mainBoatAirDriftsKm.push(stepKm);
+          }
+          if (actorName === "side" && sample.phase === "side-sail" && prior.phase === "side-sail") {
+            sideBoatRates.push({
+              distanceKm: Number(stepKm.toFixed(3)),
+              expectedKm: Number(expectedKm.toFixed(3)),
+              ratio: expectedKm > 1 ? Number((stepKm / expectedKm).toFixed(3)) : null,
+            });
+          }
+          if (actorName !== "plane" && prior.phase === sample.phase && stepKm > Math.max(25, expectedKm * 2 + 10)) {
+            unexpectedBoundaryJumps.push({
+              actor: actorName,
+              distanceKm: Number(stepKm.toFixed(3)),
+              expectedKm: Number(expectedKm.toFixed(3)),
+              fromPhase: prior.phase,
+              toPhase: current.phase,
+              fromFilmNm: prior.filmNm,
+              toFilmNm: current.filmNm,
+              reason: "boat-displacement-exceeds-film-progress",
+            });
+          }
+        }
+        actorsByName.set(actorName, current);
+      }
     }
     if (sample.active && sample.lat != null && sample.lon != null) {
       const current = { lat: sample.lat, lon: sample.lon };
@@ -232,6 +304,13 @@ test("production film: complete 150-second browser replay with timing and map sa
       : null,
     modeTransitionJumps,
     unexpectedBoundaryJumps,
+    actorVehicleChanges,
+    phasesSeen: Array.from(phasesSeen).sort(),
+    maxMainBoatDriftDuringAirOrSideKm: mainBoatAirDriftsKm.length ? Number(Math.max(...mainBoatAirDriftsKm).toFixed(3)) : null,
+    maxSideBoatRateRatio: sideBoatRates.filter((x) => x.ratio != null).length
+      ? Number(Math.max(...sideBoatRates.filter((x) => x.ratio != null).map((x) => x.ratio)).toFixed(3))
+      : null,
+    sideBoatRateSamples: sideBoatRates,
     pageErrors,
     samples,
   };
@@ -253,7 +332,15 @@ test("production film: complete 150-second browser replay with timing and map sa
   ).toBeLessThan(1000);
   expect(
     unexpectedBoundaryJumps,
-    "les transitions entre chapitres maritimes contigus doivent arriver à l'escale annoncée",
+    "un bateau ne doit pas se téléporter et tout changement d'acteur doit passer par une phase aérienne déclarée",
   ).toEqual([]);
+  expect(
+    mainBoatAirDriftsKm.length ? Math.max(...mainBoatAirDriftsKm) : 0,
+    "le bateau A reste à quai pendant les vols et la navigation du bateau B",
+  ).toBeLessThan(1);
+  expect(
+    sideBoatRates.filter((x) => x.ratio != null && x.ratio > 2).length,
+    "le bateau B ne peut avancer plus de deux fois le progrès maritime du film",
+  ).toBe(0);
   expect(pageErrors, "erreurs JavaScript de page: " + pageErrors.join(" | ")).toEqual([]);
 });
