@@ -251,19 +251,22 @@ jobs:
             --connect-timeout 10 --max-time 60 \
             "https://naviguide.fr/voyage/official/film?lang=fr&seconds=150&style=raw" \
             --output /tmp/naviguide-film-raw.json
+          curl --fail-with-body --silent --show-error \
+            --connect-timeout 10 --max-time 60 \
+            "https://naviguide.fr/voyage/official/clock" \
+            --output /tmp/naviguide-official-clock.json
           PYTHONPATH=server python - <<'PY'
           import json
           from pathlib import Path
-          from film_script import nemotron_reread_report
+          from film_script import nemotron_reread_report, official_dated_stops
 
           film = json.loads(Path("/tmp/naviguide-film-raw.json").read_text(encoding="utf-8"))
+          clock = json.loads(Path("/tmp/naviguide-official-clock.json").read_text(encoding="utf-8"))
           chapters = [ch for ch in film.get("chapters", []) if isinstance(ch, dict)]
-          stops = []
-          for ch in chapters:
-              for name in (ch.get("fromName"), ch.get("toName")):
-                  name = str(name or "").strip()
-                  if name and (not stops or stops[-1]["name"] != name):
-                      stops.append({"name": name})
+          # Reproduce the production gate with the full official clock, not just
+          # chapter endpoints (that shortcut falsely flags legitimate repeated
+          # Halifax/Cayenne legs and upcoming planned stops as absent/skipped).
+          stops = official_dated_stops(clock.get("marks"), clock)
           report = nemotron_reread_report(
               " ".join(ch.get("text") or "" for ch in chapters),
               stops,
@@ -283,6 +286,8 @@ jobs:
               "source": film.get("source"),
               "hasWritten": film.get("hasWritten"),
               "chapterCount": len(chapters),
+              "officialClockStopCount": len(stops),
+              "officialClockStops": [s.get("name") for s in stops],
               "localReread": report,
               "textIndexIssues": text_issues,
           }, ensure_ascii=False, indent=2))
