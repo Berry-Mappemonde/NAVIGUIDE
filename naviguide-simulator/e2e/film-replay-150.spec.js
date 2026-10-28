@@ -38,6 +38,9 @@ test("production film: complete 150-second browser replay with timing and map sa
   expect(filmResponse.ok(), "GET du film brut de production").toBeTruthy();
   const rawFilm = await filmResponse.json();
   expect(Array.isArray(rawFilm.chapters) && rawFilm.chapters.length > 0, "le snapshot réel doit contenir des chapitres").toBeTruthy();
+  const rawPath = testInfo.outputPath("film-raw-production.json");
+  await fs.writeFile(rawPath, JSON.stringify(rawFilm, null, 2), "utf8");
+  await testInfo.attach("film-raw-production", { path: rawPath, contentType: "application/json" });
 
   await dismissNotForNav(page, { timeout: 1_500 });
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
