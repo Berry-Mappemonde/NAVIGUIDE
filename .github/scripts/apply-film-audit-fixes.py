@@ -180,39 +180,39 @@ film = film[:regular_start] + sub + film[regular_end:]
 
 film = replace_once(
     film,
-    "    t = ev.get(\\"tMs\\")\n"
+    "    t = ev.get(\"tMs\")\n"
     "    if t_a is not None and t_b is not None and t is not None and t_b > t_a:",
-    "    t = ev.get(\\"tMs\\")\n"
+    "    t = ev.get(\"tMs\")\n"
     "    if t is None:\n"
-    "        card = ev.get(\\"card\\") if isinstance(ev.get(\\"card\\"), dict) else {}\n"
-    "        t = _ms(ev.get(\\"t\\") or card.get(\\"at\\"))\n"
+    "        card = ev.get(\"card\") if isinstance(ev.get(\"card\"), dict) else {}\n"
+    "        t = _ms(ev.get(\"t\") or card.get(\"at\"))\n"
     "    if t_a is not None and t_b is not None and t is not None and t_b > t_a:",
     "event timestamp fallback",
 )
 
 film = replace_once(
     film,
-    "    if super_plan is None or int((super_stats or {}).get(\\"rewritten\\") or 0) <= 0:\n"
+    "    if super_plan is None or int((super_stats or {}).get(\"rewritten\") or 0) <= 0:\n"
     "        return None, None, stats",
-    "    if super_plan is None or int((super_stats or {}).get(\\"rewritten\\") or 0) <= 0:\n"
-    "        stats[\\"reason\\"] = \\"no-rewritten-sentences\\"\n"
-    "        stats[\\"writeStats\\"] = {\n"
-    "            \\"rewritten\\": int((super_stats or {}).get(\\"rewritten\\") or 0),\n"
-    "            \\"fallen\\": int((super_stats or {}).get(\\"fallen\\") or 0),\n"
-    "            \\"source\\": str((super_stats or {}).get(\\"source\\") or \\"rules\\"),\n"
+    "    if super_plan is None or int((super_stats or {}).get(\"rewritten\") or 0) <= 0:\n"
+    "        stats[\"reason\"] = \"no-rewritten-sentences\"\n"
+    "        stats[\"writeStats\"] = {\n"
+    "            \"rewritten\": int((super_stats or {}).get(\"rewritten\") or 0),\n"
+    "            \"fallen\": int((super_stats or {}).get(\"fallen\") or 0),\n"
+    "            \"source\": str((super_stats or {}).get(\"source\") or \"rules\"),\n"
     "        }\n"
-    "        stats[\\"source\\"] = str((super_stats or {}).get(\\"source\\") or \\"rules\\")\n"
+    "        stats[\"source\"] = str((super_stats or {}).get(\"source\") or \"rules\")\n"
     "        return None, None, stats",
     "record no-rewrite reason",
 )
 film = replace_once(
     film,
     "    if not ok_fr:\n"
-    "        stats[\\"faults\\"] = review_fr.get(\\"faults\\") or []\n"
+    "        stats[\"faults\"] = review_fr.get(\"faults\") or []\n"
     "        return None, None, stats",
     "    if not ok_fr:\n"
-    "        stats[\\"reason\\"] = \\"local-reread-rejected\\"\n"
-    "        stats[\\"faults\\"] = review_fr.get(\\"faults\\") or []\n"
+    "        stats[\"reason\"] = \"local-reread-rejected\"\n"
+    "        stats[\"faults\"] = review_fr.get(\"faults\") or []\n"
     "        return None, None, stats",
     "record reread reason",
 )
@@ -354,31 +354,31 @@ store_path = Path("naviguide-simulator/server/official_store.py")
 store = store_path.read_text(encoding="utf-8")
 store = replace_once(
     store,
-    "    if not isinstance(fr_plan, dict) or not (fr_plan.get(\\"chapters\\") or []):\n"
-    "        _log_fill_written(f\\"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})\\")\n"
-    "        return serve_film(lang=lg, seconds=secs, style=\\"written\\")",
-    "    if not isinstance(fr_plan, dict) or not (fr_plan.get(\\"chapters\\") or []):\n"
-    "        faults = \\",\\".join(str(x) for x in (stats.get(\\"faults\\") or [])) or \\"none\\"\n"
-    "        write_stats = stats.get(\\"writeStats\\") if isinstance(stats.get(\\"writeStats\\"), dict) else {}\n"
+    "    if not isinstance(fr_plan, dict) or not (fr_plan.get(\"chapters\") or []):\n"
+    "        _log_fill_written(f\"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})\")\n"
+    "        return serve_film(lang=lg, seconds=secs, style=\"written\")",
+    "    if not isinstance(fr_plan, dict) or not (fr_plan.get(\"chapters\") or []):\n"
+    "        faults = \",\".join(str(x) for x in (stats.get(\"faults\") or [])) or \"none\"\n"
+    "        write_stats = stats.get(\"writeStats\") if isinstance(stats.get(\"writeStats\"), dict) else {}\n"
     "        _log_fill_written(\n"
-    "            f\\"written clic {lg} {secs}s : pas de rédigé \\"\n"
-    "            f\\"reason={stats.get('reason') or 'unknown'} source={stats.get('source') or 'rules'} \\"\n"
-    "            f\\"reread={stats.get('reread') or 'not-run'} faults={faults} \\"\n"
-    "            f\\"rewritten={write_stats.get('rewritten', 'n/a')} fallen={write_stats.get('fallen', 'n/a')}\\"\n"
+    "            f\"written clic {lg} {secs}s : pas de rédigé \"\n"
+    "            f\"reason={stats.get('reason') or 'unknown'} source={stats.get('source') or 'rules'} \"\n"
+    "            f\"reread={stats.get('reread') or 'not-run'} faults={faults} \"\n"
+    "            f\"rewritten={write_stats.get('rewritten', 'n/a')} fallen={write_stats.get('fallen', 'n/a')}\"\n"
     "        )\n"
-    "        return serve_film(lang=lg, seconds=secs, style=\\"written\\")",
+    "        return serve_film(lang=lg, seconds=secs, style=\"written\")",
     "log detailed fallback",
 )
 store = replace_once(
     store,
     "    _log_fill_written(\n"
-    "        f\\"written clic {lg} {secs}s : source={stats.get('source')} \\"\n"
-    "        f\\"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} lightning={stats.get('lightning')}\\"\n"
+    "        f\"written clic {lg} {secs}s : source={stats.get('source')} \"\n"
+    "        f\"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} lightning={stats.get('lightning')}\"\n"
     "    )",
     "    _log_fill_written(\n"
-    "        f\\"written clic {lg} {secs}s : source={stats.get('source')} \\"\n"
-    "        f\\"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} lightning={stats.get('lightning')} \\"\n"
-    "        f\\"reread={stats.get('reread') or 'n/a'}\\"\n"
+    "        f\"written clic {lg} {secs}s : source={stats.get('source')} \"\n"
+    "        f\"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} lightning={stats.get('lightning')} \"\n"
+    "        f\"reread={stats.get('reread') or 'n/a'}\"\n"
     "    )",
     "log successful reread",
 )
