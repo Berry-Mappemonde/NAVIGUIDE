@@ -903,6 +903,12 @@ hook_test_path = Path("naviguide-simulator/src/hooks/useReplay.test.js")
 hook_test = hook_test_path.read_text(encoding="utf-8")
 hook_test = replace_once(
     hook_test,
+    "    assert.match(hook, /if \\(uiDue\\) setTMs\\(next\\)/);",
+    "    assert.match(hook, /if \\(uiDue\\) setTMs\\(monotoneNext\\)/);",
+    "update playhead monotonicity contract",
+)
+hook_test = replace_once(
+    hook_test,
     "linearFilmAt, officialFilmStatus",
     "linearFilmAt, monotonicFilmCharIdx, monotonicFilmTime, officialFilmStatus",
     "import monotonic film cursor helpers",
