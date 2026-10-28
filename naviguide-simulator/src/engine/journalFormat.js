@@ -45,6 +45,11 @@ export function formatDay(day, lang = "fr") {
   });
 }
 
+/**
+ * Symbole texte de chaque type (champ `icon` des entrées formatées). L'écran
+ * ne l'affiche plus : journal et bulle dessinent un pictogramme lucide
+ * (components/kindIcon.js), même table de types.
+ */
 export const KIND_ICON = Object.freeze({
   position: "📍", stop: "⚓", grib: "🌬", note: "📝", zee: "🛂", amp: "🐟",
   poe: "🛃", wx: "⚠️", chat: "💬", climo: "🧭", sci: "🔬", news: "📰",
