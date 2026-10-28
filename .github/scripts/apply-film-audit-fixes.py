@@ -698,8 +698,7 @@ def test_air_return_inserts_a_second_cayenne_visit_by_time():
     visits = [r for r in out if r["name"] == "Cayenne"]
     assert len(visits) == 2
     assert visits[1]["iso"] == "2026-08-30T03:57:30Z"
-
-
+'''
 test_path.write_text(test, encoding="utf-8")
 
 store_path = Path("naviguide-simulator/server/official_store.py")
