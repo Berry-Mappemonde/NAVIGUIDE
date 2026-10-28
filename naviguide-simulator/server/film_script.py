@@ -9453,7 +9453,7 @@ REREAD_SYSTEM = (
     "Do not rewrite the film."
 )
 _LEAVE_FOR_RE = re.compile(
-    r"(?:leaves|quitte|quitté)\s+(?P<frm>.+?)"
+    r"(?:leaves|quitte|quitté)\s+(?P<frm>[^.;:!?\n]+?)"
     r"(?:,\s*heading\s+\w+)?\s+"
     r"(?:for|pour)\s+(?P<to>.+?)"
     r"(?=[.,;:]|\s+on\b|\s+le\b|$)",
