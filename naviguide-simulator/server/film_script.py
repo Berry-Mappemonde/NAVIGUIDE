@@ -9726,37 +9726,34 @@ def _pair_indexes(
     rows: list[dict], frm: str, to: str, *,
     start_ms: Optional[int] = None, end_ms: Optional[int] = None,
 ) -> tuple[Optional[int], Optional[int]]:
-    """Pair a leg to the visit occurring inside its time window.
+    """Pair a leg to a visit within its official time window.
 
-    A repeated port must not fall back to an arbitrarily old visit merely
-    because no candidate lies within the date tolerance. In that case, use
-    the first matching stop at/after the requested start when available.
+    Don't let a stale same-name port satisfy a later chapter when the timed
+    rows contain no visit near that chapter's start.
     """
     ia = None
+    timed_from = []
     if start_ms is not None:
-        timed = []
         for i, row in enumerate(rows):
             if not _known_stop(frm, [row]):
                 continue
             at = _ms(row.get("iso"))
             if at is not None:
-                timed.append((at, i))
-        # Best match just before/at the chapter start, including the existing
-        # tolerance for a timestamp slightly offset from the narration anchor.
+                timed_from.append((at, i))
         before = [
             (abs(start_ms - at), i, at)
-            for at, i in timed
+            for at, i in timed_from
             if at <= start_ms + 12 * 3600 * 1000
         ]
         close = [item for item in before if item[0] <= 3 * 86400000]
         if close:
             ia = min(close)[1]
         else:
-            # When the previous port visit is days/weeks old, don't call it
-            # the current visit. Prefer an explicit visit at/after the start.
-            after = [(at, i) for at, i in timed if at >= start_ms - 12 * 3600 * 1000]
+            after = [(at, i) for at, i in timed_from if at >= start_ms - 12 * 3600 * 1000]
             if after:
                 ia = min(after)[1]
+        if ia is None and timed_from:
+            return None, None
     if ia is None:
         ia = _index_row(rows, frm)
     if ia is None:
@@ -9764,18 +9761,23 @@ def _pair_indexes(
 
     if end_ms is not None and start_ms is not None:
         candidates = []
+        destination_times_exist = False
         for i in range(ia + 1, len(rows)):
             row = rows[i]
             if not _known_stop(to, [row]):
                 continue
             at = _ms(row.get("iso"))
-            if at is not None and start_ms - 12 * 3600 * 1000 <= at <= end_ms + 12 * 3600 * 1000:
+            if at is None:
+                continue
+            destination_times_exist = True
+            if start_ms - 12 * 3600 * 1000 <= at <= end_ms + 12 * 3600 * 1000:
                 candidates.append((abs(end_ms - at), i, at))
         if candidates:
             close = [item for item in candidates if item[0] <= 3 * 86400000]
             return ia, min(close or candidates)[1]
+        if destination_times_exist:
+            return None, None
     return ia, _index_row(rows, to, after=ia)
-
 
 def _sea_between(
     rows: list[dict], frm: str, to: str, *,

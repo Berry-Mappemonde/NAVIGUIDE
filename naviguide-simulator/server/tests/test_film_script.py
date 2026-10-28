@@ -6220,6 +6220,19 @@ def test_pair_indexes_preserves_real_intermediate_stops_for_the_selected_visit()
     assert (ia, ib) == (2, 3)
 
 
+def test_pair_indexes_does_not_reuse_a_stale_cayenne_when_return_visit_is_missing():
+    rows = [
+        {"name": "Cayenne", "iso": "2026-08-10T14:50:23Z", "nm": 8700.0},
+        {"name": "Halifax", "iso": "2026-08-29T19:57:30Z", "nm": 8780.0},
+        {"name": "Papeete", "iso": "2026-10-13T19:07:28Z", "nm": 16200.0},
+    ]
+    assert _pair_indexes(
+        rows, "Cayenne", "Papeete",
+        start_ms=_ms("2026-08-30T03:57:30Z"),
+        end_ms=_ms("2026-10-13T19:07:28Z"),
+    ) == (None, None)
+
+
 def test_sea_between_ignores_a_duplicate_of_the_current_port():
     rows = [
         {"name": "Saint-Pierre", "iso": "2026-08-17T08:48:38Z"},
