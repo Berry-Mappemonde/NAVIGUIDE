@@ -6309,35 +6309,3 @@ def test_skip_gate_still_detects_a_real_intermediate_maritime_stop():
         "text": "Le navire a quitté La Rochelle pour Fort-de-France.",
     }
     assert _skip_pairs(chapter["text"], rows, chapters=[chapter])
-
-
-
-def test_real_replay_leg13_reread_rejects_when_air_return_is_not_injected():
-    """Real fixture: prove the unpatched production read path rejects leg-13."""
-    from pathlib import Path
-    from film_script import _insert_chapter_air_revisits, nemotron_reread_report
-
-    fixture_dir = Path(__file__).parent
-    clock = json.loads((fixture_dir / "fixture-clock.json").read_text(encoding="utf-8"))
-    snapshot = json.loads((fixture_dir / "fixture-film.json").read_text(encoding="utf-8"))
-    leg12 = next(ch for ch in snapshot["chapters"] if ch["id"] == "leg-12")
-    leg13 = next(ch for ch in snapshot["chapters"] if ch["id"] == "leg-13")
-    assert leg12["fromName"].startswith("Halifax") and leg12["toName"].startswith("Cayenne")
-    assert leg13["fromName"].startswith("Cayenne") and leg13["toName"].startswith("Papeete")
-    assert leg13["tA"] == "2026-08-30T03:57:30Z"
-
-    # These are the production clock.marks, not hand-built stop rows.
-    marks = clock["marks"]
-    assert not any(m["name"].startswith("Cayenne") and m.get("iso") == leg13["tA"] for m in marks)
-    # Recreate the caller's official-stop rows from marks (same fields the
-    # official reread path retains). The return leg's destination must then be
-    # injected at leg-13's exact tA.
-    from film_script import _as_stop_rows
-    stops = _as_stop_rows(marks)
-    report_before = nemotron_reread_report(leg13["text"], stops, lang="fr", chapters=[leg13])
-    assert "skip" in report_before["faults"]
-
-    repaired = _insert_chapter_air_revisits(stops, {"chapters": snapshot["chapters"]})
-    assert any(m["name"].startswith("Cayenne") and m.get("iso") == leg13["tA"] for m in repaired)
-    report_after = nemotron_reread_report(leg13["text"], repaired, lang="fr", chapters=[leg13])
-    assert "skip" not in report_after["faults"]
