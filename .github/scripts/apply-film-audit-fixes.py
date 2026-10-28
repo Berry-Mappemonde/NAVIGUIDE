@@ -587,8 +587,6 @@ hook = replace_once(
     "        linearFinish: linear.finish && !holdForSelectedBudget,",
     "hold the last frame until the selected film budget",
 )
-hook_path.write_text(hook, encoding="utf-8")
-
 hook = replace_once(
     hook,
     "            charIdx = atLast ? (ch.chars || 1) : keep;\n"
@@ -601,6 +599,72 @@ hook = replace_once(
     "            charIdx = ch.chars || 1;",
     "complete final phrase in linear/no-voice playback",
 )
+hook = replace_once(
+    hook,
+    "  const onVoiceEnd = useCallback(() => {",
+    "  const settleChapterAtEnd = useCallback((chapter) => {\n"
+    "    const boundary = Number(chapter?.tB);\n"
+    "    if (!Number.isFinite(boundary)) return;\n"
+    "    const previous = lastTRef.current;\n"
+    "    const from = previous == null ? boundary : previous;\n"
+    "    const next = monotonicFilmTime(from, boundary);\n"
+    "    const fresh = cardsBetween(timelineRef.current, from, next, lang);\n"
+    "    if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);\n"
+    "    lastTRef.current = next;\n"
+    "    tMsRef.current = next;\n"
+    "    setTMs(next);\n"
+    "  }, [lang]);\n\n"
+    "  const onVoiceEnd = useCallback(() => {",
+    "create chapter-end settlement helper",
+)
+hook = replace_once(
+    hook,
+    "    const idx = chapterIdxRef.current;\n"
+    "    // Pas de bond à tB — le gouverneur a déjà rejoint l'ancre, ou la rampe d'escale.",
+    "    const idx = chapterIdxRef.current;\n"
+    "    settleChapterAtEnd(plan.chapters[idx]);\n"
+    "    // The completed narration must land on this chapter's declared endpoint.",
+    "settle voice-led chapter boundary",
+)
+hook = replace_once(
+    hook,
+    "  }, [applyChapter, finish, abandonVoiceNow]);",
+    "  }, [applyChapter, finish, abandonVoiceNow, settleChapterAtEnd]);",
+    "depend on chapter-end settlement in voice callback",
+)
+hook = replace_once(
+    hook,
+    "          if (ch && ch.idx !== chapterIdxRef.current) applyChapter(ch);",
+    "          if (ch && ch.idx !== chapterIdxRef.current) {\n"
+    "            const previousChapter = plan.chapters[chapterIdxRef.current];\n"
+    "            if (previousChapter && ch.idx > chapterIdxRef.current && pinnedIdxRef.current == null) {\n"
+    "              settleChapterAtEnd(previousChapter);\n"
+    "            }\n"
+    "            applyChapter(ch);\n"
+    "          }",
+    "settle chapter boundary during catch-up",
+)
+hook = replace_once(
+    hook,
+    "          applyChapter(linearCh);\n"
+    "        }\n"
+    "        const ch = plan.chapters[chapterIdxRef.current];",
+    "          const previousChapter = plan.chapters[chapterIdxRef.current];\n"
+    "          if (previousChapter && linearCh.idx > chapterIdxRef.current && pinnedIdxRef.current == null) {\n"
+    "            settleChapterAtEnd(previousChapter);\n"
+    "          }\n"
+    "          applyChapter(linearCh);\n"
+    "        }\n"
+    "        const ch = plan.chapters[chapterIdxRef.current];",
+    "settle chapter boundary before linear transition",
+)
+hook = replace_once(
+    hook,
+    "  }, [active, secondsPerDay, lang, stop, finish, applyChapter, abandonVoiceNow]);",
+    "  }, [active, secondsPerDay, lang, stop, finish, applyChapter, abandonVoiceNow, settleChapterAtEnd]);",
+    "depend on settlement in replay loop",
+)
+hook_path.write_text(hook, encoding="utf-8")
 film_path.write_text(film, encoding="utf-8")
 
 test_path = Path("naviguide-simulator/server/tests/test_film_script.py")
