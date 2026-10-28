@@ -4,7 +4,7 @@
 // dépendent sont sautées (annotation + return) — barre film + ligne d'état
 // restent exigées. Avec API : ligne d'état « climatologie · réel jusqu'au
 // <date> » / « climatology · real until <date> », route parcourue turquoise
-// (#2dd4bf) jusqu'à la frontière réelle.
+// (#e86aab) jusqu'à la frontière réelle.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -84,7 +84,7 @@ test("Suivre : climatologie · réel jusqu'au <date>, route turquoise puis viole
   await shotBar(page, "02-statut");
 
   await page.waitForFunction(() => {
-    const want = [45, 212, 191]; // #2dd4bf — réel (teintes de C3)
+    const want = [232, 106, 171]; // #e86aab — réel (teintes de C3)
     for (const c of document.querySelectorAll("canvas")) {
       const ctx = c.getContext("2d");
       if (!ctx || !c.width || !c.height) continue;
