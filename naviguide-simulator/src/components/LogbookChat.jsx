@@ -56,34 +56,34 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
   };
 
   return (
-    <div data-testid="logbook-chat" className="sim-box-chat rounded-lg border border-violet-500/25 bg-violet-950/25 p-2 min-w-0">
+    <div data-testid="logbook-chat" className="sim-box-chat rounded-lg border border-slate-700/60 bg-slate-800/40 p-2 min-w-0">
       <div className="flex items-center gap-1.5 mb-1 flex-shrink-0">
-        <MessageSquare size={12} className="text-violet-200" />
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-violet-200 leading-snug">{t("logbookChatTitle")}</div>
-        <span className="ml-auto text-[9px] text-violet-100/60">{admin ? t("logbookChatLogged") : t("logbookChatNotLogged")}</span>
+        <MessageSquare size={12} className="text-slate-400" />
+        <div className="text-[12px] font-semibold text-slate-200 leading-snug">{t("logbookChatTitle")}</div>
+        <span className="ml-auto text-[12px] text-slate-400">{admin ? t("logbookChatLogged") : t("logbookChatNotLogged")}</span>
       </div>
       <div
         data-testid="logbook-chat-reply"
-        className="flex-1 min-h-0 rounded-md border border-violet-300/30 bg-slate-950/55 px-1.5 py-1"
+        className="flex-1 min-h-0 rounded-md border border-slate-700/60 bg-slate-950/55 px-1.5 py-1"
       >
         <div ref={listRef} className="h-full overflow-y-auto sidebar-scroll space-y-1 min-w-0" data-testid="logbook-chat-list">
           {messages.map((m, i) => (
-            <div key={`${m.t}-${i}`} className={`text-[11px] leading-snug break-words [overflow-wrap:anywhere] ${m.role === "skipper" ? "text-slate-100" : "text-violet-100"}`}>
-              <span className="text-[9px] text-slate-500 mr-1">{formatTimeUtc(m.t)}</span>
+            <div key={`${m.t}-${i}`} className={`text-[12px] leading-snug break-words [overflow-wrap:anywhere] ${m.role === "skipper" ? "text-slate-100" : "text-violet-100"}`}>
+              <span className="text-[12px] text-slate-500 mr-1">{formatTimeUtc(m.t)}</span>
               <span className="font-semibold mr-1">{m.role === "skipper" ? t("logbookChatYou") : t("logbookChatBot")}</span>
               {m.status === "failed"
                 ? <span className="text-amber-300/90">{t("logbookChatFailed")}</span>
                 : m.text}
               {m.role === "logbook" && m.status === "ready" ? (
-                <span className="ml-1 text-[9px] text-slate-500">{m.logged ? "💬 " + t("logbookChatSaved") : t("logbookChatUnsaved")}</span>
+                <span className="ml-1 text-[12px] text-slate-500">{m.logged ? "💬 " + t("logbookChatSaved") : t("logbookChatUnsaved")}</span>
               ) : null}
               {m.role === "logbook" && (m.source || m.engine) ? (
                 <LlmSourceBadge source={m.source || m.engine} testId="chat-source" className="mt-0.5" />
               ) : null}
             </div>
           ))}
-          {pending ? <p className="text-[10px] text-slate-400 leading-snug">{t("logbookChatPending")}</p> : null}
-          {error ? <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p> : null}
+          {pending ? <p className="text-[12px] text-slate-400 leading-snug">{t("logbookChatPending")}</p> : null}
+          {error ? <p className="text-[12px] text-amber-300/90 leading-snug">{error}</p> : null}
         </div>
       </div>
       {showAiNotice ? (
@@ -112,7 +112,7 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
           placeholder={t("logbookChatPlaceholder")}
           maxLength={500}
           data-testid="logbook-chat-input"
-          className="flex-1 min-w-0 h-7 rounded-md bg-slate-900/70 border border-white/10 px-2 text-[11px] text-white placeholder:text-slate-500 focus:outline-none focus:border-violet-400/60"
+          className="flex-1 min-w-0 h-7 rounded-md bg-slate-900/70 border border-white/10 px-2 text-[12px] text-white placeholder:text-slate-500 focus:outline-none focus:border-violet-400/60"
         />
         <button
           type="submit"
