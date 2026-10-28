@@ -35,7 +35,7 @@ ne se change pas dans ce mode.
 | **Écouter** | Lit le récit à voix haute. |
 | **Stop** (à côté d’Écouter) | Coupe la voix. |
 | **Envoyer** | Envoie votre question au journal de bord. |
-| **Voir sur la carte** | Cadre le bateau et le lieu dont parle la carte. |
+| **Voir sur la carte** | Cadre le bateau et le lieu dont parle la carte. Pendant le film, la vue y reste jusqu'à la fermeture de la carte, puis revient au bateau. |
 | **Fiche / site officiel** | Ouvre la page officielle (port d’entrée, aire protégée…). |
 | **Source des données** | Ouvre la source du chiffre affiché. |
 | **Fiche Google Maps** | Ouvre le lieu dans Google Maps. |
