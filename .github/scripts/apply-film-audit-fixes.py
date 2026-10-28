@@ -589,6 +589,18 @@ hook = replace_once(
 )
 hook_path.write_text(hook, encoding="utf-8")
 
+hook = replace_once(
+    hook,
+    "            charIdx = atLast ? (ch.chars || 1) : keep;\n"
+    "          } else {\n"
+    "            charIdx = linear.charIdx;",
+    "            charIdx = atLast ? (ch.chars || 1) : keep;\n"
+    "          } else {\n"
+    "            // Voice is no longer leading: linearFilmAt has passed the\n"
+    "            // chapter's character budget, so finish its final phrase.\n"
+    "            charIdx = ch.chars || 1;",
+    "complete final phrase in linear/no-voice playback",
+)
 film_path.write_text(film, encoding="utf-8")
 
 test_path = Path("naviguide-simulator/server/tests/test_film_script.py")
@@ -928,6 +940,13 @@ hook_test = replace_once(
 )
 hook_test_path.write_text(hook_test, encoding="utf-8")
 
+hook_test = replace_once(
+    hook_test,
+    "    assert.match(hook, /charIdx = monotonicFilmCharIdx/);",
+    "    assert.match(hook, /charIdx = monotonicFilmCharIdx/);\n"
+    "    assert.match(hook, /charIdx = ch\\.chars \\|\\| 1/);",
+    "assert linear playback completes the final phrase of a chapter",
+)
 store_path.write_text(store, encoding="utf-8")
 
 print("Applied film snapshot, index, and writing-failure diagnostic patches.")
