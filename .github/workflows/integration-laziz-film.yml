@@ -346,6 +346,9 @@ jobs:
           path: |
             naviguide-simulator/test-results/**
             naviguide-simulator/playwright-report/**
+            /tmp/naviguide-film-raw.json
+            /tmp/naviguide-film-fixed.json
+            /tmp/naviguide-official-clock.json
           retention-days: 7
           if-no-files-found: warn
 
