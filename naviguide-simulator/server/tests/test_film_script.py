@@ -96,6 +96,9 @@ from film_script import (
     chapter_structured_facts,
     zee_waters_label,
     _nm_label,
+    _drop_stale_dated_sentences,
+    _reconcile_film_indices,
+    _dates_regress,
 )
 from tests.test_voyage_journal import PUBLIC, _official
 from voyage_clock import OFFICIAL_T0
@@ -6005,3 +6008,90 @@ def test_halifax_saint_pierre_hop_not_voyage():
     assert _opening_nm_label(leg_nm, "en") in repaired_text
     assert spoken_sea_days(leg_days, "en") in repaired_text
     assert "Arrival on 15 August." in repaired_text
+
+
+def test_stale_date_inside_later_chapter_is_removed_before_writing():
+    """Une date vieille de 82 jours ne doit pas faire rejeter tout le récit."""
+    chapter = {
+        "tA": "2026-08-13T22:50:23Z",
+        "tB": "2026-08-17T08:48:38Z",
+        "text": (
+            "Le 23 mai, une bouée. 489 milles, trois jours de mer. "
+            "Arrivée à Saint-Pierre le 17 août."
+        ),
+        "anchors": [
+            {"charIdx": 0, "t": "2026-08-14T23:50:23Z"},
+            {"charIdx": 117, "t": "2026-08-14T23:50:23Z"},
+            {"charIdx": 205, "t": "2026-08-17T08:48:38Z"},
+        ],
+        "events": [],
+    }
+
+    _drop_stale_dated_sentences([chapter], lang="fr")
+
+    assert "23 mai" not in chapter["text"]
+    assert "489 milles" in chapter["text"]
+    assert "17 août" in chapter["text"]
+    assert not _dates_regress(chapter["text"], "fr")
+
+
+def test_reconcile_film_indices_after_text_cut():
+    """Les index utilisent le texte final, pas celui d'avant la coupe budgétaire."""
+    text = "Départ vers Ajaccio. La traversée continue."
+    chapter = {
+        "id": "leg-test",
+        "tA": "2026-05-15T12:00:00Z",
+        "tB": "2026-06-06T03:36:48Z",
+        "text": text,
+        "anchors": [
+            {"charIdx": 0, "t": "2026-05-15T12:00:00Z"},
+            {"charIdx": 220, "t": "2026-06-06T03:36:48Z"},
+        ],
+        "_anchorInputs": [
+            ("Départ vers Ajaccio.", _ms("2026-05-15T12:00:00Z"), {"role": "depart"}),
+            ("Arrivée à Ajaccio le 6 juin.", _ms("2026-06-06T03:36:48Z"),
+             {"role": "arrive", "place": "Ajaccio", "kind": "escale"}),
+        ],
+        "events": [{
+            "id": "stop:Ajaccio",
+            "kind": "stop",
+            "name": "Ajaccio",
+            "title": "Ajaccio",
+            "fact": "Arrivée à Ajaccio le 6 juin.",
+            "charIdx": 280,
+            "card": {"at": "2026-06-06T03:36:48Z"},
+        }],
+    }
+
+    _reconcile_film_indices([chapter], lang="fr")
+
+    assert "_anchorInputs" not in chapter
+    assert chapter["anchors"]
+    assert all(0 <= a["charIdx"] < len(text) for a in chapter["anchors"])
+    indices = [a["charIdx"] for a in chapter["anchors"]]
+    assert indices == sorted(set(indices))
+    event = chapter["events"][0]
+    assert 0 <= event["charIdx"] < len(text)
+    assert event["charIdx"] == text.index("Ajaccio")
+
+
+def test_reconcile_film_indices_repairs_legacy_overflow_monotonically():
+    """Un vieux snapshot sans métadonnées d'ancres ne publie plus d'index hors texte."""
+    chapter = {
+        "tA": "2026-05-15T12:00:00Z",
+        "tB": "2026-06-06T03:36:48Z",
+        "text": "Départ. Arrivée.",
+        "anchors": [
+            {"charIdx": 0, "t": "2026-05-15T12:00:00Z"},
+            {"charIdx": 120, "t": "2026-05-24T12:00:00Z"},
+            {"charIdx": 280, "t": "2026-06-06T03:36:48Z"},
+        ],
+        "events": [],
+    }
+
+    _reconcile_film_indices([chapter], lang="fr")
+
+    indices = [a["charIdx"] for a in chapter["anchors"]]
+    assert indices
+    assert all(0 <= idx < len(chapter["text"]) for idx in indices)
+    assert indices == sorted(set(indices))
