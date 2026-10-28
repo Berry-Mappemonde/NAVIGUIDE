@@ -6045,12 +6045,11 @@ def test_buoy_bubble_is_attached_using_its_source_event_time():
         "t": "2026-05-23T12:00:00Z",
         "sciKind": "buoy",
     }
-    # The outer candidate has an August timestamp. The nested source entry is
-    # authoritative because event_sentence() speaks the nested entry date.
     journal = {"latest": [{
         "id": "candidate:buoy-wave-12",
         "kind": "buoy",
         "t": "2026-08-14T10:00:00Z",
+        "tMs": _ms("2026-08-14T10:00:00Z"),
         "entry": entry,
     }]}
     chapters = [

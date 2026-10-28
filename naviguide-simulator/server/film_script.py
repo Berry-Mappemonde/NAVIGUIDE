@@ -3490,7 +3490,7 @@ def _event_char_idx(ev: dict, chapter: dict, fact: str) -> int:
 
 def _in_chapter(ev: dict, chapter: dict, last: bool, first: bool = False) -> bool:
     t_a, t_b = _ms(chapter.get("tA")), _ms(chapter.get("tB"))
-    t = ev.get("tMs")
+    t = _event_source_ms(ev)
     if t is None or t_a is None or t_b is None:
         return False
     dest = chapter.get("toName") or ""
@@ -3500,6 +3500,7 @@ def _in_chapter(ev: dict, chapter: dict, last: bool, first: bool = False) -> boo
     if first:
         return t_a <= t <= t_b
     return t_a < t <= t_b
+
 
 
 def _bubble_payload(ev: dict, chapter: dict, lang: str, prev: dict | None = None) -> dict:
