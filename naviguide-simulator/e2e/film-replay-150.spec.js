@@ -261,12 +261,6 @@ test("production film: complete 150-second browser replay with timing and map sa
           boundaryPositionDeltasKm.push(stepKm);
           const previousChapter = rawFilm.chapters[previousPositionChapter] || {};
           const nextChapter = rawFilm.chapters[sample.chapterIdx] || {};
-          const isAirLeg = (chapter) => {
-            const from = String(chapter.fromName || "").toLowerCase();
-            const to = String(chapter.toName || "").toLowerCase();
-            return (from.includes("cayenne") && to.includes("halifax"))
-              || (from.includes("halifax") && to.includes("cayenne"));
-          };
           const transition = {
             distanceKm: Number(stepKm.toFixed(3)),
             fromChapter: previousPositionChapter,
@@ -277,11 +271,7 @@ test("production film: complete 150-second browser replay with timing and map sa
             nextTo: String(nextChapter.toName || ""),
           };
           if (stepKm > 1000) {
-            if (isAirLeg(previousChapter) || isAirLeg(nextChapter)) {
-              modeTransitionJumps.push(transition);
-            } else {
-              unexpectedBoundaryJumps.push(transition);
-            }
+            modeTransitionJumps.push(transition);
           }
         }
       }

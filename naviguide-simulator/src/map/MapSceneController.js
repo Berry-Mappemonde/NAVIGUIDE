@@ -1712,7 +1712,7 @@ export class MapSceneController {
       actors: {
         // A is always present in the scene; on air/side phases its coordinates
         // are the parked quay position. The relay boat/plane are phase-gated.
-        main: actor(cast.main, Boolean(cast.main && Number.isFinite(cast.main.lat) && Number.isFinite(cast.main.lon))),
+        main: actor(cast.main, Boolean(cast.main?.visible && Number.isFinite(cast.main.lat) && Number.isFinite(cast.main.lon))),
         side: actor(cast.side, Boolean(cast.side?.visible && cast.phase === "side-sail")),
         plane: actor(cast.plane, Boolean(cast.plane?.visible && ["air-out", "air-return", "air"].includes(cast.phase))),
       },
