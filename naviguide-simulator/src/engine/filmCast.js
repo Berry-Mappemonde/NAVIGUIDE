@@ -106,12 +106,32 @@ export function detectAirEpisodes(points) {
   return episodes;
 }
 
+function nearestIndex(points, fromIdx, toIdx, target, fallback) {
+  let best = fallback;
+  let bestD = Infinity;
+  for (let i = Math.max(0, fromIdx); i <= Math.min(points.length - 1, toIdx); i++) {
+    const d = haversineNm(target.lat, target.lon, points[i].lat, points[i].lon);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
 /** Snap SPM and re-insert Cayenne on the return, for the Cayenne → Papeete HUD. */
 export function mergeEpisodeMarks(marks, flat, stops) {
   const episodes = nameAirEpisodes(flat?.episodes || detectAirEpisodes(flat?.points || []), stops);
   const out = [...(marks || [])];
   for (const ep of episodes) {
-    const viaP = flat.points[ep.viaIdx];
+    // L'escale nommée (Saint-Pierre) d'abord : le point le plus loin de
+    // Halifax n'est qu'un sommet de route (45 N 55 W sur la route officielle).
+    const viaStop = (stops || []).find((s) => s?.name === ep.viaName
+      && Number.isFinite(s.lat) && Number.isFinite(s.lon));
+    const viaIdx = viaStop
+      ? nearestIndex(flat.points, ep.ja + 1, ep.jb - 1, viaStop, ep.viaIdx)
+      : ep.viaIdx;
+    const viaP = flat.points[viaIdx];
     const retP = flat.points[ep.jb];
     if (viaP) {
       const existing = out.find((m) => m.name === ep.viaName);
@@ -120,7 +140,7 @@ export function mergeEpisodeMarks(marks, flat, stops) {
         existing.filmNm = viaP.filmCum ?? viaP.cumNm;
         existing.lat = viaP.lat;
         existing.lon = viaP.lon;
-        existing.index = ep.viaIdx;
+        existing.index = viaIdx;
       } else {
         out.push({
           name: ep.viaName,
@@ -128,7 +148,7 @@ export function mergeEpisodeMarks(marks, flat, stops) {
           lon: viaP.lon,
           nm: viaP.cumNm,
           filmNm: viaP.filmCum ?? viaP.cumNm,
-          index: ep.viaIdx,
+          index: viaIdx,
         });
       }
     }
