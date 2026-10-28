@@ -1,8 +1,8 @@
 # Versions installées par la CI de main (23be7ba8, Python 3.12, run 39069408395).
 # Aucune montée : chaque ligne est le paquet réellement testé. Dependabot
 # continue de proposer des mises à jour sur ces épingles ==.
-fastapi==0.142.2
-starlette==1.8.0
+fastapi==0.161.1
+starlette==1.9.0
 uvicorn==0.54.0
 httpx==0.28.1
 searoute==1.6.0
@@ -11,7 +11,7 @@ shapely==2.2.0
 global-land-mask==1.0.0
 numpy==2.5.4
 h5py==3.16.0
-pandas==3.0.6
+pandas==3.1.0
 openpyxl==3.1.5
 pdfplumber==0.11.10
 python-multipart==0.0.32
@@ -29,8 +29,8 @@ annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
 arcosparse==0.5.1
-boto3==1.43.114
-botocore==1.43.114
+boto3==1.43.118
+botocore==1.43.118
 certifi>=2026.10.19
 cffi==2.1.1
 charset-normalizer==3.5.2
@@ -52,14 +52,14 @@ jmespath==1.1.0
 locket==1.0.0
 msgspec==0.22.0
 networkx==3.7
-numcodecs==0.17.0
+numcodecs==0.17.1
 opentelemetry-api==1.45.1
 packaging==26.3
 partd==1.4.2
 pdfminer.six==20260107
 pluggy==1.7.0
 pyarrow==26.0.0
-pycparser==3.11
+pycparser==3.12
 pydantic==2.14.1
 pydantic-core==2.50.1
 pygments==2.21.0
@@ -91,7 +91,7 @@ pystac-ext-xarray-assets==1.0.1
 python-dateutil==2.9.0.post0
 pyyaml==6.0.3
 requests==2.34.2
-s3transfer==0.19.2
+s3transfer==0.19.3
 semver==3.1.0
 six==1.17.0
 toolz==1.2.0
