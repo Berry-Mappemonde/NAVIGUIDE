@@ -300,6 +300,23 @@ jobs:
         working-directory: naviguide-simulator
         run: npx playwright test e2e/smoke.spec.js
 
+      - name: Record a full 150-second production film replay (GET-only)
+        working-directory: naviguide-simulator
+        run: npx playwright test e2e/film-replay-150.spec.js
+        env:
+          NAVIGUIDE_REPLAY_URL: https://naviguide.fr
+
+      - name: Upload full film replay, source JSON, screenshots, and telemetry
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: naviguide-film-replay-150-${{ github.run_id }}
+          path: |
+            naviguide-simulator/test-results/**
+            naviguide-simulator/playwright-report/**
+          retention-days: 7
+          if-no-files-found: warn
+
   live-model-status:
     name: Read-only production LLM status (no model call)
     needs: integrate-and-test
