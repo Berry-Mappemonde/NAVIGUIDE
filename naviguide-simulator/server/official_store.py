@@ -2860,7 +2860,14 @@ async def write_film_on_click(
 
     fr_plan, en_plan, stats = await write_film_chain(fr_raw, seconds=secs, cascade=cascade_fn)
     if not isinstance(fr_plan, dict) or not (fr_plan.get("chapters") or []):
-        _log_fill_written(f"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})")
+        faults = ",".join(str(x) for x in (stats.get("faults") or [])) or "none"
+        write_stats = stats.get("writeStats") if isinstance(stats.get("writeStats"), dict) else {}
+        _log_fill_written(
+            f"written clic {lg} {secs}s : pas de rédigé "
+            f"reason={stats.get('reason') or 'unknown'} source={stats.get('source') or 'rules'} "
+            f"reread={stats.get('reread') or 'not-run'} faults={faults} "
+            f"rewritten={write_stats.get('rewritten', 'n/a')} fallen={write_stats.get('fallen', 'n/a')}"
+        )
         return serve_film(lang=lg, seconds=secs, style="written")
     body = _put_written_variant(body, "fr", secs, fr_plan, when, last_stop)
     if isinstance(en_plan, dict) and (en_plan.get("chapters") or []):
@@ -2868,7 +2875,8 @@ async def write_film_on_click(
     put("film", body, hit.get("key"))
     _log_fill_written(
         f"written clic {lg} {secs}s : source={stats.get('source')} "
-        f"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} lightning={stats.get('lightning')}"
+        f"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} lightning={stats.get('lightning')} "
+        f"reread={stats.get('reread') or 'n/a'}"
     )
     return serve_film(lang=lg, seconds=secs, style="written")
 
@@ -2886,6 +2894,41 @@ def _repair_served_hop(plan: Optional[dict], lang: str, voy: Optional[dict]) -> 
     except Exception:
         review = None
     return repair_side_hop_plan(plan, clock=clock, marks=marks, review=review, lang=lang)
+
+
+def _sanitize_served_film_plan(plan: dict, lang: str = "fr") -> dict:
+    """Repair a stored legacy snapshot on read, without mutating its cache entry."""
+    chapters = []
+    for source in (plan.get("chapters") or []):
+        if not isinstance(source, dict):
+            continue
+        chapter = dict(source)
+        chapter["anchors"] = [
+            dict(anchor) for anchor in (source.get("anchors") or [])
+            if isinstance(anchor, dict)
+        ]
+        chapter["events"] = []
+        for source_event in (source.get("events") or []):
+            if not isinstance(source_event, dict):
+                continue
+            event = dict(source_event)
+            if isinstance(event.get("card"), dict):
+                event["card"] = dict(event["card"])
+            chapter["events"].append(event)
+        chapters.append(chapter)
+    safe = {**plan, "chapters": chapters}
+    from film_script import (  # noqa: PLC0415
+        _drop_stale_dated_sentences,
+        _reconcile_film_indices,
+        film_estimated_seconds,
+        script_chars,
+    )
+
+    _drop_stale_dated_sentences(safe["chapters"], lang=lang)
+    _reconcile_film_indices(safe["chapters"], lang=lang)
+    safe["chars"] = script_chars(safe["chapters"])
+    safe["estimatedSeconds"] = film_estimated_seconds(safe["chars"])
+    return safe
 
 
 def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
@@ -2927,6 +2970,7 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
         wplan = _pick_written_plan(body, lg, int(seconds or 0))
         if isinstance(wplan, dict) and (wplan.get("chapters") or []):
             wplan = _repair_served_hop(wplan, lg, voy)
+            wplan = _sanitize_served_film_plan(wplan, lg)
             out = _with_film_estimate(wplan)
             if isinstance(lang_est, dict) and lang_est:
                 out["estimates"] = lang_est
@@ -2948,7 +2992,7 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
             out["style"] = "written"
             out.update(_stamp(hit))
             return out
-    out = _with_film_estimate(_repair_served_hop(plan, lg, voy))
+    out = _with_film_estimate(_sanitize_served_film_plan(_repair_served_hop(plan, lg, voy), lg))
     if isinstance(lang_est, dict) and lang_est:
         out["estimates"] = lang_est
     out["status"] = READY

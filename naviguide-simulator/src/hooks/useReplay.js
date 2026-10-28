@@ -606,6 +606,19 @@ export function filmCharRatesStable(rateA, rateB, maxRel = 0.2) {
   return Math.abs(a - b) / Math.max(a, b) < maxRel;
 }
 
+export function monotonicFilmTime(previous, next) {
+  const a = Number(previous);
+  const b = Number(next);
+  if (!Number.isFinite(b)) return previous;
+  return Number.isFinite(a) ? Math.max(a, b) : b;
+}
+
+export function monotonicFilmCharIdx({ previousChapterIdx = null, chapterIdx = null, previousCharIdx = 0, charIdx = 0 } = {}) {
+  const next = Math.max(0, Number(charIdx) || 0);
+  if (previousChapterIdx !== chapterIdx) return next;
+  return Math.max(Math.max(0, Number(previousCharIdx) || 0), next);
+}
+
 export function filmSpeakChars(plan) {
   const listed = Number(plan?.totalChars);
   if (Number.isFinite(listed) && listed > 0) return listed;
@@ -1163,6 +1176,7 @@ export function useReplay({
   const chapterTextRef = useRef("");
   const finishRef = useRef(() => {});
   const voiceCharRef = useRef(0);
+  const lastCharPublishedRef = useRef({ chapterIdx: null, charIdx: 0 });
   const voiceFailedRef = useRef(false);
   const voiceSpokenAllRef = useRef(false);
   const voiceBoundaryAtRef = useRef(0);
@@ -1250,6 +1264,7 @@ export function useReplay({
   const applyChapter = useCallback((ch) => {
     if (!ch) return;
     chapterIdxRef.current = ch.idx;
+    lastCharPublishedRef.current = { chapterIdx: ch.idx, charIdx: 0 };
     voiceCharRef.current = 0;
     voiceBoundaryAtRef.current = 0;
     chapterStartedAtRef.current = typeof performance !== "undefined" ? performance.now() : 0;
@@ -1875,11 +1890,12 @@ export function useReplay({
       const ingest = (next) => {
         if (next == null) return;
         const from = lastTRef.current ?? next;
-        const fresh = cardsBetween(timelineRef.current, from, next, lang);
+        const monotoneNext = monotonicFilmTime(from, next);
+        const fresh = cardsBetween(timelineRef.current, from, monotoneNext, lang);
         if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);
-        lastTRef.current = next;
-        tMsRef.current = next;
-        if (uiDue) setTMs(next);
+        lastTRef.current = monotoneNext;
+        tMsRef.current = monotoneNext;
+        if (uiDue) setTMs(monotoneNext);
       };
       const ingestHeld = (raw, chapter, { hold = true } = {}) => {
         if (!hold) {
@@ -1903,11 +1919,16 @@ export function useReplay({
         budgetRef.current <= 0 || wallElapsed >= plan.targetSeconds
       );
       // La clôture se finit — tant que la voix parle, pas de finish().
+      const holdForSelectedBudget = shouldHoldFilmForBudget({
+        userBudget: budgetRef.current,
+        wallElapsed,
+        lastChapter: linear.lastReached,
+      });
       const done = filmShouldFinish({
         voiceClock,
         speaking,
         voiceAllDone,
-        linearFinish: linear.finish,
+        linearFinish: linear.finish && !holdForSelectedBudget,
         lastReached: linear.lastReached,
         stopping: stoppingRef.current,
       });
@@ -2065,6 +2086,13 @@ export function useReplay({
           linearChar: linear.charIdx,
         });
       }
+      charIdx = monotonicFilmCharIdx({
+        previousChapterIdx: lastCharPublishedRef.current.chapterIdx,
+        chapterIdx: chapter?.idx ?? null,
+        previousCharIdx: lastCharPublishedRef.current.charIdx,
+        charIdx,
+      });
+      lastCharPublishedRef.current = { chapterIdx: chapter?.idx ?? null, charIdx };
       // RC52 : le bateau publié suit charIdx, pas elapsed / tB.
       const sentPub = chapter ? sentenceSpan(chapter, charIdx) : null;
       const phraseDone = Boolean(
