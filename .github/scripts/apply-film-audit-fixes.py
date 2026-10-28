@@ -21,7 +21,62 @@ film = film.replace(
 )
 
 helper_anchor = "def reanchor_written_chapter(chapter: dict, written_text: str, lang: str) -> list[dict]:"
-helper = '''def _reconcile_film_indices(chapters: list[dict], *, lang: str = "fr") -> None:
+helper = '''def _drop_stale_dated_sentences(chapters: list[dict], *, lang: str = "fr") -> None:
+    """Drop a dated sentence when it contradicts its chapter's actual start date.
+
+    A stale observation date should not invalidate the entire written film.
+    Unreconcilable dated statements are omitted rather than silently rewritten.
+    """
+    for chapter in chapters or []:
+        if not isinstance(chapter, dict):
+            continue
+        text = str(chapter.get("text") or "")
+        sentences = _sentences(text)
+        start_ms = _ms(chapter.get("tA"))
+        if not text or not sentences or start_ms is None:
+            continue
+        kept = []
+        kept_old_indices = []
+        for i, sentence in enumerate(sentences):
+            if _spoken_before_anchor(sentence, start_ms, lang):
+                continue
+            kept.append(sentence)
+            kept_old_indices.append(i)
+        if len(kept) == len(sentences):
+            continue
+        new_text = " ".join(kept).strip()
+        chapter["text"] = new_text
+        # Current builders retain semantic anchor inputs and rebuild them later.
+        # For legacy snapshots, move surviving anchors with their sentences.
+        if "_anchorInputs" not in chapter:
+            old_starts = _sentence_starts(text, sentences)
+            new_starts = _sentence_starts(new_text, kept)
+            old_to_new = {old_i: new_i for new_i, old_i in enumerate(kept_old_indices)}
+            moved = []
+            for anchor in chapter.get("anchors") or []:
+                if not isinstance(anchor, dict):
+                    continue
+                try:
+                    idx = int(anchor.get("charIdx") or 0)
+                except (TypeError, ValueError):
+                    continue
+                hit = next(
+                    (i for i, start in enumerate(old_starts)
+                     if start <= idx < start + max(1, len(sentences[i]))),
+                    len(sentences) - 1,
+                )
+                if hit not in old_to_new:
+                    continue
+                new_i = old_to_new[hit]
+                local = max(0, idx - old_starts[hit])
+                moved.append({
+                    **anchor,
+                    "charIdx": new_starts[new_i] + min(local, max(0, len(kept[new_i]) - 1)),
+                })
+            chapter["anchors"] = moved
+
+
+def _reconcile_film_indices(chapters: list[dict], *, lang: str = "fr") -> None:
     """Rebuild text-linked indices after cuts/injections; repair legacy snapshots too.
 
     Builders keep source anchor tuples privately until all character-budget and
@@ -103,6 +158,7 @@ moments_end = "    chapters[:] = _drop_degenerate_chapters(chapters)\n    chars 
 film = replace_once(
     film, moments_end,
     "    chapters[:] = _drop_degenerate_chapters(chapters)\n"
+    "    _drop_stale_dated_sentences(chapters, lang=lang)\n"
     "    _reconcile_film_indices(chapters, lang=lang)\n"
     "    chars = script_chars(chapters)",
     "reconcile moments builder",
@@ -114,6 +170,7 @@ sub = film[regular_start:regular_end]
 sub = replace_once(
     sub,
     "    chars = script_chars(chapters)\n    return _with_dc_subjects({",
+    "    _drop_stale_dated_sentences(chapters, lang=lang)\n"
     "    _reconcile_film_indices(chapters, lang=lang)\n"
     "    chars = script_chars(chapters)\n"
     "    return _with_dc_subjects({",
@@ -158,6 +215,42 @@ film = replace_once(
     "        stats[\\"faults\\"] = review_fr.get(\\"faults\\") or []\n"
     "        return None, None, stats",
     "record reread reason",
+)
+film = replace_once(
+    film,
+    "    return 1 <= delta <= 60",
+    "    return 1 <= delta <= 365",
+    "widen stale-date window",
+)
+film = replace_once(
+    film,
+    "            if _known_stop(place, route_rows) and _spoken_before_anchor(sentence, t_ms, lang):\n                return",
+    "            if _spoken_before_anchor(sentence, t_ms, lang):\n                return",
+    "reject stale dates on non-port events too",
+)
+film = replace_once(
+    film,
+    "            sentence = event_sentence(rich, lang, display_t0=display_t0).strip()\n"
+    "            if not sentence:\n"
+    "                return\n"
+    "            char_idx = len(\" \".join(bits)) + (1 if bits else 0)",
+    "            sentence = event_sentence(rich, lang, display_t0=display_t0).strip()\n"
+    "            if not sentence or _spoken_before_anchor(sentence, ev.get(\"tMs\"), lang):\n"
+    "                return\n"
+    "            char_idx = len(\" \".join(bits)) + (1 if bits else 0)",
+    "reject stale event dates in the regular composer",
+)
+film = replace_once(
+    film,
+    "    raw = dict(plan)\n"
+    "    raw[\"targetSeconds\"] = _film_seconds(seconds if seconds is not None else plan.get(\"targetSeconds\"))",
+    "    raw = {\n"
+    "        **plan,\n"
+    "        \"chapters\": [dict(ch) for ch in (plan.get(\"chapters\") or []) if isinstance(ch, dict)],\n"
+    "    }\n"
+    "    _drop_stale_dated_sentences(raw[\"chapters\"], lang=\"fr\")\n"
+    "    raw[\"targetSeconds\"] = _film_seconds(seconds if seconds is not None else plan.get(\"targetSeconds\"))",
+    "sanitize stale cached chapter dates before Super",
 )
 film_path.write_text(film, encoding="utf-8")
 
