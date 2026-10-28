@@ -6309,3 +6309,40 @@ def test_skip_gate_still_detects_a_real_intermediate_maritime_stop():
         "text": "Le navire a quitté La Rochelle pour Fort-de-France.",
     }
     assert _skip_pairs(chapter["text"], rows, chapters=[chapter])
+
+
+def test_real_replay_leg13_gate_uses_cayenne_visit_inserted_from_leg12():
+    """Regression from run 40611512024: the real marks omit Cayenne's air return."""
+    from pathlib import Path
+    from film_script import (
+        _insert_chapter_air_revisits,
+        _route_stops_for_reread,
+        nemotron_reread_report,
+    )
+
+    fixture_dir = Path(__file__).parent
+    clock = json.loads((fixture_dir / "fixture-clock.json").read_text(encoding="utf-8"))
+    fixture = json.loads((fixture_dir / "fixture-film.json").read_text(encoding="utf-8"))
+    chapters = fixture["chapters"]
+    leg12 = next(ch for ch in chapters if ch["id"] == "leg-12")
+    leg13 = next(ch for ch in chapters if ch["id"] == "leg-13")
+    assert leg12["fromName"].startswith("Halifax") and leg12["toName"].startswith("Cayenne")
+    assert leg13["fromName"].startswith("Cayenne") and leg13["toName"].startswith("Papeete")
+    assert leg13["tA"] == "2026-08-30T03:57:30Z"
+
+    # Use the actual clock marks as the gate input; only leg-12/leg-13 were
+    # captured from the actual production-film artifact.
+    marks = clock["marks"]
+    assert not any(m["name"].startswith("Cayenne") and m.get("iso") == leg13["tA"] for m in marks)
+    plan = {"chapters": chapters}
+    stops = _route_stops_for_reread(plan)
+    # Production fallback is a departure from Cayenne to Papeete at the actual
+    # chapter boundary. The stale route lacks the second, time-matched visit.
+    report_before = nemotron_reread_report(leg13["text"], stops, lang="fr", chapters=[leg13])
+    assert "skip" in report_before["faults"]
+
+    repaired = _insert_chapter_air_revisits(stops, plan)
+    visits = [m for m in repaired if m["name"].startswith("Cayenne")]
+    assert any(m.get("iso") == leg13["tA"] for m in visits)
+    report_after = nemotron_reread_report(leg13["text"], repaired, lang="fr", chapters=[leg13])
+    assert "skip" not in report_after["faults"]
