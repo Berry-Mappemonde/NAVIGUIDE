@@ -1082,15 +1082,17 @@ hook_test = replace_once(
     "    assert.match(hook, /charIdx = monotonicFilmCharIdx/);",
     "assert film time and characters cannot regress within a leg",
 )
-hook_test_path.write_text(hook_test, encoding="utf-8")
-
 hook_test = replace_once(
     hook_test,
     "    assert.match(hook, /charIdx = monotonicFilmCharIdx/);",
     "    assert.match(hook, /charIdx = monotonicFilmCharIdx/);\n"
-    "    assert.match(hook, /charIdx = ch\\.chars \\|\\| 1/);",
+    "    assert.match(hook, /charIdx = ch\\.chars \\|\\| 1/);\n"
+    "    assert.match(hook, /settleChapterAtEnd\\(plan\\.chapters\\[idx\\]\\)/);\n"
+    "    assert.match(hook, /settleChapterAtEnd\\(previousChapter\\)/);",
     "assert linear playback completes the final phrase of a chapter",
 )
+hook_test_path.write_text(hook_test, encoding="utf-8")
+
 store_path.write_text(store, encoding="utf-8")
 
 print("Applied film snapshot, index, and writing-failure diagnostic patches.")
