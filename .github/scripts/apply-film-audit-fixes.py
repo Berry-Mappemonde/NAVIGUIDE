@@ -346,6 +346,51 @@ test_path.write_text(test, encoding="utf-8")
 
 store_path = Path("naviguide-simulator/server/official_store.py")
 store = store_path.read_text(encoding="utf-8")
+served_helper = '''def _sanitize_served_film_plan(plan: dict, lang: str = "fr") -> dict:
+    """Repair a stored legacy snapshot on read, without mutating its cache entry."""
+    safe = {
+        **plan,
+        "chapters": [
+            dict(ch) for ch in (plan.get("chapters") or [])
+            if isinstance(ch, dict)
+        ],
+    }
+    from film_script import (  # noqa: PLC0415
+        _drop_stale_dated_sentences,
+        _reconcile_film_indices,
+        film_estimated_seconds,
+        script_chars,
+    )
+
+    _drop_stale_dated_sentences(safe["chapters"], lang=lang)
+    _reconcile_film_indices(safe["chapters"], lang=lang)
+    safe["chars"] = script_chars(safe["chapters"])
+    safe["estimatedSeconds"] = film_estimated_seconds(safe["chars"])
+    return safe
+
+
+'''
+store = replace_once(
+    store,
+    "def serve_film(lang: str = \"fr\", seconds: int = 0, style: str = \"raw\") -> dict:\n",
+    served_helper + "def serve_film(lang: str = \"fr\", seconds: int = 0, style: str = \"raw\") -> dict:\n",
+    "insert read-time legacy snapshot sanitizer",
+)
+store = replace_once(
+    store,
+    "            wplan = _repair_served_hop(wplan, lg, voy)\n"
+    "            out = _with_film_estimate(wplan)",
+    "            wplan = _repair_served_hop(wplan, lg, voy)\n"
+    "            wplan = _sanitize_served_film_plan(wplan, lg)\n"
+    "            out = _with_film_estimate(wplan)",
+    "sanitize written snapshot before serving",
+)
+store = replace_once(
+    store,
+    "    out = _with_film_estimate(_repair_served_hop(plan, lg, voy))",
+    "    out = _with_film_estimate(_sanitize_served_film_plan(_repair_served_hop(plan, lg, voy), lg))",
+    "sanitize raw snapshot before serving",
+)
 store = replace_once(
     store,
     "    if not isinstance(fr_plan, dict) or not (fr_plan.get(\"chapters\") or []):\n"
@@ -376,6 +421,56 @@ store = replace_once(
     "    )",
     "log successful reread",
 )
+test_store_path = Path("naviguide-simulator/server/tests/test_official_store.py")
+test_store = test_store_path.read_text(encoding="utf-8")
+test_store += '''
+
+def test_served_film_plan_repairs_stale_date_and_text_indices():
+    """Legacy snapshot repair happens on read and does not mutate the stored plan."""
+    start = "2026-08-13T22:50:23Z"
+    end = "2026-08-17T08:48:38Z"
+    original = {
+        "source": "rules",
+        "chars": 400,
+        "targetSeconds": 150,
+        "chapters": [{
+            "id": "leg-st-pierre",
+            "tA": start,
+            "tB": end,
+            "text": (
+                "Le 23 mai, une bouée. 489 milles, trois jours de mer. "
+                "Arrivée à Saint-Pierre le 17 août."
+            ),
+            "anchors": [
+                {"charIdx": 0, "t": start},
+                {"charIdx": 117, "t": "2026-08-14T23:50:23Z"},
+                {"charIdx": 205, "t": end},
+            ],
+            "events": [{
+                "id": "distance",
+                "kind": "distance",
+                "title": "Distance du chapitre",
+                "fact": "489 milles, trois jours de mer.",
+                "charIdx": 190,
+                "card": {"text": "489 milles, trois jours de mer.", "at": end},
+            }],
+        }],
+    }
+
+    repaired = official_store._sanitize_served_film_plan(original, "fr")
+    chapter = repaired["chapters"][0]
+
+    assert "23 mai" not in chapter["text"]
+    assert "489 milles" in chapter["text"]
+    assert len(chapter["text"]) == repaired["chars"]
+    assert all(0 <= a["charIdx"] < len(chapter["text"]) for a in chapter["anchors"])
+    assert all(0 <= e["charIdx"] < len(chapter["text"]) for e in chapter["events"])
+    event = chapter["events"][0]
+    assert event["charIdx"] == chapter["text"].index("489 milles")
+    assert "23 mai" in original["chapters"][0]["text"]
+'''
+test_store_path.write_text(test_store, encoding="utf-8")
+
 store_path.write_text(store, encoding="utf-8")
 
-print("Applied film index, timestamp fallback, and writing-failure diagnostic patches.")
+print("Applied film snapshot, index, and writing-failure diagnostic patches.")
