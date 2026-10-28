@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt, sentenceSpan, stepFilmTime } from "../engine/replay.js";
-import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, arrivalBubbleFitsDestination, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmBudgetCanPlay, filmCharRatesStable, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, arrivalBubbleFitsDestination, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmBudgetCanPlay, filmCharRatesStable, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, monotonicFilmCharIdx, monotonicFilmTime, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
 import { briefingForReplayPosition, replayPlace } from "./useReplay.js";
 import { VOICE_LEAD_MS, VOICE_MS_PER_CHAR } from "../utils/speak.js";
 import { shouldStopSpeakingOnChapterChange } from "./useReplayVoice.js";
@@ -30,7 +30,7 @@ describe("useReplay contract", () => {
     assert.match(hook, /t0 = DEFAULT_T0_ISO/);
     assert.match(hook, /buildFilmScript/);
     assert.match(hook, /FILM_UI_MS/);
-    assert.match(hook, /if \(uiDue\) setTMs\(next\)/);
+    assert.match(hook, /if \(uiDue\) setTMs\(monotoneNext\)/);
     assert.doesNotMatch(hook, /Tavily|Nebius/i);
   });
 
@@ -98,7 +98,14 @@ describe("useReplay contract", () => {
     assert.equal(shouldHoldFilmForBudget({ userBudget: 150, wallElapsed: 121, lastChapter: true }), true);
     assert.equal(shouldHoldFilmForBudget({ userBudget: 150, wallElapsed: 150, lastChapter: true }), false);
     assert.equal(shouldHoldFilmForBudget({ userBudget: 0, wallElapsed: 80, lastChapter: true }), false);
+    assert.equal(monotonicFilmTime(100, 90), 100);
+    assert.equal(monotonicFilmTime(100, 120), 120);
+    assert.equal(monotonicFilmCharIdx({ previousChapterIdx: 3, chapterIdx: 3, previousCharIdx: 200, charIdx: 0 }), 200);
+    assert.equal(monotonicFilmCharIdx({ previousChapterIdx: 3, chapterIdx: 4, previousCharIdx: 200, charIdx: 0 }), 0);
     assert.match(hook, /shouldHoldFilmForBudget/);
+    assert.match(hook, /linearFinish: linear.finish && !holdForSelectedBudget/);
+    assert.match(hook, /monotonicFilmTime/);
+    assert.match(hook, /charIdx = monotonicFilmCharIdx/);
     assert.match(hook, /budgetSeconds/);
     assert.match(hook, /resolveFilmTargetSeconds\(userBudget, chapters\)/);
     assert.match(hook, /keepChapters: true/);
