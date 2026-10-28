@@ -910,8 +910,7 @@ def test_skip_gate_still_detects_a_real_intermediate_maritime_stop():
         "text": "Le navire a quitté La Rochelle pour Fort-de-France.",
     }
     assert _skip_pairs(chapter["text"], rows, chapters=[chapter])
-
-
+'''
 test_path.write_text(test, encoding="utf-8")
 
 store_path = Path("naviguide-simulator/server/official_store.py")
