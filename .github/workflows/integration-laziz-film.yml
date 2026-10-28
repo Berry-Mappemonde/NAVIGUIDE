@@ -179,7 +179,7 @@ jobs:
           git commit -m "fix: use semantic accent token for event bubble icon"
 
           python .github/scripts/apply-film-audit-fixes.py
-          git add naviguide-simulator/server/film_script.py naviguide-simulator/server/tests/test_film_script.py naviguide-simulator/server/official_store.py
+          git add naviguide-simulator/server/film_script.py naviguide-simulator/server/tests/test_film_script.py naviguide-simulator/server/official_store.py naviguide-simulator/server/tests/test_official_store.py naviguide-simulator/src/hooks/useReplay.js naviguide-simulator/src/hooks/useReplay.test.js naviguide-simulator/e2e/film-replay-150.spec.js
           git commit -m "fix: keep film indices aligned and report write fallback"
 
           branch="integration/laziz-film-audit-${GITHUB_RUN_ID}"
@@ -258,7 +258,7 @@ jobs:
           PYTHONPATH=server python - <<'PY'
           import json
           from pathlib import Path
-          from film_script import nemotron_reread_report, official_dated_stops
+          from film_script import nemotron_reread_report, official_dated_stops, _insert_chapter_air_revisits
           from official_store import _sanitize_served_film_plan
 
           film = json.loads(Path("/tmp/naviguide-film-raw.json").read_text(encoding="utf-8"))
@@ -272,7 +272,7 @@ jobs:
           # Reproduce the production gate with the full official clock, not just
           # chapter endpoints (that shortcut falsely flags legitimate repeated
           # Halifax/Cayenne legs and upcoming planned stops as absent/skipped).
-          stops = official_dated_stops(clock.get("marks"), clock)
+          stops = _insert_chapter_air_revisits(official_dated_stops(clock.get("marks"), clock), film)
           report = nemotron_reread_report(
               " ".join(ch.get("text") or "" for ch in chapters),
               stops,
