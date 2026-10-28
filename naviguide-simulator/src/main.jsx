@@ -8,6 +8,7 @@ import "leaflet/dist/leaflet.css";
 import "./index.css";
 import App from "./App.jsx";
 import { LangProvider } from "./i18n/LangContext.jsx";
+import { RootBoundary } from "./components/PanelBoundary.jsx";
 import { captureAdminSecretFromUrl } from "./utils/adminSecret.js";
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -16,10 +17,20 @@ L.Icon.Default.mergeOptions({ iconRetinaUrl, iconUrl, shadowUrl });
 // `?admin=…` once → stored in this browser, removed from the address bar.
 captureAdminSecretFromUrl();
 
-createRoot(document.getElementById("root")).render(
+// #101 : toute erreur de rendu laisse une trace en console ; RootBoundary évite la page blanche.
+const logRenderError = (kind) => (error, info) => {
+  console.error(`[naviguide] ${kind}`, error, info?.componentStack);
+};
+
+createRoot(document.getElementById("root"), {
+  onUncaughtError: logRenderError("erreur de rendu non rattrapée"),
+  onCaughtError: logRenderError("erreur de rendu rattrapée par un filet"),
+}).render(
   <StrictMode>
-    <LangProvider>
-      <App />
-    </LangProvider>
+    <RootBoundary>
+      <LangProvider>
+        <App />
+      </LangProvider>
+    </RootBoundary>
   </StrictMode>,
 );

@@ -102,6 +102,7 @@ import { parseRouteFile } from "./utils/routeImport.js";
 import { viewExportMode } from "./utils/routeExport.js";
 import { attachClockIso, legendNowAndLive, officialNowMs, usePlanReview } from "./hooks/usePlanReview.js";
 import { MapScene } from "./map/MapScene.jsx";
+import { PanelBoundary } from "./components/PanelBoundary.jsx";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL;
@@ -1901,6 +1902,8 @@ export default function App() {
           pendingLayerRef.current = null;
         }}
       />
+      {/* #101 : un panneau qui casse au rendu n'emporte plus la carte ni le film. */}
+      <PanelBoundary name="sidebar" message={t("panelError")} retryLabel={t("panelReload")}>
       <Sidebar
         plan={expeditionPlan}
         open={sidebarOpen}
@@ -1973,7 +1976,9 @@ export default function App() {
         escaleError={escaleSheet?.error}
         onEscaleClose={closeEscaleSheet}
       />
+      </PanelBoundary>
 
+      <PanelBoundary name="tools" message={t("panelError")} retryLabel={t("panelReload")}>
       <ToolsSidebar
         segments={statsSegs}
         points={statsPoints}
@@ -2021,6 +2026,7 @@ export default function App() {
         tracerLayout={!isSuivre}
         ampNearby={iciPack.dossier?.amp || []}
       />
+      </PanelBoundary>
 
       {!sceneReady && !drawingMode && (
         <div data-testid="scene-load-mask" className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-[1500] pointer-events-none">
@@ -2117,6 +2123,7 @@ export default function App() {
         </div>
       )}
 
+      <PanelBoundary name="film-bar" message={t("panelError")} retryLabel={t("panelReload")}>
       <SimulationFilmBar
         ref={filmBarRef}
         barRef={filmBarRef}
@@ -2211,6 +2218,7 @@ export default function App() {
         } : null}
         disclaimer={t("creditsLine")}
       />
+      </PanelBoundary>
 
       <RecomputeDialog
         draft={vessel.draft}

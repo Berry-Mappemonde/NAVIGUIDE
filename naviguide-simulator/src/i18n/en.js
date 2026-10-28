@@ -677,4 +677,8 @@ export default {
   // NB2
   storySourceNano: "Nemotron 3 Nano · Token Factory",
   filmModels: "Models",
+
+  // ── Panel error boundary (#101) ───────────────────────────────────────────
+  panelError: "This panel hit an error.",
+  panelReload: "Reload panel",
 };
