@@ -174,7 +174,8 @@ def _reconcile_film_indices(chapters: list[dict], *, lang: str = "fr") -> None:
         )
 
 
-''''''
+''' 
+
 film = replace_once(film, helper_anchor, helper + helper_anchor, "insert index reconciler")
 
 moments_end = "    chapters[:] = _drop_degenerate_chapters(chapters)\n    chars = script_chars(chapters)"
@@ -271,24 +272,24 @@ film = replace_once(
 )
 film = replace_once(
     film,
-    "            row: dict[str, Any] = {\\"name\\": name}\n"
-    "            for key in (\\"nm\\", \\"filmNm\\"):\n",
-    "            row: dict[str, Any] = {\\"name\\": name}\n"
-    "            if raw.get(\\"iso\\"):\n"
-    "                row[\\"iso\\"] = str(raw[\\"iso\\"])\n"
-    "            for key in (\\"nm\\", \\"filmNm\\"):\n",
+    "            row: dict[str, Any] = {\"name\": name}\n"
+    "            for key in (\"nm\", \"filmNm\"):\n",
+    "            row: dict[str, Any] = {\"name\": name}\n"
+    "            if raw.get(\"iso\"):\n"
+    "                row[\"iso\"] = str(raw[\"iso\"])\n"
+    "            for key in (\"nm\", \"filmNm\"):\n",
     "preserve stop timestamps for repeated visits",
 )
 film = replace_once(
     film,
-    "            rows.append(row)\n        elif str(raw or \\"\\").strip():",
-    "            rows.append(row)\n        elif str(raw or \\"\\").strip():",
+    "            rows.append(row)\n        elif str(raw or \"\").strip():",
+    "            rows.append(row)\n        elif str(raw or \"\").strip():",
     "retain existing stop row shape",
 )
 film = replace_once(
     film,
-    "        row: dict[str, Any] = {\\"name\\": name}\n        nm = mark.get(\\"filmNm\\")",
-    "        row: dict[str, Any] = {\\"name\\": name}\n        if mark.get(\\"iso\\"):\n            row[\\"iso\\"] = str(mark[\\"iso\\"])\n        nm = mark.get(\\"filmNm\\")",
+    "        row: dict[str, Any] = {\"name\": name}\n        nm = mark.get(\"filmNm\")",
+    "        row: dict[str, Any] = {\"name\": name}\n        if mark.get(\"iso\"):\n            row[\"iso\"] = str(mark[\"iso\"])\n        nm = mark.get(\"filmNm\")",
     "preserve missing air stop timestamps",
 )
 film = replace_once(
@@ -304,7 +305,7 @@ film = replace_once(
     "        return []\n"
     "    missed: list[str] = []\n"
     "    for row in rows[ia + 1:ib]:\n"
-    "        label = _stop_spoken(row.get(\\"name\\") or \\"\\")\n"
+    "        label = _stop_spoken(row.get(\"name\") or \"\")\n"
     "        if not label or _is_air_only_stop(label):\n"
     "            continue\n"
     "        missed.append(label)\n"
@@ -330,7 +331,7 @@ film = replace_once(
     "        for i, row in enumerate(rows):\n"
     "            if not _known_stop(frm, [row]):\n"
     "                continue\n"
-    "            at = _ms(row.get(\\"iso\\"))\n"
+    "            at = _ms(row.get(\"iso\"))\n"
     "            if at is not None and at <= start_ms + 12 * 3600 * 1000:\n"
     "                candidates.append((abs(start_ms - at), i, at))\n"
     "        if candidates:\n"
@@ -346,7 +347,7 @@ film = replace_once(
     "            row = rows[i]\n"
     "            if not _known_stop(to, [row]):\n"
     "                continue\n"
-    "            at = _ms(row.get(\\"iso\\"))\n"
+    "            at = _ms(row.get(\"iso\"))\n"
     "            if at is not None and at >= start_ms - 12 * 3600 * 1000:\n"
     "                candidates.append((abs(end_ms - at), i, at))\n"
     "        if candidates:\n"
@@ -362,7 +363,7 @@ film = replace_once(
     "        return []\n"
     "    missed: list[str] = []\n"
     "    for row in rows[ia + 1:ib]:\n"
-    "        label = _stop_spoken(row.get(\\"name\\") or \\"\\")\n"
+    "        label = _stop_spoken(row.get(\"name\") or \"\")\n"
     "        if not label or _is_air_only_stop(label):\n"
     "            continue\n"
     "        if same_stop(label, frm) or same_stop(label, to):\n"
@@ -386,20 +387,20 @@ film = replace_once(
 film = replace_once(
     film,
     "def _cap_leg_faults(text: str, rows: list[dict], frm: str) -> list[str]:\n"
-    "    \\"\\"\\"« cap sur Dzaoudzi » depuis Papeete : la destination n'est pas l'escale suivante.\\"\\"\\"",
+    "    \"\"\"« cap sur Dzaoudzi » depuis Papeete : la destination n'est pas l'escale suivante.\"\"\"",
     "def _cap_leg_faults(\n"
     "    text: str, rows: list[dict], frm: str, *,\n"
     "    start_ms: Optional[int] = None, end_ms: Optional[int] = None,\n"
     ") -> list[str]:\n"
-    "    \\"\\"\\"« cap sur Dzaoudzi » depuis Papeete : la destination n'est pas l'escale suivante.\\"\\"\\"",
+    "    \"\"\"« cap sur Dzaoudzi » depuis Papeete : la destination n'est pas l'escale suivante.\"\"\"",
     "make chapter dates available to cap checker",
 )
 film = replace_once(
     film,
     "        skipped = _sea_between(rows, frm, to)\n"
-    "        if skipped and \\"skip\\" not in faults:",
+    "        if skipped and \"skip\" not in faults:",
     "        skipped = _sea_between(rows, frm, to, start_ms=start_ms, end_ms=end_ms)\n"
-    "        if skipped and \\"skip\\" not in faults:",
+    "        if skipped and \"skip\" not in faults:",
     "time-aware skip checker",
 )
 film = replace_once(
@@ -416,10 +417,10 @@ film = replace_once(
 )
 film = replace_once(
     film,
-    "        for fault in _cap_leg_faults(chapter.get(\\"text\\") or \\"\\", rows, str(chapter.get(\\"fromName\\") or \\"\\")):",
+    "        for fault in _cap_leg_faults(chapter.get(\"text\") or \"\", rows, str(chapter.get(\"fromName\") or \"\")):",
     "        for fault in _cap_leg_faults(\n"
-    "            chapter.get(\\"text\\") or \\"\\", rows, str(chapter.get(\\"fromName\\") or \\"\\"),\n"
-    "            start_ms=_ms(chapter.get(\\"tA\\")), end_ms=_ms(chapter.get(\\"tB\\")),\n"
+    "            chapter.get(\"text\") or \"\", rows, str(chapter.get(\"fromName\") or \"\"),\n"
+    "            start_ms=_ms(chapter.get(\"tA\")), end_ms=_ms(chapter.get(\"tB\")),\n"
     "        ):",
     "pass chapter time to route gate",
 )
@@ -427,33 +428,33 @@ film = replace_once(
     film,
     "def _route_stops_for_reread(plan: dict | None) -> list[dict]:",
     "def _insert_chapter_air_revisits(rows: list[dict], plan: dict | None) -> list[dict]:\n"
-    "    \\"\\"\\"Insert a dated second arrival at the destination of an air-transfer chapter.\\"\\"\\"\n"
+    "    \"\"\"Insert a dated second arrival at the destination of an air-transfer chapter.\"\"\"\n"
     "    out = [dict(row) for row in (rows or [])]\n"
-    "    chapters = [ch for ch in (plan or {}).get(\\"chapters\\") or [] if isinstance(ch, dict)]\n"
+    "    chapters = [ch for ch in (plan or {}).get(\"chapters\") or [] if isinstance(ch, dict)]\n"
     "    for i, chapter in enumerate(chapters[:-1]):\n"
-    "        frm = str(chapter.get(\\"fromName\\") or \\"\\")\n"
-    "        to = str(chapter.get(\\"toName\\") or \\"\\")\n"
+    "        frm = str(chapter.get(\"fromName\") or \"\")\n"
+    "        to = str(chapter.get(\"toName\") or \"\")\n"
     "        if not _is_air_leg(frm, to):\n"
     "            continue\n"
     "        nxt = chapters[i + 1]\n"
-    "        if not same_stop(str(nxt.get(\\"fromName\\") or \\"\\"), to):\n"
+    "        if not same_stop(str(nxt.get(\"fromName\") or \"\"), to):\n"
     "            continue\n"
-    "        iso = str(nxt.get(\\"tA\\") or chapter.get(\\"tB\\") or \\"\\")\n"
+    "        iso = str(nxt.get(\"tA\") or chapter.get(\"tB\") or \"\")\n"
     "        at = _ms(iso)\n"
     "        if at is None:\n"
     "            continue\n"
     "        present = any(\n"
-    "            same_stop(str(row.get(\\"name\\") or \\"\\"), to)\n"
-    "            and _ms(row.get(\\"iso\\")) is not None\n"
-    "            and abs(_ms(row.get(\\"iso\\")) - at) <= 12 * 3600 * 1000\n"
+    "            same_stop(str(row.get(\"name\") or \"\"), to)\n"
+    "            and _ms(row.get(\"iso\")) is not None\n"
+    "            and abs(_ms(row.get(\"iso\")) - at) <= 12 * 3600 * 1000\n"
     "            for row in out\n"
     "        )\n"
     "        if present:\n"
     "            continue\n"
-    "        item = {\\"name\\": to, \\"iso\\": iso}\n"
+    "        item = {\"name\": to, \"iso\": iso}\n"
     "        at_or_before = [\n"
     "            j for j, row in enumerate(out)\n"
-    "            if _ms(row.get(\\"iso\\")) is not None and _ms(row.get(\\"iso\\")) <= at\n"
+    "            if _ms(row.get(\"iso\")) is not None and _ms(row.get(\"iso\")) <= at\n"
     "        ]\n"
     "        insert_at = (max(at_or_before) + 1) if at_or_before else len(out)\n"
     "        out.insert(insert_at, item)\n"
@@ -471,9 +472,9 @@ film = replace_once(
 )
 film = replace_once(
     film,
-    "        rows = _insert_missing_air(_as_stop_rows(marks), clock.get(\\"marks\\"))\n"
+    "        rows = _insert_missing_air(_as_stop_rows(marks), clock.get(\"marks\"))\n"
     "        if len(rows) >= 8:",
-    "        rows = _insert_missing_air(_as_stop_rows(marks), clock.get(\\"marks\\"))\n"
+    "        rows = _insert_missing_air(_as_stop_rows(marks), clock.get(\"marks\"))\n"
     "        rows = _insert_chapter_air_revisits(rows, plan)\n"
     "        if len(rows) >= 8:",
     "augment official stops with repeated air arrivals",
@@ -497,12 +498,12 @@ film = replace_once(
     "    return False\n\n\ndef _upcoming_omits",
     "        chapter = next((\n"
     "            ch for ch in (chapters or []) if isinstance(ch, dict)\n"
-    "            and same_stop(str(ch.get(\\"fromName\\") or \\"\\"), frm)\n"
-    "            and same_stop(str(ch.get(\\"toName\\") or \\"\\"), to)\n"
-    "            and bool(_LEAVE_FOR_RE.search(ch.get(\\"text\\") or \\"\\"))\n"
+    "            and same_stop(str(ch.get(\"fromName\") or \"\"), frm)\n"
+    "            and same_stop(str(ch.get(\"toName\") or \"\"), to)\n"
+    "            and bool(_LEAVE_FOR_RE.search(ch.get(\"text\") or \"\"))\n"
     "        ), None)\n"
-    "        start_ms = _ms(chapter.get(\\"tA\\")) if chapter else None\n"
-    "        end_ms = _ms(chapter.get(\\"tB\\")) if chapter else None\n"
+    "        start_ms = _ms(chapter.get(\"tA\")) if chapter else None\n"
+    "        end_ms = _ms(chapter.get(\"tB\")) if chapter else None\n"
     "        if _sea_between(rows, frm, to, start_ms=start_ms, end_ms=end_ms):\n"
     "            return True\n"
     "    return False\n\n\ndef _upcoming_omits",
