@@ -1,0 +1,398 @@
+name: Integration Laziz PRs and film audit
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      capture_real_film:
+        description: "Demander une nouvelle rédaction réelle (peut consommer des crédits modèle)"
+        required: true
+        type: boolean
+        default: false
+      seconds:
+        description: "Durée du film à demander"
+        required: true
+        type: choice
+        options: ["150", "180", "0"]
+        default: "150"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: laziz-film-integration-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  integrate-and-test:
+    name: Integrate open PRs and run simulator checks
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      branch: ${{ steps.integrate.outputs.branch }}
+      sha: ${{ steps.integrate.outputs.sha }}
+    steps:
+      - name: Checkout helper branch without persisted credentials
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Merge PRs into an isolated integration tree
+        id: integrate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout --detach origin/main
+
+          # Include the audit/test helper workflows in the resulting branch.
+          git fetch origin "+refs/heads/chatgpt/integration-laziz-film-audit-20261027:refs/remotes/origin/film-audit-helper"
+          git merge --no-ff --no-edit refs/remotes/origin/film-audit-helper
+
+          # #114 is stacked on #108, so merge the design-system base first.
+          # PR #110 shares two files with #108. Preserve the theme changes from #108,
+          # and transplant only #110's new AI-source badge / film-write status into them.
+          for pr in 108 114 99 107 109 110 111 112 113; do
+            echo "::group::Merging PR #${pr}"
+            git fetch origin "+refs/pull/${pr}/head:refs/remotes/integration/pr-${pr}"
+            if ! git merge --no-ff --no-edit "refs/remotes/integration/pr-${pr}"; then
+              if [[ "${pr}" == "110" ]]; then
+                git checkout --ours -- naviguide-simulator/src/components/RecomputeDialog.jsx naviguide-simulator/src/components/SimulationFilmBar.jsx
+                python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one insertion point in {path}, found {count}: {old!r}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          recompute = "naviguide-simulator/src/components/RecomputeDialog.jsx"
+          replace_once(
+              recompute,
+              'import { RouteAdviceText } from "../hooks/useVirtualVessel.js";',
+              'import { RouteAdviceText, routeAdviceText } from "../hooks/useVirtualVessel.js";',
+          )
+          replace_once(
+              recompute,
+              'import { useLang } from "../i18n/LangContext.jsx";',
+              'import { useLang } from "../i18n/LangContext.jsx";\nimport { LlmSourceBadge } from "./LlmSourceBadge.jsx";',
+          )
+          replace_once(
+              recompute,
+              '        <RouteAdviceText draft={draft} />\n',
+              '''        <RouteAdviceText draft={draft} />
+                  {routeAdviceText(draft) ? (
+                    // Phrase de la cascade (Lightning, un repli ou les règles) : sa source la suit.
+                    <LlmSourceBadge
+                      source={draft.advice?.source}
+                      testId="route-advice-source"
+                      className="-mt-1.5 mb-2 [&_span]:text-[10px] [&_span]:text-white/70"
+                    />
+                  ) : null}
+          ''',
+          )
+
+          film_bar = "naviguide-simulator/src/components/SimulationFilmBar.jsx"
+          replace_once(
+              film_bar,
+              'import { DepartureField } from "./DepartureField.jsx";',
+              'import { DepartureField } from "./DepartureField.jsx";\nimport { FilmWriteStatus } from "./FilmWriteStatus.jsx";',
+          )
+          replace_once(
+              film_bar,
+              '        <div className={`naviguide-film-bar overflow-hidden rounded-xl border ${drawing ? "border-status-ok/30" : "border-line-hairline"} bg-surface-panel/95 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm`}>',
+              '''        {replay && !replay.unavailable ? (
+                  <FilmWriteStatus writing={Boolean(replay.writing)} since={replay.writingSince} notice={replay.writeNotice} />
+                ) : null}
+                <div className={`naviguide-film-bar overflow-hidden rounded-xl border ${drawing ? "border-status-ok/30" : "border-line-hairline"} bg-surface-panel/95 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm`}>''',
+          )
+          PY
+                git add naviguide-simulator/src/components/RecomputeDialog.jsx naviguide-simulator/src/components/SimulationFilmBar.jsx
+                git commit --no-edit
+                echo "Resolved PR #110 by preserving #108's theme styling and applying #110's status/source additions."
+              elif [[ "${pr}" == "112" ]]; then
+                git checkout --ours -- naviguide-simulator/src/components/JournalPanel.jsx
+                python - <<'PY'
+          from pathlib import Path
+
+          path = Path("naviguide-simulator/src/components/JournalPanel.jsx")
+          text = path.read_text(encoding="utf-8")
+
+          def replace_once(old, new):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one insertion point in JournalPanel.jsx, found {count}: {old!r}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              'import { useLang } from "../i18n/LangContext.jsx";',
+              'import { useLang } from "../i18n/LangContext.jsx";\nimport { NotebookText } from "lucide-react";\nimport { KindIcon } from "./kindIcon.js";',
+          )
+          replace_once(
+              '<span className="flex-shrink-0 w-4 text-center">{e.icon}</span>',
+              '''<span className="flex-shrink-0 w-4 h-[1lh] flex items-center justify-center text-slate-400" aria-hidden="true">
+                        <KindIcon kind={e.kind} />
+                      </span>''',
+          )
+          replace_once(
+              '<span>📓</span>',
+              '<NotebookText size={13} className="flex-shrink-0" aria-hidden="true" focusable="false" />',
+          )
+          path.write_text(text, encoding="utf-8")
+          PY
+                git add naviguide-simulator/src/components/JournalPanel.jsx
+                git commit --no-edit
+                echo "Resolved PR #112 by preserving #108's typography changes and applying Lucide icons."
+              else
+                echo "::error::Merge conflict while integrating PR #${pr}. Resolve it explicitly before rerunning."
+                git status --short
+                exit 20
+              fi
+            fi
+            echo "::endgroup::"
+          done
+
+          # The combined PRs exposed one remaining hard-coded palette class in the
+          # event-bubble icon. Use the semantic theme token expected by PR #114.
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("naviguide-simulator/src/components/EventBubble.jsx")
+          text = p.read_text(encoding="utf-8")
+          old = 'text-sky-200'
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"Expected exactly one legacy EventBubble color, found {count}")
+          p.write_text(text.replace(old, "text-accent-text", 1), encoding="utf-8")
+          PY
+          git add naviguide-simulator/src/components/EventBubble.jsx
+          git commit -m "fix: use semantic accent token for event bubble icon"
+
+          python .github/scripts/apply-film-audit-fixes.py
+          git add naviguide-simulator/server/film_script.py naviguide-simulator/server/tests/test_film_script.py naviguide-simulator/server/official_store.py naviguide-simulator/server/tests/test_official_store.py naviguide-simulator/src/hooks/useReplay.js naviguide-simulator/src/hooks/useReplay.test.js naviguide-simulator/e2e/film-replay-150.spec.js
+          git commit -m "fix: keep film indices aligned and report write fallback"
+
+          branch="integration/laziz-film-audit-${GITHUB_RUN_ID}"
+          sha="$(git rev-parse HEAD)"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Integration tree prepared"
+            echo "- Planned branch: `${branch}`"
+            echo "- Commit: `${sha}`"
+            echo "- Included PRs: #108, #114, #99, #107, #109, #110, #111, #112, #113"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Write access is used only in this step. It is not persisted to the checkout
+      # and is not available to npm/pytest/Playwright commands below.
+      - name: Publish isolated integration branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INTEGRATION_BRANCH: ${{ steps.integrate.outputs.branch }}
+          INTEGRATION_SHA: ${{ steps.integrate.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" \
+            push origin "HEAD:refs/heads/${INTEGRATION_BRANCH}"
+          echo "Published `${INTEGRATION_BRANCH}` at `${INTEGRATION_SHA}`." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: naviguide-simulator/package-lock.json
+
+      - name: Install JavaScript dependencies
+        working-directory: naviguide-simulator
+        run: npm ci
+
+      - name: JavaScript tests
+        working-directory: naviguide-simulator
+        run: npm test
+
+      - name: Build Vite
+        working-directory: naviguide-simulator
+        run: npm run build
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: naviguide-simulator/server/requirements.txt
+
+      - name: Install Python dependencies
+        working-directory: naviguide-simulator
+        run: pip install -r server/requirements.txt
+
+      - name: Python tests (including film story pipeline)
+        working-directory: naviguide-simulator
+        run: python -m pytest -q
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+
+      - name: Diagnose the live raw film against the local write gate (read-only)
+        working-directory: naviguide-simulator
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --connect-timeout 10 --max-time 60 \
+            "https://naviguide.fr/voyage/official/film?lang=fr&seconds=150&style=raw" \
+            --output /tmp/naviguide-film-raw.json
+          curl --fail-with-body --silent --show-error \
+            --connect-timeout 10 --max-time 60 \
+            "https://naviguide.fr/voyage/official/clock" \
+            --output /tmp/naviguide-official-clock.json
+          PYTHONPATH=server python - <<'PY'
+          import json
+          from pathlib import Path
+          from film_script import nemotron_reread_report, official_dated_stops, _insert_chapter_air_revisits
+          from official_store import _sanitize_served_film_plan
+
+          film = json.loads(Path("/tmp/naviguide-film-raw.json").read_text(encoding="utf-8"))
+          clock = json.loads(Path("/tmp/naviguide-official-clock.json").read_text(encoding="utf-8"))
+          chapters = [ch for ch in film.get("chapters", []) if isinstance(ch, dict)]
+          fixed = _sanitize_served_film_plan(film, "fr")
+          fixed.update({"status": "ready", "hasWritten": False, "style": "raw"})
+          Path("/tmp/naviguide-film-fixed.json").write_text(
+              json.dumps(fixed, ensure_ascii=False), encoding="utf-8",
+          )
+          # Reproduce the production gate with the full official clock, not just
+          # chapter endpoints (that shortcut falsely flags legitimate repeated
+          # Halifax/Cayenne legs and upcoming planned stops as absent/skipped).
+          stops = _insert_chapter_air_revisits(official_dated_stops(clock.get("marks"), clock), film)
+          report = nemotron_reread_report(
+              " ".join(ch.get("text") or "" for ch in chapters),
+              stops,
+              lang="fr",
+              chapters=chapters,
+          )
+          fixed_chapters = [ch for ch in fixed.get("chapters", []) if isinstance(ch, dict)]
+          fixed_report = nemotron_reread_report(
+              " ".join(ch.get("text") or "" for ch in fixed_chapters),
+              stops,
+              lang="fr",
+              chapters=fixed_chapters,
+          )
+          text_issues = []
+          for i, ch in enumerate(chapters):
+              text = ch.get("text") or ""
+              for ev in ch.get("events") or []:
+                  if isinstance(ev, dict) and not (0 <= int(ev.get("charIdx") or 0) < max(1, len(text))):
+                      text_issues.append({"chapter": i, "type": "event", "index": ev.get("charIdx"), "chars": len(text)})
+              for a in ch.get("anchors") or []:
+                  if isinstance(a, dict) and not (0 <= int(a.get("charIdx") or 0) < max(1, len(text))):
+                      text_issues.append({"chapter": i, "type": "anchor", "index": a.get("charIdx"), "chars": len(text)})
+          print(json.dumps({
+              "source": film.get("source"),
+              "hasWritten": film.get("hasWritten"),
+              "chapterCount": len(chapters),
+              "officialClockStopCount": len(stops),
+              "officialClockStops": [s.get("name") for s in stops],
+              "rawLocalReread": report,
+              "repairedLocalReread": fixed_report,
+              "rawTextIndexIssues": text_issues,
+              "repairedChapterCount": len(fixed_chapters),
+              "repairedTextIndexIssues": [
+                  {"chapter": i, "type": typ, "index": idx, "chars": len(ch.get("text") or "")}
+                  for i, ch in enumerate(fixed_chapters)
+                  for typ, rows in (("event", ch.get("events") or []), ("anchor", ch.get("anchors") or []))
+                  for row in rows if isinstance(row, dict)
+                  for idx in [row.get("charIdx")]
+                  if not isinstance(idx, int) or not (0 <= idx < max(1, len(ch.get("text") or "")))
+              ],
+          }, ensure_ascii=False, indent=2))
+          if not report.get("ok"):
+              print("::warning::The currently served raw film fails the local gate before read-time repair; see rawLocalReread.faults.")
+          if not fixed_report.get("ok"):
+              print("::warning::The repaired raw film still fails the local gate; see repairedLocalReread.faults.")
+          if text_issues:
+              print("::warning::The production snapshot has text-index overflow; the branch now repairs it on read.")
+          PY
+
+      - name: Install Chromium for Playwright
+        working-directory: naviguide-simulator
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright smoke test
+        working-directory: naviguide-simulator
+        run: npx playwright test e2e/smoke.spec.js
+
+      - name: Record a full 150-second production film replay (GET-only)
+        working-directory: naviguide-simulator
+        run: npx playwright test e2e/film-replay-150.spec.js
+        env:
+          NAVIGUIDE_REPLAY_URL: http://127.0.0.1:5174
+          NAVIGUIDE_FILM_FIXTURE: /tmp/naviguide-film-fixed.json
+          NAVIGUIDE_CLOCK_FIXTURE: /tmp/naviguide-official-clock.json
+
+      - name: Upload full film replay, source JSON, screenshots, and telemetry
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: naviguide-film-replay-150-${{ github.run_id }}
+          path: |
+            naviguide-simulator/test-results/**
+            naviguide-simulator/playwright-report/**
+            /tmp/naviguide-film-raw.json
+            /tmp/naviguide-film-fixed.json
+            /tmp/naviguide-official-clock.json
+          retention-days: 7
+          if-no-files-found: warn
+
+  live-model-status:
+    name: Read-only production LLM status (no model call)
+    needs: integrate-and-test
+    if: needs.integrate-and-test.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Fetch server status without triggering generation
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --connect-timeout 10 --max-time 30 \
+            'https://naviguide.fr/ici/warm/status' \
+            --output llm-status.json
+
+      - name: Print generation diagnostics (no secrets)
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path("llm-status.json").read_text(encoding="utf-8"))
+          print(json.dumps({
+              "llm": data.get("llm"),
+              "stories": data.get("stories"),
+              "store": data.get("store"),
+              "moments": data.get("moments"),
+          }, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Save read-only diagnostic snapshot
+        uses: actions/upload-artifact@v7
+        with:
+          name: naviguide-live-llm-status-${{ github.run_id }}
+          path: llm-status.json
+          retention-days: 3
+          if-no-files-found: error
+
+  real-film-audit:
+    name: Capture actual production film after integration checks pass
+    needs: integrate-and-test
+    if: needs.integrate-and-test.result == 'success' && github.event_name == 'workflow_dispatch' && inputs.capture_real_film
+    uses: ./.github/workflows/film-audit.yml
+    with:
+      seconds: ${{ inputs.seconds || '150' }}
