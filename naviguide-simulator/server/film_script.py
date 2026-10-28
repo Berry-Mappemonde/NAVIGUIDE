@@ -3479,6 +3479,9 @@ def _event_char_idx(ev: dict, chapter: dict, fact: str) -> int:
             return text.index(needle)
     t_a, t_b = _ms(chapter.get("tA")), _ms(chapter.get("tB"))
     t = ev.get("tMs")
+    if t is None:
+        card = ev.get("card") if isinstance(ev.get("card"), dict) else {}
+        t = _ms(ev.get("t") or card.get("at"))
     if t_a is not None and t_b is not None and t is not None and t_b > t_a:
         frac = max(0.0, min(1.0, (t - t_a) / (t_b - t_a)))
         return int(round(frac * max(0, len(text) - 1)))
@@ -6261,6 +6264,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 "tB": _iso(w["tB"]),
                 "text": text,
                 "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "_anchorInputs": list(anchored),
                 "events": placed,
                 "fromName": w.get("fromName") or "",
                 "toName": w.get("toName") or "",
@@ -7579,7 +7583,7 @@ def _off_leg_stop(place: str, frm: Any, dest: Any, route_rows: list | None, kind
     return True
 
 
-def _spoken_before_anchor(sentence: str, t_ms: Any, lang: str) -> bool:
+def _spoken_before_anchor(sentence: str, t_ms: Any, lang: str, *, max_days: int = 60) -> bool:
     """La date dite est avant le jour de la barre (1 à 60 jours)."""
     if not sentence or t_ms is None:
         return False
@@ -7596,7 +7600,7 @@ def _spoken_before_anchor(sentence: str, t_ms: Any, lang: str) -> bool:
         except ValueError:
             return False
     delta = (bar.date() - spoken.date()).days
-    return 1 <= delta <= 60
+    return 1 <= delta <= max(0, int(max_days))
 
 
 def _is_arrival_sentence(text: str) -> bool:
@@ -8891,6 +8895,7 @@ def build_raw_from_moments(
                 "tB": _iso(w["tB"]),
                 "text": text,
                 "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "_anchorInputs": list(anchored),
                 "events": placed,
                 "fromName": w.get("fromName") or "",
                 "toName": w.get("toName") or "",
@@ -8966,6 +8971,7 @@ def build_raw_from_moments(
             "tB": _iso(w["tB"]),
             "text": text,
             "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "_anchorInputs": list(anchored),
             "events": placed,
             "fromName": w.get("fromName") or "",
             "toName": w.get("toName") or "",
@@ -8994,6 +9000,8 @@ def build_raw_from_moments(
     if has_budget and target > 0:
         _film_apply_char_budget(chapters, seconds)
     chapters[:] = _drop_degenerate_chapters(chapters)
+    _drop_stale_dated_sentences(chapters, lang=lang)
+    _reconcile_film_indices(chapters, lang=lang)
     chars = script_chars(chapters)
     return _with_dc_subjects({
         "chapters": chapters,
@@ -9067,6 +9075,8 @@ def build_raw_script(
     )
     if _film_seconds(seconds) > 0:
         _film_apply_char_budget(chapters, seconds)
+    _drop_stale_dated_sentences(chapters, lang=lang)
+    _reconcile_film_indices(chapters, lang=lang)
     chars = script_chars(chapters)
     return _with_dc_subjects({
         "chapters": chapters,
@@ -9321,6 +9331,159 @@ def _trim_written_to_budget(raw_text: str, written_text: str, cap: int) -> tuple
     return " ".join(kept), fallen
 
 
+def _drop_stale_dated_sentences(chapters: list[dict], *, lang: str = "fr") -> None:
+    """Drop a dated sentence that predates its chapter, keeping source dates intact."""
+    for chapter in chapters or []:
+        if not isinstance(chapter, dict):
+            continue
+        text = str(chapter.get("text") or "")
+        sentences = _sentences(text)
+        start_ms = _ms(chapter.get("tA"))
+        if not text or not sentences or start_ms is None:
+            continue
+        kept = []
+        kept_old_indices = []
+        for i, sentence in enumerate(sentences):
+            if _spoken_before_anchor(sentence, start_ms, lang, max_days=365):
+                continue
+            kept.append(sentence)
+            kept_old_indices.append(i)
+        if len(kept) == len(sentences):
+            continue
+        new_text = " ".join(kept).strip()
+        chapter["text"] = new_text
+        # For legacy snapshots, drop invalid or removed-sentence anchors before
+        # remapping; never attach an arbitrary overflow anchor to the last sentence.
+        if "_anchorInputs" not in chapter:
+            old_starts = _sentence_starts(text, sentences)
+            new_starts = _sentence_starts(new_text, kept)
+            old_to_new = {old_i: new_i for new_i, old_i in enumerate(kept_old_indices)}
+            moved = []
+            for anchor in chapter.get("anchors") or []:
+                if not isinstance(anchor, dict):
+                    continue
+                try:
+                    idx = int(anchor.get("charIdx") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if idx < 0 or idx >= len(text):
+                    continue
+                hit = next(
+                    (i for i, start in enumerate(old_starts)
+                     if start <= idx < start + max(1, len(sentences[i]))),
+                    None,
+                )
+                if hit is None or hit not in old_to_new:
+                    continue
+                new_i = old_to_new[hit]
+                local = max(0, idx - old_starts[hit])
+                moved.append({
+                    **anchor,
+                    "charIdx": new_starts[new_i] + min(local, max(0, len(kept[new_i]) - 1)),
+                })
+            chapter["anchors"] = moved
+
+
+def _reconcile_film_indices(chapters: list[dict], *, lang: str = "fr") -> None:
+    """Rebuild character indices from final chapter text and semantic dates.
+
+    Newly generated chapters retain source anchor tuples. Legacy snapshots do not:
+    rebuild their date-bearing phrases semantically instead of linearly scaling an
+    obsolete index into unrelated text after a budget cut.
+    """
+    for chapter in chapters or []:
+        if not isinstance(chapter, dict):
+            continue
+        text = str(chapter.get("text") or "")
+        size = len(text)
+        source_anchors = chapter.pop("_anchorInputs", None)
+        ta, tb = _ms(chapter.get("tA")), _ms(chapter.get("tB"))
+        if source_anchors is not None:
+            rebuilt = chapter_anchors(text, source_anchors, ta, tb, lang) if text and ta is not None and tb is not None else []
+            chapter["anchors"] = _strict_increasing_anchors(rebuilt)
+        elif not text:
+            chapter["anchors"] = []
+        else:
+            sentences = _sentences(text)
+            starts = _sentence_starts(text, sentences)
+            old_by_sentence = {}
+            for anchor in chapter.get("anchors") or []:
+                if not isinstance(anchor, dict):
+                    continue
+                try:
+                    idx = int(anchor.get("charIdx") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if idx < 0 or idx >= size:
+                    continue
+                sentence_i = next(
+                    (i for i, start in enumerate(starts)
+                     if start <= idx < start + max(1, len(sentences[i]))),
+                    None,
+                )
+                if sentence_i is None:
+                    continue
+                sent = sentences[sentence_i]
+                t_raw = anchor.get("t")
+                t_ms = t_raw if isinstance(t_raw, int) else _ms(t_raw)
+                # Any sentence with an explicit date gets a fresh semantic time below.
+                if _parse_spoken_date(sent, lang) is not None or _is_arrival_sentence(sent):
+                    continue
+                if t_ms is None or _spoken_before_anchor(sent, t_ms, lang, max_days=365):
+                    continue
+                old_by_sentence.setdefault(sentence_i, (t_ms, anchor))
+
+            anchored = []
+            span = max(1, size - 1)
+            for i, sentence in enumerate(sentences):
+                start = starts[i] if i < len(starts) else 0
+                spoken_date = _parse_spoken_date(sentence, lang)
+                extra = {}
+                if _is_arrival_sentence(sentence):
+                    t_ms = tb
+                    extra["role"] = "arrive"
+                elif spoken_date is not None:
+                    t_ms = int(spoken_date.timestamp() * 1000)
+                    if _is_depart_sentence(sentence):
+                        extra["role"] = "depart"
+                    if ta is not None:
+                        t_ms = max(ta, t_ms)
+                    if tb is not None:
+                        t_ms = min(tb, t_ms)
+                elif _is_depart_sentence(sentence) and ta is not None:
+                    t_ms = ta
+                    extra["role"] = "depart"
+                elif i in old_by_sentence:
+                    t_ms, old = old_by_sentence[i]
+                    for key in ("place", "kind", "role"):
+                        if old.get(key):
+                            extra[key] = old[key]
+                elif ta is not None and tb is not None:
+                    t_ms = ta + int(round((tb - ta) * start / span))
+                else:
+                    t_ms = None
+                if t_ms is None:
+                    continue
+                anchored.append((sentence, t_ms, extra))
+
+            rebuilt = chapter_anchors(text, anchored, ta, tb, lang) if ta is not None and tb is not None else []
+            chapter["anchors"] = _strict_increasing_anchors(rebuilt)
+
+        # Event bubbles also carry text indices. Search the final phrase first;
+        # use timestamp interpolation only when a matching phrase is absent.
+        for event in chapter.get("events") or []:
+            if not isinstance(event, dict):
+                continue
+            card = event.get("card") if isinstance(event.get("card"), dict) else {}
+            fact = str(event.get("fact") or card.get("text") or "")
+            idx = _event_char_idx(event, chapter, fact)
+            event["charIdx"] = max(0, min(max(0, size - 1), int(idx or 0)))
+        chapter["events"] = sorted(
+            [e for e in (chapter.get("events") or []) if isinstance(e, dict)],
+            key=lambda e: (int(e.get("charIdx") or 0), str(e.get("id") or "")),
+        )
+
+
 def reanchor_written_chapter(chapter: dict, written_text: str, lang: str) -> list[dict]:
     """Ancres du brut reportées phrase à phrase, puis recalculées sur le rédigé."""
     raw = chapter.get("text") or ""
@@ -9508,6 +9671,8 @@ def _as_stop_rows(stops: list | None) -> list[dict]:
             if not name:
                 continue
             row: dict[str, Any] = {"name": name}
+            if raw.get("iso"):
+                row["iso"] = str(raw["iso"])
             for key in ("nm", "filmNm"):
                 val = raw.get(key)
                 if isinstance(val, (int, float)) and not isinstance(val, bool):
@@ -9539,15 +9704,48 @@ def _index_row(rows: list[dict], name: str, *, after: int = -1) -> Optional[int]
     return None
 
 
-def _pair_indexes(rows: list[dict], frm: str, to: str) -> tuple[Optional[int], Optional[int]]:
-    ia = _index_row(rows, frm)
+def _pair_indexes(
+    rows: list[dict], frm: str, to: str, *,
+    start_ms: Optional[int] = None, end_ms: Optional[int] = None,
+) -> tuple[Optional[int], Optional[int]]:
+    # Repeated ports (Cayenne on the return flight) must be matched to this
+    # chapter's dates, not the first same-name port in the entire itinerary.
+    ia = None
+    if start_ms is not None:
+        candidates = []
+        for i, row in enumerate(rows):
+            if not _known_stop(frm, [row]):
+                continue
+            at = _ms(row.get("iso"))
+            if at is not None and at <= start_ms + 12 * 3600 * 1000:
+                candidates.append((abs(start_ms - at), i, at))
+        if candidates:
+            close = [x for x in candidates if x[0] <= 3 * 86400000]
+            ia = min(close or candidates)[1]
+    if ia is None:
+        ia = _index_row(rows, frm)
     if ia is None:
         return None, None
+    if end_ms is not None:
+        candidates = []
+        for i in range(ia + 1, len(rows)):
+            row = rows[i]
+            if not _known_stop(to, [row]):
+                continue
+            at = _ms(row.get("iso"))
+            if at is not None and at >= start_ms - 12 * 3600 * 1000:
+                candidates.append((abs(end_ms - at), i, at))
+        if candidates:
+            close = [x for x in candidates if x[0] <= 3 * 86400000]
+            return ia, min(close or candidates)[1]
     return ia, _index_row(rows, to, after=ia)
 
 
-def _sea_between(rows: list[dict], frm: str, to: str) -> list[str]:
-    ia, ib = _pair_indexes(rows, frm, to)
+def _sea_between(
+    rows: list[dict], frm: str, to: str, *,
+    start_ms: Optional[int] = None, end_ms: Optional[int] = None,
+) -> list[str]:
+    ia, ib = _pair_indexes(rows, frm, to, start_ms=start_ms, end_ms=end_ms)
     if ia is None or ib is None or ib <= ia + 1:
         return []
     missed: list[str] = []
@@ -9555,12 +9753,17 @@ def _sea_between(rows: list[dict], frm: str, to: str) -> list[str]:
         label = _stop_spoken(row.get("name") or "")
         if not label or _is_air_only_stop(label):
             continue
+        if same_stop(label, frm) or same_stop(label, to):
+            continue
         missed.append(label)
     return missed
 
 
-def _span_nm(rows: list[dict], frm: str, to: str) -> Optional[float]:
-    ia, ib = _pair_indexes(rows, frm, to)
+def _span_nm(
+    rows: list[dict], frm: str, to: str, *,
+    start_ms: Optional[int] = None, end_ms: Optional[int] = None,
+) -> Optional[float]:
+    ia, ib = _pair_indexes(rows, frm, to, start_ms=start_ms, end_ms=end_ms)
     if ia is None or ib is None or ib <= ia:
         return None
     a, b = _row_nm(rows[ia]), _row_nm(rows[ib])
@@ -9644,14 +9847,34 @@ def _split_upcoming(blob: str) -> list[str]:
     return [part.strip(" .") for part in parts if part.strip(" .")]
 
 
-def _skip_pairs(text: str, rows: list[dict]) -> bool:
-    for leave in _LEAVE_FOR_RE.finditer(text or ""):
-        frm = _place_core(leave.group("frm"))
-        to = _place_core(leave.group("to"))
-        if _is_air_leg(frm, to) or _is_side_leg(frm, to):
-            continue
-        if _sea_between(rows, frm, to):
-            return True
+def _skip_pairs(text: str, rows: list[dict], *, chapters: list | None = None) -> bool:
+    """Check each departure sentence separately and against its own leg."""
+    contexts = (
+        [(str(ch.get("text") or ""), ch) for ch in (chapters or []) if isinstance(ch, dict)]
+        if chapters
+        else [(str(text or ""), None)]
+    )
+    for body, chapter in contexts:
+        start_ms = _ms(chapter.get("tA")) if chapter else None
+        end_ms = _ms(chapter.get("tB")) if chapter else None
+        for sentence in _sentences(body):
+            for leave in _LEAVE_FOR_RE.finditer(sentence):
+                frm = _place_core(leave.group("frm"))
+                to = _place_core(leave.group("to"))
+                if not frm or not to:
+                    continue
+                # These are explicit mode transfers, not a sea leg skipping a port.
+                if _is_air_leg(frm, to) or _is_side_leg(frm, to) or _is_land_leg(frm, to):
+                    continue
+                if chapter:
+                    chapter_from = str(chapter.get("fromName") or "")
+                    chapter_to = str(chapter.get("toName") or "")
+                    if chapter_from and not same_stop(frm, chapter_from):
+                        continue
+                    if chapter_to and not same_stop(to, chapter_to):
+                        continue
+                if _sea_between(rows, frm, to, start_ms=start_ms, end_ms=end_ms):
+                    return True
     return False
 
 
@@ -9731,7 +9954,10 @@ def _distance_mismatch(text: str, rows: list[dict]) -> bool:
     return False
 
 
-def _cap_leg_faults(text: str, rows: list[dict], frm: str) -> list[str]:
+def _cap_leg_faults(
+    text: str, rows: list[dict], frm: str, *,
+    start_ms: Optional[int] = None, end_ms: Optional[int] = None,
+) -> list[str]:
     """« cap sur Dzaoudzi » depuis Papeete : la destination n'est pas l'escale suivante."""
     if not frm:
         return []
@@ -9743,11 +9969,11 @@ def _cap_leg_faults(text: str, rows: list[dict], frm: str) -> list[str]:
         to = _place_core(match.group("to"))
         if not to or _is_air_leg(frm, to) or _is_side_leg(frm, to):
             continue
-        skipped = _sea_between(rows, frm, to)
+        skipped = _sea_between(rows, frm, to, start_ms=start_ms, end_ms=end_ms)
         if skipped and "skip" not in faults:
             faults.append("skip")
         nums = _mile_ints(sent)
-        span = _span_nm(rows, frm, to)
+        span = _span_nm(rows, frm, to, start_ms=start_ms, end_ms=end_ms)
         if not nums or span is None:
             continue
         close = abs(float(nums[0]) - span) <= max(50.0, 0.08 * span)
@@ -9784,7 +10010,7 @@ def nemotron_reread_report(
             c.get("text") or "" for c in chapters if isinstance(c, dict)
         )
     faults: list[str] = []
-    if _skip_pairs(blob, rows):
+    if _skip_pairs(blob, rows, chapters=chapters):
         faults.append("skip")
     if _upcoming_omits(blob, rows, here=here):
         faults.append("upcoming")
@@ -9797,7 +10023,10 @@ def nemotron_reread_report(
     for chapter in chapters or []:
         if not isinstance(chapter, dict):
             continue
-        for fault in _cap_leg_faults(chapter.get("text") or "", rows, str(chapter.get("fromName") or "")):
+        for fault in _cap_leg_faults(
+            chapter.get("text") or "", rows, str(chapter.get("fromName") or ""),
+            start_ms=_ms(chapter.get("tA")), end_ms=_ms(chapter.get("tB")),
+        ):
             if fault not in faults:
                 faults.append(fault)
         if _offleg_in_chapter(chapter, rows) and "offleg" not in faults:
@@ -9834,6 +10063,8 @@ def _insert_missing_air(rows: list[dict], clock_marks: list | None) -> list[dict
             if anchor is not None:
                 break
         row: dict[str, Any] = {"name": name}
+        if mark.get("iso"):
+            row["iso"] = str(mark["iso"])
         nm = mark.get("filmNm") if isinstance(mark.get("filmNm"), (int, float)) else mark.get("nm")
         if isinstance(nm, (int, float)) and not isinstance(nm, bool):
             row["nm"] = float(nm)
@@ -9841,6 +10072,40 @@ def _insert_missing_air(rows: list[dict], clock_marks: list | None) -> list[dict
             out.append(row)
         else:
             out.insert(anchor + 1, row)
+    return out
+
+
+def _insert_chapter_air_revisits(rows: list[dict], plan: dict | None) -> list[dict]:
+    """Insert a dated second arrival at the destination of an air-transfer chapter."""
+    out = [dict(row) for row in (rows or [])]
+    chapters = [ch for ch in (plan or {}).get("chapters") or [] if isinstance(ch, dict)]
+    for i, chapter in enumerate(chapters[:-1]):
+        frm = str(chapter.get("fromName") or "")
+        to = str(chapter.get("toName") or "")
+        if not _is_air_leg(frm, to):
+            continue
+        nxt = chapters[i + 1]
+        if not same_stop(str(nxt.get("fromName") or ""), to):
+            continue
+        iso = str(nxt.get("tA") or chapter.get("tB") or "")
+        at = _ms(iso)
+        if at is None:
+            continue
+        present = any(
+            same_stop(str(row.get("name") or ""), to)
+            and _ms(row.get("iso")) is not None
+            and abs(_ms(row.get("iso")) - at) <= 12 * 3600 * 1000
+            for row in out
+        )
+        if present:
+            continue
+        item = {"name": to, "iso": iso}
+        at_or_before = [
+            j for j, row in enumerate(out)
+            if _ms(row.get("iso")) is not None and _ms(row.get("iso")) <= at
+        ]
+        insert_at = (max(at_or_before) + 1) if at_or_before else len(out)
+        out.insert(insert_at, item)
     return out
 
 
@@ -9852,7 +10117,7 @@ def _route_stops_for_reread(plan: dict | None) -> list[dict]:
     """
     explicit = (plan or {}).get("routeStops")
     if isinstance(explicit, list) and explicit:
-        return _as_stop_rows(explicit)
+        return _insert_chapter_air_revisits(_as_stop_rows(explicit), plan)
     try:
         from voyage_store import load_voyage  # noqa: PLC0415
         from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
@@ -9861,6 +10126,7 @@ def _route_stops_for_reread(plan: dict | None) -> list[dict]:
         marks = voy.get("marks") if isinstance(voy.get("marks"), list) else []
         clock = voy.get("clock") if isinstance(voy.get("clock"), dict) else {}
         rows = _insert_missing_air(_as_stop_rows(marks), clock.get("marks"))
+        rows = _insert_chapter_air_revisits(rows, plan)
         if len(rows) >= 8:
             return rows
         named = [
@@ -10533,10 +10799,21 @@ async def write_film_chain(
         "super": 0, "ultra_edit": 0, "ultra_judge": 0, "lightning": 0,
         "source": "rules", "reviewed": False,
     }
-    raw = dict(plan)
+    raw = {
+        **plan,
+        "chapters": [dict(ch) for ch in (plan.get("chapters") or []) if isinstance(ch, dict)],
+    }
+    _drop_stale_dated_sentences(raw["chapters"], lang="fr")
     raw["targetSeconds"] = _film_seconds(seconds if seconds is not None else plan.get("targetSeconds"))
     super_plan, super_stats = await write_stored_plan(raw, lang="fr", cascade=cascade, seconds=seconds)
     if super_plan is None or int((super_stats or {}).get("rewritten") or 0) <= 0:
+        stats["reason"] = "no-rewritten-sentences"
+        stats["writeStats"] = {
+            "rewritten": int((super_stats or {}).get("rewritten") or 0),
+            "fallen": int((super_stats or {}).get("fallen") or 0),
+            "source": str((super_stats or {}).get("source") or "rules"),
+        }
+        stats["source"] = str((super_stats or {}).get("source") or "rules")
         return None, None, stats
     stats["super"] = 1
     origin = public_written_source(super_plan.get("source") or (super_stats or {}).get("source"))
@@ -10569,6 +10846,7 @@ async def write_film_chain(
     ok_fr, review_fr = await reread_before_store(accepted, stops, cascade=cascade, lang="fr")
     stats["reread"] = "pass" if ok_fr else "fail"
     if not ok_fr:
+        stats["reason"] = "local-reread-rejected"
         stats["faults"] = review_fr.get("faults") or []
         return None, None, stats
 
