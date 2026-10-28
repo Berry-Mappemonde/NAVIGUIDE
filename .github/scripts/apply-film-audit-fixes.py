@@ -399,14 +399,14 @@ film = replace_once(
 )
 film = replace_once(
     film,
+    "        nums = _mile_ints(sent)\n"
     "        span = _span_nm(rows, frm, to)\n"
-    "        if span is None:\n"
-    "            continue\n"
-    "        close = abs(float(nums[0]) - span)",
+    "        if not nums or span is None:\n"
+    "            continue",
+    "        nums = _mile_ints(sent)\n"
     "        span = _span_nm(rows, frm, to, start_ms=start_ms, end_ms=end_ms)\n"
-    "        if span is None:\n"
-    "            continue\n"
-    "        close = abs(float(nums[0]) - span)",
+    "        if not nums or span is None:\n"
+    "            continue",
     "time-aware distance checker",
 )
 film = replace_once(
