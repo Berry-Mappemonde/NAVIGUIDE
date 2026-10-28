@@ -63,7 +63,7 @@ function CardLinks({ entity, t }) {
           data-testid="event-bubble-focus"
           title={t("briefingSeeOnMap")}
           aria-label={t("momentSeeOnMap")}
-          className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[12px] font-semibold border border-sky-400/40 bg-sky-600/20 text-sky-100 hover:bg-sky-600/40"
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[12px] font-semibold border border-accent-line/40 bg-accent-fill/20 text-accent-text hover:bg-accent-fill/40"
         >
           <LocateFixed size={11} />
         </button>
@@ -77,7 +77,7 @@ function CardLinks({ entity, t }) {
           data-testid={`event-bubble-link-${l.kind}`}
           title={l.kind === "site" ? `${t("briefingOfficialSheet")} — ${l.host || ""}` : t("briefingGoogleMaps")}
           aria-label={l.kind === "site" ? t("briefingOfficialSheet") : t("briefingGoogleMaps")}
-          className="px-1.5 py-0.5 rounded-md text-[12px] border border-white/10 bg-white/5 text-sky-200 hover:text-white hover:bg-white/10 no-underline"
+          className="px-1.5 py-0.5 rounded-md text-[12px] border border-line-hairline bg-surface-raised text-accent-text! hover:text-text-primary! hover:bg-line-hairline no-underline"
         >
           {l.kind === "site" ? "↗" : "◎"}
         </a>
@@ -102,9 +102,9 @@ export function EventBubble({ card, onClose }) {
       <div className="flex items-start gap-2 min-w-0">
         <span className="text-[16px] leading-none flex-shrink-0" aria-hidden="true">{bubbleKindIcon(card)}</span>
         <div className="min-w-0 flex-1">
-          {title ? <div className="font-serif text-[15px] font-semibold text-slate-100 leading-snug">{title}</div> : null}
+          {title ? <div className="font-serif text-[15px] font-semibold text-text-primary leading-snug">{title}</div> : null}
           {facts ? (
-            <p className="event-bubble-facts mt-0.5 text-[12px] leading-snug text-slate-100 break-words [overflow-wrap:anywhere]">
+            <p className="event-bubble-facts mt-0.5 text-[12px] leading-snug text-text-primary break-words [overflow-wrap:anywhere]">
               {facts}
             </p>
           ) : null}
@@ -118,7 +118,7 @@ export function EventBubble({ card, onClose }) {
           }}
           title={t("eventBubbleClose")}
           aria-label={t("eventBubbleClose")}
-          className="w-6 h-6 flex items-center justify-center rounded-md text-white/70 hover:text-white hover:bg-white/10 flex-shrink-0 leading-none"
+          className="w-6 h-6 flex items-center justify-center rounded-md text-text-muted hover:text-text-primary hover:bg-surface-raised flex-shrink-0 leading-none"
         >
           ×
         </button>
@@ -129,7 +129,7 @@ export function EventBubble({ card, onClose }) {
             <span
               key={c.id}
               data-testid={`event-bubble-chip-${c.id}`}
-              className="px-1.5 py-0.5 rounded-md text-[12px] font-semibold bg-white/10 text-white/85 border border-white/10"
+              className="px-1.5 py-0.5 rounded-md text-[12px] font-semibold bg-surface-raised text-text-primary border border-line-hairline"
             >
               {c.id === "wind" ? `${t("eventBubbleChipWind")} ${c.kn} kn`
                 : c.id === "hs" ? `${t("eventBubbleChipHs")} ${Number(c.m).toFixed(1)} m`
