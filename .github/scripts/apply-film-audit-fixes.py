@@ -348,13 +348,25 @@ store_path = Path("naviguide-simulator/server/official_store.py")
 store = store_path.read_text(encoding="utf-8")
 served_helper = '''def _sanitize_served_film_plan(plan: dict, lang: str = "fr") -> dict:
     """Repair a stored legacy snapshot on read, without mutating its cache entry."""
-    safe = {
-        **plan,
-        "chapters": [
-            dict(ch) for ch in (plan.get("chapters") or [])
-            if isinstance(ch, dict)
-        ],
-    }
+    chapters = []
+    for source in (plan.get("chapters") or []):
+        if not isinstance(source, dict):
+            continue
+        chapter = dict(source)
+        chapter["anchors"] = [
+            dict(anchor) for anchor in (source.get("anchors") or [])
+            if isinstance(anchor, dict)
+        ]
+        chapter["events"] = []
+        for source_event in (source.get("events") or []):
+            if not isinstance(source_event, dict):
+                continue
+            event = dict(source_event)
+            if isinstance(event.get("card"), dict):
+                event["card"] = dict(event["card"])
+            chapter["events"].append(event)
+        chapters.append(chapter)
+    safe = {**plan, "chapters": chapters}
     from film_script import (  # noqa: PLC0415
         _drop_stale_dated_sentences,
         _reconcile_film_indices,
@@ -370,6 +382,7 @@ served_helper = '''def _sanitize_served_film_plan(plan: dict, lang: str = "fr") 
 
 
 '''
+
 store = replace_once(
     store,
     "def serve_film(lang: str = \"fr\", seconds: int = 0, style: str = \"raw\") -> dict:\n",
@@ -468,6 +481,7 @@ def test_served_film_plan_repairs_stale_date_and_text_indices():
     event = chapter["events"][0]
     assert event["charIdx"] == chapter["text"].index("489 milles")
     assert "23 mai" in original["chapters"][0]["text"]
+    assert original["chapters"][0]["events"][0]["charIdx"] == 190
 '''
 test_store_path.write_text(test_store, encoding="utf-8")
 
