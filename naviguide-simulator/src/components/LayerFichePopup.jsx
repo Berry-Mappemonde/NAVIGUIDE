@@ -14,7 +14,7 @@ function Row({ label, children }) {
   if (!children) return null;
   return (
     <div className="muted" style={{ marginTop: 6 }}>
-      {label ? <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>{label}</div> : null}
+      {label ? <div style={{ fontSize: 12, marginBottom: 2 }}>{label}</div> : null}
       {children}
     </div>
   );
