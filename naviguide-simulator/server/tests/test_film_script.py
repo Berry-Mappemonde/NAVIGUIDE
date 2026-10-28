@@ -6038,16 +6038,17 @@ def test_buoy_bubble_is_attached_using_its_source_event_time():
     from film_script import attach_chapter_events
 
     entry = {
-        "id": "buoy:wave-12",
+        "id": "candidate:buoy-wave-12",
         "kind": "buoy",
         "name": "Wave buoy 12",
         "title": "Wave buoy 12",
         "t": "2026-05-23T12:00:00Z",
         "sciKind": "buoy",
     }
+    # The event's own source entry carries the May date; a production
+    # candidate may already include an outer tMs from another stage.
     journal = {"latest": [{
-        "id": "candidate:buoy-wave-12",
-        "kind": "buoy",
+        **entry,
         "t": "2026-08-14T10:00:00Z",
         "tMs": _ms("2026-08-14T10:00:00Z"),
         "entry": entry,
