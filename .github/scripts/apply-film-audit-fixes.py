@@ -503,6 +503,42 @@ film = replace_once(
     "    return False\n\n\ndef _upcoming_omits",
     "time-aware departure skip check",
 )
+skip_start = film.index("def _skip_pairs(")
+skip_end = film.index("def _upcoming_omits(", skip_start)
+skip_fn = '''def _skip_pairs(text: str, rows: list[dict], *, chapters: list | None = None) -> bool:
+    """Check each departure sentence separately and against its own leg."""
+    contexts = (
+        [(str(ch.get("text") or ""), ch) for ch in (chapters or []) if isinstance(ch, dict)]
+        if chapters
+        else [(str(text or ""), None)]
+    )
+    for body, chapter in contexts:
+        start_ms = _ms(chapter.get("tA")) if chapter else None
+        end_ms = _ms(chapter.get("tB")) if chapter else None
+        for sentence in _sentences(body):
+            for leave in _LEAVE_FOR_RE.finditer(sentence):
+                frm = _place_core(leave.group("frm"))
+                to = _place_core(leave.group("to"))
+                if not frm or not to:
+                    continue
+                # These are explicit mode transfers, not a sea leg skipping a port.
+                if _is_air_leg(frm, to) or _is_side_leg(frm, to) or _is_land_leg(frm, to):
+                    continue
+                if chapter:
+                    chapter_from = str(chapter.get("fromName") or "")
+                    chapter_to = str(chapter.get("toName") or "")
+                    if chapter_from and not same_stop(frm, chapter_from):
+                        continue
+                    if chapter_to and not same_stop(to, chapter_to):
+                        continue
+                if _sea_between(rows, frm, to, start_ms=start_ms, end_ms=end_ms):
+                    return True
+    return False
+
+
+'''
+film = film[:skip_start] + skip_fn + film[skip_end:]
+
 hook_path = Path("naviguide-simulator/src/hooks/useReplay.js")
 hook = hook_path.read_text(encoding="utf-8")
 hook = replace_once(
@@ -670,7 +706,7 @@ film_path.write_text(film, encoding="utf-8")
 test_path = Path("naviguide-simulator/server/tests/test_film_script.py")
 test = test_path.read_text(encoding="utf-8")
 test = replace_once(
-    test, "    _nm_label,\n)", "    _nm_label,\n    _drop_stale_dated_sentences,\n    _reconcile_film_indices,\n    _dates_regress,\n    _anchor_dates_regress,\n    _sea_between,\n    _insert_chapter_air_revisits,\n)",
+    test, "    _nm_label,\n)", "    _nm_label,\n    _drop_stale_dated_sentences,\n    _reconcile_film_indices,\n    _dates_regress,\n    _anchor_dates_regress,\n    _sea_between,\n    _insert_chapter_air_revisits,\n    _skip_pairs,\n)",
     "import reconciler",
 )
 test += '''
@@ -832,6 +868,50 @@ def test_air_return_inserts_a_second_cayenne_visit_by_time():
     assert len(visits) == 2
     assert visits[1]["iso"] == "2026-08-30T03:57:30Z"
 '''
+test += '''
+
+def test_skip_gate_does_not_join_different_sentences_or_flag_land_transfer():
+    rows = [
+        {"name": "Saint-Maur", "iso": "2026-05-15T08:00:00Z", "nm": 0.0},
+        {"name": "La Rochelle", "iso": "2026-05-15T12:00:00Z", "nm": 1.0},
+        {"name": "Ajaccio", "iso": "2026-06-06T03:36:48Z", "nm": 1913.5},
+        {"name": "Fort-de-France", "iso": "2026-07-14T18:52:07Z", "nm": 7051.7},
+    ]
+    chapters = [
+        {
+            "fromName": "Saint-Maur", "toName": "La Rochelle",
+            "tA": "2026-05-15T08:00:00Z", "tB": "2026-05-15T12:00:00Z",
+            "text": "L'expédition a quitté Saint-Maur. Arrivée à La Rochelle.",
+        },
+        {
+            "fromName": "La Rochelle", "toName": "Ajaccio",
+            "tA": "2026-05-15T12:00:00Z", "tB": "2026-06-06T03:36:48Z",
+            "text": "L'équipage repart pour Fort-de-France.",
+        },
+    ]
+    blob = " ".join(ch["text"] for ch in chapters)
+    assert not _skip_pairs(blob, rows, chapters=chapters)
+    assert not _skip_pairs(
+        "Le navire a quitté Saint-Maur. L'équipage repart pour Fort-de-France.",
+        rows,
+    )
+
+
+def test_skip_gate_still_detects_a_real_intermediate_maritime_stop():
+    rows = [
+        {"name": "Saint-Maur", "iso": "2026-05-15T08:00:00Z", "nm": 0.0},
+        {"name": "La Rochelle", "iso": "2026-05-15T12:00:00Z", "nm": 1.0},
+        {"name": "Ajaccio", "iso": "2026-06-06T03:36:48Z", "nm": 1913.5},
+        {"name": "Fort-de-France", "iso": "2026-07-14T18:52:07Z", "nm": 7051.7},
+    ]
+    chapter = {
+        "fromName": "La Rochelle", "toName": "Fort-de-France",
+        "tA": "2026-05-15T12:00:00Z", "tB": "2026-07-14T18:52:07Z",
+        "text": "Le navire a quitté La Rochelle pour Fort-de-France.",
+    }
+    assert _skip_pairs(chapter["text"], rows, chapters=[chapter])
+
+
 test_path.write_text(test, encoding="utf-8")
 
 store_path = Path("naviguide-simulator/server/official_store.py")
