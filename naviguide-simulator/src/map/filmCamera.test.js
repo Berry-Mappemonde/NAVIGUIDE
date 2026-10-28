@@ -485,6 +485,13 @@ describe("filmCamera — 60 Hz, cap lissé, zoom d'approche", () => {
     assert.match(controller, /stabilizeWorldLng\(subject\.lon/);
     assert.match(controller, /filmActive: this\.config\.filmActive/);
     assert.match(controller, /filmFramesSinceReset/);
+    assert.match(controller, /this\.publishFilmCast\(cast\)/);
+    assert.match(controller, /vehicle: cast\.vehicle \|\| "main"/);
+    assert.match(controller, /phase: cast\.phase \|\| "sail"/);
+    assert.match(controller, /main: actor\(cast\.main, Boolean\(cast\.main && Number\.isFinite\(cast\.main\.lat\)/);
+    assert.match(controller, /side: actor\(cast\.side, Boolean\(cast\.side\?\.visible && cast\.phase === "side-sail"\)/);
+    assert.match(controller, /plane: actor\(cast\.plane, Boolean\(cast\.plane\?\.visible && \["air-out", "air-return", "air"\]\.includes\(cast\.phase\)\)/);
+    assert.match(controller, /lat: Number\.isFinite\(follow\?\.lat\) \? follow\.lat/);
   });
 });
 

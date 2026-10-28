@@ -105,6 +105,11 @@ test("production film: complete 150-second browser replay with timing and map sa
   const sideBoatRates = [];
   const phasesSeen = new Set();
   const actorsByName = new Map();
+  const actorVisibilityViolations = [];
+  const invalidActorTransitions = [];
+  let sawMainBoat = false;
+  let sawSideBoat = false;
+  let sawPlane = false;
   let previousPosition = null;
   let previousPositionChapter = null;
   let previousVehicle = null;
@@ -168,8 +173,12 @@ test("production film: complete 150-second browser replay with timing and map sa
     if (sample.active && sample.phase) phasesSeen.add(sample.phase);
     if (sample.active && sample.vehicle) {
       if (previousVehicle && sample.vehicle !== previousVehicle) {
-        const airPhases = new Set(["air-out", "air-return", "air"]);
-        const declaredTransition = airPhases.has(previousPhase) || airPhases.has(sample.phase);
+        const allowed = (
+          (previousVehicle === "main" && sample.vehicle === "plane" && sample.phase === "air-out")
+          || (previousVehicle === "plane" && sample.vehicle === "side" && previousPhase === "air-out" && sample.phase === "side-sail")
+          || (previousVehicle === "side" && sample.vehicle === "plane" && previousPhase === "side-sail" && sample.phase === "air-return")
+          || (previousVehicle === "plane" && sample.vehicle === "main" && previousPhase === "air-return" && sample.phase === "sail")
+        );
         const transition = {
           fromVehicle: previousVehicle,
           toVehicle: sample.vehicle,
@@ -178,18 +187,35 @@ test("production film: complete 150-second browser replay with timing and map sa
           fromChapter: previousPositionChapter,
           toChapter: sample.chapterIdx,
           wallElapsed: Number(((Date.now() - wallStart) / 1000).toFixed(2)),
-          declared: declaredTransition,
+          declared: allowed,
         };
         actorVehicleChanges.push(transition);
-        if (!declaredTransition) unexpectedBoundaryJumps.push({ ...transition, reason: "actor-change-without-declared-air-phase" });
+        if (!allowed) {
+          invalidActorTransitions.push(transition);
+          unexpectedBoundaryJumps.push({ ...transition, reason: "invalid-actor-transition" });
+        }
       }
       previousVehicle = sample.vehicle;
       previousPhase = sample.phase;
     }
     if (sample.active && sample.actors && sample.filmNm != null) {
+      const { main, side, plane } = sample.actors;
+      const visible = (actor) => Boolean(actor?.visible && actor.lat != null && actor.lon != null);
+      const mainVisible = visible(main);
+      const sideVisible = visible(side);
+      const planeVisible = visible(plane);
+      sawMainBoat ||= mainVisible;
+      sawSideBoat ||= sideVisible;
+      sawPlane ||= planeVisible;
+      const shouldSide = sample.phase === "side-sail";
+      const shouldPlane = ["air-out", "air-return", "air"].includes(sample.phase);
+      if (!mainVisible) actorVisibilityViolations.push({ phase: sample.phase, actor: "main", expected: "visible" });
+      if (sideVisible !== shouldSide) actorVisibilityViolations.push({ phase: sample.phase, actor: "side", expectedVisible: shouldSide, actualVisible: sideVisible });
+      if (planeVisible !== shouldPlane) actorVisibilityViolations.push({ phase: sample.phase, actor: "plane", expectedVisible: shouldPlane, actualVisible: planeVisible });
+
       for (const actorName of ["main", "side", "plane"]) {
         const actor = sample.actors[actorName];
-        if (!actor || !actor.visible || actor.lat == null || actor.lon == null) continue;
+        if (!visible(actor)) continue;
         const prior = actorsByName.get(actorName);
         const current = { lat: actor.lat, lon: actor.lon, filmNm: sample.filmNm, phase: sample.phase };
         if (prior) {
@@ -206,7 +232,9 @@ test("production film: complete 150-second browser replay with timing and map sa
               ratio: expectedKm > 1 ? Number((stepKm / expectedKm).toFixed(3)) : null,
             });
           }
-          if (actorName !== "plane" && prior.phase === sample.phase && stepKm > Math.max(25, expectedKm * 2 + 10)) {
+          // No vessel may teleport within any uninterrupted phase. Compare
+          // displacement to official maritime-film progress, not chapter names.
+          if (prior.phase === sample.phase && stepKm > Math.max(25, expectedKm * 2 + 10)) {
             unexpectedBoundaryJumps.push({
               actor: actorName,
               distanceKm: Number(stepKm.toFixed(3)),
@@ -215,13 +243,14 @@ test("production film: complete 150-second browser replay with timing and map sa
               toPhase: current.phase,
               fromFilmNm: prior.filmNm,
               toFilmNm: current.filmNm,
-              reason: "boat-displacement-exceeds-film-progress",
+              reason: "actor-displacement-exceeds-film-progress",
             });
           }
         }
         actorsByName.set(actorName, current);
       }
     }
+
     if (sample.active && sample.lat != null && sample.lon != null) {
       const current = { lat: sample.lat, lon: sample.lon };
       if (previousPosition) {
@@ -305,7 +334,12 @@ test("production film: complete 150-second browser replay with timing and map sa
     modeTransitionJumps,
     unexpectedBoundaryJumps,
     actorVehicleChanges,
+    invalidActorTransitions,
+    actorVisibilityViolations,
     phasesSeen: Array.from(phasesSeen).sort(),
+    sawMainBoat,
+    sawSideBoat,
+    sawPlane,
     maxMainBoatDriftDuringAirOrSideKm: mainBoatAirDriftsKm.length ? Number(Math.max(...mainBoatAirDriftsKm).toFixed(3)) : null,
     maxSideBoatRateRatio: sideBoatRates.filter((x) => x.ratio != null).length
       ? Number(Math.max(...sideBoatRates.filter((x) => x.ratio != null).map((x) => x.ratio)).toFixed(3))
@@ -332,8 +366,15 @@ test("production film: complete 150-second browser replay with timing and map sa
   ).toBeLessThan(1000);
   expect(
     unexpectedBoundaryJumps,
-    "un bateau ne doit pas se téléporter et tout changement d'acteur doit passer par une phase aérienne déclarée",
+    "un bateau ne doit pas se téléporter et tout changement d'acteur doit respecter la séquence avion → relais → avion → bateau",
   ).toEqual([]);
+  expect(invalidActorTransitions, "aucun changement d'acteur n'est permis hors des transitions officielles").toEqual([]);
+  expect(actorVisibilityViolations, "A reste à quai, B n'est visible qu'en mer entre Halifax et Saint-Pierre, l'avion seulement en vol").toEqual([]);
+  expect(sawMainBoat, "le bateau A doit rester visible").toBeTruthy();
+  expect(sawSideBoat, "le bateau B doit apparaître au départ de Halifax").toBeTruthy();
+  expect(sawPlane, "les vols doivent être représentés par l'avion, pas par le bateau").toBeTruthy();
+  expect(phasesSeen.has("air-out") && phasesSeen.has("side-sail") && phasesSeen.has("air-return"),
+    "le rejeu doit traverser les deux vols et le tronçon maritime découplé").toBeTruthy();
   expect(
     mainBoatAirDriftsKm.length ? Math.max(...mainBoatAirDriftsKm) : 0,
     "le bateau A reste à quai pendant les vols et la navigation du bateau B",

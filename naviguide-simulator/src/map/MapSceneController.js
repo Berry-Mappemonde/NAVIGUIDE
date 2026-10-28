@@ -1710,9 +1710,11 @@ export class MapSceneController {
       fromName: cast.fromName || previous.fromName || "",
       toName: cast.toName || previous.toName || "",
       actors: {
-        main: actor(cast.main, Boolean(cast.main?.visible)),
-        side: actor(cast.side, Boolean(cast.side?.visible)),
-        plane: actor(cast.plane, Boolean(cast.plane?.visible)),
+        // A is always present in the scene; on air/side phases its coordinates
+        // are the parked quay position. The relay boat/plane are phase-gated.
+        main: actor(cast.main, Boolean(cast.main && Number.isFinite(cast.main.lat) && Number.isFinite(cast.main.lon))),
+        side: actor(cast.side, Boolean(cast.side?.visible && cast.phase === "side-sail")),
+        plane: actor(cast.plane, Boolean(cast.plane?.visible && ["air-out", "air-return", "air"].includes(cast.phase))),
       },
       // The legacy lat/lon pair is the camera subject, never necessarily a boat.
       lat: Number.isFinite(follow?.lat) ? follow.lat : previous.lat ?? null,
