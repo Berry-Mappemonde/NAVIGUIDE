@@ -218,27 +218,21 @@ film = replace_once(
 )
 film = replace_once(
     film,
+    "def _spoken_before_anchor(sentence: str, t_ms: Any, lang: str) -> bool:",
+    "def _spoken_before_anchor(sentence: str, t_ms: Any, lang: str, *, max_days: int = 60) -> bool:",
+    "make stale-date window explicit",
+)
+film = replace_once(
+    film,
     "    return 1 <= delta <= 60",
-    "    return 1 <= delta <= 365",
-    "widen stale-date window",
+    "    return 1 <= delta <= max(0, int(max_days))",
+    "parameterize stale-date window",
 )
 film = replace_once(
     film,
-    "            if _known_stop(place, route_rows) and _spoken_before_anchor(sentence, t_ms, lang):\n                return",
-    "            if _spoken_before_anchor(sentence, t_ms, lang):\n                return",
-    "reject stale dates on non-port events too",
-)
-film = replace_once(
-    film,
-    "            sentence = event_sentence(rich, lang, display_t0=display_t0).strip()\n"
-    "            if not sentence:\n"
-    "                return\n"
-    "            char_idx = len(\" \".join(bits)) + (1 if bits else 0)",
-    "            sentence = event_sentence(rich, lang, display_t0=display_t0).strip()\n"
-    "            if not sentence or _spoken_before_anchor(sentence, ev.get(\"tMs\"), lang):\n"
-    "                return\n"
-    "            char_idx = len(\" \".join(bits)) + (1 if bits else 0)",
-    "reject stale event dates in the regular composer",
+    "if _spoken_before_anchor(sentence, start_ms, lang):",
+    "if _spoken_before_anchor(sentence, start_ms, lang, max_days=365):",
+    "wider window only at chapter-level cleanup",
 )
 film = replace_once(
     film,
