@@ -1,0 +1,41 @@
+{
+ "_source": "GET https://naviguide.fr/voyage/official/film?lang=fr&seconds=150&style=raw (dcSubjects, filmChoice), storedAt 2026-10-27T02:15:34Z",
+ "filmChoice": [
+  "dc:amp",
+  "dc:buoy"
+ ],
+ "dcSubjects": [
+  {
+   "id": "dc:amp",
+   "kind": "amp",
+   "phrase": "Le 5 juin, le bateau traverse l'aire marine protégée Corse - Mérous - Grouper fishing ban.",
+   "oncePerFamilyOnLongLeg": true,
+   "name": "Corse - Mérous - Grouper fishing ban",
+   "t": "2026-06-05T17:43:06Z",
+   "relation": "crossing"
+  },
+  {
+   "id": "dc:buoy",
+   "kind": "buoy",
+   "phrase": "Le 23 mai, une bouée.",
+   "oncePerFamilyOnLongLeg": true,
+   "name": "{'fr': 'Station croisée', 'en': 'Station passed'}",
+   "t": "2026-05-23T13:27:42Z"
+  },
+  {
+   "id": "dc:poe",
+   "kind": "poe",
+   "phrase": "Le 23 octobre, les formalités d'entrée passent par Apia Wharf (Matautu Port).",
+   "oncePerFamilyOnLongLeg": true,
+   "name": "Apia Wharf (Matautu Port)",
+   "t": "2026-10-23T16:12:06Z"
+  },
+  {
+   "id": "dc:depth",
+   "kind": "depth",
+   "phrase": "Profondeur : 3,5 m.",
+   "oncePerFamilyOnLongLeg": true,
+   "name": "emodnet"
+  }
+ ]
+}

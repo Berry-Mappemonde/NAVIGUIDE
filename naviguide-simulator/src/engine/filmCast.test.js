@@ -144,4 +144,15 @@ describe("route officielle Berry", () => {
     assert.ok(Math.abs(side.main.lat - ep.park.lat) < 1e-6);
     assert.ok(side.side.lat > 43);
   });
+
+  it("Saint-Pierre reste à Saint-Pierre dans les marques (pas au point le plus loin de Halifax, 45 N 55 W)", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const raw = JSON.parse(readFileSync(join(here, "../../public/route.geojson"), "utf8"));
+    const { segments, stops } = routeFromOfficial(raw);
+    const flat = flattenRoute(segments);
+    const marks = mergeEpisodeMarks(mapEscalesOnRoute(stops, flat), flat, stops);
+    const spm = marks.filter((m) => /Saint-Pierre/.test(m.name));
+    assert.equal(spm.length, 1);
+    assert.ok(Math.abs(spm[0].lat - 46.7761) < 0.1 && Math.abs(spm[0].lon + 56.1628) < 0.1, `${spm[0].lat}, ${spm[0].lon}`);
+  });
 });

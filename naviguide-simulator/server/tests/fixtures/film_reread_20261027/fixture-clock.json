@@ -1,0 +1,203 @@
+{
+ "_source": "GET https://naviguide.fr/voyage/official/clock (marks only), storedAt 2026-10-27T02:13:20Z",
+ "marks": [
+  {
+   "name": "Ajaccio (Corse)",
+   "filmNm": 1913.548,
+   "tHours": 523.6135,
+   "iso": "2026-06-06T03:36:48Z",
+   "holdHours": 72,
+   "lat": 41.91919999999999,
+   "lon": 8.738599999999987,
+   "kind": null,
+   "vehicle": "quay"
+  },
+  {
+   "name": "Fort-de-France (Martinique)",
+   "filmNm": 7051.7566,
+   "tHours": 1450.8687,
+   "iso": "2026-07-14T18:52:07Z",
+   "holdHours": 72,
+   "lat": 14.5887,
+   "lon": -61.0731,
+   "kind": null,
+   "vehicle": "quay"
+  },
+  {
+   "name": "Pointe-à-Pitre (Guadeloupe)",
+   "filmNm": 7173.6053,
+   "tHours": 1538.1069,
+   "iso": "2026-07-18T10:06:24Z",
+   "holdHours": 72,
+   "lat": 16.236499999999996,
+   "lon": -61.5381,
+   "kind": null,
+   "vehicle": "quay"
+  },
+  {
+   "name": "Gustavia (Saint-Barthélemy)",
+   "filmNm": 7381.166,
+   "tHours": 1649.2819,
+   "iso": "2026-07-23T01:16:54Z",
+   "holdHours": 72,
+   "lat": 17.8912,
+   "lon": -62.85479999999999,
+   "kind": null,
+   "vehicle": "quay"
+  },
+  {
+   "name": "Marigot (Saint-Martin)",
+   "filmNm": 7449.9949,
+   "tHours": 1736.3171,
+   "iso": "2026-07-26T16:19:01Z",
+   "holdHours": 72,
+   "lat": 18.082900000000016,
+   "lon": -63.0922,
+   "kind": null,
+   "vehicle": "quay"
+  },
+  {
+   "name": "Cayenne (Guyane)",
+   "filmNm": 8680.7748,
+   "tHours": 2094.84,
+   "iso": "2026-08-10T14:50:23Z",
+   "holdHours": 72,
+   "lat": 4.9333,
+   "lon": -52.3533,
+   "kind": null,
+   "vehicle": "quay"
+  },
+  {
+   "name": "Halifax (Nouvelle-Écosse)",
+   "filmNm": 8760.7748,
+   "tHours": 2174.84,
+   "iso": "2026-08-13T22:50:23Z",
+   "holdHours": 24,
+   "lat": 44.655955,
+   "lon": -63.562088,
+   "kind": "hub",
+   "vehicle": "quay"
+  },
+  {
+   "name": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+   "filmNm": 9132.5443,
+   "tHours": 2256.8107,
+   "iso": "2026-08-17T08:48:38Z",
+   "holdHours": 72,
+   "lat": 46.7761,
+   "lon": -56.1628,
+   "kind": "via",
+   "vehicle": "quay"
+  },
+  {
+   "name": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+   "filmNm": 9249.7294,
+   "tHours": 2342.2684,
+   "iso": "2026-08-20T22:16:06Z",
+   "holdHours": 72,
+   "lat": 46.7761,
+   "lon": -56.1628,
+   "kind": null,
+   "vehicle": "quay"
+  },
+  {
+   "name": "Halifax (Nouvelle-Écosse)",
+   "filmNm": 9738.684,
+   "tHours": 2531.9586,
+   "iso": "2026-08-28T19:57:30Z",
+   "holdHours": 24,
+   "lat": 44.655955,
+   "lon": -63.562088,
+   "kind": "hub",
+   "vehicle": "quay"
+  },
+  {
+   "name": "Papeete (Polynésie française)",
+   "filmNm": 16286.059,
+   "tHours": 3635.1245,
+   "iso": "2026-10-13T19:07:28Z",
+   "holdHours": 72,
+   "lat": -17.511600000000005,
+   "lon": -149.5685,
+   "kind": null,
+   "vehicle": "quay"
+  },
+  {
+   "name": "Mata-Utu (Wallis-et-Futuna)",
+   "filmNm": 17947.4298,
+   "tHours": 3916.9518,
+   "iso": "2026-10-25T12:57:05Z",
+   "holdHours": 72,
+   "lat": -13.272499999999992,
+   "lon": -176.2036,
+   "kind": null,
+   "vehicle": "quay"
+  },
+  {
+   "name": "Nouméa (Nouvelle-Calédonie)",
+   "filmNm": 19323.2443,
+   "tHours": 4190.622,
+   "iso": "2026-11-05T22:37:18Z",
+   "holdHours": 72,
+   "lat": -22.2958,
+   "lon": 166.4572,
+   "kind": null,
+   "vehicle": "quay"
+  },
+  {
+   "name": "Dzaoudzi (Mayotte)",
+   "filmNm": 28243.9571,
+   "tHours": 9365.0787,
+   "iso": "2027-06-09T13:04:42Z",
+   "holdHours": 72,
+   "lat": -12.7921,
+   "lon": 45.26999999999998,
+   "kind": null,
+   "vehicle": "quay"
+  },
+  {
+   "name": "Tromelin (TAAF)",
+   "filmNm": 29042.2217,
+   "tHours": 9893.5899,
+   "iso": "2027-07-01T13:35:22Z",
+   "holdHours": 72,
+   "lat": -15.89,
+   "lon": 54.52499999999998,
+   "kind": null,
+   "vehicle": "quay"
+  },
+  {
+   "name": "Saint-Gilles (La Réunion)",
+   "filmNm": 29364.4352,
+   "tHours": 10049.3934,
+   "iso": "2027-07-08T01:23:35Z",
+   "holdHours": 72,
+   "lat": -21.05939999999999,
+   "lon": 55.224199999999996,
+   "kind": null,
+   "vehicle": "quay"
+  },
+  {
+   "name": "Europa (TAAF)",
+   "filmNm": 30492.8631,
+   "tHours": 10293.8222,
+   "iso": "2027-07-18T05:49:18Z",
+   "holdHours": 72,
+   "lat": -22.3685,
+   "lon": 40.3476,
+   "kind": null,
+   "vehicle": "quay"
+  },
+  {
+   "name": "La Rochelle",
+   "filmNm": 38907.1176,
+   "tHours": 12983.0818,
+   "iso": "2027-11-07T07:04:53Z",
+   "holdHours": 72,
+   "lat": 46.1541,
+   "lon": -1.1669999999999732,
+   "kind": null,
+   "vehicle": "quay"
+  }
+ ]
+}

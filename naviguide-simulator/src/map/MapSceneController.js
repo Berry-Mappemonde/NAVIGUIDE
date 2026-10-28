@@ -1,6 +1,7 @@
 import L from "leaflet";
 import { catamaranSvg } from "../engine/catamaranIcon.js";
 import { interpolateCast, isAirPhase } from "../engine/filmCast.js";
+import { pickSceneCast } from "../engine/clockCast.js";
 import { wakeCursorAt } from "../engine/filmWake.js";
 import {
   haversineNm,
@@ -1588,7 +1589,11 @@ export class MapSceneController {
 
   renderDynamic(snapshot) {
     this.currentPlayback = snapshot;
-    const cast = interpolateCast(this.config.flat, this.filmPlayheadNm(snapshot), { stops: this.config.stops });
+    const cast = pickSceneCast({
+      filmActive: this.config.filmActive,
+      film: typeof window !== "undefined" ? window.__naviguideFilm : null,
+      fallback: () => interpolateCast(this.config.flat, this.filmPlayheadNm(snapshot), { stops: this.config.stops }),
+    });
     this.currentCast = cast;
     const liveMode = this.config.isSuivre && this.config.live && !this.config.previewing;
     const sailNm = liveMode ? (this.config.live.sailNm ?? 0) : (cast?.sailNm ?? 0);

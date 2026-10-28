@@ -728,3 +728,49 @@ def test_official_clock_keeps_one_cayenne_and_saint_pierre_port():
     assert (lat, lon) == (-17.5, -149.6)
     lat, lon = _stop_latlon("Papeete (Polynésie française)", {}, {"lat": -17.0, "lon": -149.0})
     assert (lat, lon) == (-17.0, -149.0)
+
+
+def _episode_with_offshore_waypoint():
+    """Prod 27/10 : la route Halifax → SPM passe par 45 N 55 W, plus loin de Halifax que SPM."""
+    points = [
+        {"lat": 4.93, "lon": -52.35, "cumNm": 1000, "filmCum": 1000, "jump": False},
+        {"lat": 44.65, "lon": -63.57, "cumNm": 1000, "filmCum": 1080, "jump": True},
+        {"lat": 45.00, "lon": -55.00, "cumNm": 1370, "filmCum": 1450, "jump": False},
+        {"lat": 46.78, "lon": -56.16, "cumNm": 1490, "filmCum": 1570, "jump": False},
+        {"lat": 44.65, "lon": -63.57, "cumNm": 1840, "filmCum": 1920, "jump": False},
+        {"lat": 4.93, "lon": -52.35, "cumNm": 1840, "filmCum": 2000, "jump": True},
+        {"lat": 4.80, "lon": -52.50, "cumNm": 1870, "filmCum": 2030, "jump": False},
+    ]
+    marks = [
+        {"name": "Cayenne (Guyane)", "nm": 1000, "filmNm": 1000, "lat": 4.93, "lon": -52.35},
+        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "nm": 1490, "filmNm": 1570,
+         "lat": 46.78, "lon": -56.16},
+    ]
+
+    def wind_fn(lat, lon, t):
+        return {"speedKnots": 10.0, "dirFromDeg": 90.0, "kind": "climatology"}
+
+    return build_voyage_clock(
+        points, marks, "2026-07-19T08:00:00Z", start_at="saint-maur", wind_fn=wind_fn,
+    )
+
+
+def test_film_axis_never_goes_back_after_the_return_flight():
+    """Prod 27/10 : le sommet quai de Cayenne au retour reprenait filmNm de l'aller (8680 après 9818)."""
+    c = _episode_with_offshore_waypoint()
+    film = [v["filmNm"] for v in c["vertices"]]
+    back = [(i, film[i - 1], film[i]) for i in range(1, len(film)) if film[i] < film[i - 1] - 1e-6]
+    assert back == []
+
+
+def test_saint_pierre_is_held_once_and_at_saint_pierre():
+    """Le point le plus loin de Halifax n'est pas une escale : pas 3 jours à quai en mer à 45 N 55 W."""
+    c = _episode_with_offshore_waypoint()
+    spm = [m for m in c["marks"] if "Saint-Pierre" in (m.get("name") or "")]
+    assert len(spm) == 1
+    holds = [
+        v for i, v in enumerate(c["vertices"])
+        if v.get("vehicle") == "quay" and i and v["tHours"] - c["vertices"][i - 1]["tHours"] > 1
+    ]
+    assert all(abs(v["lat"] - 45.0) > 0.05 or abs(v["lon"] + 55.0) > 0.05 for v in holds)
+    assert any(abs(v["lat"] - 46.78) < 0.05 for v in holds)

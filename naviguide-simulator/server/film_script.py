@@ -12,6 +12,7 @@ Suivre ne rappelle rien.
 """
 from __future__ import annotations
 
+import difflib
 import hashlib
 import json
 import math
@@ -1908,6 +1909,17 @@ def _chapter_for_subject(chapters: list[dict], rec: dict) -> Optional[dict]:
     return chapters[-1] if chapters else None
 
 
+def _subject_fits_chapter(rec: dict, ch: dict) -> bool:
+    """Sujet sans date : tout chapitre. Sujet daté : seulement si tA <= t <= tB."""
+    t = _ms(rec.get("t")) if rec.get("t") else None
+    if t is None:
+        return True
+    a, b = _ms(ch.get("tA")), _ms(ch.get("tB"))
+    if a is None or b is None:
+        return False
+    return a <= t <= b
+
+
 def apply_chosen_subjects(
     plan: dict,
     ids: list[str] | None,
@@ -1916,6 +1928,7 @@ def apply_chosen_subjects(
 ) -> dict:
     """Remplace des redites par les ids choisis. N'empile pas. Puis film_char_budget."""
     chapters = [{**c, "text": c.get("text") or ""} for c in (plan.get("chapters") or [])]
+    before = _snapshot_texts(chapters)
     by_id = {str(c.get("id")): c for c in bag or [] if isinstance(c, dict) and c.get("id")}
     blob = " ".join(ch.get("text") or "" for ch in chapters)
     remaining: list[dict] = []
@@ -1941,19 +1954,28 @@ def apply_chosen_subjects(
         seen_kind.add(kind)
         remaining.append(rec)
     slots = _repeat_slots(chapters)
-    used = 0
     spoken: list[dict] = []
-    for rec, (ch, idx) in zip(remaining, slots):
+    unplaced: list[dict] = []
+    for rec in remaining:
+        # Un sujet daté (« Le 23 mai, une bouée ») ne quitte pas son chapitre.
+        pick = next(
+            (i for i, (ch, _idx) in enumerate(slots) if _subject_fits_chapter(rec, ch)),
+            None,
+        )
+        if pick is None:
+            unplaced.append(rec)
+            continue
+        ch, idx = slots.pop(pick)
         sents = _sentences(ch.get("text") or "")
         if idx < 0 or idx >= len(sents):
+            unplaced.append(rec)
             continue
         sents[idx] = rec["phrase"]
         ch["text"] = " ".join(sents).strip()
-        used += 1
         spoken.append(rec)
     budget = film_char_budget(seconds)
     if budget <= 0:
-        for rec in remaining[used:]:
+        for rec in unplaced:
             ch = _chapter_for_subject(chapters, rec)
             if ch is None:
                 continue
@@ -1962,6 +1984,7 @@ def apply_chosen_subjects(
             if phrase and phrase not in text:
                 ch["text"] = f"{text} {phrase}".strip() if text else phrase
                 spoken.append(rec)
+    _reindex_edited_chapters(before)
     if budget > 0:
         _film_apply_char_budget(chapters, seconds)
     blob_after = " ".join(ch.get("text") or "" for ch in chapters)
@@ -6269,6 +6292,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 "toLat": w.get("toLat"),
                 "toLon": w.get("toLon"),
             })
+            _place_chapter_events(chapters[-1])
 
         film_opens: list[str] = []
         skip_depart = False
@@ -8155,7 +8179,10 @@ _CORE_KEEP_SENT = re.compile(
     r"envole|par la route|by road|attend à|waits at|aujourd|today|"
     r"expédition|expedition|escales|stops|destination|entre le |between |"
     r"à venir|still to come|le plan compte|the plan has|"
-    r"cap au |cap sur |heading ",
+    r"cap au |cap sur |heading |"
+    # Ouverture du second bateau (_side_opening_sentence) : embarque / reprend.
+    r"embarque sur|boards |l'équipage reprend|sails again on|"
+    r"second voilier|second sailing boat",
     re.I,
 )
 _KEEP_SENT = re.compile(
@@ -8356,6 +8383,7 @@ def _prepend_film_opens_to_chapter(
     merged.sort(key=lambda r: (int(r.get("charIdx") or 0), str(r.get("t") or "")))
     chapter["text"] = new_text
     chapter["anchors"] = merged
+    _place_chapter_events(chapter)
 
 
 def _drop_degenerate_chapters(chapters: list[dict]) -> list[dict]:
@@ -8400,15 +8428,146 @@ def _finalize_chapter_zero_opens(
     _prepend_film_opens_to_chapter(chapters[0], opens, w0["tA"], w0["tB"], lang)
 
 
+# --- Index texte ↔ ancres ↔ bulles -----------------------------------------
+# Les ancres et les bulles sont des positions dans le texte. Toute retouche du
+# texte (budget, sujet DC substitué, phrase de vol, ouverture) les recalcule ici,
+# sinon le client cale le bateau ou ouvre une bulle après la fin du texte
+# (production 27/10 : leg-8, bulles à 117 et 205 pour 115 caractères).
+
+
+def _remap_anchors_after_edit(anchors: list[dict], old_text: str, new_text: str) -> list[dict]:
+    """Une ancre suit sa phrase ; phrase coupée ou lieu plus dit → ancre supprimée."""
+    old_sents, new_sents = _sentences(old_text), _sentences(new_text)
+    old_starts = _sentence_starts(old_text, old_sents)
+    new_starts = _sentence_starts(new_text, new_sents)
+    target: dict[int, Optional[int]] = {}
+    matcher = difflib.SequenceMatcher(a=old_sents, b=new_sents, autojunk=False)
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        for k in range(i1, i2):
+            if op == "equal":
+                target[k] = j1 + (k - i1)
+            elif op == "replace":
+                target[k] = j1 + min(k - i1, j2 - j1 - 1)
+            else:  # delete
+                target[k] = None
+    out: list[dict] = []
+    for a in anchors or []:
+        if not isinstance(a, dict):
+            continue
+        place = str(a.get("place") or "")
+        if place and place in old_text and place not in new_text:
+            continue  # le lieu n'est plus dit
+        idx = int(a.get("charIdx") or 0)
+        k = max((i for i, st in enumerate(old_starts) if st <= idx), default=None)
+        if k is None:
+            out.append({**a, "charIdx": 0})
+            continue
+        j = target.get(k)
+        if j is None:
+            continue
+        offset = idx - old_starts[k]
+        old_len = max(1, len(old_sents[k]))
+        new_len = len(new_sents[j])
+        if old_sents[k] != new_sents[j]:
+            offset = int(round(offset * new_len / old_len))
+        out.append({**a, "charIdx": new_starts[j] + max(0, min(offset, new_len))})
+    out = [a for a in _strict_increasing_anchors(out) if int(a["charIdx"]) <= len(new_text)]
+    return out
+
+
+_EVENT_TITLE_KINDS = {"project", "amp", "sci"}
+
+
+def _event_spoken_at(text: str, ev: dict) -> int:
+    """Début de la phrase qui dit la bulle, -1 si elle n'est pas dite."""
+    fact = str(ev.get("fact") or (ev.get("card") or {}).get("text") or "").strip()
+    needles: list[str] = []
+    if fact:
+        needles.append(fact[:28])
+        lead = _LEAD_DATE_FR_RE.match(fact) or _LEAD_DATE_EN_RE.match(fact)
+        if lead:
+            rest = fact[lead.end():]
+            if len(rest) >= 16:
+                needles += [rest[:28], (rest[:1].upper() + rest[1:])[:28]]
+    for needle in needles:
+        if len(needle) >= 12:
+            idx = text.find(needle)
+            if idx >= 0:
+                return idx
+    title = short_name(str(ev.get("title") or ""))
+    if str(ev.get("kind") or "") in _EVENT_TITLE_KINDS and len(title) >= 6 and title in text:
+        return text.index(title)
+    return -1
+
+
+def _char_at_instant(chapter: dict, t_ms: Optional[int]) -> int:
+    """Index du texte que le récit dit à l'instant t (ancres inversées)."""
+    text = chapter.get("text") or ""
+    pts = sorted(
+        (int(a.get("charIdx") or 0), _ms(a.get("t")))
+        for a in chapter.get("anchors") or []
+        if isinstance(a, dict) and _ms(a.get("t")) is not None
+    )
+    if t_ms is None:
+        return 0
+    if len(pts) < 2:
+        t_a, t_b = _ms(chapter.get("tA")), _ms(chapter.get("tB"))
+        if t_a is None or t_b is None or t_b <= t_a:
+            return 0
+        frac = max(0.0, min(1.0, (t_ms - t_a) / (t_b - t_a)))
+        return int(round(frac * max(0, len(text) - 1)))
+    if t_ms <= pts[0][1]:
+        return pts[0][0]
+    for (i0, t0), (i1, t1) in zip(pts, pts[1:]):
+        if t0 <= t_ms <= t1:
+            if t1 == t0:
+                return i0
+            return int(round(i0 + (i1 - i0) * (t_ms - t0) / (t1 - t0)))
+    return pts[-1][0]
+
+
+def _place_chapter_events(chapter: dict) -> None:
+    """Bulle dite → au début de sa phrase ; sinon → quand le récit atteint son instant."""
+    text = chapter.get("text") or ""
+    last = max(0, len(text) - 1)
+    placed: list[dict] = []
+    for ev in chapter.get("events") or []:
+        if not isinstance(ev, dict):
+            continue
+        idx = _event_spoken_at(text, ev)
+        if idx < 0:
+            card = ev.get("card") if isinstance(ev.get("card"), dict) else {}
+            t_ms = _ms(card.get("at") or ev.get("t") or ev.get("at"))
+            idx = _char_at_instant(chapter, t_ms)
+        placed.append({**ev, "charIdx": max(0, min(int(idx), last))})
+    placed.sort(key=lambda e: int(e["charIdx"]))
+    chapter["events"] = placed
+
+
+def _reindex_edited_chapters(before: list[tuple[dict, str]]) -> None:
+    """Après une retouche : ancres suivies phrase à phrase, bulles reposées sur le texte final."""
+    for ch, old_text in before:
+        new_text = ch.get("text") or ""
+        if new_text != old_text:
+            ch["anchors"] = _remap_anchors_after_edit(ch.get("anchors") or [], old_text, new_text)
+        _place_chapter_events(ch)
+
+
+def _snapshot_texts(chapters: list[dict]) -> list[tuple[dict, str]]:
+    return [(ch, ch.get("text") or "") for ch in chapters if isinstance(ch, dict)]
+
+
 def _film_apply_char_budget(chapters: list[dict], seconds: Any) -> None:
     """Plafond film_char_budget (15 car./s), pas 110 %. 2:30 : keep_head=1."""
     target = film_char_budget(seconds)
     if target <= 0 or not chapters:
         return
+    before = _snapshot_texts(chapters)
     keep = 1 if _film_compact_template(seconds) else 2
     if _film_compact_template(seconds):
         _keep_one_amp_in_script(chapters)
     _trim_script_to_char_budget(chapters, target, keep_head=keep)
+    _reindex_edited_chapters(before)
 
 
 def fit_chapter_text(text: str, budget: int, extras: list[str], lang: str) -> str:
@@ -8636,7 +8795,9 @@ def _inject_sentence_before_close(chapter: dict | None, sentence: str, lang: str
     blob = f"{text} {sentence}".strip()
     if close:
         blob = f"{blob} {close}".strip()
+    before = _snapshot_texts([chapter])
     chapter["text"] = speak_film_text(blob, lang)
+    _reindex_edited_chapters(before)
 
 
 def _ensure_air_sentences(
@@ -8899,6 +9060,7 @@ def build_raw_from_moments(
                 "toLat": w.get("toLat"),
                 "toLon": w.get("toLon"),
             })
+            _place_chapter_events(chapters[-1])
             continue
         if not skip_depart:
             head = _depart_towards(
@@ -8974,6 +9136,7 @@ def build_raw_from_moments(
             "toLat": w.get("toLat"),
             "toLon": w.get("toLon"),
         })
+        _place_chapter_events(chapters[-1])
     # Après opens recollés, puis après l'avion recollé.
     if has_budget and target > 0:
         _film_apply_char_budget(chapters, seconds)
@@ -9360,6 +9523,14 @@ def reanchor_written_chapter(chapter: dict, written_text: str, lang: str) -> lis
     return _strict_increasing_anchors(_fallback_anchors(written_text, wr_sents, old, t_a))
 
 
+
+def _with_written_text(chapter: dict, written_text: str, anchors: list[dict]) -> dict:
+    """Chapitre rédigé : ses bulles se calent sur le texte rédigé, pas sur le brut."""
+    out = {**chapter, "text": written_text, "anchors": anchors}
+    _place_chapter_events(out)
+    return out
+
+
 def _fallback_anchors(
     written_text: str, wr_sents: list[str], old: list[dict], t_a: Optional[int],
 ) -> list[dict]:
@@ -9453,7 +9624,7 @@ REREAD_SYSTEM = (
     "Do not rewrite the film."
 )
 _LEAVE_FOR_RE = re.compile(
-    r"(?:leaves|quitte|quitté)\s+(?P<frm>.+?)"
+    r"(?:leaves|quitte|quitté)\s+(?P<frm>[^.;:!?\n]+?)"
     r"(?:,\s*heading\s+\w+)?\s+"
     r"(?:for|pour)\s+(?P<to>.+?)"
     r"(?=[.,;:]|\s+on\b|\s+le\b|$)",
@@ -10313,7 +10484,7 @@ async def write_stored_plan(
                 fb += extra_fb
                 rw = max(0, rw - extra_fb)
         anchors = reanchor_written_chapter(ch, guarded, lang)
-        chapters_out.append({**ch, "text": guarded, "anchors": anchors})
+        chapters_out.append(_with_written_text(ch, guarded, anchors))
         stats["rewritten"] += rw
         stats["fallen"] += fb
     stats["source"] = source_last
@@ -10426,7 +10597,7 @@ def _redistribute_written_blob(raw_plan: dict, blob: str, *, lang: str = "fr") -
         facts = chapter_structured_facts(ch, lang=lang)
         guarded, rw, _fb = apply_written_guard(raw, chunk, facts, lang=lang)
         anchors = reanchor_written_chapter(ch, guarded, lang)
-        out.append({**ch, "text": guarded, "anchors": anchors})
+        out.append(_with_written_text(ch, guarded, anchors))
         rewritten += rw
     if rewritten <= 0:
         return None
@@ -10509,7 +10680,7 @@ async def translate_written_plan(
             return None
         any_ok = True
         anchors = reanchor_written_chapter(raw_ch, guarded, "en")
-        out.append({**raw_ch, "text": guarded, "anchors": anchors})
+        out.append(_with_written_text(raw_ch, guarded, anchors))
     if not any_ok:
         return None
     stamped = _stamp_written_plan(

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { castAtClock } from "../engine/clockCast.js";
+import { filmGlideStep } from "../engine/filmGlide.js";
 import {
   DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, cardDwellMs, measuredCps, cardsBetween, chapterAtElapsed, chapterZoomEstimate, filmChaptersFromStory, filmPlan, journalTimeline, nextMovingTime, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, sentenceIsStationary, sentenceSpan, stepFilmTime, trimQueue, voiceShouldWait,
 } from "../engine/replay.js";
@@ -1126,6 +1128,8 @@ export function useReplay({
   const queueRef = useRef([]);
   const cardSinceRef = useRef(0);
   const lastTRef = useRef(null);
+  // Raccord de chapitre en cours (filmGlide) : l'image rattrape tA sans saut.
+  const glideRef = useRef(null);
   const rafRef = useRef(null);
   const timeline = useMemo(() => journalTimeline(journal), [journal]);
   const timelineRef = useRef(timeline);
@@ -1210,6 +1214,7 @@ export function useReplay({
     setProgress(cleared.progress);
     queueRef.current = [];
     lastTRef.current = null;
+    glideRef.current = null;
     tMsRef.current = null;
     voiceTargetRef.current = null;
     recaleRemainRef.current = 0;
@@ -1849,8 +1854,18 @@ export function useReplay({
           : Math.max(0, Math.min(1, elapsed / speakDenom)));
       }
 
-      const ingest = (next) => {
-        if (next == null) return;
+      const ingest = (raw) => {
+        if (raw == null) return;
+        // Changement de chapitre avant l'arrivée du bateau : pas de bond à tA,
+        // une glisse courte sur l'horloge (Panamá → Papeete, Cayenne → Halifax).
+        const glided = filmGlideStep(glideRef.current, {
+          fromT: lastTRef.current,
+          toT: raw,
+          nowMs: now,
+          clock: clockRef.current,
+        });
+        glideRef.current = glided.state;
+        const next = glided.t;
         const from = lastTRef.current ?? next;
         const fresh = cardsBetween(timelineRef.current, from, next, lang);
         if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);
@@ -2137,6 +2152,9 @@ export function useReplay({
           lon: pos?.lon ?? sample?.lon ?? null,
           heading: sample?.bearing ?? prevFilm.heading ?? null,
           filmNm: pos?.filmNm ?? sample?.filmNm ?? null,
+          // Qui est où, lu sur l'horloge : A à quai à Cayenne pendant
+          // l'épisode, B entre Halifax et Halifax, l'avion sur les seuls vols.
+          cast: castAtClock(clockRef.current, lastTRef.current),
           bubbleId: shown ? (shown.key || shown.id || null) : null,
           bubbleKind: shown?.kind || null,
           seekChapter: prevFilm.seekChapter || ((idx, charIdx) => seekChapterRef.current?.(idx, charIdx)),

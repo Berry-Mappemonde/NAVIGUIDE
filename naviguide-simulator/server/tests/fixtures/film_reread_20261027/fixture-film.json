@@ -1,0 +1,113 @@
+{
+ "_source": "GET https://naviguide.fr/voyage/official/film?lang=fr&seconds=150&style=raw (27/10/2026 22:36 Toronto), storedAt 2026-10-27T02:15:34Z",
+ "source": "rules",
+ "hasWritten": false,
+ "style": "raw",
+ "film_script_rev": "vs1-ed2",
+ "chapters": [
+  {
+   "id": "leg-0",
+   "fromName": "Saint-Maur (Berry, Indre)",
+   "toName": "La Rochelle",
+   "tA": "2026-05-15T08:00:00Z",
+   "tB": "2026-05-15T12:00:00Z",
+   "text": "L’expédition Berry-Mappemonde a quitté Saint-Maur le 15 mai 2026 par la route jusqu’à La Rochelle. Arrivée à La Rochelle."
+  },
+  {
+   "id": "leg-1",
+   "fromName": "La Rochelle",
+   "toName": "Ajaccio (Corse)",
+   "tA": "2026-05-15T12:00:00Z",
+   "tB": "2026-06-06T03:36:48Z",
+   "text": "Le 15 mai, départ vers Ajaccio : 1 791 milles, une vingtaine de jours de mer. Le 5 juin, le bateau traverse l'aire marine protégée Corse - Corbs - Corb fishing ban. Puis, à vingt-trois milles, le projet Corsica Clean Nature. Arrivée à Ajaccio (Corse) le 6 juin."
+  },
+  {
+   "id": "leg-2",
+   "fromName": "Ajaccio (Corse)",
+   "toName": "Fort-de-France (Martinique)",
+   "tA": "2026-06-06T03:36:48Z",
+   "tB": "2026-07-14T18:52:07Z",
+   "text": "Le 9 juin, départ vers Fort-de-France : 5 138 milles, une quarantaine de jours de mer. Arrivée à Fort-de-France (Martinique) le 14 juillet."
+  },
+  {
+   "id": "leg-3",
+   "fromName": "Fort-de-France (Martinique)",
+   "toName": "Pointe-à-Pitre (Guadeloupe)",
+   "tA": "2026-07-14T18:52:07Z",
+   "tB": "2026-07-18T10:06:24Z",
+   "text": "Puis, départ vers Pointe-à-Pitre : 122 milles, un jour de mer. Arrivée à Pointe-à-Pitre (Guadeloupe) le 18 juillet."
+  },
+  {
+   "id": "leg-4",
+   "fromName": "Pointe-à-Pitre (Guadeloupe)",
+   "toName": "Gustavia (Saint-Barthélemy)",
+   "tA": "2026-07-18T10:06:24Z",
+   "tB": "2026-07-23T01:16:54Z",
+   "text": "Le 21 juillet, départ vers Gustavia : 208 milles, deux jours de mer. Puis, à vingt-sept milles, le projet NAUTIK N/BT - Préservation de la biodiversité du Grand Cul Sac Marin. Arrivée à Gustavia (Saint-Barthélemy) le 23 juillet."
+  },
+  {
+   "id": "leg-5",
+   "fromName": "Gustavia (Saint-Barthélemy)",
+   "toName": "Marigot (Saint-Martin)",
+   "tA": "2026-07-23T01:16:54Z",
+   "tB": "2026-07-26T16:19:01Z",
+   "text": "Puis, départ vers Marigot : 69 milles, un jour de mer. Arrivée à Marigot (Saint-Martin) le 26 juillet."
+  },
+  {
+   "id": "leg-6",
+   "fromName": "Marigot (Saint-Martin)",
+   "toName": "Cayenne (Guyane)",
+   "tA": "2026-07-26T16:19:01Z",
+   "tB": "2026-08-10T14:50:23Z",
+   "text": "Le 29 juillet, départ vers Cayenne : 1 231 milles, une dizaine de jours de mer. Puis, à un mille, le projet Ocean Sciences & Logistic. Arrivée à Cayenne (Guyane) le 10 août, à la marina de Roura."
+  },
+  {
+   "id": "leg-7",
+   "fromName": "Cayenne (Guyane)",
+   "toName": "Halifax (Nouvelle-Écosse)",
+   "tA": "2026-08-10T14:50:23Z",
+   "tB": "2026-08-13T22:50:23Z",
+   "text": "Le 13 août, l'équipage s'envole de Cayenne pour Halifax ; le catamaran attend à Cayenne."
+  },
+  {
+   "id": "leg-8",
+   "fromName": "Halifax (Nouvelle-Écosse)",
+   "toName": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+   "tA": "2026-08-13T22:50:23Z",
+   "tB": "2026-08-17T08:48:38Z",
+   "text": "Le 23 mai, une bouée. 489 milles, trois jours de mer. Arrivée à Saint-Pierre (Saint-Pierre-et-Miquelon) le 17 août."
+  },
+  {
+   "id": "leg-10",
+   "fromName": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+   "toName": "Halifax (Nouvelle-Écosse)",
+   "tA": "2026-08-20T22:16:06Z",
+   "tB": "2026-08-28T19:57:30Z",
+   "text": "Le 23 août, à Saint-Pierre (Saint-Pierre-et-Miquelon), l'équipage reprend un second voilier pour Halifax (Nouvelle-Écosse). 489 milles, cinq jours de mer. Arrivée à Halifax (Nouvelle-Écosse) le 28 août."
+  },
+  {
+   "id": "leg-12",
+   "fromName": "Halifax (Nouvelle-Écosse)",
+   "toName": "Cayenne (Guyane)",
+   "tA": "2026-08-29T19:57:30Z",
+   "tB": "2026-08-30T03:57:30Z",
+   "text": "Le 29 août, l'équipage s'envole de Halifax pour Cayenne."
+  },
+  {
+   "id": "leg-13",
+   "fromName": "Cayenne (Guyane)",
+   "toName": "Papeete (Polynésie française)",
+   "tA": "2026-08-30T03:57:30Z",
+   "tB": "2026-10-13T19:07:28Z",
+   "text": "Le 30 août, le catamaran reprend la mer, départ vers Papeete (Polynésie française). Arrivée à Papeete (Polynésie française) le 13 octobre."
+  },
+  {
+   "id": "leg-14",
+   "fromName": "Papeete (Polynésie française)",
+   "toName": "Mata-Utu (Wallis-et-Futuna)",
+   "tA": "2026-10-13T19:07:28Z",
+   "tB": "2026-10-25T12:57:05Z",
+   "text": "Le 16 octobre, départ vers Mata-Utu : 1 661 milles, une dizaine de jours de mer. Arrivée à Mata-Utu (Wallis-et-Futuna) le 25 octobre. Aujourd’hui, le bateau est à Mata-Utu (Wallis-et-Futuna). Les escales à venir : Nouméa, Dzaoudzi, Tromelin, Saint-Gilles, Europa, La Rochelle."
+  }
+ ]
+}

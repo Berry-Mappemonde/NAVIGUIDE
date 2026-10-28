@@ -456,7 +456,13 @@ def with_hub_marks(marks: List[dict], points: List[dict], episodes: List[dict]) 
         if ret_hub != ja and ret_hub > ja:
             push(ret_hub, hub_name, points[ret_hub], "hub")
         via_idx = int(ep.get("viaIdx") or ja)
-        if via_idx != ja and via_idx != jb:
+        # Une escale nommée entre les vols (Saint-Pierre) EST le via : le point
+        # le plus loin de Halifax n'est qu'un sommet de route (45 N 55 W).
+        named_between = any(
+            ja < m["index"] < jb - 1
+            for m in _mark_indices(out, points) if m.get("kind") not in {"hub", "via"}
+        )
+        if via_idx != ja and via_idx != jb and not named_between:
             push(via_idx, via_name, points[via_idx], "via")
     return out
 
@@ -632,8 +638,13 @@ def _apply_park_stay(
     vertices: List[dict],
     sea_hours: float,
     basis: str,
+    film_nm: Optional[float] = None,
 ) -> tuple[float, float]:
-    """Séjour à Cayenne (3 j, table des ports) au retour de l'épisode, une fois."""
+    """Séjour à Cayenne (3 j, table des ports) au retour de l'épisode, une fois.
+
+    film_nm : axe film à l'instant du retour (jamais celui de l'aller).
+    """
+    film = (park.get("filmCum") or 0) if film_nm is None else film_nm
     hold = float(port_days_for(PARK_STOP_NAME) * 24)
     if hold <= 0:
         return t_hours, quay_hours
@@ -643,7 +654,7 @@ def _apply_park_stay(
     if existing is None:
         clock_marks.append({
             "name": PARK_STOP_NAME,
-            "filmNm": _r4(park.get("filmCum") or 0),
+            "filmNm": _r4(film),
             "tHours": _r4(t_hours),
             "iso": to_iso(t0d + timedelta(hours=t_hours)),
             "holdHours": hold,
@@ -656,7 +667,7 @@ def _apply_park_stay(
     t_hours += hold
     quay_hours += hold
     vertices.append(_emit(
-        {**park, "cumNm": sail_nm, "filmCum": park.get("filmCum") or 0},
+        {**park, "cumNm": sail_nm, "filmCum": film},
         t_hours, t0d, float(park.get("bearing") or brg), 0.0,
         {"kind": "climatology"}, "quay",
         (t0d + timedelta(hours=t_hours)).month,
@@ -790,8 +801,10 @@ def build_voyage_clock(
                 ep_land = _episode_covering(episodes, i + 1)
                 if ep_land and i + 1 == int(ep_land["jb"]):
                     park = ep_land["park"]
+                    # Bateau A à quai où il a été laissé, mais à l'instant du
+                    # retour : l'axe film continue (pas le filmCum de l'aller).
                     vertices.append(_emit(
-                        {**park, "cumNm": sail_nm, "filmCum": park.get("filmCum") or 0},
+                        {**park, "cumNm": sail_nm, "filmCum": b.get("filmCum", park.get("filmCum")) or 0},
                         t_hours, t0d, float(park.get("bearing") or brg), 0.0,
                         {"kind": "climatology"}, "quay",
                         (t0d + timedelta(hours=t_hours)).month,
@@ -801,6 +814,7 @@ def build_voyage_clock(
                     t_hours, quay_hours = _apply_park_stay(
                         clock_marks, park, t_hours, quay_hours, t0d, brg, sail_nm,
                         vertices, sea_hours, last_speed_basis,
+                        film_nm=b.get("filmCum", park.get("filmCum")) or 0,
                     )
             elif a.get("nonMaritime") and b.get("nonMaritime"):
                 vehicle = "land"

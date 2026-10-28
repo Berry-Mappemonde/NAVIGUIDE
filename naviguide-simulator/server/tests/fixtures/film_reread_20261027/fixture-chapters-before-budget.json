@@ -1,0 +1,1100 @@
+{
+ "_source": "Chapitres composés par film_script (main 36c11fe) à partir des GET publics de production du 27/10/2026 (/voyage/official/clock, /voyage/official, /voyage/official/journal?limit=500, /voyage/official/moments, /voyage/official/plan-review), now=2026-10-27T02:15:34Z, juste avant le premier _film_apply_char_budget(150 s).",
+ "chapters": [
+  {
+   "id": "leg-0",
+   "tA": "2026-05-15T08:00:00Z",
+   "tB": "2026-05-15T12:00:00Z",
+   "text": "L’expédition Berry-Mappemonde a quitté Saint-Maur le 15 mai 2026 par la route jusqu’à La Rochelle. Arrivée à La Rochelle.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-05-15T08:00:00Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 100,
+     "t": "2026-05-15T12:00:00Z",
+     "place": "La Rochelle",
+     "kind": "escale"
+    }
+   ],
+   "events": [
+    {
+     "id": "stop:La Rochelle:2026-05-15T12:00:00Z",
+     "charIdx": 0,
+     "kind": "stop",
+     "title": "La Rochelle",
+     "fact": "Arrivée à La Rochelle.",
+     "score": 3,
+     "card": {
+      "id": "stop:La Rochelle:2026-05-15T12:00:00Z",
+      "kind": "stop",
+      "title": "La Rochelle",
+      "text": "Arrivée à La Rochelle.",
+      "at": "2026-05-15T12:00:00Z",
+      "score": 3
+     }
+    }
+   ],
+   "fromName": "Saint-Maur (Berry, Indre)",
+   "toName": "La Rochelle"
+  },
+  {
+   "id": "leg-1",
+   "tA": "2026-05-15T12:00:00Z",
+   "tB": "2026-06-06T03:36:48Z",
+   "text": "Le 15 mai, départ vers Ajaccio : 1 791 milles, une vingtaine de jours de mer. La route passe par le golfe de Gascogne, le détroit de Gibraltar, Méditerranée occidentale. Le 5 juin, le bateau traverse l'aire marine protégée Corse - Corbs - Corb fishing ban. Puis, à vingt-trois milles, le projet Corsica Clean Nature. Arrivée à Ajaccio (Corse) le 6 juin.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-05-15T12:19:36Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 97,
+     "t": "2026-05-15T12:19:36Z",
+     "kind": "coast"
+    },
+    {
+     "charIdx": 211,
+     "t": "2026-06-05T17:43:06Z",
+     "place": "Corse - Corbs - Corb fishing ban",
+     "kind": "amp"
+    },
+    {
+     "charIdx": 283,
+     "t": "2026-06-05T21:08:06Z",
+     "place": "Corsica Clean Nature",
+     "kind": "project"
+    },
+    {
+     "charIdx": 336,
+     "t": "2026-06-06T03:36:48Z",
+     "place": "Ajaccio (Corse)",
+     "kind": "escale"
+    }
+   ],
+   "events": [
+    {
+     "id": "1:amp:2",
+     "charIdx": 170,
+     "kind": "amp",
+     "title": "Corse - Corbs - Corb fishing ban",
+     "fact": "Le 5 juin, le bateau traverse l'aire marine protégée Corse - Corbs - Corb fishing ban.",
+     "score": 1,
+     "card": {
+      "id": "1:amp:2",
+      "kind": "amp",
+      "title": "Corse - Corbs - Corb fishing ban",
+      "text": "Le 5 juin, le bateau traverse l'aire marine protégée Corse - Corbs - Corb fishing ban.",
+      "at": "2026-06-05T17:43:06Z",
+      "score": 1
+     }
+    },
+    {
+     "id": "2:project:8",
+     "charIdx": 257,
+     "kind": "project",
+     "title": "Corsica Clean Nature",
+     "fact": "Le 5 juin, à vingt-trois milles, le projet Corsica Clean Nature.",
+     "score": 1,
+     "card": {
+      "id": "2:project:8",
+      "kind": "project",
+      "title": "Corsica Clean Nature",
+      "text": "Le 5 juin, à vingt-trois milles, le projet Corsica Clean Nature.",
+      "at": "2026-06-05T21:08:06Z",
+      "score": 1
+     }
+    },
+    {
+     "id": "2:zee-enter:2",
+     "charIdx": 322,
+     "kind": "zee",
+     "title": "Haute mer",
+     "fact": "Le 5 juin, haute mer.",
+     "score": 2,
+     "card": {
+      "id": "2:zee-enter:2",
+      "kind": "zee",
+      "title": "Haute mer",
+      "text": "Le 5 juin, haute mer.",
+      "at": "2026-06-05T21:08:06Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "stop:Ajaccio (Corse):2026-06-06T03:36:48Z",
+     "charIdx": 344,
+     "kind": "stop",
+     "title": "Ajaccio (Corse)",
+     "fact": "Arrivée à Ajaccio (Corse) le 6 juin.",
+     "score": 3,
+     "card": {
+      "id": "stop:Ajaccio (Corse):2026-06-06T03:36:48Z",
+      "kind": "stop",
+      "title": "Ajaccio (Corse)",
+      "text": "Arrivée à Ajaccio (Corse) le 6 juin.",
+      "at": "2026-06-06T03:36:48Z",
+      "score": 3
+     }
+    }
+   ],
+   "fromName": "La Rochelle",
+   "toName": "Ajaccio (Corse)"
+  },
+  {
+   "id": "leg-2",
+   "tA": "2026-06-06T03:36:48Z",
+   "tB": "2026-07-14T18:52:07Z",
+   "text": "Le 9 juin, départ vers Fort-de-France : 5 138 milles, une quarantaine de jours de mer. La route passe par Méditerranée occidentale, le détroit de Gibraltar. Puis, à dix-neuf milles, le projet Cape Verde Marine Protected Areas Network. Arrivée à Fort-de-France (Martinique) le 14 juillet.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-06-09T04:36:48Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 134,
+     "t": "2026-06-09T04:36:48Z",
+     "kind": "coast"
+    },
+    {
+     "charIdx": 239,
+     "t": "2026-06-29T11:25:27Z",
+     "place": "Cape Verde Marine Protected Areas Network",
+     "kind": "project"
+    },
+    {
+     "charIdx": 267,
+     "t": "2026-07-14T18:52:07Z",
+     "place": "Fort-de-France (Martinique)",
+     "kind": "escale"
+    }
+   ],
+   "events": [
+    {
+     "id": "65:zee-enter:2",
+     "charIdx": 157,
+     "kind": "zee",
+     "title": "Zone économique exclusive marocaine",
+     "fact": "Le 20 juin, les eaux marocaines.",
+     "score": 2,
+     "card": {
+      "id": "65:zee-enter:2",
+      "kind": "zee",
+      "title": "Zone économique exclusive marocaine",
+      "text": "Le 20 juin, les eaux marocaines.",
+      "at": "2026-06-20T19:32:09Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "67:zee-enter:1",
+     "charIdx": 190,
+     "kind": "zee",
+     "title": "Haute mer",
+     "fact": "Le 21 juin, haute mer.",
+     "score": 2,
+     "card": {
+      "id": "67:zee-enter:1",
+      "kind": "zee",
+      "title": "Haute mer",
+      "text": "Le 21 juin, haute mer.",
+      "at": "2026-06-21T00:56:02Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "zee-cluster:78:zee-enter:0",
+     "charIdx": 213,
+     "kind": "zee",
+     "title": "Zone économique exclusive des Canaries",
+     "fact": "Le 23 juin, les eaux des Canaries, puis celles de Madère.",
+     "score": 2,
+     "card": {
+      "id": "zee-cluster:78:zee-enter:0",
+      "kind": "zee",
+      "title": "Zone économique exclusive des Canaries",
+      "text": "Le 23 juin, les eaux des Canaries, puis celles de Madère.",
+      "at": "2026-06-23T19:47:23Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "103:zee-enter:0",
+     "charIdx": 271,
+     "kind": "zee",
+     "title": "Zone économique exclusive capverdienne",
+     "fact": "Le 28 juin, les eaux capverdiennes.",
+     "score": 2,
+     "card": {
+      "id": "103:zee-enter:0",
+      "kind": "zee",
+      "title": "Zone économique exclusive capverdienne",
+      "text": "Le 28 juin, les eaux capverdiennes.",
+      "at": "2026-06-28T15:37:48Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "106:project:1",
+     "charIdx": 307,
+     "kind": "project",
+     "title": "Cape Verde Marine Protected Areas Networ",
+     "fact": "Le 29 juin, à dix-neuf milles, le projet Cape Verde Marine Protected Areas Network.",
+     "score": 1,
+     "card": {
+      "id": "106:project:1",
+      "kind": "project",
+      "title": "Cape Verde Marine Protected Areas Network",
+      "text": "Le 29 juin, à dix-neuf milles, le projet Cape Verde Marine Protected Areas Network.",
+      "at": "2026-06-29T11:25:27Z",
+      "score": 1
+     }
+    },
+    {
+     "id": "115:zee-enter:2",
+     "charIdx": 391,
+     "kind": "zee",
+     "title": "Zone économique exclusive de Saint-Vince",
+     "fact": "Le 13 juillet, les eaux de Saint-Vincent-et-les-Grenadines.",
+     "score": 2,
+     "card": {
+      "id": "115:zee-enter:2",
+      "kind": "zee",
+      "title": "Zone économique exclusive de Saint-Vincent-et-les-Grenadines",
+      "text": "Le 13 juillet, les eaux de Saint-Vincent-et-les-Grenadines.",
+      "at": "2026-07-13T22:43:35Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "stop:Fort-de-France (Martinique):2026-07-14T18:52:07Z",
+     "charIdx": 451,
+     "kind": "stop",
+     "title": "Fort-de-France (Martinique)",
+     "fact": "Arrivée à Fort-de-France (Martinique) le 14 juillet.",
+     "score": 3,
+     "card": {
+      "id": "stop:Fort-de-France (Martinique):2026-07-14T18:52:07Z",
+      "kind": "stop",
+      "title": "Fort-de-France (Martinique)",
+      "text": "Arrivée à Fort-de-France (Martinique) le 14 juillet.",
+      "at": "2026-07-14T18:52:07Z",
+      "score": 3
+     }
+    }
+   ],
+   "fromName": "Ajaccio (Corse)",
+   "toName": "Fort-de-France (Martinique)"
+  },
+  {
+   "id": "leg-3",
+   "tA": "2026-07-14T18:52:07Z",
+   "tB": "2026-07-18T10:06:24Z",
+   "text": "Le 17 juillet, départ vers Pointe-à-Pitre : 122 milles, un jour de mer. Puis, le projet Coco An Dlo. Arrivée à Pointe-à-Pitre (Guadeloupe) le 18 juillet.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-07-17T18:52:07Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 76,
+     "t": "2026-07-17T21:11:20Z",
+     "place": "Coco An Dlo",
+     "kind": "project"
+    },
+    {
+     "charIdx": 133,
+     "t": "2026-07-18T10:06:24Z",
+     "place": "Pointe-à-Pitre (Guadeloupe)",
+     "kind": "escale"
+    }
+   ],
+   "events": [
+    {
+     "id": "714:project:0",
+     "charIdx": 72,
+     "kind": "project",
+     "title": "project",
+     "fact": "Le 17 juillet, le projet Coco An Dlo.",
+     "score": 1,
+     "card": {
+      "id": "714:project:0",
+      "kind": "project",
+      "title": "project",
+      "text": "Le 17 juillet, le projet Coco An Dlo.",
+      "at": "2026-07-17T21:11:20Z",
+      "score": 1
+     }
+    },
+    {
+     "id": "stop:Pointe-à-Pitre (Guadeloupe):2026-07-18T10:06:24Z",
+     "charIdx": 110,
+     "kind": "stop",
+     "title": "Pointe-à-Pitre (Guadeloupe)",
+     "fact": "Arrivée à Pointe-à-Pitre (Guadeloupe) le 18 juillet.",
+     "score": 3,
+     "card": {
+      "id": "stop:Pointe-à-Pitre (Guadeloupe):2026-07-18T10:06:24Z",
+      "kind": "stop",
+      "title": "Pointe-à-Pitre (Guadeloupe)",
+      "text": "Arrivée à Pointe-à-Pitre (Guadeloupe) le 18 juillet.",
+      "at": "2026-07-18T10:06:24Z",
+      "score": 3
+     }
+    }
+   ],
+   "fromName": "Fort-de-France (Martinique)",
+   "toName": "Pointe-à-Pitre (Guadeloupe)"
+  },
+  {
+   "id": "leg-4",
+   "tA": "2026-07-18T10:06:24Z",
+   "tB": "2026-07-23T01:16:54Z",
+   "text": "Le 21 juillet, départ vers Gustavia : 208 milles, deux jours de mer. Puis, à vingt-sept milles, le projet NAUTIK N/BT - Préservation de la biodiversité du Grand Cul Sac Marin. Arrivée à Gustavia (Saint-Barthélemy) le 23 juillet.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-07-21T10:55:22Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 94,
+     "t": "2026-07-21T10:55:22Z",
+     "place": "NAUTIK N/BT - Préservation de la biodiversité du Grand Cul Sac Marin",
+     "kind": "project"
+    },
+    {
+     "charIdx": 208,
+     "t": "2026-07-23T01:16:54Z",
+     "place": "Gustavia (Saint-Barthélemy)",
+     "kind": "escale"
+    }
+   ],
+   "events": [
+    {
+     "id": "117:project:13",
+     "charIdx": 69,
+     "kind": "project",
+     "title": "NAUTIK N/BT - Préservation de la biodive",
+     "fact": "Le 19 juillet, à vingt-sept milles, le projet NAUTIK N/BT - Préservation de la biodiversité du Grand Cul Sac Marin.",
+     "score": 1,
+     "card": {
+      "id": "117:project:13",
+      "kind": "project",
+      "title": "NAUTIK N/BT - Préservation de la biodiversité du Grand Cul Sac Marin",
+      "text": "Le 19 juillet, à vingt-sept milles, le projet NAUTIK N/BT - Préservation de la biodiversité du Grand Cul Sac Marin.",
+      "at": "2026-07-19T02:59:47Z",
+      "score": 1
+     }
+    },
+    {
+     "id": "117:zee-enter:4",
+     "charIdx": 185,
+     "kind": "zee",
+     "title": "Zone économique exclusive française (Gua",
+     "fact": "Le 19 juillet, les eaux de la Guadeloupe.",
+     "score": 2,
+     "card": {
+      "id": "117:zee-enter:4",
+      "kind": "zee",
+      "title": "Zone économique exclusive française (Guadeloupe)",
+      "text": "Le 19 juillet, les eaux de la Guadeloupe.",
+      "at": "2026-07-19T02:59:47Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "stop:Gustavia (Saint-Barthélemy):2026-07-23T01:16:54Z",
+     "charIdx": 227,
+     "kind": "stop",
+     "title": "Gustavia (Saint-Barthélemy)",
+     "fact": "Arrivée à Gustavia (Saint-Barthélemy) le 23 juillet.",
+     "score": 3,
+     "card": {
+      "id": "stop:Gustavia (Saint-Barthélemy):2026-07-23T01:16:54Z",
+      "kind": "stop",
+      "title": "Gustavia (Saint-Barthélemy)",
+      "text": "Arrivée à Gustavia (Saint-Barthélemy) le 23 juillet.",
+      "at": "2026-07-23T01:16:54Z",
+      "score": 3
+     }
+    }
+   ],
+   "fromName": "Pointe-à-Pitre (Guadeloupe)",
+   "toName": "Gustavia (Saint-Barthélemy)"
+  },
+  {
+   "id": "leg-5",
+   "tA": "2026-07-23T01:16:54Z",
+   "tB": "2026-07-26T16:19:01Z",
+   "text": "Puis, départ vers Marigot : 69 milles, un jour de mer. Arrivée à Marigot (Saint-Martin) le 26 juillet.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-07-26T01:16:54Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 82,
+     "t": "2026-07-26T16:19:01Z",
+     "place": "Marigot (Saint-Martin)",
+     "kind": "escale"
+    }
+   ],
+   "events": [
+    {
+     "id": "stop:Marigot (Saint-Martin):2026-07-26T16:19:01Z",
+     "charIdx": 64,
+     "kind": "stop",
+     "title": "Marigot (Saint-Martin)",
+     "fact": "Arrivée à Marigot (Saint-Martin) le 26 juillet.",
+     "score": 3,
+     "card": {
+      "id": "stop:Marigot (Saint-Martin):2026-07-26T16:19:01Z",
+      "kind": "stop",
+      "title": "Marigot (Saint-Martin)",
+      "text": "Arrivée à Marigot (Saint-Martin) le 26 juillet.",
+      "at": "2026-07-26T16:19:01Z",
+      "score": 3
+     }
+    }
+   ],
+   "fromName": "Gustavia (Saint-Barthélemy)",
+   "toName": "Marigot (Saint-Martin)"
+  },
+  {
+   "id": "leg-6",
+   "tA": "2026-07-26T16:19:01Z",
+   "tB": "2026-08-10T14:50:23Z",
+   "text": "Le 29 juillet, départ vers Cayenne : 1 231 milles, une dizaine de jours de mer. Puis, les eaux françaises, puis les eaux néerlandaises. Puis, à un mille, le projet Ocean Sciences & Logistic. Arrivée à Cayenne (Guyane) le 10 août, à la marina de Roura.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-07-29T16:19:01Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 83,
+     "t": "2026-07-29T16:19:01Z",
+     "place": "Zone économique exclusive de Saint-Martin (partie française)",
+     "kind": "zee-enter"
+    },
+    {
+     "charIdx": 152,
+     "t": "2026-08-08T20:03:47Z",
+     "place": "Ocean Sciences & Logistic",
+     "kind": "project"
+    },
+    {
+     "charIdx": 233,
+     "t": "2026-08-10T14:50:23Z",
+     "place": "Cayenne (Guyane)",
+     "kind": "escale"
+    }
+   ],
+   "events": [
+    {
+     "id": "zee-cluster:118:zee-enter:5",
+     "charIdx": 80,
+     "kind": "zee",
+     "title": "Zone économique exclusive de Saint-Marti",
+     "fact": "Le 27 juillet, les eaux françaises, puis les eaux néerlandaises.",
+     "score": 2,
+     "card": {
+      "id": "zee-cluster:118:zee-enter:5",
+      "kind": "zee",
+      "title": "Zone économique exclusive de Saint-Martin (partie française)",
+      "text": "Le 27 juillet, les eaux françaises, puis les eaux néerlandaises.",
+      "at": "2026-07-27T02:56:30Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "120:zee-enter:4",
+     "charIdx": 145,
+     "kind": "zee",
+     "title": "Zone économique exclusive française (Mar",
+     "fact": "Le 31 juillet, les eaux de la Martinique.",
+     "score": 2,
+     "card": {
+      "id": "120:zee-enter:4",
+      "kind": "zee",
+      "title": "Zone économique exclusive française (Martinique)",
+      "text": "Le 31 juillet, les eaux de la Martinique.",
+      "at": "2026-07-31T10:24:51Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "121:project:12",
+     "charIdx": 187,
+     "kind": "project",
+     "title": "Ocean Sciences & Logistic",
+     "fact": "Le 8 août, à un mille, le projet Ocean Sciences & Logistic.",
+     "score": 1,
+     "card": {
+      "id": "121:project:12",
+      "kind": "project",
+      "title": "Ocean Sciences & Logistic",
+      "text": "Le 8 août, à un mille, le projet Ocean Sciences & Logistic.",
+      "at": "2026-08-08T20:03:47Z",
+      "score": 1
+     }
+    },
+    {
+     "id": "121:zee-enter:5",
+     "charIdx": 247,
+     "kind": "zee",
+     "title": "Zone économique exclusive française (Guy",
+     "fact": "Le 8 août, les eaux de la Guyane.",
+     "score": 2,
+     "card": {
+      "id": "121:zee-enter:5",
+      "kind": "zee",
+      "title": "Zone économique exclusive française (Guyane)",
+      "text": "Le 8 août, les eaux de la Guyane.",
+      "at": "2026-08-08T20:03:47Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "122:zee-enter:3",
+     "charIdx": 281,
+     "kind": "zee",
+     "title": "Haute mer",
+     "fact": "Le 8 août, haute mer.",
+     "score": 2,
+     "card": {
+      "id": "122:zee-enter:3",
+      "kind": "zee",
+      "title": "Haute mer",
+      "text": "Le 8 août, haute mer.",
+      "at": "2026-08-08T20:03:47Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "stop:Cayenne (Guyane):2026-08-10T14:50:23Z",
+     "charIdx": 303,
+     "kind": "stop",
+     "title": "Cayenne (Guyane)",
+     "fact": "Arrivée à Cayenne (Guyane) le 10 août, à la marina de Roura.",
+     "score": 3,
+     "card": {
+      "id": "stop:Cayenne (Guyane):2026-08-10T14:50:23Z",
+      "kind": "stop",
+      "title": "Cayenne (Guyane)",
+      "text": "Arrivée à Cayenne (Guyane) le 10 août, à la marina de Roura.",
+      "at": "2026-08-10T14:50:23Z",
+      "score": 3
+     }
+    }
+   ],
+   "fromName": "Marigot (Saint-Martin)",
+   "toName": "Cayenne (Guyane)"
+  },
+  {
+   "id": "leg-7",
+   "tA": "2026-08-10T14:50:23Z",
+   "tB": "2026-08-13T22:50:23Z",
+   "text": "Le 13 août, l'équipage s'envole de Cayenne pour Halifax ; le catamaran attend à Cayenne.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-08-13T14:50:23Z",
+     "kind": "depart"
+    }
+   ],
+   "events": [],
+   "fromName": "Cayenne (Guyane)",
+   "toName": "Halifax (Nouvelle-Écosse)"
+  },
+  {
+   "id": "leg-8",
+   "tA": "2026-08-13T22:50:23Z",
+   "tB": "2026-08-17T08:48:38Z",
+   "text": "Le 14 août, à Halifax (Nouvelle-Écosse), l'équipage embarque sur un second voilier pour Saint-Pierre (Saint-Pierre-et-Miquelon). 489 milles, trois jours de mer. Arrivée à Saint-Pierre (Saint-Pierre-et-Miquelon) le 17 août.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-08-14T23:50:23Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 117,
+     "t": "2026-08-14T23:50:23Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 205,
+     "t": "2026-08-17T08:48:38Z",
+     "place": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+     "kind": "escale"
+    }
+   ],
+   "events": [
+    {
+     "id": "stop:Saint-Pierre (Saint-Pierre-et-Miquelon):2026-08-17T08:48:38Z",
+     "charIdx": 197,
+     "kind": "stop",
+     "title": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+     "fact": "Arrivée à Saint-Pierre (Saint-Pierre-et-Miquelon) le 17 août.",
+     "score": 3,
+     "card": {
+      "id": "stop:Saint-Pierre (Saint-Pierre-et-Miquelon):2026-08-17T08:48:38Z",
+      "kind": "stop",
+      "title": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+      "text": "Arrivée à Saint-Pierre (Saint-Pierre-et-Miquelon) le 17 août.",
+      "at": "2026-08-17T08:48:38Z",
+      "score": 3
+     }
+    }
+   ],
+   "fromName": "Halifax (Nouvelle-Écosse)",
+   "toName": "Saint-Pierre (Saint-Pierre-et-Miquelon)"
+  },
+  {
+   "id": "leg-9",
+   "tA": "2026-08-17T08:48:38Z",
+   "tB": "2026-08-20T22:16:06Z",
+   "text": "Le 20 août, départ vers Saint-Pierre : 37 milles, un jour de mer.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-08-20T08:48:38Z",
+     "kind": "depart"
+    }
+   ],
+   "events": [],
+   "fromName": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+   "toName": "Saint-Pierre (Saint-Pierre-et-Miquelon)"
+  },
+  {
+   "id": "leg-10",
+   "tA": "2026-08-20T22:16:06Z",
+   "tB": "2026-08-28T19:57:30Z",
+   "text": "Le 23 août, à Saint-Pierre (Saint-Pierre-et-Miquelon), l'équipage reprend un second voilier pour Halifax (Nouvelle-Écosse). 489 milles, cinq jours de mer. Arrivée à Halifax (Nouvelle-Écosse) le 28 août.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-08-23T23:04:50Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 112,
+     "t": "2026-08-23T23:04:50Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 185,
+     "t": "2026-08-28T19:57:30Z",
+     "place": "Halifax (Nouvelle-Écosse)",
+     "kind": "escale"
+    }
+   ],
+   "events": [
+    {
+     "id": "stop:Halifax (Nouvelle-Écosse):2026-08-28T19:57:30Z",
+     "charIdx": 191,
+     "kind": "stop",
+     "title": "Halifax (Nouvelle-Écosse)",
+     "fact": "Arrivée à Halifax (Nouvelle-Écosse) le 28 août.",
+     "score": 3,
+     "card": {
+      "id": "stop:Halifax (Nouvelle-Écosse):2026-08-28T19:57:30Z",
+      "kind": "stop",
+      "title": "Halifax (Nouvelle-Écosse)",
+      "text": "Arrivée à Halifax (Nouvelle-Écosse) le 28 août.",
+      "at": "2026-08-28T19:57:30Z",
+      "score": 3
+     }
+    }
+   ],
+   "fromName": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+   "toName": "Halifax (Nouvelle-Écosse)"
+  },
+  {
+   "id": "leg-11",
+   "tA": "2026-08-28T19:57:30Z",
+   "tB": "2026-08-29T19:57:30Z",
+   "text": "Le 28 août, départ vers Halifax. Le lendemain, haute mer. Le 29 août, les eaux du Guyana.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-08-28T19:57:30Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 35,
+     "t": "2026-08-29T08:36:34Z",
+     "place": "Haute mer",
+     "kind": "zee-enter"
+    },
+    {
+     "charIdx": 70,
+     "t": "2026-08-29T10:16:57Z",
+     "place": "Zone économique exclusive du Guyana",
+     "kind": "zee-enter"
+    }
+   ],
+   "events": [
+    {
+     "id": "147:zee-enter:1",
+     "charIdx": 33,
+     "kind": "zee",
+     "title": "Haute mer",
+     "fact": "Le 29 août, haute mer.",
+     "score": 2,
+     "card": {
+      "id": "147:zee-enter:1",
+      "kind": "zee",
+      "title": "Haute mer",
+      "text": "Le 29 août, haute mer.",
+      "at": "2026-08-29T08:36:34Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "148:zee-enter:1",
+     "charIdx": 56,
+     "kind": "zee",
+     "title": "Zone économique exclusive du Guyana",
+     "fact": "Le 29 août, les eaux du Guyana.",
+     "score": 2,
+     "card": {
+      "id": "148:zee-enter:1",
+      "kind": "zee",
+      "title": "Zone économique exclusive du Guyana",
+      "text": "Le 29 août, les eaux du Guyana.",
+      "at": "2026-08-29T10:16:57Z",
+      "score": 2
+     }
+    }
+   ],
+   "fromName": "Halifax (Nouvelle-Écosse)",
+   "toName": "Halifax (Nouvelle-Écosse)"
+  },
+  {
+   "id": "leg-12",
+   "tA": "2026-08-29T19:57:30Z",
+   "tB": "2026-08-30T03:57:30Z",
+   "text": "Le 29 août, l'équipage s'envole de Halifax pour Cayenne.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-08-29T19:57:30Z",
+     "kind": "depart"
+    }
+   ],
+   "events": [],
+   "fromName": "Halifax (Nouvelle-Écosse)",
+   "toName": "Cayenne (Guyane)"
+  },
+  {
+   "id": "leg-13",
+   "tA": "2026-08-30T03:57:30Z",
+   "tB": "2026-10-13T19:07:28Z",
+   "text": "Le 30 août, le catamaran reprend la mer, départ vers Papeete (Polynésie française). 6 467 milles. Puis, les eaux de Trinité-et-Tobago. Puis, à quatre milles, le projet French Polynesia Manta Project. Arrivée à Papeete (Polynésie française) le 13 octobre.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-08-30T03:57:30Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 72,
+     "t": "2026-08-30T03:57:30Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 104,
+     "t": "2026-09-02T06:42:36Z",
+     "place": "Zone économique exclusive de Trinité-et-Tobago",
+     "kind": "zee-enter"
+    },
+    {
+     "charIdx": 204,
+     "t": "2026-10-04T21:56:56Z",
+     "place": "French Polynesia Manta Project",
+     "kind": "project"
+    },
+    {
+     "charIdx": 234,
+     "t": "2026-10-13T19:07:28Z",
+     "place": "Papeete (Polynésie française)",
+     "kind": "escale"
+    }
+   ],
+   "events": [
+    {
+     "id": "155:zee-enter:0",
+     "charIdx": 98,
+     "kind": "zee",
+     "title": "Zone économique exclusive de Trinité-et-",
+     "fact": "Le 30 août, les eaux de Trinité-et-Tobago.",
+     "score": 2,
+     "card": {
+      "id": "155:zee-enter:0",
+      "kind": "zee",
+      "title": "Zone économique exclusive de Trinité-et-Tobago",
+      "text": "Le 30 août, les eaux de Trinité-et-Tobago.",
+      "at": "2026-08-30T08:27:51Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "172:zee-enter:2",
+     "charIdx": 141,
+     "kind": "zee",
+     "title": "Zone économique exclusive néerlandaise",
+     "fact": "Le 31 août, les eaux néerlandaises.",
+     "score": 2,
+     "card": {
+      "id": "172:zee-enter:2",
+      "kind": "zee",
+      "title": "Zone économique exclusive néerlandaise",
+      "text": "Le 31 août, les eaux néerlandaises.",
+      "at": "2026-08-31T06:15:15Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "169:zee-enter:1",
+     "charIdx": 177,
+     "kind": "zee",
+     "title": "Zone économique exclusive de Bonaire",
+     "fact": "Le 2 septembre, les eaux de Bonaire.",
+     "score": 2,
+     "card": {
+      "id": "169:zee-enter:1",
+      "kind": "zee",
+      "title": "Zone économique exclusive de Bonaire",
+      "text": "Le 2 septembre, les eaux de Bonaire.",
+      "at": "2026-09-02T06:42:36Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "180:zee-enter:2",
+     "charIdx": 214,
+     "kind": "zee",
+     "title": "Zone économique exclusive panaméenne",
+     "fact": "Le 6 septembre, les eaux panaméennes.",
+     "score": 2,
+     "card": {
+      "id": "180:zee-enter:2",
+      "kind": "zee",
+      "title": "Zone économique exclusive panaméenne",
+      "text": "Le 6 septembre, les eaux panaméennes.",
+      "at": "2026-09-06T00:02:29Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "185:project:14",
+     "charIdx": 286,
+     "kind": "project",
+     "title": "French Polynesia Manta Project",
+     "fact": "Le 4 octobre, à quatre milles, le projet French Polynesia Manta Project.",
+     "score": 1,
+     "card": {
+      "id": "185:project:14",
+      "kind": "project",
+      "title": "French Polynesia Manta Project",
+      "text": "Le 4 octobre, à quatre milles, le projet French Polynesia Manta Project.",
+      "at": "2026-10-04T21:56:56Z",
+      "score": 1
+     }
+    },
+    {
+     "id": "185:zee-enter:3",
+     "charIdx": 359,
+     "kind": "zee",
+     "title": "Haute mer",
+     "fact": "Le 4 octobre, haute mer.",
+     "score": 2,
+     "card": {
+      "id": "185:zee-enter:3",
+      "kind": "zee",
+      "title": "Haute mer",
+      "text": "Le 4 octobre, haute mer.",
+      "at": "2026-10-04T21:56:56Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "stop:Papeete (Polynésie française):2026-10-13T19:07:28Z",
+     "charIdx": 395,
+     "kind": "stop",
+     "title": "Papeete (Polynésie française)",
+     "fact": "Arrivée à Papeete (Polynésie française) le 13 octobre.",
+     "score": 3,
+     "card": {
+      "id": "stop:Papeete (Polynésie française):2026-10-13T19:07:28Z",
+      "kind": "stop",
+      "title": "Papeete (Polynésie française)",
+      "text": "Arrivée à Papeete (Polynésie française) le 13 octobre.",
+      "at": "2026-10-13T19:07:28Z",
+      "score": 3
+     }
+    }
+   ],
+   "fromName": "Cayenne (Guyane)",
+   "toName": "Papeete (Polynésie française)"
+  },
+  {
+   "id": "leg-14",
+   "tA": "2026-10-13T19:07:28Z",
+   "tB": "2026-10-25T12:57:05Z",
+   "text": "Le 16 octobre, départ vers Mata-Utu : 1 661 milles, une dizaine de jours de mer. Puis, à cinq milles, le projet Mouvement du Focolari de Wallis et Futuna. Arrivée à Mata-Utu (Wallis-et-Futuna) le 25 octobre. Aujourd’hui, le bateau est à Mata-Utu (Wallis-et-Futuna). Les escales à venir : Nouméa, Dzaoudzi, Tromelin, Saint-Gilles, Europa, La Rochelle.",
+   "anchors": [
+    {
+     "charIdx": 0,
+     "t": "2026-10-16T19:35:31Z",
+     "kind": "depart"
+    },
+    {
+     "charIdx": 100,
+     "t": "2026-10-16T19:35:31Z",
+     "place": "Mouvement du Focolari de Wallis et Futuna",
+     "kind": "project"
+    },
+    {
+     "charIdx": 187,
+     "t": "2026-10-25T12:57:05Z",
+     "place": "Mata-Utu (Wallis-et-Futuna)",
+     "kind": "escale"
+    },
+    {
+     "charIdx": 208,
+     "t": "2026-10-25T12:57:05Z"
+    },
+    {
+     "charIdx": 276,
+     "t": "2026-10-25T12:57:05Z"
+    }
+   ],
+   "events": [
+    {
+     "id": "187:project:11",
+     "charIdx": 81,
+     "kind": "project",
+     "title": "Mouvement du Focolari de Wallis et Futun",
+     "fact": "Le 15 octobre, à cinq milles, le projet Mouvement du Focolari de Wallis et Futuna.",
+     "score": 1,
+     "card": {
+      "id": "187:project:11",
+      "kind": "project",
+      "title": "Mouvement du Focolari de Wallis et Futuna",
+      "text": "Le 15 octobre, à cinq milles, le projet Mouvement du Focolari de Wallis et Futuna.",
+      "at": "2026-10-15T04:53:02Z",
+      "score": 1
+     }
+    },
+    {
+     "id": "187:zee-enter:4",
+     "charIdx": 164,
+     "kind": "zee",
+     "title": "Zone économique exclusive de Wallis-et-F",
+     "fact": "Le 15 octobre, les eaux de Wallis-et-Futuna.",
+     "score": 2,
+     "card": {
+      "id": "187:zee-enter:4",
+      "kind": "zee",
+      "title": "Zone économique exclusive de Wallis-et-Futuna",
+      "text": "Le 15 octobre, les eaux de Wallis-et-Futuna.",
+      "at": "2026-10-15T04:53:02Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "188:zee-enter:1",
+     "charIdx": 209,
+     "kind": "zee",
+     "title": "Haute mer",
+     "fact": "Le 19 octobre, haute mer.",
+     "score": 2,
+     "card": {
+      "id": "188:zee-enter:1",
+      "kind": "zee",
+      "title": "Haute mer",
+      "text": "Le 19 octobre, haute mer.",
+      "at": "2026-10-19T01:30:22Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "189:zee-enter:3",
+     "charIdx": 235,
+     "kind": "zee",
+     "title": "Zone économique exclusive fidjienne",
+     "fact": "Le 20 octobre, les eaux fidjiennes.",
+     "score": 2,
+     "card": {
+      "id": "189:zee-enter:3",
+      "kind": "zee",
+      "title": "Zone économique exclusive fidjienne",
+      "text": "Le 20 octobre, les eaux fidjiennes.",
+      "at": "2026-10-20T02:01:16Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "669:alert-on:0",
+     "charIdx": 271,
+     "kind": "wx",
+     "title": "Mer",
+     "fact": "Le 22 octobre, mer formée (3 m).",
+     "score": 3,
+     "card": {
+      "id": "669:alert-on:0",
+      "kind": "wx",
+      "title": "Mer",
+      "text": "Le 22 octobre, mer formée (3 m).",
+      "at": "2026-10-22T08:13:51Z",
+      "score": 3
+     }
+    },
+    {
+     "id": "679:zee-enter:3",
+     "charIdx": 304,
+     "kind": "zee",
+     "title": "Zone économique exclusive de Nouvelle-Ca",
+     "fact": "Le 25 octobre, les eaux de Nouvelle-Calédonie.",
+     "score": 2,
+     "card": {
+      "id": "679:zee-enter:3",
+      "kind": "zee",
+      "title": "Zone économique exclusive de Nouvelle-Calédonie",
+      "text": "Le 25 octobre, les eaux de Nouvelle-Calédonie.",
+      "at": "2026-10-25T02:47:21Z",
+      "score": 2
+     }
+    },
+    {
+     "id": "stop:Mata-Utu (Wallis-et-Futuna):2026-10-25T12:57:05Z",
+     "charIdx": 362,
+     "kind": "stop",
+     "title": "Mata-Utu (Wallis-et-Futuna)",
+     "fact": "Arrivée à Mata-Utu (Wallis-et-Futuna) le 25 octobre.",
+     "score": 3,
+     "card": {
+      "id": "stop:Mata-Utu (Wallis-et-Futuna):2026-10-25T12:57:05Z",
+      "kind": "stop",
+      "title": "Mata-Utu (Wallis-et-Futuna)",
+      "text": "Arrivée à Mata-Utu (Wallis-et-Futuna) le 25 octobre.",
+      "at": "2026-10-25T12:57:05Z",
+      "score": 3
+     }
+    }
+   ],
+   "fromName": "Papeete (Polynésie française)",
+   "toName": "Mata-Utu (Wallis-et-Futuna)"
+  }
+ ]
+}

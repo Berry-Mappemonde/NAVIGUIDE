@@ -1,0 +1,163 @@
+{
+ "_source": "GET https://naviguide.fr/voyage/official (marks only) = voyage_store marks used by _route_stops_for_reread",
+ "marks": [
+  {
+   "name": "Saint-Maur (Berry, Indre)",
+   "lat": 46.8075,
+   "lon": 1.6358,
+   "nm": 0.0,
+   "filmNm": 0.0,
+   "index": 0,
+   "flag": true
+  },
+  {
+   "name": "La Rochelle",
+   "lat": 46.1541,
+   "lon": -1.167,
+   "nm": 122.3304552645673,
+   "filmNm": 122.3304552645673,
+   "index": 1,
+   "flag": true
+  },
+  {
+   "name": "Ajaccio (Corse)",
+   "lat": 41.9192,
+   "lon": 8.7386,
+   "nm": 1913.5479588341825,
+   "filmNm": 1913.5479588341825,
+   "index": 75,
+   "flag": true
+  },
+  {
+   "name": "Fort-de-France (Martinique)",
+   "lat": 14.5887,
+   "lon": -61.0731,
+   "nm": 7051.756551745753,
+   "filmNm": 7051.756551745753,
+   "index": 245,
+   "flag": true
+  },
+  {
+   "name": "Pointe-à-Pitre (Guadeloupe)",
+   "lat": 16.2365,
+   "lon": -61.5381,
+   "nm": 7173.605349251336,
+   "filmNm": 7173.605349251336,
+   "index": 251,
+   "flag": true
+  },
+  {
+   "name": "Gustavia (Saint-Barthélemy)",
+   "lat": 17.8912,
+   "lon": -62.8548,
+   "nm": 7381.166024788256,
+   "filmNm": 7381.166024788256,
+   "index": 261,
+   "flag": true
+  },
+  {
+   "name": "Marigot (Saint-Martin)",
+   "lat": 18.0829,
+   "lon": -63.0922,
+   "nm": 7449.9948930123155,
+   "filmNm": 7449.9948930123155,
+   "index": 264,
+   "flag": true
+  },
+  {
+   "name": "Cayenne (Guyane)",
+   "lat": 4.9333,
+   "lon": -52.3533,
+   "nm": 8680.774755123954,
+   "filmNm": 8680.774755123954,
+   "index": 304,
+   "flag": true
+  },
+  {
+   "name": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+   "lat": 46.7761,
+   "lon": -56.1628,
+   "nm": 9169.729397018049,
+   "filmNm": 9249.729397018049,
+   "index": 320,
+   "flag": true
+  },
+  {
+   "name": "Papeete (Polynésie française)",
+   "lat": -17.5116,
+   "lon": -149.5685,
+   "nm": 16126.058989680063,
+   "filmNm": 16286.058989680063,
+   "index": 527,
+   "flag": true
+  },
+  {
+   "name": "Mata-Utu (Wallis-et-Futuna)",
+   "lat": -13.2725,
+   "lon": -176.2036,
+   "nm": 17787.429835305233,
+   "filmNm": 17947.42983530523,
+   "index": 576,
+   "flag": true
+  },
+  {
+   "name": "Nouméa (Nouvelle-Calédonie)",
+   "lat": -22.2958,
+   "lon": 166.4572,
+   "nm": 19163.244291395345,
+   "filmNm": 19323.244291395342,
+   "index": 615,
+   "flag": true
+  },
+  {
+   "name": "Dzaoudzi (Mayotte)",
+   "lat": -12.7921,
+   "lon": 45.27,
+   "nm": 28083.957108280865,
+   "filmNm": 28243.95710828086,
+   "index": 872,
+   "flag": true
+  },
+  {
+   "name": "Tromelin (TAAF)",
+   "lat": -15.89,
+   "lon": 54.525,
+   "nm": 28882.22171228402,
+   "filmNm": 29042.221712284016,
+   "index": 896,
+   "flag": true
+  },
+  {
+   "name": "Saint-Gilles (La Réunion)",
+   "lat": -21.0594,
+   "lon": 55.2242,
+   "nm": 29204.435156778523,
+   "filmNm": 29364.43515677852,
+   "index": 908,
+   "flag": true
+  },
+  {
+   "name": "Europa (TAAF)",
+   "lat": -22.3685,
+   "lon": 40.3476,
+   "nm": 30332.86307556951,
+   "filmNm": 30492.863075569505,
+   "index": 939,
+   "flag": true
+  },
+  {
+   "name": "La Rochelle",
+   "lat": 46.1541,
+   "lon": -1.167,
+   "nm": 38747.117592255534,
+   "filmNm": 38907.11759225553,
+   "index": 1189,
+   "flag": true
+  },
+  {
+   "name": "Halifax (Nouvelle-Écosse)",
+   "lon": -63.5652,
+   "lat": 44.6488
+  }
+ ]
+}
