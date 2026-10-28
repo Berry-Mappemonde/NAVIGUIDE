@@ -10156,8 +10156,8 @@ def _route_stops_for_reread(plan: dict | None) -> list[dict]:
     """
     explicit = (plan or {}).get("routeStops")
     if isinstance(explicit, list) and explicit:
-        rows = _as_stop_rows(explicit)
-        return _insert_chapter_air_revisits(rows, plan)
+        rows = _insert_chapter_air_revisits(_as_stop_rows(explicit), plan)
+        return rows
     try:
         from voyage_store import load_voyage  # noqa: PLC0415
         from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
