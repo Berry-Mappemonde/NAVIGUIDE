@@ -536,19 +536,19 @@ hook = replace_once(
 )
 hook = replace_once(
     hook,
-    "    const from = lastTRef.current ?? next;\n"
-    "    const fresh = cardsBetween(timelineRef.current, from, next, lang);\n"
-    "    if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);\n"
-    "    lastTRef.current = next;\n"
-    "    tMsRef.current = next;\n"
-    "    if (uiDue) setTMs(next);",
-    "    const from = lastTRef.current ?? next;\n"
-    "    const monotoneNext = monotonicFilmTime(from, next);\n"
-    "    const fresh = cardsBetween(timelineRef.current, from, monotoneNext, lang);\n"
-    "    if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);\n"
-    "    lastTRef.current = monotoneNext;\n"
-    "    tMsRef.current = monotoneNext;\n"
-    "    if (uiDue) setTMs(monotoneNext);",
+    "        const from = lastTRef.current ?? next;\n"
+    "        const fresh = cardsBetween(timelineRef.current, from, next, lang);\n"
+    "        if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);\n"
+    "        lastTRef.current = next;\n"
+    "        tMsRef.current = next;\n"
+    "        if (uiDue) setTMs(next);",
+    "        const from = lastTRef.current ?? next;\n"
+    "        const monotoneNext = monotonicFilmTime(from, next);\n"
+    "        const fresh = cardsBetween(timelineRef.current, from, monotoneNext, lang);\n"
+    "        if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);\n"
+    "        lastTRef.current = monotoneNext;\n"
+    "        tMsRef.current = monotoneNext;\n"
+    "        if (uiDue) setTMs(monotoneNext);",
     "prevent automatic playhead regression",
 )
 hook = replace_once(
