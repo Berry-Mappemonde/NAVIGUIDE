@@ -259,10 +259,16 @@ jobs:
           import json
           from pathlib import Path
           from film_script import nemotron_reread_report, official_dated_stops
+          from official_store import _sanitize_served_film_plan
 
           film = json.loads(Path("/tmp/naviguide-film-raw.json").read_text(encoding="utf-8"))
           clock = json.loads(Path("/tmp/naviguide-official-clock.json").read_text(encoding="utf-8"))
           chapters = [ch for ch in film.get("chapters", []) if isinstance(ch, dict)]
+          fixed = _sanitize_served_film_plan(film, "fr")
+          fixed.update({"status": "ready", "hasWritten": False, "style": "raw"})
+          Path("/tmp/naviguide-film-fixed.json").write_text(
+              json.dumps(fixed, ensure_ascii=False), encoding="utf-8",
+          )
           # Reproduce the production gate with the full official clock, not just
           # chapter endpoints (that shortcut falsely flags legitimate repeated
           # Halifax/Cayenne legs and upcoming planned stops as absent/skipped).
@@ -272,6 +278,13 @@ jobs:
               stops,
               lang="fr",
               chapters=chapters,
+          )
+          fixed_chapters = [ch for ch in fixed.get("chapters", []) if isinstance(ch, dict)]
+          fixed_report = nemotron_reread_report(
+              " ".join(ch.get("text") or "" for ch in fixed_chapters),
+              stops,
+              lang="fr",
+              chapters=fixed_chapters,
           )
           text_issues = []
           for i, ch in enumerate(chapters):
@@ -288,13 +301,25 @@ jobs:
               "chapterCount": len(chapters),
               "officialClockStopCount": len(stops),
               "officialClockStops": [s.get("name") for s in stops],
-              "localReread": report,
-              "textIndexIssues": text_issues,
+              "rawLocalReread": report,
+              "repairedLocalReread": fixed_report,
+              "rawTextIndexIssues": text_issues,
+              "repairedChapterCount": len(fixed_chapters),
+              "repairedTextIndexIssues": [
+                  {"chapter": i, "type": typ, "index": idx, "chars": len(ch.get("text") or "")}
+                  for i, ch in enumerate(fixed_chapters)
+                  for typ, rows in (("event", ch.get("events") or []), ("anchor", ch.get("anchors") or []))
+                  for row in rows if isinstance(row, dict)
+                  for idx in [row.get("charIdx")]
+                  if not isinstance(idx, int) or not (0 <= idx < max(1, len(ch.get("text") or "")))
+              ],
           }, ensure_ascii=False, indent=2))
           if not report.get("ok"):
-              print("::warning::The currently served raw film already fails the local narrative gate; see localReread.faults above.")
+              print("::warning::The currently served raw film fails the local gate before read-time repair; see rawLocalReread.faults.")
+          if not fixed_report.get("ok"):
+              print("::warning::The repaired raw film still fails the local gate; see repairedLocalReread.faults.")
           if text_issues:
-              print("::warning::The currently served snapshot contains text-index overflow; fixes are applied only in this PR integration tree until deployed.")
+              print("::warning::The production snapshot has text-index overflow; the branch now repairs it on read.")
           PY
 
       - name: Install Chromium for Playwright
@@ -309,7 +334,9 @@ jobs:
         working-directory: naviguide-simulator
         run: npx playwright test e2e/film-replay-150.spec.js
         env:
-          NAVIGUIDE_REPLAY_URL: https://naviguide.fr
+          NAVIGUIDE_REPLAY_URL: http://127.0.0.1:5174
+          NAVIGUIDE_FILM_FIXTURE: /tmp/naviguide-film-fixed.json
+          NAVIGUIDE_CLOCK_FIXTURE: /tmp/naviguide-official-clock.json
 
       - name: Upload full film replay, source JSON, screenshots, and telemetry
         if: always()
