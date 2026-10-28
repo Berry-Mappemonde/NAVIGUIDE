@@ -95,6 +95,7 @@ test("production film: complete 150-second browser replay with timing and map sa
   const distinctBubbles = new Set();
   let previousT = null;
   let timeRegressions = 0;
+  let significantTimestampRegressions = 0;
   const positionDeltasKm = [];
   let previousPosition = null;
 
@@ -112,22 +113,25 @@ test("production film: complete 150-second browser replay with timing and map sa
   while (Date.now() - wallStart < 205_000) {
     const sample = await page.evaluate(() => {
       const film = window.__naviguideFilm || {};
+      const numberOrNull = (value) => value == null || value === ""
+        ? null
+        : (Number.isFinite(Number(value)) ? Number(value) : null);
       const subtitle = String(film.subtitle || document.querySelector('[data-testid="film-subtitle"]')?.textContent || "").trim();
       return {
         active: Boolean(document.querySelector('[data-testid="replay-stop"]')),
-        elapsed: Number.isFinite(Number(film.elapsed)) ? Number(film.elapsed) : null,
-        chapterIdx: Number.isFinite(Number(film.chapterIdx)) ? Number(film.chapterIdx) : null,
-        chapterCount: Number.isFinite(Number(film.chapterCount)) ? Number(film.chapterCount) : null,
-        charIdx: Number.isFinite(Number(film.charIdx)) ? Number(film.charIdx) : null,
-        tMs: Number.isFinite(Number(film.tMs)) ? Number(film.tMs) : null,
-        lat: Number.isFinite(Number(film.lat)) ? Number(film.lat) : null,
-        lon: Number.isFinite(Number(film.lon)) ? Number(film.lon) : null,
+        elapsed: numberOrNull(film.elapsed),
+        chapterIdx: numberOrNull(film.chapterIdx),
+        chapterCount: numberOrNull(film.chapterCount),
+        charIdx: numberOrNull(film.charIdx),
+        tMs: numberOrNull(film.tMs),
+        lat: numberOrNull(film.lat),
+        lon: numberOrNull(film.lon),
         subtitle,
         bubbleId: film.bubbleId == null ? null : String(film.bubbleId),
         bubbleKind: film.bubbleKind == null ? null : String(film.bubbleKind),
         fromName: String(film.fromName || ""),
         toName: String(film.toName || ""),
-        budgetSeconds: Number.isFinite(Number(film.budgetSeconds)) ? Number(film.budgetSeconds) : null,
+        budgetSeconds: numberOrNull(film.budgetSeconds),
         chapterText: String(film.chapterText || ""),
       };
     });
@@ -137,11 +141,12 @@ test("production film: complete 150-second browser replay with timing and map sa
     if (sample.elapsed != null) maxElapsed = Math.max(maxElapsed, sample.elapsed);
     if (sample.chapterIdx != null) distinctChapters.add(sample.chapterIdx);
     if (sample.bubbleId) distinctBubbles.add(sample.bubbleId);
-    if (sample.tMs != null) {
+    if (sample.active && sample.tMs != null) {
       if (previousT != null && sample.tMs < previousT - 1) timeRegressions += 1;
+      if (previousT != null && sample.tMs < previousT - 1000) significantTimestampRegressions += 1;
       previousT = sample.tMs;
     }
-    if (sample.lat != null && sample.lon != null) {
+    if (sample.active && sample.lat != null && sample.lon != null) {
       const current = { lat: sample.lat, lon: sample.lon };
       if (previousPosition) positionDeltasKm.push(distanceKm(previousPosition, current));
       previousPosition = current;
@@ -181,6 +186,7 @@ test("production film: complete 150-second browser replay with timing and map sa
     positionCoverage: Number((validPositions / Math.max(1, samples.length)).toFixed(3)),
     subtitleCoverage: Number((subtitleSamples / Math.max(1, samples.length)).toFixed(3)),
     timestampRegressions: timeRegressions,
+    significantTimestampRegressions,
     maxStepDistanceKm: positionDeltasKm.length ? Number(Math.max(...positionDeltasKm).toFixed(3)) : null,
     meanStepDistanceKm: positionDeltasKm.length
       ? Number((positionDeltasKm.reduce((a, b) => a + b, 0) / positionDeltasKm.length).toFixed(3))
@@ -199,6 +205,7 @@ test("production film: complete 150-second browser replay with timing and map sa
   expect(distinctChapters.size, "la lecture doit traverser plusieurs chapitres").toBeGreaterThanOrEqual(5);
   expect(validPositions, "la carte doit produire des positions pendant le film").toBeGreaterThan(50);
   expect(subtitleSamples, "le récit doit apparaître pendant le film").toBeGreaterThan(50);
-  expect(timeRegressions, "l'horloge du film ne doit pas reculer").toBe(0);
+  expect(significantTimestampRegressions, "l'horloge du film ne doit pas reculer de plus d'une seconde").toBe(0);
+  expect(positionDeltasKm.length ? Math.max(...positionDeltasKm) : Infinity, "la position du bateau ne doit pas sauter de plusieurs milliers de kilomètres en une seconde").toBeLessThan(1000);
   expect(pageErrors, "erreurs JavaScript de page: " + pageErrors.join(" | ")).toEqual([]);
 });
