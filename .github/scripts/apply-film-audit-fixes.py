@@ -22,11 +22,7 @@ film = film.replace(
 
 helper_anchor = "def reanchor_written_chapter(chapter: dict, written_text: str, lang: str) -> list[dict]:"
 helper = '''def _drop_stale_dated_sentences(chapters: list[dict], *, lang: str = "fr") -> None:
-    """Drop a dated sentence when it contradicts its chapter's actual start date.
-
-    A stale observation date should not invalidate the entire written film.
-    Unreconcilable dated statements are omitted rather than silently rewritten.
-    """
+    """Drop a dated sentence that predates its chapter, keeping source dates intact."""
     for chapter in chapters or []:
         if not isinstance(chapter, dict):
             continue
@@ -38,7 +34,7 @@ helper = '''def _drop_stale_dated_sentences(chapters: list[dict], *, lang: str =
         kept = []
         kept_old_indices = []
         for i, sentence in enumerate(sentences):
-            if _spoken_before_anchor(sentence, start_ms, lang):
+            if _spoken_before_anchor(sentence, start_ms, lang, max_days=365):
                 continue
             kept.append(sentence)
             kept_old_indices.append(i)
@@ -46,8 +42,8 @@ helper = '''def _drop_stale_dated_sentences(chapters: list[dict], *, lang: str =
             continue
         new_text = " ".join(kept).strip()
         chapter["text"] = new_text
-        # Current builders retain semantic anchor inputs and rebuild them later.
-        # For legacy snapshots, move surviving anchors with their sentences.
+        # For legacy snapshots, drop invalid or removed-sentence anchors before
+        # remapping; never attach an arbitrary overflow anchor to the last sentence.
         if "_anchorInputs" not in chapter:
             old_starts = _sentence_starts(text, sentences)
             new_starts = _sentence_starts(new_text, kept)
@@ -60,12 +56,14 @@ helper = '''def _drop_stale_dated_sentences(chapters: list[dict], *, lang: str =
                     idx = int(anchor.get("charIdx") or 0)
                 except (TypeError, ValueError):
                     continue
+                if idx < 0 or idx >= len(text):
+                    continue
                 hit = next(
                     (i for i, start in enumerate(old_starts)
                      if start <= idx < start + max(1, len(sentences[i]))),
-                    len(sentences) - 1,
+                    None,
                 )
-                if hit not in old_to_new:
+                if hit is None or hit not in old_to_new:
                     continue
                 new_i = old_to_new[hit]
                 local = max(0, idx - old_starts[hit])
@@ -77,11 +75,11 @@ helper = '''def _drop_stale_dated_sentences(chapters: list[dict], *, lang: str =
 
 
 def _reconcile_film_indices(chapters: list[dict], *, lang: str = "fr") -> None:
-    """Rebuild text-linked indices after cuts/injections; repair legacy snapshots too.
+    """Rebuild character indices from final chapter text and semantic dates.
 
-    Builders keep source anchor tuples privately until all character-budget and
-    air-sentence edits are complete. Public payloads never include that field.
-    Cached legacy plans without source tuples get bounded, monotone anchors.
+    Newly generated chapters retain source anchor tuples. Legacy snapshots do not:
+    rebuild their date-bearing phrases semantically instead of linearly scaling an
+    obsolete index into unrelated text after a budget cut.
     """
     for chapter in chapters or []:
         if not isinstance(chapter, dict):
@@ -89,55 +87,80 @@ def _reconcile_film_indices(chapters: list[dict], *, lang: str = "fr") -> None:
         text = str(chapter.get("text") or "")
         size = len(text)
         source_anchors = chapter.pop("_anchorInputs", None)
+        ta, tb = _ms(chapter.get("tA")), _ms(chapter.get("tB"))
         if source_anchors is not None:
-            ta, tb = _ms(chapter.get("tA")), _ms(chapter.get("tB"))
-            chapter["anchors"] = (
-                chapter_anchors(text, source_anchors, ta, tb, lang)
-                if text and ta is not None and tb is not None else []
-            )
+            rebuilt = chapter_anchors(text, source_anchors, ta, tb, lang) if text and ta is not None and tb is not None else []
+            chapter["anchors"] = _strict_increasing_anchors(rebuilt)
+        elif not text:
+            chapter["anchors"] = []
         else:
-            old = [a for a in (chapter.get("anchors") or []) if isinstance(a, dict)]
-            if not text:
-                chapter["anchors"] = []
-            elif old:
-                parsed = []
-                for a in old:
-                    try:
-                        idx = int(a.get("charIdx") or 0)
-                    except (TypeError, ValueError):
-                        continue
-                    parsed.append((idx, a))
-                if any(idx < 0 or idx >= size for idx, _ in parsed):
-                    old_span = max(1, max((idx for idx, _ in parsed), default=size - 1))
-                    parsed = [
-                        (int(round(max(0, idx) * (size - 1) / old_span)), a)
-                        for idx, a in parsed
-                    ]
-                parsed.sort(key=lambda pair: pair[0])
-                bounded = []
-                last_idx = -1
-                last_t = None
-                for idx, row in parsed:
-                    idx = max(0, min(size - 1, idx))
-                    if idx <= last_idx:
-                        idx = last_idx + 1
-                    if idx >= size:
-                        continue
-                    t_ms = _ms(row.get("t"))
-                    if t_ms is not None and last_t is not None and t_ms < last_t:
-                        t_ms = last_t
-                    if t_ms is not None:
-                        last_t = t_ms
-                    bounded.append({
-                        **row,
-                        "charIdx": idx,
-                        **({"t": _iso(t_ms)} if t_ms is not None else {}),
-                    })
-                    last_idx = idx
-                chapter["anchors"] = bounded
+            sentences = _sentences(text)
+            starts = _sentence_starts(text, sentences)
+            old_by_sentence = {}
+            for anchor in chapter.get("anchors") or []:
+                if not isinstance(anchor, dict):
+                    continue
+                try:
+                    idx = int(anchor.get("charIdx") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if idx < 0 or idx >= size:
+                    continue
+                sentence_i = next(
+                    (i for i, start in enumerate(starts)
+                     if start <= idx < start + max(1, len(sentences[i]))),
+                    None,
+                )
+                if sentence_i is None:
+                    continue
+                sent = sentences[sentence_i]
+                t_raw = anchor.get("t")
+                t_ms = t_raw if isinstance(t_raw, int) else _ms(t_raw)
+                # Any sentence with an explicit date gets a fresh semantic time below.
+                if _parse_spoken_date(sent, lang) is not None or _is_arrival_sentence(sent):
+                    continue
+                if t_ms is None or _spoken_before_anchor(sent, t_ms, lang, max_days=365):
+                    continue
+                old_by_sentence.setdefault(sentence_i, (t_ms, anchor))
 
-        # Event bubbles use text positions too. Re-find their named fact in the
-        # final text; fall back to the event timestamp interpolated over the leg.
+            anchored = []
+            span = max(1, size - 1)
+            for i, sentence in enumerate(sentences):
+                start = starts[i] if i < len(starts) else 0
+                spoken_date = _parse_spoken_date(sentence, lang)
+                extra = {}
+                if _is_arrival_sentence(sentence):
+                    t_ms = tb
+                    extra["role"] = "arrive"
+                elif spoken_date is not None:
+                    t_ms = int(spoken_date.timestamp() * 1000)
+                    if _is_depart_sentence(sentence):
+                        extra["role"] = "depart"
+                    if ta is not None:
+                        t_ms = max(ta, t_ms)
+                    if tb is not None:
+                        t_ms = min(tb, t_ms)
+                elif _is_depart_sentence(sentence) and ta is not None:
+                    t_ms = ta
+                    extra["role"] = "depart"
+                elif i in old_by_sentence:
+                    t_ms, old = old_by_sentence[i]
+                    for key in ("place", "kind", "role"):
+                        if old.get(key):
+                            extra[key] = old[key]
+                elif ta is not None and tb is not None:
+                    t_ms = ta + int(round((tb - ta) * start / span))
+                else:
+                    t_ms = None
+                if t_ms is None:
+                    continue
+                anchored.append((sentence, t_ms, extra))
+
+            rebuilt = chapter_anchors(text, anchored, ta, tb, lang) if ta is not None and tb is not None else []
+            chapter["anchors"] = _strict_increasing_anchors(rebuilt)
+
+        # Event bubbles also carry text indices. Search the final phrase first;
+        # use timestamp interpolation only when a matching phrase is absent.
         for event in chapter.get("events") or []:
             if not isinstance(event, dict):
                 continue
@@ -151,7 +174,7 @@ def _reconcile_film_indices(chapters: list[dict], *, lang: str = "fr") -> None:
         )
 
 
-'''
+''''''
 film = replace_once(film, helper_anchor, helper + helper_anchor, "insert index reconciler")
 
 moments_end = "    chapters[:] = _drop_degenerate_chapters(chapters)\n    chars = script_chars(chapters)"
@@ -245,6 +268,245 @@ film = replace_once(
     "    _drop_stale_dated_sentences(raw[\"chapters\"], lang=\"fr\")\n"
     "    raw[\"targetSeconds\"] = _film_seconds(seconds if seconds is not None else plan.get(\"targetSeconds\"))",
     "sanitize stale cached chapter dates before Super",
+)
+film = replace_once(
+    film,
+    "            row: dict[str, Any] = {\\"name\\": name}\n"
+    "            for key in (\\"nm\\", \\"filmNm\\"):\n",
+    "            row: dict[str, Any] = {\\"name\\": name}\n"
+    "            if raw.get(\\"iso\\"):\n"
+    "                row[\\"iso\\"] = str(raw[\\"iso\\"])\n"
+    "            for key in (\\"nm\\", \\"filmNm\\"):\n",
+    "preserve stop timestamps for repeated visits",
+)
+film = replace_once(
+    film,
+    "            rows.append(row)\n        elif str(raw or \\"\\").strip():",
+    "            rows.append(row)\n        elif str(raw or \\"\\").strip():",
+    "retain existing stop row shape",
+)
+film = replace_once(
+    film,
+    "        row: dict[str, Any] = {\\"name\\": name}\n        nm = mark.get(\\"filmNm\\")",
+    "        row: dict[str, Any] = {\\"name\\": name}\n        if mark.get(\\"iso\\"):\n            row[\\"iso\\"] = str(mark[\\"iso\\"])\n        nm = mark.get(\\"filmNm\\")",
+    "preserve missing air stop timestamps",
+)
+film = replace_once(
+    film,
+    "def _pair_indexes(rows: list[dict], frm: str, to: str) -> tuple[Optional[int], Optional[int]]:\n"
+    "    ia = _index_row(rows, frm)\n"
+    "    if ia is None:\n"
+    "        return None, None\n"
+    "    return ia, _index_row(rows, to, after=ia)\n\n\n"
+    "def _sea_between(rows: list[dict], frm: str, to: str) -> list[str]:\n"
+    "    ia, ib = _pair_indexes(rows, frm, to)\n"
+    "    if ia is None or ib is None or ib <= ia + 1:\n"
+    "        return []\n"
+    "    missed: list[str] = []\n"
+    "    for row in rows[ia + 1:ib]:\n"
+    "        label = _stop_spoken(row.get(\\"name\\") or \\"\\")\n"
+    "        if not label or _is_air_only_stop(label):\n"
+    "            continue\n"
+    "        missed.append(label)\n"
+    "    return missed\n\n\n"
+    "def _span_nm(rows: list[dict], frm: str, to: str) -> Optional[float]:\n"
+    "    ia, ib = _pair_indexes(rows, frm, to)\n"
+    "    if ia is None or ib is None or ib <= ia:\n"
+    "        return None\n"
+    "    a, b = _row_nm(rows[ia]), _row_nm(rows[ib])\n"
+    "    if a is None or b is None:\n"
+    "        return None\n"
+    "    gap = b - a\n"
+    "    return gap if gap > 1 else None",
+    "def _pair_indexes(\n"
+    "    rows: list[dict], frm: str, to: str, *,\n"
+    "    start_ms: Optional[int] = None, end_ms: Optional[int] = None,\n"
+    ") -> tuple[Optional[int], Optional[int]]:\n"
+    "    # Repeated ports (Cayenne on the return flight) must be matched to this\n"
+    "    # chapter's dates, not the first same-name port in the entire itinerary.\n"
+    "    ia = None\n"
+    "    if start_ms is not None:\n"
+    "        candidates = []\n"
+    "        for i, row in enumerate(rows):\n"
+    "            if not _known_stop(frm, [row]):\n"
+    "                continue\n"
+    "            at = _ms(row.get(\\"iso\\"))\n"
+    "            if at is not None and at <= start_ms + 12 * 3600 * 1000:\n"
+    "                candidates.append((abs(start_ms - at), i, at))\n"
+    "        if candidates:\n"
+    "            close = [x for x in candidates if x[0] <= 3 * 86400000]\n"
+    "            ia = min(close or candidates)[1]\n"
+    "    if ia is None:\n"
+    "        ia = _index_row(rows, frm)\n"
+    "    if ia is None:\n"
+    "        return None, None\n"
+    "    if end_ms is not None:\n"
+    "        candidates = []\n"
+    "        for i in range(ia + 1, len(rows)):\n"
+    "            row = rows[i]\n"
+    "            if not _known_stop(to, [row]):\n"
+    "                continue\n"
+    "            at = _ms(row.get(\\"iso\\"))\n"
+    "            if at is not None and at >= start_ms - 12 * 3600 * 1000:\n"
+    "                candidates.append((abs(end_ms - at), i, at))\n"
+    "        if candidates:\n"
+    "            close = [x for x in candidates if x[0] <= 3 * 86400000]\n"
+    "            return ia, min(close or candidates)[1]\n"
+    "    return ia, _index_row(rows, to, after=ia)\n\n\n"
+    "def _sea_between(\n"
+    "    rows: list[dict], frm: str, to: str, *,\n"
+    "    start_ms: Optional[int] = None, end_ms: Optional[int] = None,\n"
+    ") -> list[str]:\n"
+    "    ia, ib = _pair_indexes(rows, frm, to, start_ms=start_ms, end_ms=end_ms)\n"
+    "    if ia is None or ib is None or ib <= ia + 1:\n"
+    "        return []\n"
+    "    missed: list[str] = []\n"
+    "    for row in rows[ia + 1:ib]:\n"
+    "        label = _stop_spoken(row.get(\\"name\\") or \\"\\")\n"
+    "        if not label or _is_air_only_stop(label):\n"
+    "            continue\n"
+    "        if same_stop(label, frm) or same_stop(label, to):\n"
+    "            continue\n"
+    "        missed.append(label)\n"
+    "    return missed\n\n\n"
+    "def _span_nm(\n"
+    "    rows: list[dict], frm: str, to: str, *,\n"
+    "    start_ms: Optional[int] = None, end_ms: Optional[int] = None,\n"
+    ") -> Optional[float]:\n"
+    "    ia, ib = _pair_indexes(rows, frm, to, start_ms=start_ms, end_ms=end_ms)\n"
+    "    if ia is None or ib is None or ib <= ia:\n"
+    "        return None\n"
+    "    a, b = _row_nm(rows[ia]), _row_nm(rows[ib])\n"
+    "    if a is None or b is None:\n"
+    "        return None\n"
+    "    gap = b - a\n"
+    "    return gap if gap > 1 else None",
+    "match repeated route visits using chapter timestamps",
+)
+film = replace_once(
+    film,
+    "def _cap_leg_faults(text: str, rows: list[dict], frm: str) -> list[str]:\n"
+    "    \\"\\"\\"« cap sur Dzaoudzi » depuis Papeete : la destination n'est pas l'escale suivante.\\"\\"\\"",
+    "def _cap_leg_faults(\n"
+    "    text: str, rows: list[dict], frm: str, *,\n"
+    "    start_ms: Optional[int] = None, end_ms: Optional[int] = None,\n"
+    ") -> list[str]:\n"
+    "    \\"\\"\\"« cap sur Dzaoudzi » depuis Papeete : la destination n'est pas l'escale suivante.\\"\\"\\"",
+    "make chapter dates available to cap checker",
+)
+film = replace_once(
+    film,
+    "        skipped = _sea_between(rows, frm, to)\n"
+    "        if skipped and \\"skip\\" not in faults:",
+    "        skipped = _sea_between(rows, frm, to, start_ms=start_ms, end_ms=end_ms)\n"
+    "        if skipped and \\"skip\\" not in faults:",
+    "time-aware skip checker",
+)
+film = replace_once(
+    film,
+    "        span = _span_nm(rows, frm, to)\n"
+    "        if span is None:\n"
+    "            continue\n"
+    "        close = abs(float(nums[0]) - span)",
+    "        span = _span_nm(rows, frm, to, start_ms=start_ms, end_ms=end_ms)\n"
+    "        if span is None:\n"
+    "            continue\n"
+    "        close = abs(float(nums[0]) - span)",
+    "time-aware distance checker",
+)
+film = replace_once(
+    film,
+    "        for fault in _cap_leg_faults(chapter.get(\\"text\\") or \\"\\", rows, str(chapter.get(\\"fromName\\") or \\"\\")):",
+    "        for fault in _cap_leg_faults(\n"
+    "            chapter.get(\\"text\\") or \\"\\", rows, str(chapter.get(\\"fromName\\") or \\"\\"),\n"
+    "            start_ms=_ms(chapter.get(\\"tA\\")), end_ms=_ms(chapter.get(\\"tB\\")),\n"
+    "        ):",
+    "pass chapter time to route gate",
+)
+film = replace_once(
+    film,
+    "def _route_stops_for_reread(plan: dict | None) -> list[dict]:",
+    "def _insert_chapter_air_revisits(rows: list[dict], plan: dict | None) -> list[dict]:\n"
+    "    \\"\\"\\"Insert a dated second arrival at the destination of an air-transfer chapter.\\"\\"\\"\n"
+    "    out = [dict(row) for row in (rows or [])]\n"
+    "    chapters = [ch for ch in (plan or {}).get(\\"chapters\\") or [] if isinstance(ch, dict)]\n"
+    "    for i, chapter in enumerate(chapters[:-1]):\n"
+    "        frm = str(chapter.get(\\"fromName\\") or \\"\\")\n"
+    "        to = str(chapter.get(\\"toName\\") or \\"\\")\n"
+    "        if not _is_air_leg(frm, to):\n"
+    "            continue\n"
+    "        nxt = chapters[i + 1]\n"
+    "        if not same_stop(str(nxt.get(\\"fromName\\") or \\"\\"), to):\n"
+    "            continue\n"
+    "        iso = str(nxt.get(\\"tA\\") or chapter.get(\\"tB\\") or \\"\\")\n"
+    "        at = _ms(iso)\n"
+    "        if at is None:\n"
+    "            continue\n"
+    "        present = any(\n"
+    "            same_stop(str(row.get(\\"name\\") or \\"\\"), to)\n"
+    "            and _ms(row.get(\\"iso\\")) is not None\n"
+    "            and abs(_ms(row.get(\\"iso\\")) - at) <= 12 * 3600 * 1000\n"
+    "            for row in out\n"
+    "        )\n"
+    "        if present:\n"
+    "            continue\n"
+    "        item = {\\"name\\": to, \\"iso\\": iso}\n"
+    "        at_or_before = [\n"
+    "            j for j, row in enumerate(out)\n"
+    "            if _ms(row.get(\\"iso\\")) is not None and _ms(row.get(\\"iso\\")) <= at\n"
+    "        ]\n"
+    "        insert_at = (max(at_or_before) + 1) if at_or_before else len(out)\n"
+    "        out.insert(insert_at, item)\n"
+    "    return out\n\n\n"
+    "def _route_stops_for_reread(plan: dict | None) -> list[dict]:",
+    "insert timestamped air-transfer revisits",
+)
+film = replace_once(
+    film,
+    "    if isinstance(explicit, list) and explicit:\n"
+    "        return _as_stop_rows(explicit)",
+    "    if isinstance(explicit, list) and explicit:\n"
+    "        return _insert_chapter_air_revisits(_as_stop_rows(explicit), plan)",
+    "augment explicit route stops with repeated air arrivals",
+)
+film = replace_once(
+    film,
+    "        rows = _insert_missing_air(_as_stop_rows(marks), clock.get(\\"marks\\"))\n"
+    "        if len(rows) >= 8:",
+    "        rows = _insert_missing_air(_as_stop_rows(marks), clock.get(\\"marks\\"))\n"
+    "        rows = _insert_chapter_air_revisits(rows, plan)\n"
+    "        if len(rows) >= 8:",
+    "augment official stops with repeated air arrivals",
+)
+film = replace_once(
+    film,
+    "    if _skip_pairs(blob, rows):",
+    "    if _skip_pairs(blob, rows, chapters=chapters):",
+    "validate route skip against the matching chapter interval",
+)
+film = replace_once(
+    film,
+    "def _skip_pairs(text: str, rows: list[dict]) -> bool:",
+    "def _skip_pairs(text: str, rows: list[dict], *, chapters: list | None = None) -> bool:",
+    "allow time-aware skip checks",
+)
+film = replace_once(
+    film,
+    "        if _sea_between(rows, frm, to):\n"
+    "            return True\n"
+    "    return False\n\n\ndef _upcoming_omits",
+    "        chapter = next((\n"
+    "            ch for ch in (chapters or []) if isinstance(ch, dict)\n"
+    "            and same_stop(str(ch.get(\\"fromName\\") or \\"\\"), frm)\n"
+    "            and same_stop(str(ch.get(\\"toName\\") or \\"\\"), to)\n"
+    "            and bool(_LEAVE_FOR_RE.search(ch.get(\\"text\\") or \\"\\"))\n"
+    "        ), None)\n"
+    "        start_ms = _ms(chapter.get(\\"tA\\")) if chapter else None\n"
+    "        end_ms = _ms(chapter.get(\\"tB\\")) if chapter else None\n"
+    "        if _sea_between(rows, frm, to, start_ms=start_ms, end_ms=end_ms):\n"
+    "            return True\n"
+    "    return False\n\n\ndef _upcoming_omits",
+    "time-aware departure skip check",
 )
 film_path.write_text(film, encoding="utf-8")
 
