@@ -4,6 +4,7 @@ import { useLang } from "../i18n/LangContext.jsx";
 import { hasAdminSecret } from "../utils/adminSecret.js";
 import { formatTimeUtc } from "../engine/journalFormat.js";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
+import { chatErrorKey } from "../hooks/logbookChatErrors.js";
 
 /**
  * Le chatbot du journal de bord, dans le panneau gauche : une
@@ -20,7 +21,7 @@ function aiNoticeDismissed() {
   }
 }
 
-export const LogbookChat = memo(function LogbookChat({ messages = [], pending = false, error = null, onAsk }) {
+export const LogbookChat = memo(function LogbookChat({ messages = [], pending = false, error = null, onAsk, onRetry }) {
   const { t } = useLang();
   const [draft, setDraft] = useState("");
   const [aiNoticeOff, setAiNoticeOff] = useState(aiNoticeDismissed);
@@ -80,10 +81,27 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
               {m.role === "logbook" && (m.source || m.engine) ? (
                 <LlmSourceBadge source={m.source || m.engine} testId="chat-source" className="mt-0.5" />
               ) : null}
+              {m.role === "skipper" && m.failed ? (
+                <span data-testid="logbook-chat-failed" className="ml-1 text-[10px] text-amber-300/90">
+                  {t("chatUnanswered")}
+                  {onRetry ? (
+                    <button
+                      type="button"
+                      data-testid="logbook-chat-retry"
+                      disabled={pending}
+                      onClick={() => onRetry(m)}
+                      className="ml-1 font-semibold underline underline-offset-2 hover:text-amber-200 disabled:opacity-40"
+                    >
+                      {t("chatRetry")}
+                    </button>
+                  ) : null}
+                </span>
+              ) : null}
             </div>
           ))}
           {pending ? <p className="text-[10px] text-slate-400 leading-snug">{t("logbookChatPending")}</p> : null}
-          {error ? <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p> : null}
+          {/* #104 : un code traduit, jamais le texte brut (« Failed to fetch », « HTTP 504 », détail serveur). */}
+          {error ? <p data-testid="logbook-chat-error" className="text-[10px] text-amber-300/90 leading-snug">{t(chatErrorKey(error))}</p> : null}
         </div>
       </div>
       {showAiNotice ? (
