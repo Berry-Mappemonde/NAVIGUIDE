@@ -2918,13 +2918,11 @@ def _sanitize_served_film_plan(plan: dict, lang: str = "fr") -> dict:
         chapters.append(chapter)
     safe = {**plan, "chapters": chapters}
     from film_script import (  # noqa: PLC0415
-        _drop_stale_dated_sentences,
         _reconcile_film_indices,
         film_estimated_seconds,
         script_chars,
     )
 
-    _drop_stale_dated_sentences(safe["chapters"], lang=lang)
     _reconcile_film_indices(safe["chapters"], lang=lang)
     safe["chars"] = script_chars(safe["chapters"])
     safe["estimatedSeconds"] = film_estimated_seconds(safe["chars"])

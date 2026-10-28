@@ -3588,7 +3588,10 @@ def collect_bubble_events(
         score = bubble_score(entry, role=role or raw.get("role"), wind_max_kt=wind_max_kt)
         if score is None:
             return
-        t = _ms(raw.get("t") or entry.get("t"))
+        # The source entry owns the event date. Wrappers can carry a
+        # chapter/candidate timestamp that must never override the physical event.
+        source_t = entry.get("t") or raw.get("t")
+        t = _ms(source_t)
         if t is None:
             return
         if t0 is not None and t < t0:
@@ -3602,7 +3605,7 @@ def collect_bubble_events(
         out.append({
             "id": eid,
             "kind": raw.get("kind") or entry.get("kind"),
-            "t": raw.get("t") or entry.get("t"),
+            "t": source_t,
             "tMs": t,
             "name": short_name(raw.get("name") or entry.get("name") or ""),
             "role": role or raw.get("role"),
@@ -5346,13 +5349,28 @@ def _windows(stops: list[dict], t0: int, t_end: int, clock: dict | None = None) 
     return out
 
 
+def _event_source_ms(ev: dict) -> Optional[int]:
+    """Horodatage de l'événement source, partagé par la phrase et sa bulle."""
+    entry = ev.get("entry") if isinstance(ev.get("entry"), dict) else {}
+    source_ms = _ms(entry.get("t"))
+    if source_ms is not None:
+        return source_ms
+    t_ms = ev.get("tMs")
+    if isinstance(t_ms, (int, float)) and not isinstance(t_ms, bool):
+        return int(t_ms)
+    return _ms(ev.get("t"))
+
+
 def _window_owns(w: dict, ev: dict, i: int) -> bool:
     dest = w.get("toName") or ""
     if ev.get("kind") == "stop" and ev.get("role") not in {"depart", "today"} and dest and same_stop(dest, ev.get("name") or ""):
         return True
+    event_ms = _event_source_ms(ev)
+    if event_ms is None:
+        return False
     if i == 0:
-        return ev["tMs"] >= w["tA"] and ev["tMs"] <= w["tB"]
-    return ev["tMs"] > w["tA"] and ev["tMs"] <= w["tB"]
+        return event_ms >= w["tA"] and event_ms <= w["tB"]
+    return event_ms > w["tA"] and event_ms <= w["tB"]
 
 
 def _assign(events: list[dict], windows: list[dict]) -> list[list[dict]]:

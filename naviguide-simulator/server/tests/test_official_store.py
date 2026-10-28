@@ -2358,7 +2358,7 @@ def test_official_meta_route_fingerprints_on_fake_stock(client, monkeypatch):
     assert draft["routeRev"] == 0
 
 
-def test_served_film_plan_repairs_stale_date_and_text_indices():
+def test_served_film_plan_preserves_buoy_fact_and_repairs_text_indices():
     """Legacy snapshot repair happens on read and does not mutate the stored plan."""
     start = "2026-08-13T22:50:23Z"
     end = "2026-08-17T08:48:38Z"

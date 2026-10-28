@@ -6015,19 +6015,15 @@ def test_halifax_saint_pierre_hop_not_voyage():
     assert "Arrival on 15 August." in repaired_text
 
 
-def test_stale_date_inside_later_chapter_preserves_buoy_sentence_and_reindexes():
-    """Le garde de date ne doit pas supprimer le fait historique à l'origine du récit."""
+def test_source_dated_buoy_sentence_is_kept_in_its_matching_chapter():
+    """La date de la bouée appartient à mai et ne doit pas être recollée à août."""
     chapter = {
-        "tA": "2026-08-13T22:50:23Z",
-        "tB": "2026-08-17T08:48:38Z",
-        "text": (
-            "Le 23 mai, une bouée. 489 milles, trois jours de mer. "
-            "Arrivée à Saint-Pierre le 17 août."
-        ),
+        "tA": "2026-05-22T22:50:23Z",
+        "tB": "2026-05-24T08:48:38Z",
+        "text": "Le 23 mai, une bouée. 489 milles, trois jours de mer.",
         "anchors": [
-            {"charIdx": 0, "t": "2026-08-14T23:50:23Z"},
-            {"charIdx": 117, "t": "2026-08-14T23:50:23Z"},
-            {"charIdx": 205, "t": "2026-08-17T08:48:38Z"},
+            {"charIdx": 0, "t": "2026-05-22T22:50:23Z"},
+            {"charIdx": 28, "t": "2026-05-23T12:00:00Z"},
         ],
         "events": [],
     }
@@ -6036,7 +6032,6 @@ def test_stale_date_inside_later_chapter_preserves_buoy_sentence_and_reindexes()
 
     assert "Le 23 mai, une bouée." in chapter["text"]
     assert "489 milles" in chapter["text"]
-    assert "Arrivée à Saint-Pierre le 17 août." in chapter["text"]
 
 
 def test_buoy_bubble_is_attached_using_its_source_event_time():
@@ -6050,31 +6045,49 @@ def test_buoy_bubble_is_attached_using_its_source_event_time():
         "t": "2026-05-23T12:00:00Z",
         "sciKind": "buoy",
     }
-    journal = {"latest": [entry]}
-    chapter_text = (
-        "Le 23 mai, une bouée. 489 milles, trois jours de mer. "
-        "Arrivée à Saint-Pierre le 17 août."
-    )
-    chapters = [{
-        "id": "halifax-saint-pierre",
-        "tA": "2026-08-13T22:50:23Z",
-        "tB": "2026-08-17T08:48:38Z",
-        "fromName": "Halifax",
-        "toName": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
-        "text": chapter_text,
-        "events": [],
-    }]
+    # The outer candidate has an August timestamp. The nested source entry is
+    # authoritative because event_sentence() speaks the nested entry date.
+    journal = {"latest": [{
+        "id": "candidate:buoy-wave-12",
+        "kind": "buoy",
+        "t": "2026-08-14T10:00:00Z",
+        "entry": entry,
+    }]}
+    chapters = [
+        {
+            "id": "may-event",
+            "tA": "2026-05-22T22:50:23Z",
+            "tB": "2026-05-24T08:48:38Z",
+            "fromName": "La Rochelle",
+            "toName": "Ajaccio",
+            "text": "Le 23 mai, une bouée. 489 milles, trois jours de mer.",
+            "events": [],
+        },
+        {
+            "id": "halifax-saint-pierre",
+            "tA": "2026-08-13T22:50:23Z",
+            "tB": "2026-08-17T08:48:38Z",
+            "fromName": "Halifax",
+            "toName": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+            "text": "Du 13 au 17 août, le bateau relie Halifax à Saint-Pierre.",
+            "events": [],
+        },
+    ]
     packed = {"t0": _ms("2026-05-15T08:00:00Z"), "tEnd": _ms("2026-10-13T19:07:28Z")}
 
     attach_chapter_events(chapters, packed, journal, lang="fr")
 
-    assert "Le 23 mai, une bouée." in chapters[0]["text"]
+    may_events = chapters[0]["events"]
+    aug_events = chapters[1]["events"]
     assert any(
-        event["id"] == "buoy:wave-12"
+        event["id"] == "candidate:buoy-wave-12"
         and event["kind"] == "buoy"
         and event["card"]["at"] == "2026-05-23T12:00:00Z"
-        for event in chapters[0]["events"]
+        and "23 mai" in event["fact"]
+        for event in may_events
     )
+    assert not any(event["id"] == "candidate:buoy-wave-12" for event in aug_events)
+
 
 
 def test_reconcile_film_indices_after_text_cut():
