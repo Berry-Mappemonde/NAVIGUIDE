@@ -507,6 +507,69 @@ hook_path = Path("naviguide-simulator/src/hooks/useReplay.js")
 hook = hook_path.read_text(encoding="utf-8")
 hook = replace_once(
     hook,
+    "export function filmSpeakChars(plan) {",
+    "export function monotonicFilmTime(previous, next) {\n"
+    "  const a = Number(previous);\n"
+    "  const b = Number(next);\n"
+    "  if (!Number.isFinite(b)) return previous;\n"
+    "  return Number.isFinite(a) ? Math.max(a, b) : b;\n"
+    "}\n\n"
+    "export function monotonicFilmCharIdx({ previousChapterIdx = null, chapterIdx = null, previousCharIdx = 0, charIdx = 0 } = {}) {\n"
+    "  const next = Math.max(0, Number(charIdx) || 0);\n"
+    "  if (previousChapterIdx !== chapterIdx) return next;\n"
+    "  return Math.max(Math.max(0, Number(previousCharIdx) || 0), next);\n"
+    "}\n\n"
+    "export function filmSpeakChars(plan) {",
+    "insert monotonic film cursor helpers",
+)
+hook = replace_once(
+    hook,
+    "const voiceCharRef = useRef(0);",
+    "const voiceCharRef = useRef(0);\n  const lastCharPublishedRef = useRef({ chapterIdx: null, charIdx: 0 });",
+    "track last published character per chapter",
+)
+hook = replace_once(
+    hook,
+    "    chapterIdxRef.current = ch.idx;\n    voiceCharRef.current = 0;",
+    "    chapterIdxRef.current = ch.idx;\n    lastCharPublishedRef.current = { chapterIdx: ch.idx, charIdx: 0 };\n    voiceCharRef.current = 0;",
+    "reset character guard on chapter change or explicit seek",
+)
+hook = replace_once(
+    hook,
+    "    const from = lastTRef.current ?? next;\n"
+    "    const fresh = cardsBetween(timelineRef.current, from, next, lang);\n"
+    "    if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);\n"
+    "    lastTRef.current = next;\n"
+    "    tMsRef.current = next;\n"
+    "    if (uiDue) setTMs(next);",
+    "    const from = lastTRef.current ?? next;\n"
+    "    const monotoneNext = monotonicFilmTime(from, next);\n"
+    "    const fresh = cardsBetween(timelineRef.current, from, monotoneNext, lang);\n"
+    "    if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);\n"
+    "    lastTRef.current = monotoneNext;\n"
+    "    tMsRef.current = monotoneNext;\n"
+    "    if (uiDue) setTMs(monotoneNext);",
+    "prevent automatic playhead regression",
+)
+hook = replace_once(
+    hook,
+    "        });\n"
+    "      }\n"
+    "      // RC52 : le bateau publié suit charIdx, pas elapsed / tB.",
+    "        });\n"
+    "      }\n"
+    "      charIdx = monotonicFilmCharIdx({\n"
+    "        previousChapterIdx: lastCharPublishedRef.current.chapterIdx,\n"
+    "        chapterIdx: chapter?.idx ?? null,\n"
+    "        previousCharIdx: lastCharPublishedRef.current.charIdx,\n"
+    "        charIdx,\n"
+    "      });\n"
+    "      lastCharPublishedRef.current = { chapterIdx: chapter?.idx ?? null, charIdx };\n"
+    "      // RC52 : le bateau publié suit charIdx, pas elapsed / tB.",
+    "prevent subtitle and boat character regression",
+)
+hook = replace_once(
+    hook,
     "      const done = filmShouldFinish({\n"
     "        voiceClock,\n"
     "        speaking,\n"
@@ -840,9 +903,22 @@ hook_test_path = Path("naviguide-simulator/src/hooks/useReplay.test.js")
 hook_test = hook_test_path.read_text(encoding="utf-8")
 hook_test = replace_once(
     hook_test,
+    "linearFilmAt, officialFilmStatus",
+    "linearFilmAt, monotonicFilmCharIdx, monotonicFilmTime, officialFilmStatus",
+    "import monotonic film cursor helpers",
+)
+hook_test = replace_once(
+    hook_test,
     "    assert.match(hook, /shouldHoldFilmForBudget/);",
-    "    assert.match(hook, /shouldHoldFilmForBudget/);\n    assert.match(hook, /linearFinish: linear.finish && !holdForSelectedBudget/);",
-    "assert linear playback waits for selected duration",
+    "    assert.equal(monotonicFilmTime(100, 90), 100);\n"
+    "    assert.equal(monotonicFilmTime(100, 120), 120);\n"
+    "    assert.equal(monotonicFilmCharIdx({ previousChapterIdx: 3, chapterIdx: 3, previousCharIdx: 200, charIdx: 0 }), 200);\n"
+    "    assert.equal(monotonicFilmCharIdx({ previousChapterIdx: 3, chapterIdx: 4, previousCharIdx: 200, charIdx: 0 }), 0);\n"
+    "    assert.match(hook, /shouldHoldFilmForBudget/);\n"
+    "    assert.match(hook, /linearFinish: linear.finish && !holdForSelectedBudget/);\n"
+    "    assert.match(hook, /monotonicFilmTime/);\n"
+    "    assert.match(hook, /charIdx = monotonicFilmCharIdx/);",
+    "assert film time and characters cannot regress within a leg",
 )
 hook_test_path.write_text(hook_test, encoding="utf-8")
 
