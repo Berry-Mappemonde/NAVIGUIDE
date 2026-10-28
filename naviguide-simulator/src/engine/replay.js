@@ -125,10 +125,15 @@ export function positionAt(clock, tMs) {
   const tHours = (tMs - t0) / 3600000;
   const pts = [];
   let prevLon = null;
+  let prevFilm = -Infinity;
   for (const v of verts) {
     if (!Number.isFinite(v.lat) || !Number.isFinite(v.lon) || !Number.isFinite(v.tHours)) continue;
     const lon = prevLon == null ? v.lon : unwrapLon(prevLon, v.lon);
-    pts.push({ lat: v.lat, lon, tHours: v.tHours, sailNm: v.sailNm, filmNm: v.filmNm });
+    // L'axe film ne recule pas (horloges servies avant le correctif du quai
+    // de Cayenne au retour : 8680 après 9818).
+    const filmNm = Number.isFinite(v.filmNm) ? Math.max(prevFilm, v.filmNm) : v.filmNm;
+    if (Number.isFinite(filmNm)) prevFilm = filmNm;
+    pts.push({ lat: v.lat, lon, tHours: v.tHours, sailNm: v.sailNm, filmNm });
     prevLon = lon;
   }
   if (!pts.length) return null;

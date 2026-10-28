@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { castAtClock } from "../engine/clockCast.js";
 import {
   DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, cardDwellMs, measuredCps, cardsBetween, chapterAtElapsed, chapterZoomEstimate, filmChaptersFromStory, filmPlan, journalTimeline, nextMovingTime, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, sentenceIsStationary, sentenceSpan, stepFilmTime, trimQueue, voiceShouldWait,
 } from "../engine/replay.js";
@@ -2137,6 +2138,9 @@ export function useReplay({
           lon: pos?.lon ?? sample?.lon ?? null,
           heading: sample?.bearing ?? prevFilm.heading ?? null,
           filmNm: pos?.filmNm ?? sample?.filmNm ?? null,
+          // Qui est où, lu sur l'horloge : A à quai à Cayenne pendant
+          // l'épisode, B entre Halifax et Halifax, l'avion sur les seuls vols.
+          cast: castAtClock(clockRef.current, lastTRef.current),
           bubbleId: shown ? (shown.key || shown.id || null) : null,
           bubbleKind: shown?.kind || null,
           seekChapter: prevFilm.seekChapter || ((idx, charIdx) => seekChapterRef.current?.(idx, charIdx)),
