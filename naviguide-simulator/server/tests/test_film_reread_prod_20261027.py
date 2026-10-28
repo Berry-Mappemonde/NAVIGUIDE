@@ -40,3 +40,51 @@ def test_real_intermediate_stop_is_still_detected(monkeypatch):
     _film, stops = _prod_stops(monkeypatch)
     assert _skip_pairs("Le navire a quitté La Rochelle pour Fort-de-France.", stops)
     assert not _skip_pairs("Le navire a quitté Ajaccio pour Fort-de-France.", stops)
+
+
+# --- Faute `date` : « Le 23 mai, une bouée » dans le chapitre Halifax → Saint-Pierre ---
+# En production, leg-8 (13–17 août) commence par la phrase de la bouée du 23 mai.
+# Son ouverture d'origine est reconstruite au format de `_side_opening_sentence`,
+# avec la date de son ancre charIdx 0 (2026-08-14T23:50:23Z). Le reste vient des GET.
+LEG8_OPENING = (
+    "Le 14 août, à Halifax (Nouvelle-Écosse), l'équipage embarque sur "
+    "un second voilier pour Saint-Pierre (Saint-Pierre-et-Miquelon)."
+)
+BUOY_PHRASE = "Le 23 mai, une bouée."
+
+
+def _film_before_subjects():
+    film = _load("fixture-film.json")
+    chapters = [dict(ch) for ch in film["chapters"]]
+    leg8 = next(ch for ch in chapters if ch["id"] == "leg-8")
+    assert leg8["text"].startswith(BUOY_PHRASE)
+    leg8["text"] = leg8["text"].replace(BUOY_PHRASE, LEG8_OPENING, 1)
+    return chapters
+
+
+def _chosen(chapters):
+    from film_script import apply_chosen_subjects, film_choice_bag
+
+    dc = _load("fixture-dc-subjects.json")
+    bag = film_choice_bag(dc["dcSubjects"])
+    return apply_chosen_subjects({"chapters": chapters}, dc["filmChoice"], bag, 150)
+
+
+def test_dated_subject_stays_in_its_time_window():
+    out = _chosen(_film_before_subjects())
+    leg8 = next(ch for ch in out["chapters"] if ch["id"] == "leg-8")
+    # L'ouverture du second bateau n'est pas une redite remplaçable.
+    assert leg8["text"].startswith(LEG8_OPENING), leg8["text"]
+    # Une bouée du 23 mai ne se place que dans un chapitre qui couvre le 23 mai.
+    for ch in out["chapters"]:
+        if BUOY_PHRASE in (ch.get("text") or ""):
+            assert ch["tA"] <= "2026-05-23T13:27:42Z" <= ch["tB"], ch["id"]
+
+
+def test_real_official_film_rereads_without_fault(monkeypatch):
+    chapters = _chosen(_film_before_subjects())["chapters"]
+    _film, stops = _prod_stops(monkeypatch)
+    blob = " ".join(ch.get("text") or "" for ch in chapters)
+    report = nemotron_reread_report(blob, stops, lang="fr", chapters=chapters)
+    assert report["faults"] == [], report
+    assert report["ok"] is True
