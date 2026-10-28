@@ -2356,3 +2356,49 @@ def test_official_meta_route_fingerprints_on_fake_stock(client, monkeypatch):
     assert "routeFileFp" not in draft
     assert "routeVoyageFp" not in draft
     assert draft["routeRev"] == 0
+
+
+def test_served_film_plan_repairs_stale_date_and_text_indices():
+    """Legacy snapshot repair happens on read and does not mutate the stored plan."""
+    start = "2026-08-13T22:50:23Z"
+    end = "2026-08-17T08:48:38Z"
+    original = {
+        "source": "rules",
+        "chars": 400,
+        "targetSeconds": 150,
+        "chapters": [{
+            "id": "leg-st-pierre",
+            "tA": start,
+            "tB": end,
+            "text": (
+                "Le 23 mai, une bouée. 489 milles, trois jours de mer. "
+                "Arrivée à Saint-Pierre le 17 août."
+            ),
+            "anchors": [
+                {"charIdx": 0, "t": start},
+                {"charIdx": 117, "t": "2026-08-14T23:50:23Z"},
+                {"charIdx": 205, "t": end},
+            ],
+            "events": [{
+                "id": "distance",
+                "kind": "distance",
+                "title": "Distance du chapitre",
+                "fact": "489 milles, trois jours de mer.",
+                "charIdx": 190,
+                "card": {"text": "489 milles, trois jours de mer.", "at": end},
+            }],
+        }],
+    }
+
+    repaired = official_store._sanitize_served_film_plan(original, "fr")
+    chapter = repaired["chapters"][0]
+
+    assert "23 mai" not in chapter["text"]
+    assert "489 milles" in chapter["text"]
+    assert len(chapter["text"]) == repaired["chars"]
+    assert all(0 <= a["charIdx"] < len(chapter["text"]) for a in chapter["anchors"])
+    assert all(0 <= e["charIdx"] < len(chapter["text"]) for e in chapter["events"])
+    event = chapter["events"][0]
+    assert event["charIdx"] == chapter["text"].index("489 milles")
+    assert "23 mai" in original["chapters"][0]["text"]
+    assert original["chapters"][0]["events"][0]["charIdx"] == 190
