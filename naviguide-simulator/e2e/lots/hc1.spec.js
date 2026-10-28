@@ -5,7 +5,7 @@
 // Avec API : hindcastStatus honnête (jamais « ready » à vide), deux lectures
 // de /voyage/official/clock identiques (position stable), et si l'horloge a
 // une part réelle (realUntil) : ligne d'état « réel jusqu'au … », route
-// parcourue turquoise (#2dd4bf, réel) puis violette (#c084fc, climatologie).
+// parcourue magenta clair (#e86aab, réel) puis lavande (#a99bc9, climatologie).
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -105,11 +105,11 @@ test("Position vraie : statut honnête, horloge stable, réel/climatologie", asy
   );
   await shotBar(page, "02-statut");
 
-  // Route parcourue : un trait réel turquoise (#2dd4bf). La carte est en
+  // Route parcourue : un trait réel magenta clair (#e86aab). La carte est en
   // preferCanvas — pas de <path> SVG : on lit les pixels du canvas. Le rendu
   // de l'horloge (~9 000 sommets) arrive après la ligne d'état, d'où l'attente.
   await page.waitForFunction(() => {
-    const want = [45, 212, 191]; // #2dd4bf — réel (teintes de C3)
+    const want = [232, 106, 171]; // #e86aab — réel (teintes de C3)
     for (const c of document.querySelectorAll("canvas")) {
       const ctx = c.getContext("2d");
       if (!ctx || !c.width || !c.height) continue;

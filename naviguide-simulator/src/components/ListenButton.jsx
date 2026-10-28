@@ -67,7 +67,7 @@ export function ListenButton({
       title={label}
       className={`flex items-center gap-1 rounded-md text-[10px] font-semibold border transition-colors relative
         ${iconOnly ? "w-6 h-6 px-0 justify-center" : compact ? "h-6 px-1.5" : "px-1.5 py-0.5 rounded-full"}
-        ${pressed ? "bg-sky-600/40 text-sky-100 border-sky-400/40" : "bg-white/5 text-white/80 border-white/10 hover:bg-white/10 hover:text-white"}
+        ${pressed ? "bg-slate-600/80 text-white border-slate-400/50" : "bg-white/5 text-white/80 border-white/10 hover:bg-white/10 hover:text-white"}
         ${className}`}
     >
       {icon}
