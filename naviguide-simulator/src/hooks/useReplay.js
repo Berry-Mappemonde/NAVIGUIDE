@@ -1903,11 +1903,16 @@ export function useReplay({
         budgetRef.current <= 0 || wallElapsed >= plan.targetSeconds
       );
       // La clôture se finit — tant que la voix parle, pas de finish().
+      const holdForSelectedBudget = shouldHoldFilmForBudget({
+        userBudget: budgetRef.current,
+        wallElapsed,
+        lastChapter: linear.lastReached,
+      });
       const done = filmShouldFinish({
         voiceClock,
         speaking,
         voiceAllDone,
-        linearFinish: linear.finish,
+        linearFinish: linear.finish && !holdForSelectedBudget,
         lastReached: linear.lastReached,
         stopping: stoppingRef.current,
       });

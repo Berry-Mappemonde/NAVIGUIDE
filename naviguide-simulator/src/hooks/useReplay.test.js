@@ -99,6 +99,7 @@ describe("useReplay contract", () => {
     assert.equal(shouldHoldFilmForBudget({ userBudget: 150, wallElapsed: 150, lastChapter: true }), false);
     assert.equal(shouldHoldFilmForBudget({ userBudget: 0, wallElapsed: 80, lastChapter: true }), false);
     assert.match(hook, /shouldHoldFilmForBudget/);
+    assert.match(hook, /linearFinish: linear.finish && !holdForSelectedBudget/);
     assert.match(hook, /budgetSeconds/);
     assert.match(hook, /resolveFilmTargetSeconds\(userBudget, chapters\)/);
     assert.match(hook, /keepChapters: true/);
