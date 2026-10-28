@@ -23,9 +23,9 @@ export const riskHex = {
 
 /** Pastilles de la légende des régimes (même teinte que le trait parcouru). */
 export const regimeLegendHex = Object.freeze({
-  hindcast: "#2dd4bf",
-  forecast: "#38bdf8",
-  climatology: "#c084fc",
+  hindcast: "#e86aab",
+  forecast: "#5b9bd5",
+  climatology: "#a99bc9",
 });
 
 /**
