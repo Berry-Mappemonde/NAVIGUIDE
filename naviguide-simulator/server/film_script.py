@@ -43,7 +43,7 @@ FILM_GAP_FRAC = 0.03
 KIND_RANK = {"wx": 0, "climo": 1, "sci": 2, "amp": 3, "project": 3, "zee": 4, "coast": 4, "poe": 5, "note": 6, "stop": 7}
 SCORED = frozenset({"wx", "climo", "sci", "amp", "project", "zee", "coast", "poe", "note"})
 CANDIDATE_KINDS = frozenset({"stop", "zee", "coast", "amp", "project", "poe", "wx", "climo", "sci", "note"})
-BUBBLE_KINDS = frozenset({"stop", "zee", "coast", "wx", "amp", "project", "sci", "climo"})
+BUBBLE_KINDS = frozenset({"stop", "zee", "coast", "wx", "amp", "project", "sci", "climo", "station", "buoy"})
 ROUTE_NAMING_KINDS = frozenset({"zee-enter", "coast", "port"})
 SHORT_CROSSING_MS = 3 * 86_400_000
 AMP_NEAR_NM = 30.0
@@ -3462,7 +3462,7 @@ def bubble_score(
         return 1
     if kind == "project":
         return 1
-    if kind == "sci":
+    if kind in {"sci", "station", "buoy"}:
         return 2
     if kind == "climo":
         return 1
@@ -4798,7 +4798,7 @@ def event_sentence(ev: dict, lang: str = "fr", display_t0: str | None = None) ->
             if en else
             f"Le {when}, le régime climatique a changé{detail}."
         )
-    if ev.get("kind") == "sci":
+    if ev.get("kind") in {"sci", "station", "buoy"}:
         spoken = station_spoken_label({**e, **ev}, lang)
         if not spoken:
             return ""

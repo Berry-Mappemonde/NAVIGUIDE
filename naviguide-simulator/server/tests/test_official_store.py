@@ -2393,7 +2393,7 @@ def test_served_film_plan_repairs_stale_date_and_text_indices():
     repaired = official_store._sanitize_served_film_plan(original, "fr")
     chapter = repaired["chapters"][0]
 
-    assert "23 mai" not in chapter["text"]
+    assert "Le 23 mai, une bouée." in chapter["text"]
     assert "489 milles" in chapter["text"]
     assert len(chapter["text"]) == repaired["chars"]
     assert all(0 <= a["charIdx"] < len(chapter["text"]) for a in chapter["anchors"])
