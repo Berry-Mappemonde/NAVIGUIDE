@@ -1908,6 +1908,17 @@ def _chapter_for_subject(chapters: list[dict], rec: dict) -> Optional[dict]:
     return chapters[-1] if chapters else None
 
 
+def _subject_fits_chapter(rec: dict, ch: dict) -> bool:
+    """Sujet sans date : tout chapitre. Sujet daté : seulement si tA <= t <= tB."""
+    t = _ms(rec.get("t")) if rec.get("t") else None
+    if t is None:
+        return True
+    a, b = _ms(ch.get("tA")), _ms(ch.get("tB"))
+    if a is None or b is None:
+        return False
+    return a <= t <= b
+
+
 def apply_chosen_subjects(
     plan: dict,
     ids: list[str] | None,
@@ -1941,19 +1952,28 @@ def apply_chosen_subjects(
         seen_kind.add(kind)
         remaining.append(rec)
     slots = _repeat_slots(chapters)
-    used = 0
     spoken: list[dict] = []
-    for rec, (ch, idx) in zip(remaining, slots):
+    unplaced: list[dict] = []
+    for rec in remaining:
+        # Un sujet daté (« Le 23 mai, une bouée ») ne quitte pas son chapitre.
+        pick = next(
+            (i for i, (ch, _idx) in enumerate(slots) if _subject_fits_chapter(rec, ch)),
+            None,
+        )
+        if pick is None:
+            unplaced.append(rec)
+            continue
+        ch, idx = slots.pop(pick)
         sents = _sentences(ch.get("text") or "")
         if idx < 0 or idx >= len(sents):
+            unplaced.append(rec)
             continue
         sents[idx] = rec["phrase"]
         ch["text"] = " ".join(sents).strip()
-        used += 1
         spoken.append(rec)
     budget = film_char_budget(seconds)
     if budget <= 0:
-        for rec in remaining[used:]:
+        for rec in unplaced:
             ch = _chapter_for_subject(chapters, rec)
             if ch is None:
                 continue
@@ -8155,7 +8175,10 @@ _CORE_KEEP_SENT = re.compile(
     r"envole|par la route|by road|attend à|waits at|aujourd|today|"
     r"expédition|expedition|escales|stops|destination|entre le |between |"
     r"à venir|still to come|le plan compte|the plan has|"
-    r"cap au |cap sur |heading ",
+    r"cap au |cap sur |heading |"
+    # Ouverture du second bateau (_side_opening_sentence) : embarque / reprend.
+    r"embarque sur|boards |l'équipage reprend|sails again on|"
+    r"second voilier|second sailing boat",
     re.I,
 )
 _KEEP_SENT = re.compile(
