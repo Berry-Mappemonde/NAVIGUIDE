@@ -3,7 +3,7 @@
 This manual lists **every button** on screen, in one line each.
 No jargon. The app is **not for navigation**.
 
-Live: [simulator.naviguide.fr](https://naviguide.fr).
+Live: [naviguide.fr](https://naviguide.fr).
 French version: [MANUEL_UTILISATEUR.md](MANUEL_UTILISATEUR.md).
 
 On first launch a **Not for navigation** window appears.
@@ -143,7 +143,7 @@ Start it from **Follow expedition**.
 | **Stop** | Stops the film and returns to Follow. |
 | **Film fullscreen** | Hides the panels for the film. |
 | **Raw** | Shows the rules-written story (no model). Greyed out if missing. |
-| **Written** | Shows the drafted story (Nemotron). Greyed out if missing. |
+| **Edited** | Shows the drafted story (Nemotron). Greyed out if missing. |
 | **2:30** / **3:00** | Sets the film length. |
 
 During the film a **bubble** may leave the boat at an event
