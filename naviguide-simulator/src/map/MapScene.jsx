@@ -120,6 +120,7 @@ export function MapScene({
     paintMain: false,
     clockVertices: scene.clockVertices,
     traveledNm: scene.traveledNm,
+    regimeColors: scene.routeColors,
   });
 
   useEffect(() => {

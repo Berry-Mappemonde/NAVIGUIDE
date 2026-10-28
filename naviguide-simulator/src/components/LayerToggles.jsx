@@ -18,7 +18,7 @@ export const LayerToggles = memo(function LayerToggles({ maritimeLayers }) {
   return (
     <div className="flex flex-wrap gap-1" data-testid="layer-toggles">
       {atlas.unavailable ? (
-        <span className="text-[9px] font-semibold text-amber-200/90 px-1.5 py-0.5" data-testid="climatology-unavailable">
+        <span className="text-[12px] font-semibold text-amber-200/90 px-1.5 py-0.5" data-testid="climatology-unavailable">
           {t("climatologyUnavailable")}
         </span>
       ) : null}
@@ -44,7 +44,7 @@ export const LayerToggles = memo(function LayerToggles({ maritimeLayers }) {
             aria-pressed={active}
             className={[
               "flex items-center justify-center gap-1 px-1.5 py-0.5 rounded-full",
-              "text-[9px] font-semibold transition-all duration-150 select-none",
+              "text-[12px] font-semibold transition-all duration-150 select-none",
               empty
                 ? "bg-slate-800/20 text-white/25 border border-white/5 cursor-not-allowed"
                 : active
