@@ -1275,6 +1275,8 @@ export default function App() {
     const onKey = (e) => {
       if (e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
       if (e.target?.closest?.("button") && e.code === "Space") return;
+      // #103 : barre du film au focus → ←/→ la déplacent (onBarKeyDown), pas d'escale suivante / précédente.
+      if (e.target?.closest?.("[role='slider']") && /^(Arrow|Home$|End$|Page)/.test(e.code)) return;
       if (isTracer && e.code === "Space") {
         e.preventDefault();
         sceneApiRef.current?.playback.toggle();
