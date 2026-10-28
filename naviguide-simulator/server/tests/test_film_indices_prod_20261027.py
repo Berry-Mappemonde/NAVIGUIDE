@@ -54,6 +54,11 @@ def _spoken_events(ch: dict) -> list[tuple[int, int]]:
     return rows
 
 
+def _until_sentence_end(text: str, i: int) -> str:
+    end = text.find(". ", i)
+    return text[i:min(i + 20, end + 1 if end >= 0 else len(text))]
+
+
 def test_fixture_reproduit_le_defaut_de_production():
     # Garde-fou : la fixture contient bien des index faux avant toute retouche.
     assert _faults(_chapters())
@@ -81,16 +86,16 @@ def test_ancres_suivent_leur_phrase_apres_coupe():
     for ch in chapters:
         old = before[ch["id"]]
         old_text, new_text = old["text"], ch["text"]
-        old_by_t = {}
+        old_by_t: dict[str, set[str]] = {}
         for a in old.get("anchors") or []:
             i = int(a["charIdx"])
             if 0 <= i < len(old_text):
-                old_by_t.setdefault(a["t"], old_text[i:i + 20])
+                old_by_t.setdefault(a["t"], set()).add(_until_sentence_end(old_text, i))
         for a in ch.get("anchors") or []:
-            snippet = old_by_t.get(a["t"])
+            snippets = {sn for sn in old_by_t.get(a["t"], set()) if sn in new_text}
             i = int(a["charIdx"])
-            if snippet and snippet in new_text and i < len(new_text):
-                assert new_text[i:i + 20] == snippet, (ch["id"], a, snippet, new_text)
+            if snippets and i < len(new_text):
+                assert _until_sentence_end(new_text, i) in snippets, (ch["id"], a, snippets, new_text)
 
 
 def test_sujet_dc_substitue_garde_les_index():
