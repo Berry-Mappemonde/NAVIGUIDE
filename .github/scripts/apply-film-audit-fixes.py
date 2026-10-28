@@ -254,12 +254,6 @@ film = replace_once(
 )
 film = replace_once(
     film,
-    "if _spoken_before_anchor(sentence, start_ms, lang):",
-    "if _spoken_before_anchor(sentence, start_ms, lang, max_days=365):",
-    "wider window only at chapter-level cleanup",
-)
-film = replace_once(
-    film,
     "    raw = dict(plan)\n"
     "    raw[\"targetSeconds\"] = _film_seconds(seconds if seconds is not None else plan.get(\"targetSeconds\"))",
     "    raw = {\n"
