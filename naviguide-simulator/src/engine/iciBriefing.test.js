@@ -524,7 +524,8 @@ describe("narrateIci", () => {
       weather: { kind: "forecast", wind: null, reason: "openmeteo_unavailable:HTTPStatusError" },
       sources: { zee: "marineregions", bi: "ok" },
     }, "fr");
-    assert.match(text, /Aucune image satellite récente ici \(cdse_stac_unavailable/);
+    assert.match(text, /Aucune image satellite récente ici \(catalogue d’images injoignable pour l’instant\)/);
+    assert.doesNotMatch(text, /cdse_stac_unavailable/);
     assert.match(text, /Prévision météo/);
     assert.doesNotMatch(text, /Sentinel-2 L2A 20/);
     assert.doesNotMatch(text, FORBIDDEN);
