@@ -286,6 +286,20 @@ jobs:
               lang="fr",
               chapters=fixed_chapters,
           )
+          per_chapter_reread = []
+          for i, ch in enumerate(fixed_chapters):
+              one = nemotron_reread_report(
+                  ch.get("text") or "",
+                  stops,
+                  lang="fr",
+                  chapters=[ch],
+              )
+              per_chapter_reread.append({
+                  "chapter": i,
+                  "from": ch.get("fromName"),
+                  "to": ch.get("toName"),
+                  "faults": one.get("faults") or [],
+              })
           text_issues = []
           for i, ch in enumerate(chapters):
               text = ch.get("text") or ""
@@ -303,6 +317,7 @@ jobs:
               "officialClockStops": [s.get("name") for s in stops],
               "rawLocalReread": report,
               "repairedLocalReread": fixed_report,
+              "perChapterReread": per_chapter_reread,
               "rawTextIndexIssues": text_issues,
               "repairedChapterCount": len(fixed_chapters),
               "repairedTextIndexIssues": [
