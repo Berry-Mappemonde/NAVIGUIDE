@@ -101,6 +101,7 @@ from film_script import (
     _dates_regress,
     _anchor_dates_regress,
     _sea_between,
+    _pair_indexes,
     _insert_chapter_air_revisits,
     _skip_pairs,
 )
@@ -6133,6 +6134,40 @@ def test_legacy_arrival_anchor_is_rebuilt_from_the_spoken_date():
         and _ms(a["t"]) == _ms(chapter["tB"])
         for a in anchors
     )
+
+
+def test_pair_indexes_matches_the_current_cayenne_visit_not_the_first_one():
+    rows = [
+        {"name": "Cayenne", "iso": "2026-08-10T14:50:23Z", "nm": 8700.0},
+        {"name": "Halifax", "iso": "2026-08-29T19:57:30Z", "nm": 8780.0},
+        {"name": "Cayenne", "iso": "2026-08-30T03:57:30Z", "nm": 8780.0},
+        {"name": "Papeete", "iso": "2026-10-13T19:07:28Z", "nm": 16200.0},
+    ]
+    start = _ms("2026-08-30T03:57:30Z")
+    end = _ms("2026-10-13T19:07:28Z")
+
+    ia, ib = _pair_indexes(rows, "Cayenne", "Papeete", start_ms=start, end_ms=end)
+
+    assert (ia, ib) == (2, 3)
+    assert _sea_between(
+        rows, "Cayenne", "Papeete", start_ms=start, end_ms=end,
+    ) == []
+
+
+def test_pair_indexes_preserves_real_intermediate_stops_for_the_selected_visit():
+    rows = [
+        {"name": "Cayenne", "iso": "2026-08-10T14:50:23Z", "nm": 8700.0},
+        {"name": "Halifax", "iso": "2026-08-29T19:57:30Z", "nm": 8780.0},
+        {"name": "Cayenne", "iso": "2026-08-30T03:57:30Z", "nm": 8780.0},
+        {"name": "Papeete", "iso": "2026-10-13T19:07:28Z", "nm": 16200.0},
+    ]
+    ia, ib = _pair_indexes(
+        rows, "Cayenne", "Papeete",
+        start_ms=_ms("2026-08-30T03:57:30Z"),
+        end_ms=_ms("2026-10-13T19:07:28Z"),
+    )
+
+    assert (ia, ib) == (2, 3)
 
 
 def test_sea_between_ignores_a_duplicate_of_the_current_port():
