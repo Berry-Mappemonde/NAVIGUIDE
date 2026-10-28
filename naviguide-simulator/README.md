@@ -55,11 +55,13 @@ redeployed. Details: `infra/vps/README.md` (simulator section).
 | NAVIGUIDE film (2 sidebars, Berry, simulation, briefing) | 4 Ports / Safety / Weather / Cruisers chats |
 | Climatology clock: departure date, days at sea, ETA by month | GRIB / GFS / “arrival Tuesday 2 pm” (simulation B) |
 | Searoute + draw your own route | Polar chat |
-| Polar upload + VMG table (Leopard 46) | GeoJSON or KML import / export |
+| Polar upload + VMG table (Leopard 46) | |
 | Civil clock + virtual boat (Follow, named 10-day forecast, recompute **one** leg) | Globe GRIB, 39 000 nm isochrone, port 3010 |
 | Layer chips (Sextant, Argo, ODATIS, EDMED, CSR, bathymetry, seabed, cables + Climatology stub) | |
-| `ici()`: EEZ, Gold PoE, MPA / projects / ports within 30 nm — the briefing tells this bag | Tavily / Nemotron / Token Factory (steps 5–6) |
+| `ici()`: EEZ, Gold PoE, MPA / projects / ports within 30 nm — the briefing tells this bag | Tavily on screen (no button; the server watch and truth judge are off by default: `NAVIGUIDE_TAVILY_WATCH=0`, `NAVIGUIDE_TRUTH_JUDGE=0`) |
 | Route click → wind / wave / current | Dump of the whole map into the story |
+| Route import (GeoJSON or KML file) and export (GeoJSON / KML) | |
+| Nemotron on Nebius Token Factory (see Models above) | |
 
 **Not for navigation.**
 
