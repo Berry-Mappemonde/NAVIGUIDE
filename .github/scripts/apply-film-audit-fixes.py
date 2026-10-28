@@ -257,10 +257,35 @@ film_path.write_text(film, encoding="utf-8")
 test_path = Path("naviguide-simulator/server/tests/test_film_script.py")
 test = test_path.read_text(encoding="utf-8")
 test = replace_once(
-    test, "    _nm_label,\n)", "    _nm_label,\n    _reconcile_film_indices,\n)",
+    test, "    _nm_label,\n)", "    _nm_label,\n    _drop_stale_dated_sentences,\n    _reconcile_film_indices,\n    _dates_regress,\n)",
     "import reconciler",
 )
 test += '''
+
+def test_stale_date_inside_later_chapter_is_removed_before_writing():
+    """Une date vieille de 82 jours ne doit pas faire rejeter tout le récit."""
+    chapter = {
+        "tA": "2026-08-13T22:50:23Z",
+        "tB": "2026-08-17T08:48:38Z",
+        "text": (
+            "Le 23 mai, une bouée. 489 milles, trois jours de mer. "
+            "Arrivée à Saint-Pierre le 17 août."
+        ),
+        "anchors": [
+            {"charIdx": 0, "t": "2026-08-14T23:50:23Z"},
+            {"charIdx": 117, "t": "2026-08-14T23:50:23Z"},
+            {"charIdx": 205, "t": "2026-08-17T08:48:38Z"},
+        ],
+        "events": [],
+    }
+
+    _drop_stale_dated_sentences([chapter], lang="fr")
+
+    assert "23 mai" not in chapter["text"]
+    assert "489 milles" in chapter["text"]
+    assert "17 août" in chapter["text"]
+    assert not _dates_regress(chapter["text"], "fr")
+
 
 def test_reconcile_film_indices_after_text_cut():
     """Les index utilisent le texte final, pas celui d'avant la coupe budgétaire."""
