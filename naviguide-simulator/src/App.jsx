@@ -1866,8 +1866,8 @@ export default function App() {
   return (
     <div
       data-testid="sim-root"
-      style={{ height: "100vh", width: "100vw", position: "relative", ...rootInsetVars }}
-      className={`${isLightMode ? "light-mode" : ""}${filmFullscreen ? " film-fullscreen" : ""}`.trim()}
+      style={{ width: "100vw", position: "relative", ...rootInsetVars }}
+      className={`naviguide-root${isLightMode ? " light-mode" : ""}${filmFullscreen ? " film-fullscreen" : ""}`}
     >
       <MapScene
         scene={mapScene}
