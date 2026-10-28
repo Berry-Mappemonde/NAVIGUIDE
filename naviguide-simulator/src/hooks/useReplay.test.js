@@ -309,9 +309,10 @@ describe("Ligne d'état pilotée par le t0 de la barre", () => {
     const live = followClockLineFromT0({ ...sample, t0: DEFAULT_T0_ISO, lang: "fr" });
     const shifted = followClockLineFromT0({ ...sample, t0: t0_2025, lang: "fr" });
     assert.match(live, /2026/);
-    assert.match(live, /j112/);
+    // 112 × 24 h de mer pile : début du 113ᵉ jour en mer (J1 = premières 24 h).
+    assert.match(live, /\bj113\b/);
     assert.match(shifted, /2025/);
-    assert.match(shifted, /j112/);
+    assert.match(shifted, /\bj113\b/);
     assert.notEqual(live, shifted);
     assert.match(shifted, /26 sept\. 2025 · 09:14 UTC/);
   });
