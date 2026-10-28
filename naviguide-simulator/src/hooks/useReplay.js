@@ -208,6 +208,27 @@ export function isOfficialFilmVoyage(voyageId) {
   return !id || id === "official";
 }
 
+/** Durée de la ligne « pas rédigé cette fois » au-dessus de la barre. */
+export const FILM_WRITE_NOTICE_MS = 8000;
+
+/**
+ * Issue du clic Rédigé. Plafond, mode off, chaîne vide, traduction ratée :
+ * le serveur sert le brut sans raison, un 429 arrive sans corps. Le client
+ * dit seulement « pas rédigé cette fois », jamais une cause qu'il ignore.
+ */
+export function filmWriteOutcome(data) {
+  if (!data || typeof data !== "object") return "not-written";
+  return resolveServedFilm(data, "written").hasWritten ? "written" : "not-written";
+}
+
+/** Secondes depuis le clic, horloge du navigateur : aucun chiffre du modèle. */
+export function filmWritingElapsedSeconds(since, now) {
+  const from = Number(since);
+  const to = Number(now);
+  if (!Number.isFinite(from) || from <= 0 || !Number.isFinite(to)) return 0;
+  return Math.max(0, Math.floor((to - from) / 1000));
+}
+
 export function isPreparingFilm(data) {
   return String(data?.status || "").toLowerCase() === "preparing";
 }
@@ -1104,6 +1125,8 @@ export function useReplay({
   const [filmSource, setFilmSource] = useState("rules");
   const [filmReviewedBy, setFilmReviewedBy] = useState("");
   const [filmWriting, setFilmWriting] = useState(false);
+  const [filmWritingSince, setFilmWritingSince] = useState(0);
+  const [filmWriteNotice, setFilmWriteNotice] = useState("");
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
   const [estimatedSeconds, setEstimatedSeconds] = useState(0);
@@ -2226,28 +2249,39 @@ export function useReplay({
     }
     if (hasWritten) {
       setFilmWriting(false);
+      setFilmWriteNotice("");
       setFilmStyle("written");
       return;
     }
     if (!isOfficialFilmVoyage(voyageId)) return;
     const path = filmRequestPath(voyageId);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
+    setFilmWriteNotice("");
+    setFilmWritingSince(Date.now());
     setFilmWriting(true);
     fetch(`${API}${path}?${q}`, { method: "POST" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (!data) return;
-        const resolved = resolveServedFilm(data, "written");
-        if (resolved.hasWritten) {
-          setHasWritten(true);
-          setFilmStyle("written");
-          setFilmSource(resolved.source);
-          setFilmReviewedBy(resolved.reviewedBy || "");
+        // Brut servi, 429 ou corps vide : on le dit, sans inventer de raison.
+        if (filmWriteOutcome(data) !== "written") {
+          setFilmWriteNotice("not-written");
+          return;
         }
+        const resolved = resolveServedFilm(data, "written");
+        setHasWritten(true);
+        setFilmStyle("written");
+        setFilmSource(resolved.source);
+        setFilmReviewedBy(resolved.reviewedBy || "");
       })
-      .catch(() => {})
+      .catch(() => setFilmWriteNotice("not-written"))
       .finally(() => setFilmWriting(false));
   }, [hasWritten, lang, targetSeconds, t0, voyageId]);
+
+  useEffect(() => {
+    if (!filmWriteNotice) return undefined;
+    const id = setTimeout(() => setFilmWriteNotice(""), FILM_WRITE_NOTICE_MS);
+    return () => clearTimeout(id);
+  }, [filmWriteNotice]);
 
   return {
     active,
@@ -2288,6 +2322,8 @@ export function useReplay({
     filmSource,
     filmReviewedBy,
     filmWriting,
+    filmWritingSince,
+    filmWriteNotice,
     filmStyle,
     setFilmStyle: chooseFilmStyle,
     hasWritten,
