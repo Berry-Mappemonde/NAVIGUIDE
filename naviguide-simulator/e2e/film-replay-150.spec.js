@@ -11,8 +11,15 @@ test("production film: complete 150-second browser replay with timing and map sa
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(String(error)));
 
-  // Capture the real raw snapshot via GET only. This test never selects
-  // "Rédigé" and never issues POST /voyage/official/film.
+  // Replay the actual production snapshot after the branch's read-time
+  // sanitizer has repaired stale dates and text indices. Only GETs are mocked;
+  // this test never selects "Rédigé" and never issues a model-generating POST.
+  const rawFilmPath = process.env.NAVIGUIDE_FILM_FIXTURE || "/tmp/naviguide-film-fixed.json";
+  const clockPath = process.env.NAVIGUIDE_CLOCK_FIXTURE || "/tmp/naviguide-official-clock.json";
+  const rawFilm = JSON.parse(await fs.readFile(rawFilmPath, "utf8"));
+  const officialClock = JSON.parse(await fs.readFile(clockPath, "utf8"));
+  expect(Array.isArray(rawFilm.chapters) && rawFilm.chapters.length > 0, "le snapshot réel réparé doit contenir des chapitres").toBeTruthy();
+
   const rawResponse = page.waitForResponse((response) => {
     try {
       const url = new URL(response.url());
@@ -25,22 +32,43 @@ test("production film: complete 150-second browser replay with timing and map sa
     }
   }, { timeout: 45_000 });
 
+  await page.route("**/voyage/official/film**", async (route) => {
+    const url = new URL(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...rawFilm,
+        status: "ready",
+        hasWritten: false,
+        style: url.searchParams.get("style") || "raw",
+      }),
+    });
+  });
+  await page.route("**/voyage/official/clock**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(officialClock),
+    });
+  });
+
   await page.addInitScript(() => {
     try { localStorage.setItem("naviguide_lang_v4", "fr"); } catch {}
   });
 
-  const target = process.env.NAVIGUIDE_REPLAY_URL || "https://naviguide.fr";
+  const target = process.env.NAVIGUIDE_REPLAY_URL || "http://127.0.0.1:5174";
   const navigation = await page.goto(target, { waitUntil: "domcontentloaded", timeout: 35_000 });
-  expect(navigation, "la page de production doit répondre").toBeTruthy();
-  expect(navigation.status(), "HTTP de la page de production").toBeLessThan(400);
+  expect(navigation, "le build de branche doit répondre").toBeTruthy();
+  expect(navigation.status(), "HTTP du simulateur local").toBeLessThan(400);
 
   const filmResponse = await rawResponse;
-  expect(filmResponse.ok(), "GET du film brut de production").toBeTruthy();
-  const rawFilm = await filmResponse.json();
-  expect(Array.isArray(rawFilm.chapters) && rawFilm.chapters.length > 0, "le snapshot réel doit contenir des chapitres").toBeTruthy();
-  const rawPath = testInfo.outputPath("film-raw-production.json");
-  await fs.writeFile(rawPath, JSON.stringify(rawFilm, null, 2), "utf8");
-  await testInfo.attach("film-raw-production", { path: rawPath, contentType: "application/json" });
+  expect(filmResponse.ok(), "GET local du snapshot brut réparé").toBeTruthy();
+  const replayFilm = await filmResponse.json();
+  expect(replayFilm.chapters.length).toBe(rawFilm.chapters.length);
+  const rawPath = testInfo.outputPath("film-raw-production-repaired.json");
+  await fs.writeFile(rawPath, JSON.stringify(replayFilm, null, 2), "utf8");
+  await testInfo.attach("film-raw-production-repaired", { path: rawPath, contentType: "application/json" });
 
   await dismissNotForNav(page, { timeout: 1_500 });
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
