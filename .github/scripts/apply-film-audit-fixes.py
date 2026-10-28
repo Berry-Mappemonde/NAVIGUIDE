@@ -509,12 +509,35 @@ film = replace_once(
     "    return False\n\n\ndef _upcoming_omits",
     "time-aware departure skip check",
 )
+hook_path = Path("naviguide-simulator/src/hooks/useReplay.js")
+hook = hook_path.read_text(encoding="utf-8")
+hook = replace_once(
+    hook,
+    "      const done = filmShouldFinish({\n"
+    "        voiceClock,\n"
+    "        speaking,\n"
+    "        voiceAllDone,\n"
+    "        linearFinish: linear.finish,",
+    "      const holdForSelectedBudget = shouldHoldFilmForBudget({\n"
+    "        userBudget: budgetRef.current,\n"
+    "        wallElapsed,\n"
+    "        lastChapter: linear.lastReached,\n"
+    "      });\n"
+    "      const done = filmShouldFinish({\n"
+    "        voiceClock,\n"
+    "        speaking,\n"
+    "        voiceAllDone,\n"
+    "        linearFinish: linear.finish && !holdForSelectedBudget,",
+    "hold the last frame until the selected film budget",
+)
+hook_path.write_text(hook, encoding="utf-8")
+
 film_path.write_text(film, encoding="utf-8")
 
 test_path = Path("naviguide-simulator/server/tests/test_film_script.py")
 test = test_path.read_text(encoding="utf-8")
 test = replace_once(
-    test, "    _nm_label,\n)", "    _nm_label,\n    _drop_stale_dated_sentences,\n    _reconcile_film_indices,\n    _dates_regress,\n)",
+    test, "    _nm_label,\n)", "    _nm_label,\n    _drop_stale_dated_sentences,\n    _reconcile_film_indices,\n    _dates_regress,\n    _anchor_dates_regress,\n    _sea_between,\n    _insert_chapter_air_revisits,\n)",
     "import reconciler",
 )
 test += '''
@@ -605,6 +628,78 @@ def test_reconcile_film_indices_repairs_legacy_overflow_monotonically():
     assert all(0 <= idx < len(chapter["text"]) for idx in indices)
     assert indices == sorted(set(indices))
 '''
+test += '''
+
+def test_legacy_arrival_anchor_is_rebuilt_from_the_spoken_date():
+    """A stale September anchor must not point into the August departure sentence."""
+    text = (
+        "Le 30 août, le catamaran reprend la mer, départ vers Papeete "
+        "(Polynésie française). Arrivée à Papeete (Polynésie française) le 13 octobre."
+    )
+    chapter = {
+        "tA": "2026-08-30T03:57:30Z",
+        "tB": "2026-10-13T19:07:28Z",
+        "text": text,
+        "anchors": [
+            {"charIdx": 0, "t": "2026-08-30T03:57:30Z"},
+            {"charIdx": 42, "t": "2026-08-30T03:57:30Z"},
+            {"charIdx": 104, "t": "2026-09-02T06:42:36Z"},
+            {"charIdx": 119, "t": "2026-10-04T21:56:56Z"},
+            {"charIdx": 137, "t": "2026-10-13T19:07:28Z"},
+        ],
+        "events": [],
+    }
+
+    _reconcile_film_indices([chapter], lang="fr")
+
+    assert not _anchor_dates_regress([chapter], "fr")
+    anchors = chapter["anchors"]
+    assert anchors
+    assert all(0 <= a["charIdx"] < len(text) for a in anchors)
+    assert all(_ms(anchors[i]["t"]) <= _ms(anchors[i + 1]["t"]) for i in range(len(anchors) - 1))
+    assert any(
+        a["charIdx"] >= text.index("Arrivée")
+        and _ms(a["t"]) == _ms(chapter["tB"])
+        for a in anchors
+    )
+
+
+def test_sea_between_ignores_a_duplicate_of_the_current_port():
+    rows = [
+        {"name": "Saint-Pierre", "iso": "2026-08-17T08:48:38Z"},
+        {"name": "Saint-Pierre", "iso": "2026-08-20T22:16:06Z"},
+        {"name": "Halifax", "iso": "2026-08-28T19:57:30Z"},
+    ]
+    assert _sea_between(
+        rows, "Saint-Pierre", "Halifax",
+        start_ms=_ms("2026-08-20T22:16:06Z"),
+        end_ms=_ms("2026-08-28T19:57:30Z"),
+    ) == []
+
+
+def test_air_return_inserts_a_second_cayenne_visit_by_time():
+    rows = [
+        {"name": "Cayenne", "iso": "2026-08-10T14:50:23Z"},
+        {"name": "Halifax", "iso": "2026-08-29T19:57:30Z"},
+        {"name": "Papeete", "iso": "2026-10-13T19:07:28Z"},
+    ]
+    plan = {"chapters": [
+        {
+            "fromName": "Halifax", "toName": "Cayenne",
+            "tA": "2026-08-29T19:57:30Z", "tB": "2026-08-30T03:57:30Z",
+        },
+        {
+            "fromName": "Cayenne", "toName": "Papeete",
+            "tA": "2026-08-30T03:57:30Z", "tB": "2026-10-13T19:07:28Z",
+        },
+    ]}
+
+    out = _insert_chapter_air_revisits(rows, plan)
+    visits = [r for r in out if r["name"] == "Cayenne"]
+    assert len(visits) == 2
+    assert visits[1]["iso"] == "2026-08-30T03:57:30Z"
+
+
 test_path.write_text(test, encoding="utf-8")
 
 store_path = Path("naviguide-simulator/server/official_store.py")
@@ -747,6 +842,16 @@ def test_served_film_plan_repairs_stale_date_and_text_indices():
     assert original["chapters"][0]["events"][0]["charIdx"] == 190
 '''
 test_store_path.write_text(test_store, encoding="utf-8")
+
+hook_test_path = Path("naviguide-simulator/src/hooks/useReplay.test.js")
+hook_test = hook_test_path.read_text(encoding="utf-8")
+hook_test = replace_once(
+    hook_test,
+    "    assert.match(hook, /shouldHoldFilmForBudget/);",
+    "    assert.match(hook, /shouldHoldFilmForBudget/);\n    assert.match(hook, /linearFinish: linear.finish && !holdForSelectedBudget/);",
+    "assert linear playback waits for selected duration",
+)
+hook_test_path.write_text(hook_test, encoding="utf-8")
 
 store_path.write_text(store, encoding="utf-8")
 
