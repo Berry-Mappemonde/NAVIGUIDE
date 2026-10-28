@@ -107,6 +107,9 @@ test("production film: complete 150-second browser replay with timing and map sa
   const actorsByName = new Map();
   const actorVisibilityViolations = [];
   const invalidActorTransitions = [];
+  const actorEntryGaps = [];
+  const actorsDuringAir = [];
+  const actorMaxDistanceByName = { main: 0, side: 0, plane: 0 };
   let sawMainBoat = false;
   let sawSideBoat = false;
   let sawPlane = false;
@@ -194,6 +197,9 @@ test("production film: complete 150-second browser replay with timing and map sa
           invalidActorTransitions.push(transition);
           unexpectedBoundaryJumps.push({ ...transition, reason: "invalid-actor-transition" });
         }
+        if (allowed && !actorsByName.has(sample.vehicle === "plane" ? "plane" : sample.vehicle)) {
+          actorEntryGaps.push({ ...transition, reason: "new-actor-has-no-position-sample" });
+        }
       }
       previousVehicle = sample.vehicle;
       previousPhase = sample.phase;
@@ -220,8 +226,12 @@ test("production film: complete 150-second browser replay with timing and map sa
         const current = { lat: actor.lat, lon: actor.lon, filmNm: sample.filmNm, phase: sample.phase };
         if (prior) {
           const stepKm = distanceKm(prior, current);
+          actorMaxDistanceByName[actorName] = Math.max(actorMaxDistanceByName[actorName] || 0, stepKm);
           const filmDeltaNm = Math.abs(Number(current.filmNm) - Number(prior.filmNm));
           const expectedKm = filmDeltaNm * 1.852;
+          if (["air-out", "side-sail", "air-return"].includes(sample.phase)) {
+            actorsDuringAir.push({ actor: actorName, phase: sample.phase, distanceKm: Number(stepKm.toFixed(3)) });
+          }
           if (actorName === "main" && ["air-out", "side-sail", "air-return"].includes(sample.phase)) {
             mainBoatAirDriftsKm.push(stepKm);
           }
@@ -326,6 +336,9 @@ test("production film: complete 150-second browser replay with timing and map sa
     actorVehicleChanges,
     invalidActorTransitions,
     actorVisibilityViolations,
+    actorEntryGaps,
+    actorsDuringAir,
+    actorMaxDistanceByName,
     phasesSeen: Array.from(phasesSeen).sort(),
     sawMainBoat,
     sawSideBoat,
@@ -360,6 +373,7 @@ test("production film: complete 150-second browser replay with timing and map sa
   ).toEqual([]);
   expect(invalidActorTransitions, "aucun changement d'acteur n'est permis hors des transitions officielles").toEqual([]);
   expect(actorVisibilityViolations, "A reste à quai, B n'est visible qu'en mer entre Halifax et Saint-Pierre, l'avion seulement en vol").toEqual([]);
+  expect(actorEntryGaps, "chaque nouvel acteur doit être échantillonné dès sa transition").toEqual([]);
   expect(sawMainBoat, "le bateau A doit rester visible").toBeTruthy();
   expect(sawSideBoat, "le bateau B doit apparaître au départ de Halifax").toBeTruthy();
   expect(sawPlane, "les vols doivent être représentés par l'avion, pas par le bateau").toBeTruthy();
