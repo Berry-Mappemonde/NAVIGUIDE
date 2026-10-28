@@ -661,9 +661,23 @@ export function formatMonthName(month, lang = "fr") {
   return months[m - 1];
 }
 
+/**
+ * Jour de mer : seul compteur de la barre film ET du panneau Maintenant.
+ * J1 = les 24 premières heures de mer, JN couvre [24·(N−1), 24·N[ h de mer ;
+ * J0 = aucune heure de mer encore (seaHours ≤ 0 : départ, transfert routier).
+ * Pourquoi compter à partir de 1 : un journal de bord appelle « J1 » le premier
+ * jour en mer, et c'était déjà le compte du panneau Maintenant ; la barre
+ * comptait à partir de 0 et affichait d130 à côté de D131 au même instant.
+ */
+export function seaDayNumber(seaHours) {
+  const h = Number(seaHours);
+  if (!Number.isFinite(h) || h <= 0) return 0;
+  return Math.floor(h / 24) + 1;
+}
+
 function clockDayLabel(seaHours, lang = "fr") {
   const prefix = lang === "en" ? "d" : "j";
-  return `${prefix}${Math.max(0, Math.floor((Number(seaHours) || 0) / 24))}`;
+  return `${prefix}${seaDayNumber(seaHours)}`;
 }
 
 function clockNmLabel(sailNm, lang = "fr") {
@@ -710,10 +724,8 @@ export function filmBarTicks(clock, lang = "fr", current = null) {
 }
 
 export function formatFilmClockLine({ sailNm, seaHours, iso, lang = "fr" }) {
-  const days = Math.max(0, Math.floor((Number(seaHours) || 0) / 24));
   const nm = Math.round(Number(sailNm) || 0).toLocaleString(lang === "en" ? "en-US" : "fr-FR");
-  const dayLabel = lang === "en" ? `d${days}` : `j${days}`;
-  return `${nm} nm · ${dayLabel} · ${formatCivilDate(iso, lang)}`;
+  return `${nm} nm · ${clockDayLabel(seaHours, lang)} · ${formatCivilDate(iso, lang)}`;
 }
 
 export function parseDepartureUtc(dateStr, timeStr) {
