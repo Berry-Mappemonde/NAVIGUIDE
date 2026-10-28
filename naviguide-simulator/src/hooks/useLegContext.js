@@ -25,7 +25,7 @@
 
 import { useMemo } from "react";
 import { chapterAtNm } from "../engine/routePlayhead.js";
-import { sampleClockAtTime } from "../engine/voyageClock.js";
+import { sampleClockAtTime, seaDayNumber } from "../engine/voyageClock.js";
 import { nextEscaleStop } from "../utils/escales.js";
 
 // Default catamaran speed (knots)
@@ -142,8 +142,9 @@ export function legAtClockNow({
   const knots = Number.isFinite(asked) && asked > 0
     ? asked
     : (Number.isFinite(sampled) && sampled > 0 ? sampled : null);
-  const sea = Number(sample.seaHours);
-  const day = Number.isFinite(sea) && sea > 0 ? Math.floor(sea / 24) + 1 : null;
+  // Même jour de mer que la barre film (seaDayNumber) ; avant la 1ʳᵉ heure de mer, pas de J.
+  const seaDay = seaDayNumber(sample.seaHours);
+  const day = seaDay > 0 ? seaDay : null;
   const fromStop = chapter.from?.name || null;
   const toStop = chapter.finished
     ? (chapter.from?.name || null)
