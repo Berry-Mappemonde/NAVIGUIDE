@@ -110,6 +110,7 @@ const REASONS = {
   no_entity: ["rien à vérifier ici", "nothing to check here"],
   not_in_along_pearl: ["non collecté sur cette perle", "not collected on this pearl"],
   rtofs_not_ingested: ["RTOFS pas encore ingéré", "RTOFS not ingested yet"],
+  overpass_unavailable: ["Overpass n'a pas répondu", "Overpass did not answer"],
   null: ["pas de donnée", "no data"],
 };
 
@@ -131,6 +132,7 @@ function why(code, lang) {
   if (row) return row[isEn(lang) ? 1 : 0];
   if (/^openmeteo_unavailable/.test(key)) return isEn(lang) ? "Open-Meteo did not answer" : "Open-Meteo n’a pas répondu";
   if (/^rtofs_unavailable/.test(key)) return isEn(lang) ? "RTOFS did not answer" : "RTOFS n’a pas répondu";
+    if (/^outside_us_enc/.test(key)) return isEn(lang) ? "Outside US EEZ: US entry formalities not available" : "Hors ZEE américaine : formalités US non disponibles";
   return key;
 }
 

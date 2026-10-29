@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, Compass, Loader2, Play, X } from "lucide-react";
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
 import { useLang } from "../i18n/LangContext.jsx";
-import { describeModelRoles, getDemoSteps, tourEditedOffer, computePanelPosition, computeArrowDirection, getStagePadding } from "./demoWalkthrough.js";
+import { describeModelRoles, getDemoSteps, tourEditedOffer } from "./demoWalkthrough.js";
 import { describeTfLatency } from "../utils/tfLatency.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
@@ -132,17 +132,6 @@ export function DemoWalkthrough({
   const [anchor, setAnchor] = useState(null);
   const spotOn = open && !hidden && !collapsed;
   const target = step?.target || null;
-
-  // Destruction immédiate si la cible est null (étapes welcome, models, return) :
-  // on tue l'instance AVANT tout rAF pour éviter tout overlay/dimming résiduel et la classe driver-active.
-  useEffect(() => {
-    if (spotOn && target === null) {
-      driverRef.current?.destroy();
-      driverRef.current = null;
-      setAnchor(null);
-    }
-  }, [spotOn, target]);
-
   useEffect(() => {
     if (!spotOn || !target) {
       driverRef.current?.destroy();
@@ -154,14 +143,13 @@ export function DemoWalkthrough({
     let tries = 0;
     let last = "";
     let stable = 0;
-    const stagePadding = getStagePadding(step.id);
     const make = () => driver({
       animate: false,
       allowClose: false,
       allowKeyboardControl: false,
       overlayClickBehavior: () => {},
       overlayOpacity: 0.62,
-      stagePadding,
+      stagePadding: 6,
       stageRadius: 10,
       smoothScroll: false,
     });
@@ -195,28 +183,8 @@ export function DemoWalkthrough({
       window.cancelAnimationFrame(raf);
       window.removeEventListener("resize", onResize);
     };
-  }, [spotOn, target, step.id]);
+  }, [spotOn, target]);
   useEffect(() => () => { driverRef.current?.destroy(); driverRef.current = null; }, []);
-
-  // Pulse animation on "trace" step target — unique useEffect, réessaye si le bouton n'existe pas encore
-  useEffect(() => {
-    if (step.id !== "trace" || !target) return;
-    let el = document.querySelector(target);
-    let checkRaf = 0;
-    const tryAdd = () => {
-      el = document.querySelector(target);
-      if (el) {
-        el.classList.add("naviguide-tour-pulse");
-      } else if (checkRaf < 30) {
-        checkRaf = window.requestAnimationFrame(tryAdd);
-      }
-    };
-    tryAdd();
-    return () => {
-      window.cancelAnimationFrame(checkRaf);
-      if (el) el.classList.remove("naviguide-tour-pulse");
-    };
-  }, [step.id, target]);
 
   if (hidden) return null;
 
@@ -248,7 +216,7 @@ export function DemoWalkthrough({
         type="button"
         data-testid="demo-walkthrough-launch"
         onClick={start}
-        className={`naviguide-demo-launch fixed right-3 top-14 z-[2300] inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold shadow-xl backdrop-blur-sm ${light ? "border-cyan-700/30 bg-white/95 text-slate-900 hover:bg-slate-100" : "border-cyan-200/35 bg-slate-950/95 text-white hover:bg-slate-900"}`}
+        className={`naviguide-demo-launch fixed right-3 top-14 z-[2300] md:top-10 inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold shadow-xl backdrop-blur-sm ${light ? "border-cyan-700/30 bg-white/95 text-slate-900 hover:bg-slate-100" : "border-cyan-200/35 bg-slate-950/95 text-white hover:bg-slate-900"}`}
         title={t("demoLaunchTitle")}
       >
         <Compass size={15} aria-hidden="true" />
@@ -265,22 +233,13 @@ export function DemoWalkthrough({
         data-testid="demo-walkthrough-chip"
         onClick={() => setExpanded(true)}
         title={t("demoChipTitle")}
-        className={`naviguide-demo-launch fixed right-3 top-14 z-[2300] inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold shadow-xl ${surface}`}
+        className={`naviguide-demo-launch fixed right-3 top-14 z-[2300] md:top-10 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold shadow-xl ${surface}`}
       >
         <Compass size={13} aria-hidden="true" />
         {t("demoChip", { n: index + 1, total })}
       </button>
     );
   }
-
-  // Compute panel position using pure logic from demoWalkthrough.js
-  const panelStyle = anchor && typeof window !== "undefined" && window.innerWidth >= 768
-    ? computePanelPosition(anchor, step.id, window.innerWidth, window.innerHeight)
-    : undefined;
-
-  const arrowDir = (anchor && window && window.innerWidth >= 768)
-    ? computeArrowDirection(anchor, step.id, window.innerWidth, window.innerHeight)
-    : undefined;
 
   return (
     <aside
@@ -291,8 +250,9 @@ export function DemoWalkthrough({
       data-side={step.side}
       data-target={step.target || ""}
       data-spot={anchor ? "on" : "off"}
-      {...(arrowDir ? { "data-arrow": arrowDir } : {})}
-      style={panelStyle}
+      style={anchor && typeof window !== "undefined" && window.innerWidth >= 768
+        ? { top: `${Math.round(Math.max(56, Math.min(anchor.top, window.innerHeight - 420)))}px` }
+        : undefined}
       className={`naviguide-demo-panel fixed z-[2300] flex flex-col overflow-y-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-md inset-x-2 bottom-2 max-h-[45dvh] md:inset-x-auto md:bottom-auto md:top-14 md:w-[min(23rem,calc(100vw-1.5rem))] md:max-h-[calc(100dvh-5rem)] ${side} ${surface}`}
     >
       <p className="sr-only" aria-live="polite" data-testid="demo-walkthrough-live">

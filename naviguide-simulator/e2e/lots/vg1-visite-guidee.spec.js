@@ -286,6 +286,20 @@ test("VG1 — pas d'overlay driver.js aux étapes 1, 2, 8 (welcome, models, retu
   await expect(page.locator(".driver-active-element")).toHaveCount(0);
 });
 
+test("VG1 — étape 1 → 2 (welcome → models) < 2 s avec cache vide", async ({ page }) => {
+  // S'assurer qu'on part d'un cache vide (pas de tour au chargement)
+  await open(page);
+  const start = Date.now();
+  await startTour(page);
+  // Étape 1 : welcome
+  await expect(panel(page)).toHaveAttribute("data-step", "welcome");
+  await next(page, "models");
+  // Étape 2 : models - la transition ne doit pas bloquer sur l'appel réseau
+  await expect(panel(page)).toHaveAttribute("data-step", "models");
+  const elapsed = Date.now() - start;
+  expect(elapsed).toBeLessThan(2000);
+});
+
 test("VG1 — étape 5 (layers) : cible = summary [data-tour=layers] (pas le details entier)", async ({ page }) => {
   await open(page);
   await startTour(page);

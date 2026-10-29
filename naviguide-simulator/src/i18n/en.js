@@ -185,6 +185,7 @@ export default {
   iciLegRemaining:    "{nm} nm left",
   iciReasonUnavailable: "unavailable",
   iciReasonNoData:    "no data",
+  iciReasonOverpassUnavailable: "Overpass did not answer",
   eventBubbleChipWind: "Wind",
   eventBubbleChipHs:   "Hs",
   eventBubbleChipQuay: "{n} d alongside",
@@ -627,6 +628,9 @@ export default {
   aiActGeneratedLabel: "AI-generated content (model: {model})",
   aiActChatNotice: "You are interacting with artificial intelligence. Replies are generated automatically and may contain errors.",
   aiActChatNoticeDismiss: "Got it",
+    aiActChatNoticeDismiss: "Got it",
+  aiChatNotice: "You are chatting with an AI. Replies are generated automatically and may contain errors.",
+  aiChatNoticeDismiss: "Got it",
 
   // Moment cards: fallback title and the stored entry alert
   momentFallbackTitle: "Boat position",

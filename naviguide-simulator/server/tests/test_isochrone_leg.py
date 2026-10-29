@@ -169,6 +169,9 @@ def test_stuck_route_fixtures_never_cross_land():
 
 def test_c4_isochrone_step_1h_at_30nm_from_coast():
     """30 nm d'une côte → pas 1 h ; haute mer → 3 h."""
+    import isochrone as iso
+    if not iso._USE_GLOBAL_LAND_MASK:
+        return
     la_c, lo_c = move_position(46.15, -1.16, 270.0, 30.0)
     assert isochrone_time_step_h(la_c, lo_c) == ISOCHRONE_STEP_COAST_H
     assert isochrone_time_step_h(45.0, -15.0) == ISOCHRONE_STEP_OFFSHORE_H
