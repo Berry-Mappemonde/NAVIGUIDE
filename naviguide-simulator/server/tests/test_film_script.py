@@ -6350,3 +6350,15 @@ def test_return_to_a_stop_is_not_a_skip():
     assert fs._sea_between(rows, "Cayenne (Guyane)", "Papeete") == []
     t = "Then, the catamaran sets sail again, heading for Papeete (French Polynesia)."
     assert fs._cap_leg_faults(t, rows, "Cayenne (Guyane)", "Papeete (Polynésie française)") == []
+
+
+def test_grouped_distance_fact_keeps_its_thousands():
+    import film_script as fs
+    facts = fs.chapter_structured_facts({"text": "Le 4 juin : 5 153 milles, à 8 nœuds."}, lang="fr")
+    assert "5 153 milles" in facts["distances"] and "153 milles" not in facts["distances"]
+
+
+def test_close_but_different_place_is_not_an_exonym():
+    import film_script as fs
+    got = fs._en_translation_names("The Focolari Movement project. Then Rochefort.", "Mouvement des Focolari. La Rochelle.")
+    assert "movement" in got and "rochefort" not in got

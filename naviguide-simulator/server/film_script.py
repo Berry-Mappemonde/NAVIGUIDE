@@ -9360,7 +9360,7 @@ def chapter_structured_facts(chapter: dict, *, lang: str = "fr") -> dict[str, An
 
     distances: list[str] = []
     for m in re.finditer(
-        r"\d+(?:[.,]\d+)?\s*(?:milles nautiques|milles|nautical miles|nœuds|noeuds|knots|jours|days)",
+        r"\b\d{1,3}(?:[ \u202f\u00a0]\d{3})+(?![\d.,]\d)\s*(?:milles nautiques|milles|nautical miles)|\d+(?:[.,]\d+)?\s*(?:milles nautiques|milles|nautical miles|nœuds|noeuds|knots|jours|days)",
         text,
         re.I,
     ):
@@ -11084,6 +11084,7 @@ def _fr_approx_numbers(fr_src: str) -> list[str]:
 
 def _en_translation_names(en_text: str, fr_src: str) -> set[str]:
     """Noms anglais tolérés : exonyme ou adjectif d'un mot déjà dans le français (« Samoan » ← « samoanes »)."""
+    import difflib  # noqa: PLC0415
     import unicodedata  # noqa: PLC0415
 
     def _fold(x: str) -> str:
@@ -11095,7 +11096,9 @@ def _en_translation_names(en_text: str, fr_src: str) -> set[str]:
         parts = [_fold(p.replace("’", "'").split("'")[-1]) for p in tok.split("-") if p] or [tok]
         if all(
             p in _EN_GEO_WORDS or p in fr_words
-            or any(len(p) >= 4 and w.startswith(p[:4]) for w in fr_words)
+            or any(len(p) >= 6 and w.startswith(p[:6]) for w in fr_words)
+            # « Movement » ← « Mouvement » : même mot, graphie anglaise
+            or any(len(p) >= 5 and difflib.SequenceMatcher(None, p, w).ratio() >= 0.75 for w in fr_words)
             for p in parts if p
         ):
             out.add(tok)
