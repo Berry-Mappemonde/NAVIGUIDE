@@ -6252,3 +6252,20 @@ def test_super_spelled_numbers_become_digits_before_edit():
     import film_script as fs
     t = "Départ : huit mille trois cent quatre-vingt-treize milles, le trente et un mai 2026, un jour de mer."
     assert fs._digits_for_speech(t) == "Départ : 8 393 milles, le 31 mai 2026, un jour de mer."
+
+
+def test_translation_never_mixes_french_fallback_sentences():
+    import asyncio
+    import film_script as fs
+    raw_ch = {"id": "c1", "text": "Le 4 juin, départ vers Fort-de-France. Arrivée le 14 juillet.", "anchors": []}
+    fr = {"chapters": [{**raw_ch, "text": "Le 4 juin, départ vers Fort-de-France. Arrivée le 14 juillet."}]}
+
+    async def half(system, user, **kw):
+        return "On June 4, departure for Fort-de-France.", "nemotron-lightning"
+
+    async def full(system, user, **kw):
+        return "On June 4, departure for Fort-de-France. Arrival on July 14.", "nemotron-lightning"
+
+    assert asyncio.run(fs.translate_written_plan(fr, {"chapters": [raw_ch]}, cascade=half)) is None
+    en = asyncio.run(fs.translate_written_plan(fr, {"chapters": [raw_ch]}, cascade=full))
+    assert en and "juin" not in en["chapters"][0]["text"]

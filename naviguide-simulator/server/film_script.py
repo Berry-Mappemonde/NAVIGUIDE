@@ -9387,7 +9387,7 @@ def chapter_structured_facts(chapter: dict, *, lang: str = "fr") -> dict[str, An
 _NAME_STOP = frozenset({
     "le", "la", "les", "un", "une", "des", "du", "de", "d", "au", "aux", "et", "ou", "en",
     "sur", "dans", "par", "pour", "avec", "sans", "sous", "vers", "chez", "entre",
-    "puis", "ensuite", "plus", "loin", "arrivée", "arrivé", "arrivée", "départ",
+    "puis", "ensuite", "plus", "loin", "arrivée", "arrivé", "arrivée", "départ", "arrival", "departure", "leaving", "in",
     "aujourd", "hui", "aujourd'hui", "the", "a", "an", "and", "or", "then", "next",
     "after", "from", "into", "on", "at", "by", "for", "with", "cap", "heading",
     "milles", "nautiques", "nautical", "miles", "jours", "days", "nœuds", "noeuds",
@@ -11016,13 +11016,16 @@ async def translate_written_plan(
     from story_cascade import TRANSLATE_SYSTEM  # noqa: PLC0415
 
     raw_chapters = [c for c in (raw_plan.get("chapters") or []) if isinstance(c, dict)]
+    raw_by_id = {c.get("id"): c for c in raw_chapters if c.get("id") is not None}
     fr_chapters = [c for c in (fr_plan.get("chapters") or []) if isinstance(c, dict)]
     if not fr_chapters:
         return None
     out: list[dict] = []
     any_ok = False
     for i, ch in enumerate(fr_chapters):
-        raw_ch = raw_chapters[i] if i < len(raw_chapters) else ch
+        # Le français accepté (édité, condensé) est la référence phrase à phrase ;
+        # les faits viennent du chapitre brut de même id.
+        raw_ch = raw_by_id.get(ch.get("id")) or (raw_chapters[i] if i < len(raw_chapters) else ch)
         src = ch.get("text") or ""
         facts = chapter_structured_facts(raw_ch, lang="fr")
         guarded, rw = "", 0
@@ -11038,14 +11041,17 @@ async def translate_written_plan(
             )
             if not (text or "").strip() or source in {"rules", "budget"}:
                 return None
-            guarded, rw, _fb = apply_written_guard(raw_ch.get("text") or src, text, facts, lang="en")
-            if rw > 0:
+            guarded, rw, fb = apply_written_guard(src, text, facts, lang="en")
+            if len(_sentences(speak_film_text(text, "en"))) < len(_sentences(src)):
+                fb = max(fb, 1)  # phrase manquante : le garde-fou recollerait le français
+            if rw > 0 and fb == 0:
                 break
-        if rw <= 0:
+        if rw <= 0 or fb > 0:
+            # Jamais un anglais mêlé de phrases françaises de repli.
             return None
         any_ok = True
-        anchors = reanchor_written_chapter(raw_ch, guarded, "en")
-        out.append({**raw_ch, "text": guarded, "anchors": anchors})
+        anchors = reanchor_written_chapter(ch, guarded, "en")
+        out.append({**ch, "text": guarded, "anchors": anchors})
     if not any_ok:
         return None
     stamped = _stamp_written_plan(
@@ -11151,7 +11157,7 @@ async def write_film_chain(
         stats["faults"] = review_fr.get("faults") or []
         return None, None, stats
 
-    en_plan = await translate_written_plan(accepted, raw, cascade=cascade)
+    en_plan = await translate_written_plan(accepted, ref_raw, cascade=cascade)
     if en_plan:
         en_plan = _stamp_written_plan(
             en_plan,
