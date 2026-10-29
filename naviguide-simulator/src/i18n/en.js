@@ -113,9 +113,13 @@ export default {
   iciBriefingLoading: "Filling the pack around the boat…",
   iciBriefingFallback: "The pack around the boat has no story yet.",
   storySourceLightning: "Nemotron 3.5 Lightning · Token Factory",
-  storySourceSuper: "Nemotron 3 Super · Token Factory",
+  // Le palier write (source nemotron-super / nemotron-super-vl) sert Nemotron 3.5 Super VL.
+  storySourceSuper: "Nemotron 3.5 Super VL · Token Factory",
+  // Seulement si le modèle servi est explicitement Super 120B (ancien stock, retiré le 9/11).
+  storySourceSuper120b: "Nemotron 3 Super 120B · Token Factory",
   storySourceSuperVl: "Nemotron 3.5 Super VL · Token Factory",
-  storySourceSuperReviewed: "Nemotron 3 Super · Token Factory · reviewed by Ultra",
+  storySourceSuperReviewed: "Nemotron 3.5 Super VL · Token Factory · reviewed by Ultra",
+  storySourceSuper120bReviewed: "Nemotron 3 Super 120B · Token Factory · reviewed by Ultra",
   storySourceUltra: "Nemotron 3 Ultra · Token Factory",
   storySourceOpenrouter: "OpenRouter",
   storySourceClaude: "Claude",
@@ -678,6 +682,7 @@ export default {
   llmBrandNebius: "Nebius",
 
   // NB2
-  storySourceNano: "Nemotron 3 Nano · Token Factory",
+  // Ancienne source nemotron-nano seulement : le palier nano sert Nemotron 3.5 Lightning.
+  storySourceNano: "Nemotron 3 Nano 30B · Token Factory",
   filmModels: "Models",
 };

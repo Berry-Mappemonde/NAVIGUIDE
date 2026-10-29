@@ -131,6 +131,7 @@ const FILM_SOURCE_I18N = Object.freeze({
   "nemotron-lightning": "storySourceLightning",
   "nemotron-super": "storySourceSuper",
   "nemotron-super-token-factory": "storySourceSuper",
+  "nemotron-super-vl": "storySourceSuperVl",
   "nemotron-ultra": "storySourceUltra",
   nemotron: "storySourceSuper",
   openrouter: "storySourceOpenrouter",
@@ -140,17 +141,36 @@ const FILM_SOURCE_I18N = Object.freeze({
   cache: "storySourceCache",
 });
 
-export function filmSourceKey(source, reviewedBy) {
+/** Super 120B (retired 9 Nov. 2026) only when the served model id names it. */
+function isLegacySuperModelId(model) {
+  const m = String(model || "").toLowerCase();
+  return m.includes("super") && m.includes("120b");
+}
+
+/**
+ * Libellé du film. Le palier write sert Nemotron 3.5 Super VL (llm_budget.DEFAULT_MODELS) :
+ * une source « nemotron-super » sans modèle se lit Super VL ; `model` (id servi) tranche
+ * (Super 120B ancien stock, Lightning en repli étiqueté).
+ */
+export function filmSourceKey(source, reviewedBy, model) {
   const s = String(source || "").toLowerCase();
+  const m = String(model || "").toLowerCase();
   const reviewed = String(reviewedBy || "").toLowerCase();
+  const legacy = isLegacySuperModelId(m) || isLegacySuperModelId(s);
   if ((s.includes("reviewed") && s.includes("ultra")) || (reviewed.includes("ultra") && isWrittenFilmSource(source))) {
-    return "storySourceSuperReviewed";
+    return legacy ? "storySourceSuper120bReviewed" : "storySourceSuperReviewed";
   }
   if (s === "openrouter" || s.startsWith("openrouter")) return "storySourceOpenrouter";
   if (s === "claude" || s.startsWith("claude")) return "storySourceClaude";
   if (/gpt-oss|nvidia-gpt|\bnim\b/.test(s) || s.startsWith("nvidia-")) return "storySourceNim";
+  if (legacy) return "storySourceSuper120b";
   if (s.endsWith("-nano") || s.includes("-nano")) return "storySourceNano";
-  if (isWrittenFilmSource(source)) return "storySourceSuper";
+  if (s.includes("super-vl")) return "storySourceSuperVl";
+  if (isWrittenFilmSource(source)) {
+    if (m.includes("lightning")) return "storySourceLightning";
+    if (m.includes("nemotron") && m.includes("ultra")) return "storySourceUltra";
+    return "storySourceSuper";
+  }
   return FILM_SOURCE_I18N[s] || "storySourceRules";
 }
 
@@ -1103,6 +1123,7 @@ export function useReplay({
   const [progress, setProgress] = useState(0);
   const [filmSource, setFilmSource] = useState("rules");
   const [filmReviewedBy, setFilmReviewedBy] = useState("");
+  const [filmModel, setFilmModel] = useState("");
   const [filmWriting, setFilmWriting] = useState(false);
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
@@ -1329,6 +1350,7 @@ export function useReplay({
       remotePlanKeyRef.current = q;
       setFilmSource(resolved.source);
       setFilmReviewedBy(resolved.reviewedBy || "");
+      setFilmModel(resolved.model || "");
       applyEstimates(data);
       applyStory(data);
     };
@@ -1374,6 +1396,7 @@ export function useReplay({
       setHasWritten(false);
       setFilmSource("rules");
       setFilmReviewedBy("");
+      setFilmModel("");
       setFilmWriting(false);
       setEstimatedSeconds(0);
       setVariantEstimates(null);
@@ -1392,6 +1415,7 @@ export function useReplay({
           if (!resolved?.hasWritten || !resolved.source) return;
           setFilmSource(resolved.source);
           setFilmReviewedBy(resolved.reviewedBy || "");
+          setFilmModel(resolved.model || "");
         })
         .catch((err) => {
           if (err?.name === "AbortError" || cancelled || ac.signal.aborted) return;
@@ -1576,6 +1600,7 @@ export function useReplay({
     const chapters = picked.chapters;
     setFilmSource(picked.source || local.source || "rules");
     setFilmReviewedBy("");
+    setFilmModel("");
     const userBudget = Number(targetSeconds) > 0 ? Number(targetSeconds) : 0;
     const playedChars = chapters.reduce((n, c) => n + String(c?.text || "").length, 0);
     if (!filmBudgetCanPlay({ chars: playedChars, budgetSeconds: userBudget })) return false;
@@ -2243,6 +2268,7 @@ export function useReplay({
           setFilmStyle("written");
           setFilmSource(resolved.source);
           setFilmReviewedBy(resolved.reviewedBy || "");
+          setFilmModel(resolved.model || "");
         }
       })
       .catch(() => {})
@@ -2287,6 +2313,7 @@ export function useReplay({
     isVoiceHeld,
     filmSource,
     filmReviewedBy,
+    filmModel,
     filmWriting,
     filmStyle,
     setFilmStyle: chooseFilmStyle,

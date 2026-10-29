@@ -44,7 +44,7 @@ for (const [lang, prefix] of [["fr", "Contenu généré par IA"], ["en", "AI-gen
     await written.click();
     const source = page.getByTestId("film-source");
     await expect(source).toContainText(prefix, { timeout: 8_000 });
-    await expect(source).toContainText("Nemotron 3 Super");
+    await expect(source).toContainText("Nemotron 3.5 Super VL");
     const label = source.locator("span").first();
     const fit = await label.evaluate((el) => {
       const clip = el.closest(".naviguide-film-bar") || document.documentElement;
@@ -59,7 +59,7 @@ for (const [lang, prefix] of [["fr", "Contenu généré par IA"], ["en", "AI-gen
         inViewport: box.left >= 0 && box.right <= window.innerWidth,
       };
     });
-    expect(fit.text).toContain("Nemotron 3 Super");
+    expect(fit.text).toContain("Nemotron 3.5 Super VL");
     for (const extra of fit.overflow) expect(extra, `débordement : ${JSON.stringify(fit)}`).toBeLessThanOrEqual(0);
     expect(fit.inside, `boîte coupée par la barre : ${JSON.stringify(fit)}`).toBe(true);
     expect(fit.inViewport).toBe(true);

@@ -95,7 +95,7 @@ test("Rédigé actif si hasWritten ou film prêt, jamais Rédigé comme source",
   await written.click();
   await expect(written).toHaveAttribute("aria-pressed", "true");
   const source = page.getByTestId("film-source");
-  await expect(source).toContainText("Nemotron 3 Super", { timeout: 8_000 });
+  await expect(source).toContainText("Nemotron 3.5 Super VL", { timeout: 8_000 });
   await expect(source).toContainText("Token Factory");
   await expect(source).not.toHaveAttribute("hidden", "");
   expect(llmHits, "aucun appel LLM depuis le navigateur").toEqual([]);

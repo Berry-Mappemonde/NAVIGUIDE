@@ -207,7 +207,7 @@ def main() -> int:
     ap.add_argument(
         "--write-film",
         action="store_true",
-        help="RG11A : forcer le rédigé Nemotron 3 Super (sans recalculer le brut)",
+        help="RG11A : forcer le rédigé Nemotron 3.5 Super VL, palier write (sans recalculer le brut)",
     )
     ap.add_argument(
         "--film-only",

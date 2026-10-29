@@ -1,5 +1,5 @@
 // Libellé rédigé en texte seul, dans la rangée des commandes.
-// EN → Suivre → Revoir → Written : « Nemotron 3 Super » et « Token Factory »,
+// EN → Suivre → Revoir → Written : « Nemotron 3.5 Super VL » et « Token Factory »,
 // aucune image de logo. Un repli (NIM, OpenRouter) ne dit pas Token Factory.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -26,7 +26,7 @@ function filmPayload({ written, source, seconds = 150 }) {
     hasWritten: written,
     source: written ? source : "rules",
     reviewedBy: written && source === "nemotron-super" ? "" : undefined,
-    model: written ? "nvidia/nemotron-3-super-120b-a12b" : undefined,
+    model: written ? "nvidia/Nemotron-3.5-Super-VL" : undefined,
     writtenAt: written ? "2026-10-17T10:00:00Z" : undefined,
     targetSeconds: seconds,
     chapters: [{
@@ -102,7 +102,7 @@ test("EN, Follow, Replay, Written: text label, no third-party logo", async ({ pa
   await expect(source).toContainText("Writing…", { timeout: 2_000 });
   await expect(source).not.toContainText(/Nemotron|NIM|OpenRouter|Claude|Token Factory|Nebius/i);
   await expect(source).toContainText("AI-generated content", { timeout: 8_000 });
-  await expect(source).toContainText("Nemotron 3 Super");
+  await expect(source).toContainText("Nemotron 3.5 Super VL");
   await expect(source).toContainText("Token Factory");
   await expect(source).not.toHaveAttribute("hidden", "");
   await expect(source.locator("img")).toHaveCount(0);
@@ -114,7 +114,7 @@ test("EN, Follow, Replay, Written: text label, no third-party logo", async ({ pa
 
   if (await page.getByTestId("replay-start").isEnabled().catch(() => false)) {
     await page.getByTestId("replay-start").click();
-    await expect(source).toContainText("Nemotron 3 Super");
+    await expect(source).toContainText("Nemotron 3.5 Super VL");
     await expect(source).toContainText("Token Factory");
     await expect(source.locator("img")).toHaveCount(0);
   }
