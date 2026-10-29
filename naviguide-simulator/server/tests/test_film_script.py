@@ -5010,7 +5010,7 @@ def test_ed2_mixed_nim_chapters_keep_nim_when_last_is_super(monkeypatch):
         return text, src
 
     fr, _en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=mixed))
-    assert seen == [1, 2, 3]
+    assert seen == [1, 2, 3, 4, 5, 6]
     assert fr is not None
     assert stats["source"] == "nvidia-gpt-oss-20b"
     assert fr["source"] == "nvidia-gpt-oss-20b"

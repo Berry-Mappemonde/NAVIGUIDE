@@ -2997,7 +2997,7 @@ async def start_film_write(
     Returns: {...cached, status:"writing", writing:true, hasWritten:false, targetSeconds}
     """
     import llm_budget  # noqa: PLC0415
-    from film_script import translate_written_plan, write_film_chain  # noqa: PLC0415
+    from film_script import write_film_chain  # noqa: PLC0415
 
     lg = (lang or "fr")[:2].lower()
     secs = int(seconds or 0)
@@ -3047,15 +3047,7 @@ async def start_film_write(
     if existing_fr and lg == "en":
         if not llm_budget.allow("fast"):
             return serve_film(lang=lg, seconds=secs, style="written")
-        en_raw = _raw_plan_for(body, "en", secs) or fr_raw
-        en_plan = await translate_written_plan(existing_fr, en_raw, cascade=cascade_fn)
-        if not en_plan:
-            return serve_film(lang=lg, seconds=secs, style="written")
-        en_plan = {**en_plan, "receipt": film_receipt(
-            receipt_calls, {"lightning": 1}, when, base=existing_fr.get("receipt"),
-        )}
-        body = _put_written_variant(body, "en", secs, en_plan, when, last_stop)
-        put("film", body, hit.get("key"))
+        # EN is now generated in parallel in write_film_chain, just serve cached
         return serve_film(lang=lg, seconds=secs, style="written")
 
     if not llm_budget.allow("write"):
@@ -3113,7 +3105,7 @@ async def write_film_on_click(
 ) -> dict:
     """Chaîne Super → Ultra? → Lightning, une fois par (langue, durée). Au clic seulement."""
     import llm_budget  # noqa: PLC0415
-    from film_script import translate_written_plan, write_film_chain  # noqa: PLC0415
+    from film_script import write_film_chain  # noqa: PLC0415
 
     lg = (lang or "fr")[:2].lower()
     secs = int(seconds or 0)
@@ -3148,15 +3140,7 @@ async def write_film_on_click(
     if existing_fr and lg == "en":
         if not llm_budget.allow("fast"):
             return serve_film(lang=lg, seconds=secs, style="written")
-        en_raw = _raw_plan_for(body, "en", secs) or fr_raw
-        en_plan = await translate_written_plan(existing_fr, en_raw, cascade=cascade_fn)
-        if not en_plan:
-            return serve_film(lang=lg, seconds=secs, style="written")
-        en_plan = {**en_plan, "receipt": film_receipt(
-            receipt_calls, {"lightning": 1}, when, base=existing_fr.get("receipt"),
-        )}
-        body = _put_written_variant(body, "en", secs, en_plan, when, last_stop)
-        put("film", body, hit.get("key"))
+        # EN is now generated in parallel in write_film_chain, just serve cached
         return serve_film(lang=lg, seconds=secs, style="written")
 
     if not llm_budget.allow("write"):

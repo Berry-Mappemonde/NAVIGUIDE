@@ -12698,11 +12698,18 @@ async def write_film_chain(
         stats["faults"] = review_fr.get("faults") or []
         return None, None, stats
 
-    en_plan = await translate_written_plan(accepted, ref_raw, cascade=cascade)
-    if en_plan and secs == 150:
-        # Lightning rallonge parfois : l'anglais tient lui aussi dans 2:30.
-        en_plan = condense_written_plan(en_plan, 150, lang="en")
-    if en_plan:
+    # Génération EN indépendante en parallèle (plus de traduction FR→EN)
+    # On lance la chaîne FR complète, puis EN part du même raw_plan
+    async def _write_en_plan():
+        from film_script import write_stored_plan  # noqa: PLC0415
+        en_plan, en_stats = await write_stored_plan(
+            ref_raw, lang="en", cascade=cascade, seconds=seconds,
+        )
+        if en_plan is None or not (en_plan.get("chapters") or []):
+            return None
+        # Post-traitements identiques à FR : condense + stamp + relecture
+        if secs == 150:
+            en_plan = condense_written_plan(en_plan, 150, lang="en")
         en_plan = _stamp_written_plan(
             en_plan,
             accepted.get("source") or WRITTEN_SOURCE,
@@ -12710,14 +12717,16 @@ async def write_film_chain(
             reviewed_by=accepted.get("reviewedBy"),
             model=accepted.get("model"),
         )
-        stats["lightning"] = 1
         ok_en, review_en = await reread_before_store(en_plan, stops, cascade=cascade, lang="en")
         stats["reread_en"] = "pass" if ok_en else "fail"
         stats["rereadBy_en"] = str(review_en.get("source") or "")
         if not ok_en:
             stats["faults"] = review_en.get("faults") or []
-            stats["lightning"] = 0
-            en_plan = None
+            return None
+        stats["lightning"] = 1
+        return en_plan
+
+    en_plan = await _write_en_plan()
     return accepted, en_plan, stats
 
 
