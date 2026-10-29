@@ -386,6 +386,16 @@ export function abandonVoiceToLinear({
  * voiceSpokenAll termine ; le budget n'arrête jamais la clôture au milieu
  * (« Aujourd'hui, le » coupé, transcription du 14 oct.).
  */
+/**
+ * Index de caractère publié au tick de fin : la fin du dernier chapitre,
+ * pour que le sous-titre montre la phrase de clôture et non la 1re phrase.
+ */
+export function filmEndCharIdx(lastChapter, chapterIdx, chapterCount, fallback = 0) {
+  if (!lastChapter || chapterIdx !== chapterCount - 1) return fallback;
+  const chars = Number(lastChapter.chars);
+  return Number.isFinite(chars) && chars > 0 ? Math.max(fallback, chars) : fallback;
+}
+
 export function filmShouldFinish({
   voiceClock = false,
   speaking = false,
@@ -1927,6 +1937,9 @@ export function useReplay({
       if (done) {
         const last = plan.chapters[plan.chapters.length - 1];
         ingest(last?.tB ?? w.endMs);
+        // Fin du film : le sous-titre reste sur la dernière phrase (sans voix,
+        // voiceCharRef vaut 0 et ramenait la 1re phrase du dernier chapitre).
+        charIdx = filmEndCharIdx(last, chapterIdxRef.current, plan.chapters.length, charIdx);
         finish();
       } else if (catchup) {
         const spokenCh = plan.chapters[chapterIdxRef.current];
@@ -2110,7 +2123,8 @@ export function useReplay({
         toName: chapter?.toName,
         anchors: chapter?.anchors,
       });
-      if (uiDue && sub.text !== lastSubtitleRef.current) {
+      // Tick de fin : le sous-titre de clôture part au DOM même hors cadence UI.
+      if ((uiDue || done) && sub.text !== lastSubtitleRef.current) {
         lastSubtitleRef.current = sub.text;
         setSubtitle(sub.text);
         setSubtitlePlace(sub.place);

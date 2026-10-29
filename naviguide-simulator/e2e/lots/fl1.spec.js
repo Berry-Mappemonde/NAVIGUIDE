@@ -149,13 +149,17 @@ test("Revoir 2:30 joue chaque chapitre jusqu'au bout", async ({ page }) => {
     ended: Boolean(window.__naviguideFilm?.ended),
     count: window.__naviguideFilm?.chapterCount || 0,
     idx: window.__fl1Idx || [],
-    subtitle: document.querySelector("[data-testid='film-subtitle']")?.innerText || "",
+    // Publié dans le même tick que la fin (sans la latence du rendu React).
+    filmSubtitle: String(window.__naviguideFilm?.subtitle || ""),
   }));
   expect(played.ended).toBe(true);
   expect(played.count).toBe(served.n);
   if (served.n === 15) expect(played.count).toBe(15);
   if (served.closing.includes("Dzaoudzi")) {
-    expect(played.subtitle).toContain("Dzaoudzi");
+    // Le tick de fin publie la phrase de clôture (pas la 1re phrase du dernier chapitre).
+    expect(played.filmSubtitle, "sous-titre publié au tick de fin").toContain("Dzaoudzi");
+    // Le DOM suit au rendu React suivant (runner CI chargé) : on attend, sans relâcher l'assertion.
+    await expect(page.getByTestId("film-subtitle")).toContainText("Dzaoudzi", { timeout: 5_000 });
   }
   expect(played.idx, `chapitres vus ${played.idx.join(",")}`).toEqual(
     Array.from({ length: served.n }, (_, i) => i),
