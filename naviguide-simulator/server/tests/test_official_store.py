@@ -1934,7 +1934,7 @@ def test_ed2_reservice_keeps_source_reviewed_by_and_model(tmp_path, monkeypatch)
     assert out["hasWritten"] is True
     assert out["source"] == "nemotron-super"
     assert out["reviewedBy"] == "nemotron-ultra"
-    assert out["model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert out["model"] == "nvidia/Nemotron-3.5-Super-VL"
     assert out["generated_at"] == "2026-10-17T10:00:00Z"
     again = official_store.serve_film("fr", 150, style="written")
     assert again["source"] == out["source"]
