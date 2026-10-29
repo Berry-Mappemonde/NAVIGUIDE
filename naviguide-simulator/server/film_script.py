@@ -10326,11 +10326,15 @@ async def reread_before_store(
         try:
             for _attempt in range(2):
                 # Le verdict cite des dates du texte : pas de filtre des nombres.
+                # Seconde demande (hors cache) si rien ou un verdict tronqué : plus court.
+                ask = user if _attempt == 0 else (
+                    user + "\nAnswer with one short JSON line; each fault under 12 words."
+                )
                 text, source = await cascade(
-                    REREAD_SYSTEM, user, tier=_reread_tier(), fallback="", facts=_verdict_facts(user),
+                    REREAD_SYSTEM, ask, tier=_reread_tier(), fallback="", facts=_verdict_facts(user),
                     max_tokens=REREAD_MAX_TOKENS,
                 )
-                if source not in {"rules", ""}:
+                if source not in {"rules", ""} and _parse_reread_verdict(text) is not None:
                     break
         except Exception:
             return True, report
@@ -11066,6 +11070,8 @@ _EN_GEO_WORDS = frozenset({
     "chilean", "peruvian", "polynesian", "indonesian", "madeira", "azores", "balearic",
     "sicilian", "sardinian", "greek", "tunisian", "algerian", "maltese", "kiwi", "zealand",
     "year", "one", "two", "three", "four", "five", "phase",
+    "trinidad", "tobago", "kitts", "nevis", "eustatius", "lucia", "vincent", "grenadines",
+    "christopher", "virgin", "turks", "caicos", "cayman", "falkland", "helena", "ascension",
     "dutch", "german", "norwegian", "swedish", "danish", "icelandic", "japanese", "chinese",
 })
 

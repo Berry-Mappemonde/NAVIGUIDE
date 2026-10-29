@@ -6362,3 +6362,20 @@ def test_close_but_different_place_is_not_an_exonym():
     import film_script as fs
     got = fs._en_translation_names("The Focolari Movement project. Then Rochefort.", "Mouvement des Focolari. La Rochelle.")
     assert "movement" in got and "rochefort" not in got
+
+
+def test_truncated_reread_is_asked_again_shorter():
+    import asyncio
+    import film_script as fs
+    seen = []
+
+    async def casc(system, user, **kw):
+        seen.append(user)
+        if len(seen) == 1:
+            return '{"ok": false, "faults": ["date: a very long ramble that never', "nemotron-ultra"
+        return '{"ok": true, "faults": []}', "nemotron-ultra"
+
+    plan = {"chapters": [{"id": "c", "fromName": "A", "toName": "B", "text": "Départ de A. Arrivée à B."}]}
+    stops = [{"name": "A"}, {"name": "B"}]
+    ok, _ = asyncio.run(fs.reread_before_store(plan, stops, cascade=casc, lang="fr"))
+    assert ok and len(seen) == 2 and seen[0] != seen[1]
