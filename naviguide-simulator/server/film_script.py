@@ -10013,10 +10013,10 @@ def _drop_avg_speed(text: str) -> str:
 
 
 _PLACE_REGION_RE = re.compile(
-    r"\b([A-ZÀ-Ý][\w'’\-]*(?:[ \-][A-ZÀ-Ý][\w'’\-]*)*) \(([^()]{2,48})\)"
+    r"\b([A-ZÀ-Ý][\w'’\-]*(?: [A-ZÀ-Ý][\w'’\-]*)*) \(([^()]{2,48})\)"
 )
 _PLACE_COMMA_REGION_RE = re.compile(
-    r"\b([A-ZÀ-Ý][\w'’\-]*(?:[ \-][A-ZÀ-Ý][\w'’\-]*)*), (?:en|à|au|aux|in) "
+    r"\b([A-ZÀ-Ý][\w'’\-]*(?: [A-ZÀ-Ý][\w'’\-]*)*), (?:en|à|au|aux|in) "
     r"([A-ZÀ-Ý][^,.;()]{2,40})(,\s*|(?=[.;]))"
 )
 
@@ -10062,7 +10062,7 @@ def _compact_leg_openings(text: str) -> str:
 
 
 _PLACE_INLINE_REGION_RE = re.compile(
-    r"\b(?!(?:Arrival|Arrivée|Departure|Départ|On|Then|Puis|Le|La|Les|The|In|At)\b)([A-ZÀ-Ý][\w'’\-]*(?:[ \-][A-ZÀ-Ý][\w'’\-]*)*) (?:en|in) "
+    r"\b(?!(?:Arrival|Arrivée|Departure|Départ|On|Then|Puis|Le|La|Les|The|In|At)\b)([A-ZÀ-Ý][\w'’\-]*(?: [A-ZÀ-Ý][\w'’\-]*)*) (?:en|in) "
     r"(?!(?:janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre|"
     r"January|February|March|April|May|June|July|August|September|October|November|December)\b)"
     r"([A-ZÀ-Ý][\w'’\-]*(?: [a-zà-ÿ]{3,}| [A-ZÀ-Ý][\w'’\-]*)?)(?=[\s:,.;])"
