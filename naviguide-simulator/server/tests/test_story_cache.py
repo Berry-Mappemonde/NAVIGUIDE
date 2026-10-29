@@ -110,8 +110,8 @@ def test_story_through_cache_translates_cached_fr(monkeypatch):
         return {
             "status": "ready",
             "text": "Entrée dans la ZEE 5677.",
-            "engine": "nemotron-super",
-            "source": "nemotron-super",
+            "engine": "nemotron-super-vl",
+            "source": "nemotron-super-vl",
         }
 
     async def fake_tr(text, lang, client=None, **kw):
