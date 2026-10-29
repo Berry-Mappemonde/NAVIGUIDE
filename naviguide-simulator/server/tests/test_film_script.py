@@ -6319,3 +6319,23 @@ def test_english_translation_keeps_approximations_and_nationalities():
              "approx": fs._fr_approx_numbers(src)}
     _, rw, fb = fs.apply_written_guard(src, en, facts, lang="en")
     assert fb == 0 and rw == 3
+
+
+def test_condense_150_drops_berth_and_repeated_region_before_cutting_facts():
+    import film_script as fs
+    chs = [{"id": f"c{i}", "fromName": "A", "toName": "Gustavia (Saint-Barthélemy)",
+            "text": "Le 21 juillet, départ vers Gustavia : 173 milles nautiques, un jour de mer. "
+                    "Arrivée à Gustavia (Saint-Barthélemy) le 23 juillet, à la marina de Gustavia. "
+                    "Arrivée à Gustavia (Saint-Barthélemy) le 23 juillet, à la marina de Gustavia."}
+           for i in range(20)]
+    fs._condense_to_spoken_seconds(chs, 150)
+    t = chs[0]["text"]
+    assert "173 milles" in t and "23 juillet" in t and "marina" not in t
+    assert t.count("Arrivée") == 1
+
+
+def test_non_breaking_hyphen_in_a_name_is_not_an_unknown_place():
+    import film_script as fs
+    src = "Arrivée à Mata-Utu (Wallis-et-Futuna) le 27 octobre."
+    out, rw, fb = fs.apply_written_guard(src, "Arrivée à Mata\u2011Utu (Wallis-et-Futuna) le 27 octobre.", {"raw": src})
+    assert fb == 0 and "\u2011" not in out

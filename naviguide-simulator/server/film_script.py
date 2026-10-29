@@ -9461,6 +9461,8 @@ def apply_written_guard(
     raw_text: str, written_text: str, facts: Any, *, lang: str = "fr",
 ) -> tuple[str, int, int]:
     """Une phrase rédigée par phrase du brut ; nombre ou nom inventé → phrase du brut."""
+    # Ultra écrit parfois « Mata‑Utu » (trait d'union insécable U+2011) : le nom ne se reconnaît plus.
+    written_text = (written_text or "").replace("\u2011", "-").replace("\u2010", "-")
     raw_sents = _sentences(raw_text)
     if not raw_sents:
         return raw_text or "", 0, 0
@@ -9586,6 +9588,37 @@ def _condense_to_spoken_seconds(chapters: list[dict], seconds: Any) -> None:
         sents = _sentences(best.get("text") or "")
         del sents[best_i]
         best["text"] = " ".join(sents).strip()
+    for ch in chapters:  # phrase répétée mot pour mot (Ultra) : une seule fois
+        sents = _sentences(ch.get("text") or "")
+        dedup = [x for i, x in enumerate(sents) if i == 0 or x != sents[i - 1]]
+        if len(dedup) != len(sents):
+            ch["text"] = " ".join(dedup)
+    # Encore trop long : l'arrivée garde lieu et date, pas la marina (« , à Port de… »).
+    for ch in sorted(chapters, key=lambda c: -len(c.get("text") or "")):
+        if script_chars(chapters) <= cap:
+            break
+        ch["text"] = _ARRIVAL_BERTH_RE.sub(r"\1.", ch.get("text") or "")
+    for ch in chapters:
+        if script_chars(chapters) <= cap:
+            break
+        ch["text"] = (ch.get("text") or "").replace(" milles nautiques", " milles")
+    # Puis la région déjà sous-entendue : « départ vers Gustavia … Arrivée à Gustavia (Saint-Barthélemy) ».
+    for ch in sorted(chapters, key=lambda c: -len(c.get("text") or "")):
+        if script_chars(chapters) <= cap:
+            break
+        text = ch.get("text") or ""
+        for m in re.finditer(r"départ vers ([^:,.(]+?)\s*[:,.]", text):
+            name = m.group(1).strip()
+            text = re.sub(rf"(Arrivée à {re.escape(name)})\s*\([^)]*\)", r"\1", text)
+        ch["text"] = text
+
+
+_ARRIVAL_BERTH_RE = re.compile(
+    r"(\d{1,2}(?:er)?\s+(?:janvier|février|mars|avril|mai|juin|juillet|août|septembre|"
+    r"octobre|novembre|décembre)(?:\s+\d{4})?),\s+"
+    r"(?:à|au|amarrée?s?\s+(?:à|au))\s+(?:la\s+|le\s+|l['’])?"
+    r"(?:marina|port|ponton|quai|mouillage|Port)\b[^.]*\.",
+)
 
 
 def _condensable_sentence(ch: dict, sents: list[str]) -> int:
@@ -11023,6 +11056,7 @@ _EN_GEO_WORDS = frozenset({
     "dominican", "haitian", "cuban", "jamaican", "colombian", "panamanian", "ecuadorian",
     "chilean", "peruvian", "polynesian", "indonesian", "madeira", "azores", "balearic",
     "sicilian", "sardinian", "greek", "tunisian", "algerian", "maltese", "kiwi", "zealand",
+    "year", "one", "two", "three", "four", "five", "phase",
 })
 
 # « une trentaine de jours » → « about thirty days » : l'approximation dite en anglais.
@@ -11200,6 +11234,9 @@ async def write_film_chain(
     if film_ultra_open():
         edited = await edit_written_once(accepted, ref_raw, cascade=cascade)
         stats["ultra_edit"] = 1
+        if edited and secs == 150:
+            # Ultra relit contre l'intégral : il peut rallonger, on retient le débit mesuré.
+            edited = condense_written_plan(edited, 150, lang="fr")
         if edited:
             ok = await judge_written_once(edited, cascade=cascade, raw_plan=ref_raw)
             stats["ultra_judge"] = 1
