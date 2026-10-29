@@ -20,7 +20,7 @@ const shot = (page, name) => page.screenshot({
 });
 
 const AIR_OUT = /prend l'avion pour|s'envole de Cayenne|the crew flies (?:to|from)/i;
-const AIR_BACK = /retour en avion vers|return flight to|s'envole de Halifax|flies from Halifax/i;
+const AIR_BACK = /retour en avion vers|return flight to|s['’]envole (?:de |d['’])Halifax|flies from Halifax/i;
 
 async function leaveCinema(page) {
   const cinema = page.getByRole("button", { name: /^(cinéma|cinema)$/i });

@@ -44,7 +44,7 @@ const shot50 = (page, name) => page.screenshot({
 });
 
 const AIR_OUT = /s'envole de Cayenne pour Halifax|prend l'avion pour Halifax|the crew flies from Cayenne to Halifax/i;
-const AIR_BACK = /s'envole de Halifax pour Cayenne|retour en avion vers Cayenne|flies from Halifax/i;
+const AIR_BACK = /s['’]envole (?:de |d['’])Halifax pour Cayenne|retour en avion vers Cayenne|flies from Halifax/i;
 const WAIT = /le catamaran attend à Cayenne|the catamaran waits at Cayenne/i;
 const SIDE_BOAT = /second voilier|second sailing boat/i;
 const RESUME_SEA = /reprend la mer|départ vers Papeete|puts to sea again|departure for Papeete/i;

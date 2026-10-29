@@ -770,16 +770,16 @@ export function closingSubtitle(text) {
 
 /** Phrases avion RF5 déjà présentes dans le chapitre — on ne les invente pas. */
 export const FILM_AIR_PHRASE_RE =
-  /prend l[''']avion pour|s'envole|the crew flies(?: to| from)|retour en avion vers|return flight to/i;
+  /prend l['’]avion pour|s['’]envole|the crew flies(?: to| from)|retour en avion vers|return flight to/i;
 
 const FILM_AIR_SENTENCE_RE =
-  /[^.!?…\n]*?(?:prend l[''']avion pour|s'envole|the crew flies(?: to| from)|retour en avion vers|return flight to)[^.!?…]*(?:[.!?…]|$)/gi;
+  /[^.!?…\n]*?(?:prend l['’]avion pour|s['’]envole|the crew flies(?: to| from)|retour en avion vers|return flight to)[^.!?…]*(?:[.!?…]|$)/gi;
 
 const FILM_AIR_OUT_PHRASE_RE =
-  /s'envole de Cayenne|prend l[''']avion pour Halifax|flies from Cayenne|the crew flies to Halifax/i;
+  /s['’]envole de Cayenne|prend l['’]avion pour Halifax|flies from Cayenne|the crew flies to Halifax/i;
 
 const FILM_AIR_BACK_PHRASE_RE =
-  /s'envole de Halifax|prend l[''']avion pour Cayenne|flies from Halifax|retour en avion vers Cayenne|return flight to Cayenne/i;
+  /s['’]envole (?:de |d['’])Halifax|prend l['’]avion pour Cayenne|flies from Halifax|retour en avion vers Cayenne|return flight to Cayenne/i;
 
 function collectAirSentences(text) {
   const found = String(text || "").match(FILM_AIR_SENTENCE_RE) || [];

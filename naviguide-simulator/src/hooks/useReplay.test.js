@@ -1026,6 +1026,24 @@ describe("useReplay — client robuste (E2, E3, E4)", () => {
     assert.doesNotMatch(resume.text, /s'envole/);
   });
 
+  it("Vol retour élidé « s'envole d’Halifax » (et apostrophe typographique) reconnu", () => {
+    const glued = [
+      "Le 18 août, l’équipage s’envole de Cayenne pour Halifax ; le catamaran attend à Cayenne.",
+      "Le 28 août, l'équipage s'envole d’Halifax pour Cayenne.",
+    ].join(" ");
+    const back = visibleFilmSubtitle(glued, {
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Cayenne (Guyane)",
+    });
+    assert.equal(back, "Le 28 août, l'équipage s'envole d’Halifax pour Cayenne.");
+    const out = visibleFilmSubtitle(glued, {
+      fromName: "Cayenne (Guyane)",
+      toName: "Halifax (Nouvelle-Écosse)",
+    });
+    assert.equal(out, "Le 18 août, l’équipage s’envole de Cayenne pour Halifax ; le catamaran attend à Cayenne.");
+    assert.ok(filmSubtitleShowsAir("Le 28 août, l’équipage s’envole d’Halifax pour Cayenne."));
+  });
+
   it("Phrase side sous le curseur même si le chapitre fusionné est étiqueté vol", () => {
     const merged = [
       "À Halifax, l'équipage embarque sur un second voilier pour Saint-Pierre.",
