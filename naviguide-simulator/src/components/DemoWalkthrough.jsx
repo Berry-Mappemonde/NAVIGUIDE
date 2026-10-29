@@ -143,6 +143,15 @@ export function DemoWalkthrough({
     }
   }, [spotOn, target]);
 
+  // R9: cleanup on step change — destroy driver, reset refs
+  useEffect(() => {
+    if (!spotOn) {
+      driverRef.current?.destroy();
+      driverRef.current = null;
+      setAnchor(null);
+    }
+  }, [spotOn]);
+
   useEffect(() => {
     if (!spotOn || !target) {
       driverRef.current?.destroy();
@@ -189,7 +198,12 @@ export function DemoWalkthrough({
       if (tries < 600) raf = window.requestAnimationFrame(track);
     };
     raf = window.requestAnimationFrame(track);
-    const onResize = () => { shown = ""; };
+    const onResize = () => {
+      shown = "";
+      tries = 0;
+      stable = 0;
+      raf = window.requestAnimationFrame(track);
+    };
     window.addEventListener("resize", onResize);
     return () => {
       window.cancelAnimationFrame(raf);
@@ -199,15 +213,18 @@ export function DemoWalkthrough({
   useEffect(() => () => { driverRef.current?.destroy(); driverRef.current = null; }, []);
 
   // Pulse animation on "trace" step target — unique useEffect, réessaye si le bouton n'existe pas encore
+  // R10: use separate counter (attempts) instead of rAF ID
   useEffect(() => {
     if (step.id !== "trace" || !target) return;
     let el = document.querySelector(target);
     let checkRaf = 0;
+    let attempts = 0;
     const tryAdd = () => {
       el = document.querySelector(target);
       if (el) {
         el.classList.add("naviguide-tour-pulse");
-      } else if (checkRaf < 30) {
+      } else if (attempts < 30) {
+        attempts += 1;
         checkRaf = window.requestAnimationFrame(tryAdd);
       }
     };
@@ -326,11 +343,36 @@ export function DemoWalkthrough({
         <div className="h-full rounded-full bg-cyan-400/80 transition-[width]" style={{ width: `${((index + 1) / total) * 100}%` }} />
       </div>
 
-      <p className={`mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${muted}`}>
+<p className={`mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${muted}`}>
         {t("demoStepOf", { n: index + 1, total })}
       </p>
-      <h2 ref={headingRef} tabIndex={-1} data-testid="demo-walkthrough-title" className="text-base font-semibold leading-snug outline-none">{step.title}</h2>
-      <p data-testid="demo-walkthrough-body" className={`mt-2 text-sm leading-relaxed ${bodyText}`}>{step.body}</p>
+  <h2 ref={headingRef} tabIndex={-1} data-testid="demo-walkthrough-title" className="text-base font-semibold leading-snug outline-none">{step.title}</h2>
+  <p data-testid="demo-walkthrough-body" className={`mt-2 text-sm leading-relaxed ${bodyText}`}>{step.body}</p>
+
+  {spotOn && (
+    <div
+      tabIndex={0}
+      role="region"
+      aria-label={t("demoPanelAria")}
+      data-testid="demo-walkthrough-panel"
+      onKeyDown={(e) => {
+        if (e.key === "Tab") {
+          const focusable = e.currentTarget.querySelectorAll(
+            'button:not([disabled]), [href], input, select, textarea, [tabIndex]:not([tabIndex="-1"])'
+          );
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }}
+    >
+      {step.id === "models" ? (() => {
 
       {step.id === "models" ? (() => {
         const roles = status.state === "loading" || status.state === "idle" ? null : describeModelRoles(status.llm, t);

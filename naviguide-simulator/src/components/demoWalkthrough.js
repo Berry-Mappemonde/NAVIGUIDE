@@ -167,6 +167,7 @@ export function tourEditedStep({
 const PANEL_HEIGHT = 420;
 const MIN_TOP = 56;
 const MOBILE_BREAKPOINT = 768;
+const MIN_BOTTOM = 56;
 
 /**
  * Compute panel position (top/bottom CSS) for the demo walkthrough panel.
@@ -192,9 +193,17 @@ export function computePanelPosition(anchor, stepId, innerWidth, innerHeight) {
     }
   }
 
-  // Default: clamp top between MIN_TOP and maxTop
-  const top = Math.max(MIN_TOP, Math.min(anchor.top, maxTop));
-  return { top: `${Math.round(top)}px` };
+  // Default: clamp top between MIN_TOP and maxTop, ensure bottom >= MIN_BOTTOM
+  const maxTopClamped = innerHeight - PANEL_HEIGHT - MIN_TOP;
+  const clampedTop = Math.max(MIN_TOP, Math.min(anchor.top, maxTopClamped));
+  const bottom = innerHeight - clampedTop - PANEL_HEIGHT;
+  if (bottom < MIN_BOTTOM) {
+    // Clamp bottom instead
+    const clampedBottom = Math.max(MIN_BOTTOM, bottom);
+    const topFromBottom = innerHeight - PANEL_HEIGHT - clampedBottom;
+    return { top: `${Math.round(topFromBottom)}px` };
+  }
+  return { top: `${Math.round(clampedTop)}px` };
 }
 
 /**
