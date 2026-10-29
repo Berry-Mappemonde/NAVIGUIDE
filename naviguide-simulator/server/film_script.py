@@ -4197,7 +4197,9 @@ def chapter_shape(w: dict, i: int, n: int, metrics: dict | None = None) -> str:
     if _is_air_window(w) or _is_road_window(w):
         return ""
     metrics = metrics or {}
-    if w.get("last") or (n and i == n - 1):
+    # Film arrêté au « now » réel (Mata-Utu, 29 oct.) : le dernier chapitre n'est pas
+    # la dernière étape du plan. `_windows` pose `last` ; l'index ne sert qu'à défaut.
+    if w.get("last") or ("last" not in w and n and i == n - 1):
         return "last"
     days = metrics.get("daysAtSea")
     nm = metrics.get("legNm")
@@ -5732,10 +5734,16 @@ def _side_opening_sentence(
     outbound = _air_stop_key(dest) == "saint-pierre"
     if en:
         verb = "boards" if outbound else "sails again on"
+        if not outbound and boat == "a second sailing boat":
+            boat = "the second sailing boat"
         body = f"in {origin}, the crew {verb} {boat} for {dest}"
         head = f"On {when}, {body}." if when else f"{body[0].upper()}{body[1:]}."
         return f"{head} {stats[0].upper() + stats[1:]}." if stats else head
     verb = "embarque sur" if outbound else "reprend"
+    if not outbound and boat == "un second voilier":
+        # Retour : c'est le même bateau qu'à l'aller — « reprend le second voilier »,
+        # pas « reprend un second voilier » (tournure relevée au chapitre 8).
+        boat = "le second voilier"
     body = f"à {origin}, l'équipage {verb} {boat} pour {dest}"
     if when:
         head = f"Le {when}, {body}."
@@ -5914,8 +5922,9 @@ def _air_window_sentence(w: dict, *, lang: str, display_t0: str | None = None) -
         if when:
             return f"On {when}, {head[0].lower() + head[1:]}."
         return f"{head}."
-    # « s'envole d’Halifax », pas « de Halifax » (élision devant h muet / voyelle).
-    head = f"l'équipage s'envole {_de(origin)} pour {dest}"
+    # « s'envole d'Halifax », pas « de Halifax » (élision devant h muet / voyelle),
+    # et la même apostrophe que « l'équipage s'envole » (pas « s'envole d’Halifax »).
+    head = f"l'équipage s'envole {_de(origin).replace('’', chr(39))} pour {dest}"
     if wait:
         head = f"{head} ; le catamaran attend à {origin}"
     if when:
@@ -8419,9 +8428,44 @@ def _heard_date_before(out: list[str], k: int, lang: str) -> Optional[datetime]:
     return heard
 
 
+_WIND_TURN_RE = re.compile(
+    r"\b(?:le vent tourne (?:à l['’]|au |à la )|the wind shifts to the )(?P<dir>[a-zé-]+)", re.I,
+)
+_WIND_BELT_RE = re.compile(
+    r"\b(?:les vents d['’]|les alizés de |les alizés d['’]|the )"
+    r"(?P<dir>[a-zé-]+?)(?:erlies|erly trade winds)?\s+(?:s['’]installent|set in)\b",
+    re.I,
+)
+
+
+def _wind_dir_key(word: str) -> str:
+    return re.sub(r"[^a-zé]", "", (word or "").casefold())
+
+
+def drop_turn_before_same_belt(sentences: list[str]) -> list[str]:
+    """« Puis, le vent tourne à l'ouest : 8 nœuds. Puis, les vents d'ouest s'installent : 12 nœuds. »
+    disait deux fois la même bascule (Halifax → Saint-Pierre) : la rotation s'efface devant
+    le régime nommé de même direction qui la suit (une ou deux phrases plus loin)."""
+    out = list(sentences)
+    i = 0
+    while i < len(out):
+        m = _WIND_TURN_RE.search(out[i] or "")
+        if m:
+            key = _wind_dir_key(m.group("dir"))
+            nxt = out[i + 1:i + 3]
+            if key and any(
+                (b := _WIND_BELT_RE.search(x or "")) and _wind_dir_key(b.group("dir")) == key
+                for x in nxt
+            ):
+                out.pop(i)
+                continue
+        i += 1
+    return out
+
+
 def thin_chapter_dates(sentences: list[str], lang: str = "fr") -> list[str]:
     """Au plus une date calendaire toutes les deux phrases. L'arrivée garde sa date."""
-    out = [scrub_spoken(s) for s in sentences]
+    out = drop_turn_before_same_belt([scrub_spoken(s) for s in sentences])
     dated = [_sentence_has_date(s, lang) for s in out]
     i = 1
     while i < len(out):
@@ -8501,20 +8545,20 @@ _WATERS_SENT = re.compile(
 # P1/P2 : ouverture, escales, cap — pas les côtes / climo / stations, pas les eaux en trop.
 _CORE_KEEP_SENT = re.compile(
     r"arriv|Berry-Mappemonde|quitte|leaves |jours de mer|days at sea|"
-    r"nœuds de moyenne|knots on average|amarré|moored|d'escale|stopover|"
+    r"nœuds de moyenne|knots on average|amarré|moored|d['’]escale|stopover|"
     r"départ|departure|left |quitté|approche|approaching|avion|flies|flight|"
     r"envole|par la route|by road|attend à|waits at|aujourd|today|"
     r"expédition|expedition|escales|stops|destination|entre le |between |"
     r"à venir|still to come|le plan compte|the plan has|"
     r"cap au |cap sur |heading |"
     # Ouverture du second bateau (Halifax ↔ Saint-Pierre) : jamais une redite.
-    r"second voilier|second sailing boat|embarque sur|boards |sails again on|l'équipage reprend",
+    r"second voilier|second sailing boat|embarque sur|boards |sails again on|l['’]équipage reprend",
     re.I,
 )
 _KEEP_SENT = re.compile(
     r"aire marine|marine protected area|le projet |project |"
     r"arriv|Berry-Mappemonde|quitte|leaves |jours de mer|days at sea|"
-    r"nœuds de moyenne|knots on average|amarré|moored|d'escale|stopover|"
+    r"nœuds de moyenne|knots on average|amarré|moored|d['’]escale|stopover|"
     r"départ|departure|left |quitté|approche|approaching|avion|flies|flight|"
     r"envole|par la route|by road|attend à|waits at|aujourd|today|"
     r"expédition|expedition|escales|stops|destination|entre le |between |"
@@ -8788,6 +8832,8 @@ def _film_apply_char_budget(chapters: list[dict], seconds: Any) -> None:
     if _film_compact_template(seconds):
         _keep_one_amp_in_script(chapters)
     _trim_script_to_char_budget(chapters, target, keep_head=keep)
+    if _film_compact_template(seconds):
+        _relative_day_to_then(chapters)
     if script_chars(chapters) > target and not _film_compact_template(seconds):
         _compact_rank0_to_budget(chapters, target)
         _trim_script_to_char_budget(chapters, target, keep_head=keep)
@@ -9901,11 +9947,14 @@ def _condense_to_spoken_seconds(chapters: list[dict], seconds: Any) -> None:
             break
         text = _SEA_DAYS_FR_RE.sub(r"\1", ch.get("text") or "")
         ch["text"] = _SEA_DAYS_EN_RE.sub(r"\1", text)
+    # Sujets du 2:30 (une aire marine, un projet — corail d'abord) : retirés en
+    # tout dernier, après les marinas et les régions (ils disparaissaient tous).
+    keys = _condense_subject_keys(chapters)
     while script_chars(chapters) > cap:
         best, best_len, best_i = None, 0, -1
         for ch in chapters:
             sents = _sentences(ch.get("text") or "")
-            i = _condensable_sentence(ch, sents)
+            i = _condensable_sentence(ch, sents, keys)
             if i < 0:
                 continue
             n = len(ch.get("text") or "")
@@ -9947,6 +9996,83 @@ def _condense_to_spoken_seconds(chapters: list[dict], seconds: Any) -> None:
         if script_chars(chapters) <= hard:
             break
         ch["text"] = re.sub(r"\s{2,}", " ", _PLACE_REGION_RE.sub(r"\1", ch.get("text") or "")).strip()
+    # Toujours au-dessus de 2:30 (le plafond dur, pas la marge) : les sujets protégés
+    # partent un à un (le projet d'abord, puis l'aire).
+    for key in reversed(keys):
+        if script_chars(chapters) <= hard:
+            break
+        for ch in chapters:
+            sents = _sentences(ch.get("text") or "")
+            kept = [x for i, x in enumerate(sents) if i == 0 or i == len(sents) - 1 or key not in _subject_key_blob(x)]
+            if len(kept) != len(sents):
+                ch["text"] = " ".join(kept).strip()
+                break
+    _relative_day_to_then(chapters)
+
+
+_RELATIVE_DAY_START_RE = re.compile(r"^(?:Le lendemain|The next day|The following day),\s+")
+
+
+def _relative_day_to_then(chapters: list[dict]) -> None:
+    """Au 2:30, les phrases intermédiaires sont retirées : « Le lendemain » ne suit plus
+    sa vraie veille (« Le 24 février, départ… Le lendemain, Pointe d'Arçay » = 30 mai).
+    « Puis » reste vrai ; jamais en tête de chapitre."""
+    for ch in chapters:
+        sents = _sentences(ch.get("text") or "")
+        changed = False
+        for i in range(1, len(sents)):
+            m = _RELATIVE_DAY_START_RE.match(sents[i])
+            if not m:
+                continue
+            then = "Then, " if m.group(0).startswith("The") else "Puis, "
+            sents[i] = then + sents[i][m.end():]
+            changed = True
+        if changed:
+            ch["text"] = " ".join(sents).strip()
+
+
+_CONDENSE_AMP_RE = re.compile(r"aire marine protégée|aire marine|marine protected area", re.I)
+_CONDENSE_PROJECT_RE = re.compile(r"\ble projet\b|\bthe project\b|\bproject\b", re.I)
+_CONDENSE_CORAL_RE = re.compile(r"cora(?:il|ux|l|ls)\b", re.I)
+
+
+def _subject_key_blob(sent: str) -> str:
+    """Forme comparable d'une phrase de sujet : sans chiffres ni parenthèses, en minuscules."""
+    t = re.sub(r"\s*\([^()]*\)", "", sent or "")
+    t = re.sub(r"[\d\u00a0\u202f]", " ", t)
+    return re.sub(r"\s+", " ", t).casefold()
+
+
+def _subject_key(sent: str, rx: re.Pattern) -> str:
+    """Le nom après « aire marine protégée » / « le projet » : stable malgré les retouches."""
+    m = rx.search(sent or "")
+    if not m:
+        return ""
+    tail = _subject_key_blob((sent or "")[m.end():])
+    tail = re.sub(r"^[\s,:]+", "", tail)
+    return tail[:40].strip(" .,;:")
+
+
+def _condense_subject_keys(chapters: list[dict]) -> list[str]:
+    """Au plus deux sujets gardés au 2:30 : la première aire marine, puis un projet (corail d'abord).
+
+    Ni la première ni la dernière phrase d'un chapitre (départ, arrivée) ne compte.
+    """
+    amp = proj = coral = ""
+    for ch in chapters:
+        sents = _sentences(ch.get("text") or "")
+        for sent in sents[1:-1]:
+            if not amp and _CONDENSE_AMP_RE.search(sent):
+                amp = _subject_key(sent, _CONDENSE_AMP_RE)
+                continue
+            if _CONDENSE_PROJECT_RE.search(sent) and not _CONDENSE_AMP_RE.search(sent):
+                k = _subject_key(sent, _CONDENSE_PROJECT_RE)
+                if k and not coral and _CONDENSE_CORAL_RE.search(sent):
+                    coral = k
+                if k and not proj:
+                    proj = k
+    out = [k for k in (amp, coral or proj) if k]
+    return out
 
 
 _ARRIVAL_BERTH_RE = re.compile(
@@ -9957,7 +10083,7 @@ _ARRIVAL_BERTH_RE = re.compile(
 )
 
 
-def _condensable_sentence(ch: dict, sents: list[str]) -> int:
+def _condensable_sentence(ch: dict, sents: list[str], protected: list[str] | None = None) -> int:
     """Dernière phrase du milieu qui ne nomme ni le départ ni l'arrivée ; -1 sinon.
 
     La phrase de bilan de l'étape (« 6 671 milles, 46 jours de mer… ») n'est jamais
@@ -9974,6 +10100,8 @@ def _condensable_sentence(ch: dict, sents: list[str]) -> int:
             continue
         if _LEG_STATS_SENT_RE.search(sents[i]):
             continue
+        if protected and any(k and k in _subject_key_blob(sents[i]) for k in protected):
+            continue
         return i
     return -1
 
@@ -9987,11 +10115,11 @@ _LEG_STATS_SENT_RE = re.compile(
 # « départ vers Papeete (Polynésie française). 6 671 milles, 46 jours de mer, à 6 nœuds
 # de moyenne. » → « départ vers Papeete (Polynésie française) : 6 671 milles, 46 jours de mer. »
 _FOLD_STATS_FR_RE = re.compile(
-    r"(départ vers [^.:;!?]+?)\.\s+(\d[\d \u00a0\u202f]*\s+milles[^.!?]*?jours? de mer)"
+    r"(départ vers [^.:;!?]+?|second voilier pour [^.:;!?]+?)\.\s+(\d[\d \u00a0\u202f]*\s+milles[^.!?]*?jours? de mer)"
     r"(?:,\s*à\s+[\w-]+\s+nœuds\s+de\s+moyenne)?\."
 )
 _FOLD_STATS_EN_RE = re.compile(
-    r"([Dd]eparture (?:for|to) [^.:;!?]+?)\.\s+(\d[\d,]*\s+(?:nautical )?miles[^.!?]*?days? at sea)"
+    r"([Dd]eparture (?:for|to) [^.:;!?]+?|second sailing boat for [^.:;!?]+?)\.\s+(\d[\d,]*\s+(?:nautical )?miles[^.!?]*?days? at sea)"
     r"(?:,\s*(?:at\s+)?(?:an average of\s+)?[\w-]+\s+knots(?:\s+(?:on\s+)?average)?)?\."
 )
 _AVG_SPEED_FR_RE = re.compile(r",\s*à\s+[\w-]+\s+nœuds\s+de\s+moyenne(?=[.;])")
@@ -11851,6 +11979,144 @@ def _translate_keep_names(facts: Any, src: str) -> str:
     return "\nKeep these names exactly as written, untranslated: " + "; ".join(names)
 
 
+# --- Garde de traduction EN déterministe (VERIF-FILM-0515 N1-N9) ---------------------
+# Lightning varie d'un run à l'autre : « Le 29 août, the catamaran… », « une vingtaine
+# de jours » → « a couple of weeks », « eaux de la Guyane » → « Guyanese waters ».
+# Ces corrections ne disent jamais un fait absent du français : elles ramènent
+# l'anglais à ce que dit la phrase française (date, approximation, nom de pays).
+
+_FR_DATE_IN_EN_RE = re.compile(
+    r"\b(?P<le>[Ll]e\s+)?(?P<d>1er|\d{1,2})\s+(?P<m>" + "|".join(_FR_MONTHS_EN) + r")\b(?:\s+(?P<y>\d{4})\b)?",
+    re.I,
+)
+
+
+def en_french_dates(text: str) -> str:
+    """« Le 29 août, the catamaran… » → « On August 29, the catamaran… » (N1)."""
+    def _one(m: re.Match) -> str:
+        day = "1" if m.group("d").casefold() == "1er" else str(int(m.group("d")))
+        month = _FR_MONTHS_EN[m.group("m").casefold()].capitalize()
+        date = f"{month} {day}, {m.group('y')}" if m.group("y") else f"{month} {day}"
+        le = m.group("le")
+        if not le:
+            return date
+        return ("On " if le[0] == "L" else "on ") + date
+
+    return _FR_DATE_IN_EN_RE.sub(_one, text or "")
+
+
+# Approximations FR sans équivalent anglais figé ici (quinzaine ≈ fortnight, douzaine) : intouchées.
+_APPROX_EN_CANON = {**_APPROX_EN_DAYS, "centaine": "about a hundred days"}
+_FR_APPROX_DAYS_RE = re.compile(
+    r"\b(" + "|".join(_APPROX_EN_CANON) + r")(?=\s+de\s+jours\b|\s*[.,;:!?)]|\s*$)", re.I,
+)
+_EN_DURATION_WORDS = (
+    r"one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|"
+    r"sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred"
+)
+# Une durée approximative anglaise : « a couple of weeks », « about three weeks »,
+# « a fortnight », « some fifteen days », « about 25 days », « nearly a month ».
+_EN_APPROX_DURATION_RE = re.compile(
+    r"\b(?:(?:about|around|roughly|some|nearly|almost|approximately|close to|over|just over|under)\s+)?"
+    r"(?:a\s+couple\s+of\s+weeks|a\s+few\s+weeks|several\s+weeks|a\s+fortnight|a\s+month|a\s+week|"
+    r"(?:a\s+)?(?:" + _EN_DURATION_WORDS + r"|\d+)(?:-odd)?\s+(?:weeks|days|months))\b",
+    re.I,
+)
+_EN_APPROX_LEAD = re.compile(
+    r"^(?:about|around|roughly|some|nearly|almost|approximately|close to|over|just over|under)\b|"
+    r"couple|few|several|fortnight|month|week|-odd",
+    re.I,
+)
+
+
+def _fix_approx_pair(en: str, fr: str) -> str:
+    hits = {m.group(1).casefold() for m in _FR_APPROX_DAYS_RE.finditer(fr or "")}
+    if len(hits) != 1:
+        return en
+    canon = _APPROX_EN_CANON[hits.pop()]
+    if canon in (en or "").casefold():
+        return en
+    for m in _EN_APPROX_DURATION_RE.finditer(en or ""):
+        phrase = m.group(0)
+        # Une durée exacte (« 46 days at sea ») n'est pas une approximation : intouchée.
+        if not _EN_APPROX_LEAD.search(phrase):
+            continue
+        return en[: m.start()] + canon + en[m.end():]
+    return en
+
+
+def fix_en_approx_days(text: str, fr_src: str) -> str:
+    """« une vingtaine de jours » se dit « about twenty days », jamais « a couple of
+    weeks » (N2). Phrase à phrase quand les découpages s'alignent, sinon le chapitre."""
+    fr_s, en_s = _sentences(fr_src or ""), _sentences(text or "")
+    if fr_s and len(fr_s) == len(en_s):
+        out = [_fix_approx_pair(en, fr) for fr, en in zip(fr_s, en_s)]
+        return " ".join(out) if out != en_s else text
+    return _fix_approx_pair(text or "", fr_src or "")
+
+
+def _fr_name_pattern(name: str) -> str:
+    return r"[\s\-]+".join(re.escape(p) for p in re.split(r"[\s\-]+", name.strip()) if p)
+
+
+_EN_EXONYM_RE: Optional[list[tuple[re.Pattern[str], str]]] = None
+
+
+def _en_exonym_rules() -> list[tuple[re.Pattern[str], str]]:
+    """Table des toponymes : nom français → exonyme anglais, seulement après
+    « the waters of » / « those of » (jamais un nom d'escale, qui ancre le film)."""
+    global _EN_EXONYM_RE
+    if _EN_EXONYM_RE is None:
+        rules = []
+        rows = sorted(toponyms.territories(), key=lambda r: len(str(r.get("fr") or "")), reverse=True)
+        for row in rows:
+            fr, en = str(row.get("fr") or "").strip(), str(row.get("en") or "").strip()
+            if not fr or not en or fr == en or row.get("kind") == "high_seas":
+                continue
+            rx = re.compile(
+                r"\b(?P<lead>(?:waters|those)\s+of\s+(?:the\s+)?)(?:l[ae]\s+|les\s+)?" + _fr_name_pattern(fr) + r"(?![\w\-])",
+            )
+            rules.append((rx, en))
+        _EN_EXONYM_RE = rules
+    return _EN_EXONYM_RE
+
+
+def fix_en_toponyms(text: str, fr_src: str) -> str:
+    """Noms de pays et d'eaux justes en anglais (N3-N7, N9), selon le français source."""
+    out = text or ""
+    for rx, en in _en_exonym_rules():
+        out = rx.sub(lambda m, en=en: m.group("lead") + en, out)
+    low = (fr_src or "").casefold()
+    # N4 : la Guyane (française) n'est pas le Guyana.
+    if re.search(r"\b(?:de la guyane|eaux guyanaises)\b", low) and not re.search(r"guyanien|eaux du guyana", low):
+        out = re.sub(r"\bGuyanese waters\b", "French Guiana waters", out)
+    # N4 bis (run réel 06 h 03) : « Cayenne (Guyane) » rendu « Cayenne (Guyana) ».
+    if "(guyane)" in low and "(guyana)" not in low:
+        out = out.replace("(Guyana)", "(French Guiana)")
+    # N5 : « eaux indiennes » = les eaux de l'Inde, pas l'océan Indien.
+    if "eaux indiennes" in low and "océan indien" not in low:
+        out = re.sub(r"\bIndian Ocean waters\b", "Indian waters", out)
+    # « eaux grenadiennes » = la Grenade (Grenadian), pas les Grenadines.
+    if "grenadiennes" in low:
+        out = re.sub(r"\bGrenadine waters\b", "Grenadian waters", out)
+    # N7 : une seule unité dans le film anglais (« miles » partout ailleurs).
+    out = re.sub(r"\bnautical miles\b", "miles", out)
+    # N9 : « reprend le second voilier » = remonte à bord, pas « prend le contrôle ».
+    if "reprend le second" in low:
+        out = re.sub(
+            r"\btakes over the second (vessel|sailboat|boat|yacht)\b",
+            r"boards the second \1 again", out,
+        )
+    return out
+
+
+def en_translation_guard(text: str, fr_src: str) -> str:
+    """Toutes les corrections déterministes de l'anglais, dans l'ordre (idempotent)."""
+    out = en_french_dates(text)
+    out = fix_en_approx_days(out, fr_src)
+    return fix_en_toponyms(out, fr_src)
+
+
 async def translate_written_plan(
     fr_plan: dict,
     raw_plan: dict,
@@ -11891,7 +12157,10 @@ async def translate_written_plan(
             )
             if not (text or "").strip() or source in {"rules", "budget"}:
                 return None
-            text = _repair_en_days(src, text or "")
+            # Date et durée remises d'aplomb AVANT le garde-fou (il les compare au
+            # français) ; les noms de pays, eux, après (ses listes de noms tolérés
+            # partent du texte de Lightning).
+            text = _repair_en_days(src, fix_en_approx_days(en_french_dates(text or ""), src))
             facts_en = {**facts, "en_names": sorted(n.title() for n in _en_translation_names(text or "", src)),
                         "approx": _fr_approx_numbers(src)} \
                 if isinstance(facts, dict) else facts
@@ -11925,6 +12194,8 @@ async def translate_written_plan(
         guarded = en_le_month(guarded)
         guarded = unit_numbers_to_digits(guarded)
         guarded = en_argo_float(guarded)
+        # Garde EN déterministe après le garde-fou (recollages compris) : N1-N9.
+        guarded = en_translation_guard(guarded, src)
         # « par la route jusqu'à La Rochelle » rendu « by the route to » : « by road ».
         guarded = re.sub(r"\bby (?:the )?route to\b|\bby the road to\b", "by road to", guarded)
         # « le bateau longe X » rendu « the boat follows X » : on dit la côte longée.
@@ -11986,9 +12257,30 @@ def unit_numbers_to_digits(text: str) -> str:
 _FR_ELIDE_DE_RE = re.compile(r"\b([Dd])e (?=Halifax\b|[AEIOUÉÈÊÎÔ][a-zà-ÿ])")
 
 
-def fr_elide_de(text: str) -> str:
-    """« s'envole de Halifax » → « s'envole d’Halifax » ; « de Ajaccio » → « d’Ajaccio »."""
-    return _FR_ELIDE_DE_RE.sub(lambda m: f"{m.group(1)}’", text or "")
+_FR_APOS_ASCII_RE = re.compile(r"(?<=[A-Za-zÀ-ÿ])'(?=[A-Za-zÀ-ÿ])")
+_FR_APOS_TYPO_RE = re.compile(r"(?<=[A-Za-zÀ-ÿ])’(?=[A-Za-zÀ-ÿ])")
+
+
+def fr_apostrophe_style(text: str) -> str:
+    """Apostrophe majoritaire du texte (entre deux lettres) : « ' » ou « ’ » (égalité : « ’ »)."""
+    ascii_n = len(_FR_APOS_ASCII_RE.findall(text or ""))
+    typo_n = len(_FR_APOS_TYPO_RE.findall(text or ""))
+    return "'" if ascii_n > typo_n else "’"
+
+
+def fr_unify_apostrophes(text: str, style: str) -> str:
+    """Une seule apostrophe dans tout le film : pas « l'équipage s'envole d’Halifax »."""
+    if style == "'":
+        return _FR_APOS_TYPO_RE.sub("'", text or "")
+    return _FR_APOS_ASCII_RE.sub("’", text or "")
+
+
+def fr_elide_de(text: str, style: str | None = None) -> str:
+    """« s'envole de Halifax » → « s'envole d'Halifax » ; « de Ajaccio » → « d'Ajaccio ».
+
+    L'apostrophe suit celle du texte (`style`, sinon la majoritaire)."""
+    apos = style or fr_apostrophe_style(text)
+    return _FR_ELIDE_DE_RE.sub(lambda m: f"{m.group(1)}{apos}", text or "")
 
 
 _EN_LE_MONTH_RE = re.compile(
@@ -12007,13 +12299,17 @@ def _polish_written_plan(plan: dict | None, raw_plan: dict, lang: str = "fr") ->
     if not plan:
         return plan
     raws = {c.get("id"): c for c in (raw_plan.get("chapters") or []) if isinstance(c, dict)}
+    # Apostrophe majoritaire du film entier (gabarits « ’ » + Super « ' » se mêlaient).
+    style = fr_apostrophe_style(" ".join(
+        str(c.get("text") or "") for c in (plan.get("chapters") or []) if isinstance(c, dict)
+    ))
     chapters = []
     for ch in plan.get("chapters") or []:
         if not isinstance(ch, dict):
             continue
         old = ch.get("text") or ""
         text = unit_numbers_to_digits(old)
-        text = en_le_month(text) if _en(lang) else fr_elide_de(text)
+        text = en_le_month(text) if _en(lang) else fr_unify_apostrophes(fr_elide_de(text, style), style)
         if text == old:
             chapters.append(ch)
             continue

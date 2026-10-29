@@ -13,6 +13,7 @@ import { useLang } from "./i18n/LangContext.jsx";
 import { ITINERARY_POINTS } from "./constants/itineraryPoints";
 import { SimulationFilmBar } from "./components/SimulationFilmBar.jsx";
 import { DemoWalkthrough } from "./components/DemoWalkthrough.jsx";
+import { wantsTourFromUrl } from "./components/demoWalkthrough.js";
 import { RecomputeDialog } from "./components/RecomputeDialog.jsx";
 import { useRouteWindProfile } from "./hooks/useRouteWindProfile.js";
 import { useExpeditionSpeed } from "./hooks/useExpeditionSpeed.js";
@@ -181,6 +182,8 @@ export default function App() {
   const [filmFullscreen, setFilmFullscreen] = useState(false);
   const filmLayerSnapRef = useRef(null);
   const demoReplayStartedRef = useRef(false);
+  // Lien profond `?tour=1` (README, Devpost) : la visite guidée s'ouvre au chargement.
+  const [tourFromUrl] = useState(() => typeof window !== "undefined" && wantsTourFromUrl(window.location.search));
   const [hideFilmBar, setHideFilmBar] = useState(false);
   const [filmBarNode, setFilmBarNode] = useState(null);
   const [filmBarMeasuredPx, setFilmBarMeasuredPx] = useState(null);
@@ -1391,6 +1394,7 @@ export default function App() {
 
     switch (action) {
       case "welcome":
+      case "models":
       case "live":
         showFollow(false, false);
         break;
@@ -2331,6 +2335,7 @@ export default function App() {
         customRoute={routeSource === "custom"}
         hidden={filmFullscreen || notForNavOpen}
         isLightMode={isLightMode}
+        autoStart={tourFromUrl}
         onStepChange={applyDemoAction}
         onPlayReplay={startDemoReplay}
         onClose={closeDemo}
