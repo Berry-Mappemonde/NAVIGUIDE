@@ -12625,6 +12625,9 @@ async def write_film_chain(
         super_plan, super_stats = await write_stored_plan(
             raw, lang="fr", cascade=cascade, seconds=seconds,
         )
+    # Reçu du film (idée n° 3) : phrases réécrites / retombées sur les règles, mesurées.
+    stats["rewritten"] = int((super_stats or {}).get("rewritten") or 0)
+    stats["fallen"] = int((super_stats or {}).get("fallen") or 0)
     if super_plan is None or int((super_stats or {}).get("rewritten") or 0) <= 0:
         return None, None, stats
     stats["super"] = 1
