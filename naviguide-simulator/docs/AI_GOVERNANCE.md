@@ -13,11 +13,11 @@ Défauts de `server/llm_budget.py:116-137`, test `server/tests/test_llm_budget.p
 | Palier | Identifiant | Source UI | Hôte Token Factory dans ce dépôt |
 |---|---|---|---|
 | `fast` | `nvidia/Nemotron-3_5-Lightning` | `nemotron-lightning` | `https://api.tokenfactory.nebius.com/v1` (`server/story_cascade.py:33-36`, `server/story_cascade.py:581-590`) |
-| `write` | `nvidia/Nemotron-3.5-Super-VL` | `nemotron-super-vl` | même hôte que Lightning (`server/story_cascade.py:581-590`) |
-| `deep` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | `https://api.tokenfactory.us-central1.nebius.com/v1` (`server/story_cascade.py:37-41`, `server/story_cascade.py:585-589`) |
-| `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | même hôte que `deep` |
+| `write` | `nvidia/Nemotron-3.5-Super-VL` | `nemotron-super-vl` | `https://api.tokenfactory.nebius.com/v1` (base EU, épinglé comme `nano`) |
+| `deep` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | `https://api.tokenfactory.nebius.com/v1` (`server/story_cascade.py:37-48`, `server/story_cascade.py:718-732`) |
+| `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | même hôte EU que `deep` |
 
-Le test `server/tests/test_story_cascade.py:1020-1032` exige `us-central1` pour `deep`, et l’interdit pour `fast` et pour `write`.
+Le test `server/tests/test_story_cascade.py:1020-1032` exige l’hôte EU pour `deep`, et interdit `us-central1` pour `fast` et `write`.
 
 `eu-north1` n’apparaît pas dans le dépôt. `devpost/nebius_futur.md` n’y est pas. Placer Lightning en `eu-north1`, ou Super en `us-central1`, contredit ou dépasse ce checkout : **à vérifier**.
 
@@ -117,7 +117,7 @@ Lien REDTEAM : aucun `evals/redteam/` ni `docs/security/REDTEAM_2026-10.md` sur 
 
 ## English
 
-The tables above are the evidence. The running Token Factory hosts are `api.tokenfactory.nebius.com` for Lightning and Super, and `api.tokenfactory.us-central1.nebius.com` for Ultra (`deep` and `judge`). `eu-north1` and `devpost/nebius_futur.md` are **à vérifier**.
+The tables above are the evidence. The running Token Factory hosts are `api.tokenfactory.nebius.com` for Lightning (`fast`), Super VL (`write`, EU-pinned), and Ultra (`deep` and `judge`) unless `NAVIGUIDE_TF_BASE_ULTRA` overrides Ultra. `eu-north1` and `devpost/nebius_futur.md` are **à vérifier**.
 
 Cascade: SQLite cache, then Token Factory, then a second Super call only after an empty body, HTTP ≥ 500, or a timeout on the `fast` tier, then NIM, OpenRouter, Claude, then `rules` if a fallback string was given. `filter_numbers` runs on each of those texts.
 
