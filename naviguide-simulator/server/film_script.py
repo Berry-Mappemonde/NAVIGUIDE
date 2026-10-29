@@ -516,8 +516,10 @@ def short_name(name: str) -> str:
 
 
 def norm_stop(name: str) -> str:
-    """« Ajaccio » ≡ « Ajaccio (Corse) ». Berry n'escale pas deux fois au même port."""
+    """« Ajaccio » ≡ « Ajaccio (Corse) ». « Nouméa » ≡ « Noumea » (NFD). Berry n'escale pas deux fois au même port."""
     s = re.sub(r"\s*\([^)]*\)\s*", " ", str(name or ""))
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
     return re.sub(r"\s+", " ", s).strip().casefold()
 
 
@@ -634,7 +636,7 @@ def _coast_is_arrival(
         harbor = _arrival_harbor(items, dest, lang) if dest else ""
     except Exception:
         harbor = ""
-    return bool(harbor) and place.casefold() in harbor.casefold()
+    return bool(harbor) and same_stop(place, harbor)
 
 
 def _is_departure_port_echo(change: dict, from_name: str, dest_name: str) -> bool:
@@ -6188,9 +6190,7 @@ def _arrival_harbor(items: list | None, dest: dict | None, lang: str) -> str:
         if not name or looks_english_title(name):
             continue
         dist = _nm_between(dest_lat, dest_lon, item.get("lat"), item.get("lon"))
-        near = bool(dest_name) and (
-            dest_name.casefold() in name.casefold() or name.casefold() in dest_name.casefold()
-        )
+        near = bool(dest_name) and same_stop(dest_name, name)
         if not near and (dist is None or dist > 25.0):
             continue
         if not near and _harbor_names_other_town(name, dest_name):
@@ -6630,9 +6630,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             if ev.get("kind") == "marina":
                 return
             ev_name = short_name(ev.get("name") or "")
-            if ev.get("kind") in {"approche", "stop"} and dest_name and ev_name and (
-                same_stop(ev_name, dest_name) or dest_name.casefold() in ev_name.casefold()
-            ):
+            if ev.get("kind") in {"approche", "stop"} and dest_name and ev_name and same_stop(ev_name, dest_name):
                 return
             if looks_english_title(ev_name):
                 return
@@ -7986,11 +7984,7 @@ def _off_leg_stop(place: str, frm: Any, dest: Any, route_rows: list | None, kind
     if frm and same_stop(place, str(frm)):
         return False
     dest_s = str(dest or "")
-    if dest_s and (
-        same_stop(place, dest_s)
-        or dest_s.casefold() in str(place or "").casefold()
-        or str(place or "").casefold() in dest_s.casefold()
-    ):
+    if dest_s and same_stop(place, dest_s):
         return False
     return True
 
@@ -9522,7 +9516,7 @@ def build_raw_from_moments(
             if _is_air_only_stop(title) and not (_is_air_window(w) or _is_side_window(w)):
                 return
             if change.get("kind") == "approche" and dest_name and title and (
-                same_stop(title, dest_name) or dest_name.casefold() in title.casefold()
+                same_stop(title, dest_name)
             ):
                 return
             place = change_place_name(change) or title

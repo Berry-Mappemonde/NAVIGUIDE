@@ -6578,7 +6578,40 @@ def test_en_guard_tolerates_demonyms_added_by_136():
         assert word in fs._en_translation_names(en, fr), en
     # Une seule source : chaque démonyme anglais de la table est connu du garde-fou.
     import toponyms  # noqa: PLC0415
-
     for row in toponyms.territories():
         for w in re.findall(r"[^\W\d_]+", str(row.get("adj_en") or "")):
             assert w.casefold() in fs._EN_GEO_WORDS, w
+
+
+def test_same_stop_exact_match_no_substring():
+    """R1: same_stop uses exact match (via norm_stop), not substring containment.
+
+    Ensures:
+    - "Port" ≠ "Porto Vecchio"
+    - "York" ≠ "New York"
+    - "Mont" ≠ "Montréal"
+    - "Ajaccio" = "Ajaccio (Corse)" (normalization)
+    """
+    from film_script import same_stop, norm_stop
+
+    # Exact matches after normalization
+    assert same_stop("Ajaccio", "Ajaccio (Corse)") is True
+    assert same_stop("Nouméa", "Noumea") is True
+    assert same_stop("Saint-Maur", "Saint-Maur (Berry, Indre)") is True
+
+    # False matches - substring should NOT match
+    assert same_stop("Port", "Porto Vecchio") is False
+    assert same_stop("York", "New York") is False
+    assert same_stop("Mont", "Montréal") is False
+    assert same_stop("Scotia", "Nova Scotia") is False
+    assert same_stop("Ecosse", "Nouvelle-Écosse") is False
+
+    # Case-insensitive
+    assert same_stop("AJACCIO", "ajaccio") is True
+    assert same_stop("port", "PORT") is True
+
+    # Empty/None handling
+    assert same_stop("", "Ajaccio") is False
+    assert same_stop("Ajaccio", "") is False
+    assert same_stop(None, "Ajaccio") is False
+    assert same_stop("Ajaccio", None) is False
