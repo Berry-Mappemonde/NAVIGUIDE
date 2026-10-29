@@ -94,8 +94,8 @@ def slug(name: str) -> str:
 def watch_enabled() -> bool:
     """Zéro recherche tant que le drapeau n'est pas ouvert.
 
-    Défaut 1 (PR #401). Le 15 oct. `ici_warm` lisait 1 ; le poste
-    ouvre `NAVIGUIDE_TAVILY_WATCH=1`. Les tests forcent 0.
+    Défaut 1 (U0 / PR #159). La veille est active par défaut ;
+    NAVIGUIDE_TAVILY_WATCH=0 la coupe. Les tests forcent 0.
     """
     return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "1").strip().lower() in (
         "1", "true", "yes", "on",
