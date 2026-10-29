@@ -1147,6 +1147,7 @@ export function useReplay({
   const [filmWriting, setFilmWriting] = useState(false);
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
+  const [filmWriteError, setFilmWriteError] = useState(false);
   // Style du plan chargé (visite des juges, bouton Rédigé) : "written" / "raw" quand le serveur
   // a servi le style demandé, "mismatch" quand il a servi le Brut à une demande Rédigé.
   const [filmLoadedStyle, setFilmLoadedStyle] = useState("");
@@ -2406,6 +2407,7 @@ export function useReplay({
     filmWebContext,
     filmReceipt,
     filmWriting,
+    filmWriteError,
     filmStyle,
     setFilmStyle: chooseFilmStyle,
     filmWriteNextStep,
