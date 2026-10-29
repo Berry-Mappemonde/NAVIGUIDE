@@ -30,7 +30,7 @@ function filmPayload({ written, seconds = 150, lang = "fr", receipt, webContext 
   };
 }
 
-async function openWritten(page, lang, receipt, webSources) {
+async function openWritten(page, lang, receipt, webSources = []) {
   await page.addInitScript((l) => localStorage.setItem("naviguide_lang_v4", l), lang);
   const cached = new Set();
   await page.route("**/voyage/**/film**", async (route) => {
@@ -41,7 +41,7 @@ async function openWritten(page, lang, receipt, webSources) {
     const key = `${url.searchParams.get("lang") || lang}:${seconds}`;
     if (req.method() === "POST") cached.add(key);
     const written = req.method() === "POST" || (style === "written" && cached.has(key));
-    const webContext = webSources ? { sources: webSources } : undefined;
+    const webContext = webSources.length ? { sources: webSources } : undefined;
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify(filmPayload({ written, seconds, lang, receipt, webContext })),
