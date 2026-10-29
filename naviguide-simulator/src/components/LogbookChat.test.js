@@ -47,6 +47,13 @@ describe("LogbookChat contract", () => {
     assert.match(src, /el\.scrollTop = el\.scrollHeight/);
   });
 
+  it("affiche les liens Tavily sous la réponse quand le serveur en envoie", () => {
+    assert.match(hook, /webSources/);
+    assert.match(src, /logbook-chat-web-sources/);
+    assert.match(src, /logbookWebSourcesTitle/);
+    assert.match(src, /logbook-chat-web-unavailable/);
+  });
+
   it("cadre de réponse sous la question", () => {
     assert.match(src, /data-testid="logbook-chat-reply"/);
     const replyAt = src.indexOf('data-testid="logbook-chat-reply"');

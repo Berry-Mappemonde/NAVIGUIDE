@@ -80,6 +80,31 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
               {m.role === "logbook" && (m.source || m.engine) ? (
                 <LlmSourceBadge source={m.source || m.engine} testId="chat-source" className="mt-0.5" />
               ) : null}
+              {m.role === "logbook" && m.webSources?.length ? (
+                <ul
+                  data-testid="logbook-chat-web-sources"
+                  className="mt-1 list-none space-y-0.5 pl-0 text-[9px] text-slate-400"
+                >
+                  <li className="font-semibold text-violet-200/80">{t("logbookWebSourcesTitle")}</li>
+                  {m.webSources.map((s) => (
+                    <li key={s.url}>
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-violet-200/90 underline underline-offset-2 break-all"
+                      >
+                        {s.title || s.url}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {m.role === "logbook" && m.portWebStatus === "unavailable" && !(m.webSources?.length) ? (
+                <p data-testid="logbook-chat-web-unavailable" className="mt-0.5 text-[9px] text-slate-500">
+                  {t("logbookWebUnavailable")}
+                </p>
+              ) : null}
             </div>
           ))}
           {pending ? <p className="text-[10px] text-slate-400 leading-snug">{t("logbookChatPending")}</p> : null}
