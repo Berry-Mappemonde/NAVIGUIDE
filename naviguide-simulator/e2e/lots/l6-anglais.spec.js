@@ -37,6 +37,6 @@ test("Langue EN : story-source présent et non vide", async ({ page }) => {
   await expect(source).toBeVisible({ timeout: 10_000 });
   const text = (await source.innerText()).trim();
   expect(text, "story-source ne doit pas être vide").not.toBe("");
-  expect(text).toMatch(/Token Factory|règles|rules|cache|budget/i);
+  expect(text).toMatch(/Token Factory|données brutes|raw data|cache|budget/i);
   await shot(page, "01-en");
 });

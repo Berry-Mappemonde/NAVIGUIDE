@@ -26,7 +26,7 @@ test("Story-source : Token Factory ou règles, jamais vide", async ({ page }) =>
     await expect(source).toBeVisible({ timeout: 10_000 });
     const text = (await source.innerText()).trim();
     expect(text, "story-source ne doit pas être vide").not.toBe("");
-    expect(text).toMatch(/Token Factory|règles|rules/i);
+    expect(text).toMatch(/Token Factory|données brutes|raw data/i);
   }
   await shot(page, "01-source");
 });
