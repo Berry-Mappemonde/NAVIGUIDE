@@ -628,7 +628,6 @@ export default {
   aiActGeneratedLabel: "AI-generated content (model: {model})",
   aiActChatNotice: "You are interacting with artificial intelligence. Replies are generated automatically and may contain errors.",
   aiActChatNoticeDismiss: "Got it",
-    aiActChatNoticeDismiss: "Got it",
   aiChatNotice: "You are chatting with an AI. Replies are generated automatically and may contain errors.",
   aiChatNoticeDismiss: "Got it",
 
