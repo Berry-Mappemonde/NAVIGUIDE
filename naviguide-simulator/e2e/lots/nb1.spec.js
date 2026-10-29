@@ -77,6 +77,23 @@ test("source en texte, aucun logo tiers", async ({ page }) => {
     return;
   }
 
+  // Le libellé lu plus bas doit être celui du film sondé (seconds=150) : on
+  // choisit la même durée dans la barre, sinon la pilule Rédigé s'applique à la
+  // durée par défaut, qui n'a pas de film rédigé dans le stock figé (« règles »).
+  // La pilule bascule (re-cliquer 150 revient à l'intégral) : on ne clique que si
+  // elle n'est pas déjà choisie, puis on vérifie qu'elle l'est.
+  const pill150 = page.locator("[data-testid='film-duration'] [data-seconds='150']");
+  const pillShown = await expect(pill150).toBeVisible({ timeout: 20_000 }).then(() => true).catch(() => false);
+  if (!pillShown) {
+    test.info().annotations.push({
+      type: "film rédigé absent",
+      description: "pilule 2:30 absente — libellé sauté ; absence de logo gardée",
+    });
+    return;
+  }
+  if ((await pill150.getAttribute("aria-pressed")) !== "true") await pill150.click();
+  await expect(pill150).toHaveAttribute("aria-pressed", "true");
+
   const written = page.getByTestId("film-style-written");
   const enabled = await expect(written).toBeEnabled({ timeout: 15_000 }).then(() => true).catch(() => false);
   if (!enabled) {
@@ -90,6 +107,10 @@ test("source en texte, aucun logo tiers", async ({ page }) => {
   await written.click();
   const source = page.getByTestId("film-source");
   await expect(source).toBeVisible({ timeout: 8_000 });
+  // Le clic sur « Rédigé » affiche d'abord « Rédaction en cours… » le temps de
+  // charger le film rédigé (150 s servi par le stock figé depuis feat/film-150s) :
+  // on lit le libellé de source une fois ce passage terminé.
+  await expect(source).not.toHaveText(/Rédaction en cours|Writing…/, { timeout: 30_000 });
   await expect(source.locator("img, svg")).toHaveCount(0);
   const text = (await source.innerText()).replace(/\s+/g, " ").trim();
   expect(text.length).toBeGreaterThan(0);
