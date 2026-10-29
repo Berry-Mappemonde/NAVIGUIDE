@@ -14,7 +14,7 @@ const RECEIPT = {
   reread: "pass", reread_en: "pass", lightning: 1, at: "2026-10-29T13:40:00Z",
 };
 
-function filmPayload({ written, seconds = 150, lang = "fr", receipt }) {
+function filmPayload({ written, seconds = 150, lang = "fr", receipt, webContext }) {
   return {
     status: "ready",
     lang,
@@ -24,12 +24,13 @@ function filmPayload({ written, seconds = 150, lang = "fr", receipt }) {
     reviewedBy: written ? "nemotron-ultra" : undefined,
     writtenAt: written ? "2026-10-29T13:40:00Z" : undefined,
     targetSeconds: seconds,
+    ...(written && webContext ? { webContext } : {}),
     chapters: [{ text: "Le 15 mai, Berry-Mappemonde quitte La Rochelle.", anchors: [{ t: 0, i: 0 }] }],
     ...(written && receipt ? { receipt } : {}),
   };
 }
 
-async function openWritten(page, lang, receipt) {
+async function openWritten(page, lang, receipt, webContext) {
   await page.addInitScript((l) => localStorage.setItem("naviguide_lang_v4", l), lang);
   const cached = new Set();
   await page.route("**/voyage/**/film**", async (route) => {
@@ -42,7 +43,7 @@ async function openWritten(page, lang, receipt) {
     const written = req.method() === "POST" || (style === "written" && cached.has(key));
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify(filmPayload({ written, seconds, lang, receipt })),
+      body: JSON.stringify(filmPayload({ written, seconds, lang, receipt, webContext })),
     });
   });
   const official = await probeOfficial(page);
@@ -84,4 +85,27 @@ test("sans reçu servi, aucun reçu affiché", async ({ page }) => {
   test.setTimeout(90_000);
   await openWritten(page, "fr", null);
   await expect(page.getByTestId("film-receipt")).toHaveCount(0);
+});
+
+test("affiche les sources Tavily quand webSourceCount > 0", async ({ page }) => {
+  test.setTimeout(90_000);
+  const CTX = {
+    basis: "tavily",
+    port: "La Rochelle",
+    fetchedAt: "2026-10-17T10:00:00Z",
+    sources: [
+      { title: "Source 1", url: "https://example.com/1", domain: "example.com" },
+      { title: "Source 2", url: "https://example.com/2", domain: "example.com" },
+      { title: "Source 3", url: "https://example.com/3", domain: "example.com" },
+    ],
+  };
+  await openWritten(page, "fr", null, CTX);
+  const receipt = page.getByTestId("film-receipt");
+  await expect(receipt).toBeVisible();
+  await expect(receipt.locator("summary")).toHaveText("Comment ce film a été fait");
+  await receipt.locator("summary").click();
+  // Vérifie que la ligne Tavily s'affiche avec le bon testid
+  const tavilyLine = page.getByTestId("film-receipt-filmReceiptTavily");
+  await expect(tavilyLine).toBeVisible();
+  await expect(tavilyLine).toContainText("Sources web Tavily affichées avec le film : 3");
 });
