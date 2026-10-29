@@ -206,7 +206,10 @@ test("parcours 60 secondes : suivre, revoir, journal, tracer, mention IA", async
   expect(size).toBeGreaterThanOrEqual(12);
   await dismissNotForNav(page);
   await expect(notice).toBeVisible();
-  await expect(page.getByRole("button", { name: /tavily/i })).toHaveCount(0);
+  // Seule la question d'exemple « web » nomme Tavily (elle l'annonce, le serveur l'appelle).
+  const tavilyButtons = await page.getByRole("button", { name: /tavily/i })
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
+  expect(tavilyButtons).toEqual(["logbook-chat-example-web"]);
   await shot(page, "02-journal");
 
   const sheet = page.getByTestId("escale-sheet");

@@ -66,3 +66,59 @@ describe("LogbookChat contract", () => {
     assert.doesNotMatch(src, /Raisonnement|Reasoning/);
   });
 });
+
+describe("LogbookChat example questions (one click, three real paths)", () => {
+  const en = readFileSync(join(here, "..", "i18n", "en.js"), "utf8");
+  const fr = readFileSync(join(here, "..", "i18n", "fr.js"), "utf8");
+  const keys = [
+    "logbookExamplesTitle",
+    "logbookExampleDeepQ", "logbookExampleDeepLabel", "logbookExampleDeepHint",
+    "logbookExampleWebQ", "logbookExampleWebLabel", "logbookExampleWebHint",
+    "logbookExampleFastQ", "logbookExampleFastLabel", "logbookExampleFastHint",
+  ];
+  const val = (file, key) => (file.match(new RegExp(`\\n\\s*${key}:\\s*"([^"]+)"`)) || [])[1];
+
+  it("three buttons, deep / web / fast, each with a test id", () => {
+    for (const id of ["deep", "web", "fast"]) {
+      assert.match(src, new RegExp(`id: "${id}"`));
+    }
+    assert.match(src, /data-testid=\{`logbook-chat-example-\$\{ex\.id\}`\}/);
+    assert.match(src, /data-testid="logbook-chat-examples"/);
+    assert.match(src, /title=\{`\$\{t\(ex\.q\)\} — \$\{t\(ex\.hint\)\}`\}/, "full question in the tooltip");
+    assert.match(src, /h-5 whitespace-nowrap rounded-full/, "small chips: the reply and the input keep their room");
+  });
+
+  it("a click sends the translated question through the existing onAsk flow, no new endpoint", () => {
+    assert.match(src, /const askExample = \(key\) =>/);
+    assert.match(src, /onAsk\?\.\(q\)/);
+    assert.match(src, /onClick=\{\(\) => askExample\(ex\.q\)\}/);
+    assert.match(src, /disabled=\{pending\}/);
+    assert.doesNotMatch(src, /fetch\(/);
+  });
+
+  it("every example key exists in FR and EN, and the texts differ", () => {
+    for (const key of keys) {
+      assert.ok(val(en, key), `en.${key}`);
+      assert.ok(val(fr, key), `fr.${key}`);
+      assert.notEqual(val(en, key), val(fr, key), key);
+    }
+  });
+
+  it("the wording matches the server routing (why/how → Ultra, short fact → Lightning)", () => {
+    assert.match(val(en, "logbookExampleDeepQ"), /^Why\b/);
+    assert.match(val(fr, "logbookExampleDeepQ"), /^Pourquoi\b/);
+    assert.match(val(en, "logbookExampleWebQ"), /^How\b/);
+    assert.match(val(fr, "logbookExampleWebQ"), /^Comment\b/);
+    for (const file of [en, fr]) {
+      const fast = val(file, "logbookExampleFastQ");
+      assert.ok(fast.length < 80, "FAST_QUESTION_MAX");
+      assert.doesNotMatch(fast, /why|how|pourquoi|comment|route|leg|course/i);
+      assert.match(val(file, "logbookExampleFastHint"), /Lightning/);
+      assert.match(val(file, "logbookExampleDeepHint"), /Ultra/);
+      assert.match(val(file, "logbookExampleWebHint"), /Tavily/);
+      assert.match(val(file, "logbookExampleDeepLabel"), /Ultra$/);
+      assert.match(val(file, "logbookExampleWebLabel"), /Tavily$/);
+      assert.match(val(file, "logbookExampleFastLabel"), /Lightning$/);
+    }
+  });
+});
