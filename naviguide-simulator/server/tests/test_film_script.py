@@ -6385,7 +6385,7 @@ def test_fortnight_only_translates_quinzaine():
     import asyncio
     import film_script as fs
     raw_ch = {"id": "c", "text": "Le 17 octobre, une dizaine de jours de mer.", "anchors": []}
-    answers = iter(["On October 17, a fortnight at sea.", "On October 17, about ten days at sea."])
+    answers = iter(["On October 17, a fortnight at sea."] * 2)
 
     async def tr(system, user, **kw):
         return next(answers), "nemotron-lightning"

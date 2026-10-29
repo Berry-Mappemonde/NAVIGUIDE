@@ -11111,6 +11111,17 @@ def _en_translation_names(en_text: str, fr_src: str) -> set[str]:
     return out
 
 
+_APPROX_EN_DAYS = {"huitaine": "about a week", "dizaine": "about ten days", "vingtaine": "about twenty days"}
+
+
+def _fix_fortnight(text: str, fr_src: str) -> str:
+    low = (fr_src or "").casefold()
+    hits = [en for fr, en in _APPROX_EN_DAYS.items() if f"{fr} de jours" in low]
+    if len(hits) != 1:
+        return text
+    return re.sub(r"\b(?:a|about a|nearly a)\s+fortnight\b", hits[0], text, flags=re.I)
+
+
 async def translate_written_plan(
     fr_plan: dict,
     raw_plan: dict,
@@ -11158,7 +11169,14 @@ async def translate_written_plan(
             if src_w and len(src_w & out_w) / len(src_w) > 0.6:
                 fb = max(fb, 1)  # Lightning a rendu le français
             if re.search(r"\bfortnight\b", text or "", re.I) and "quinzaine" not in src.casefold():
-                fb = max(fb, 1)  # « une dizaine » n'est pas « a fortnight »
+                # Lightning rend « une dizaine de jours » par « a fortnight » : on remet la
+                # traduction exacte de l'approximation dite en français, sinon refus.
+                fixed = _fix_fortnight(text or "", src)
+                if fixed != text:
+                    text = fixed
+                    guarded, rw, fb = apply_written_guard(src, text, facts_en, lang="en")
+                else:
+                    fb = max(fb, 1)
             if len(_sentences(speak_film_text(text, "en"))) < len(_sentences(src)):
                 fb = max(fb, 1)  # phrase manquante : le garde-fou recollerait le français
             if rw > 0 and fb == 0:
