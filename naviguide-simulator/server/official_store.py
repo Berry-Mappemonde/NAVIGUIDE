@@ -2854,6 +2854,49 @@ def _put_written_variant(body: dict, lang: str, seconds: int, plan: dict, when: 
     return new_body
 
 
+async def attach_film_web_context(
+    *,
+    now: Optional[datetime] = None,
+    client=None,
+) -> Optional[dict]:
+    """Clic Rédigé : provenance Tavily du dernier port du film, rangée dans le snapshot.
+
+    Une recherche par port et par jour au plus (cache de port_web_context,
+    plafond `llm_budget.allow_tavily`). Ni clé, ni plafond, ni résultat :
+    rien n'est rangé et le film ne montre aucune source. Jamais au GET.
+    """
+    try:
+        import film_web_context  # noqa: PLC0415
+
+        hit = get("film")
+        body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+        if not isinstance(body, dict):
+            return None
+        port = _stored_last_stop()
+        ctx = await film_web_context.fetch_for_port(port, now=now, client=client)
+        if ctx is None:
+            return film_web_context.public(body.get("webContext"))
+        if body.get("webContext") != ctx:
+            new_body = dict(body)
+            new_body["webContext"] = ctx
+            put("film", new_body, hit.get("key"))
+        return ctx
+    except Exception as exc:  # la source web ne bloque jamais le film
+        log.warning("film web context: %s", exc)
+        return None
+
+
+def _with_film_web_context(out: dict, body: Optional[dict]) -> dict:
+    """Champ `webContext` (+ `webSources`) servi avec le film, s'il est rangé."""
+    import film_web_context  # noqa: PLC0415
+
+    ctx = film_web_context.public((body or {}).get("webContext"))
+    if ctx:
+        out["webContext"] = ctx
+        out["webSources"] = [dict(s) for s in ctx["sources"]]
+    return out
+
+
 async def write_film_on_click(
     lang: str = "fr",
     seconds: int = 150,
@@ -2867,6 +2910,8 @@ async def write_film_on_click(
 
     lg = (lang or "fr")[:2].lower()
     secs = int(seconds or 0)
+    # Tavily au clic Rédigé (règle hackathon : appel à l'exécution, visible dans le film).
+    await attach_film_web_context(now=now)
     cached = serve_film(lang=lg, seconds=secs, style="written")
     if cached.get("hasWritten") and cached.get("status") == READY:
         return cached
@@ -2995,6 +3040,7 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
                 out["generated_at"] = wplan["generated_at"]
             out["writtenAt"] = wplan.get("writtenAt")
             out["style"] = "written"
+            _with_film_web_context(out, body)
             out.update(_stamp(hit))
             return out
     out = _with_film_estimate(_repair_served_hop(plan, lg, voy))
@@ -3007,6 +3053,7 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
     rev = body.get("film_script_rev")
     if rev:
         out["film_script_rev"] = rev
+    _with_film_web_context(out, body)
     out.update(_stamp(hit))
     return out
 
