@@ -86,3 +86,34 @@ def test_glued_french_is_retried_never_served_as_english():
 
     assert asyncio.run(fs.translate_written_plan(
         {"chapters": [raw_ch]}, {"chapters": [raw_ch]}, cascade=always_glued)) is None
+
+
+def test_frozen_store_holds_reviewed_150s_film_fr_and_en():
+    """Pré-génération figée (N17) : le stock de la CI porte le 150 s rédigé, relu FR et EN,
+    sous 150 s, sans eaux coupées ancrées à une date d'après, et sans français dans l'anglais."""
+    import json
+    import tarfile
+    from pathlib import Path
+
+    archive = Path(__file__).resolve().parent / "fixtures" / "official_store.tar.gz"
+    with tarfile.open(archive, "r:gz") as tf:
+        films = [
+            json.load(tf.extractfile(m)) for m in tf.getmembers()
+            if m.isfile() and m.name.endswith(".json")
+        ]
+    films = [d for d in films if d.get("family") == "film"
+             and str(d.get("key", "")).endswith(":" + __import__("official_store").FILM_SCRIPT_REV)]
+    assert films
+    written = films[0]["payload"].get("written") or {}
+    for lg in ("fr", "en"):
+        plan = (written.get(lg) or {}).get("150") or {}
+        assert plan.get("chapters"), lg
+        assert plan.get("estimatedSeconds", 999) <= 150, (lg, plan.get("estimatedSeconds"))
+        receipt = plan.get("receipt") or {}
+        assert receipt.get("llmCalls", 0) > 0 and receipt.get("ruleFallbacks") == 0
+        assert receipt.get("reread") == "pass" and receipt.get("reread_en") == "pass"
+        assert not fs._anchor_dates_regress(plan["chapters"], lg), lg
+        if lg == "en":
+            text = " ".join(c["text"] for c in plan["chapters"])
+            for fr_word in ("août", "milles", "jours de mer", "équipage", "Arrivée"):
+                assert fr_word not in text, fr_word
