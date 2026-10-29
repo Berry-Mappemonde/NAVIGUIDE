@@ -224,7 +224,7 @@ def test_cascade_tokenfactory_write_is_nemotron_super(monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(str(request.url))
-        assert "tokenfactory.nebius.com" in str(request.url)
+        assert _url_host_is(str(request.url), "api.tokenfactory.nebius.com")
         body = request.read().decode()
         assert "Nemotron-3.5-Super-VL" in body
         return httpx.Response(200, json=_chat_ok("Entrée dans la ZEE française."))
