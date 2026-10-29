@@ -2314,14 +2314,13 @@ export function useReplay({
       })
       .catch(() => {
         setFilmWriteError(true);
-      })
-      .finally(() => setFilmWriting(false));
+        setFilmWriting(false);
+      });
   }, [hasWritten, lang, targetSeconds, t0, voyageId]);
 
   // filmWriteNextStep: polls GET /voyage/official/film?style=written every 4s, up to 10min
   const filmWriteNextStep = useCallback(async () => {
     if (!isOfficialFilmVoyage(voyageId)) return "stop";
-    if (!filmWriting && !hasWritten) return "stop";
 
     const path = filmRequestPath(voyageId);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=written&t0=${encodeURIComponent(t0)}`;
@@ -2351,6 +2350,7 @@ export function useReplay({
           setFilmWebContext(resolved.webContext || null);
           setFilmReceipt(resolved.receipt || null);
           setFilmWriteError(false);
+          setFilmWriting(false);
           return "ready";
         }
         if (resolved.effectiveStyle === "raw" && data.hasWritten === false) {
@@ -2362,8 +2362,9 @@ export function useReplay({
       }
     }
     setFilmWriteError(true);
+    setFilmWriting(false);
     return "stop";
-  }, [filmWriting, hasWritten, lang, targetSeconds, t0, voyageId]);
+  }, [hasWritten, lang, targetSeconds, t0, voyageId]);
 
   return {
     active,
