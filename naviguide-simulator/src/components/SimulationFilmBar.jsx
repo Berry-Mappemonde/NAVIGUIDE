@@ -417,7 +417,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                   <LlmSourceBadge
                     source={replay.source}
                     reviewedBy={replay.reviewedBy}
-                    label={filmSourceLabel(replay.source, replay.reviewedBy, t)}
+                    label={filmSourceLabel(replay.source, replay.reviewedBy, t, replay.model)}
                     testId="film-source"
                     textOnly
                     hidden={(replay.style || "raw") !== "written" || !replay.hasWritten}
@@ -650,8 +650,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   );
 });
 
-function filmSourceLabel(source, reviewedBy, t) {
-  return t(filmSourceKey(source, reviewedBy));
+function filmSourceLabel(source, reviewedBy, t, model) {
+  return t(filmSourceKey(source, reviewedBy, model));
 }
 
 /** Jambe terrestre (Saint-Maur → La Rochelle) : km par la route, pas de nm. */

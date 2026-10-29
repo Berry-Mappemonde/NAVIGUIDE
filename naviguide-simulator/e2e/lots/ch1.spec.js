@@ -21,7 +21,7 @@ const shot = (page, name) => page.screenshot({
 const FAILED = /n.a pas pu répondre|aucun modèle n.a répondu|could not answer|no model replied/i;
 const MISSING = /n.a pas cette information dans ses données|does not hold that information/i;
 const RULES = /règles|rules/i;
-const SUPER = /nemotron 3 super|nemotron-super/i;
+const SUPER = /nemotron 3(?:\.5)? super|nemotron-super/i;
 
 async function askChat(page, question) {
   const chat = page.getByTestId("logbook-chat");

@@ -49,7 +49,9 @@ describe("llmSourceI18nKey", () => {
     assert.doesNotMatch(fr[lightning], /relu par Ultra/i);
     assert.equal(llmSourceI18nKey("nemotron-super", "nemotron-ultra"), "storySourceSuperReviewed");
     assert.equal(llmSourceI18nKey("nemotron", "nemotron-ultra"), "storySourceSuperReviewed");
-    assert.match(en.storySourceSuperReviewed, /Nemotron 3 Super/);
+    assert.match(en.storySourceSuperReviewed, /Nemotron 3\.5 Super VL/);
+    assert.doesNotMatch(en.storySourceSuperReviewed, /Nemotron 3 Super\b/);
+    assert.match(fr.storySourceSuperReviewed, /Nemotron 3\.5 Super VL/);
     assert.match(en.storySourceSuperReviewed, /Token Factory/);
     assert.match(en.storySourceSuperReviewed, /reviewed by Ultra/);
     assert.match(fr.storySourceSuperReviewed, /Token Factory/);
@@ -62,14 +64,14 @@ describe("llmSourceI18nKey", () => {
 
   it("names each Token Factory tier exactly, and never a fallback", () => {
     const exact = {
-      "nemotron-nano": "Nemotron 3 Nano · Token Factory",
-      "route-nano": "Nemotron 3 Nano · Token Factory",
-      "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B": "Nemotron 3 Nano · Token Factory",
+      "nemotron-nano": "Nemotron 3 Nano 30B · Token Factory",
+      "route-nano": "Nemotron 3 Nano 30B · Token Factory",
+      "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B": "Nemotron 3 Nano 30B · Token Factory",
       "nemotron-lightning": "Nemotron 3.5 Lightning · Token Factory",
       "nvidia/Nemotron-3_5-Lightning": "Nemotron 3.5 Lightning · Token Factory",
-      "nemotron-super": "Nemotron 3 Super · Token Factory",
+      "nemotron-super": "Nemotron 3.5 Super VL · Token Factory",
       "nemotron-super-vl": "Nemotron 3.5 Super VL · Token Factory",
-      "nvidia/nemotron-3-super-120b-a12b": "Nemotron 3 Super · Token Factory",
+      "nvidia/nemotron-3-super-120b-a12b": "Nemotron 3 Super 120B · Token Factory",
       "nvidia/Nemotron-3.5-Super-VL": "Nemotron 3.5 Super VL · Token Factory",
       "nemotron-ultra": "Nemotron 3 Ultra · Token Factory",
       "nvidia/Nemotron-3-Ultra-550b-a55b": "Nemotron 3 Ultra · Token Factory",
@@ -130,5 +132,27 @@ describe("LlmSourceBadge — texte seul", () => {
     assert.match(badge, /llmBrandNebius/);
     assert.match(badge, /llmSourceShowsBrands/);
     assert.match(badge, /llmSourceLabel/);
+  });
+});
+
+describe("libellés alignés sur les modèles servis (llm_budget.DEFAULT_MODELS)", () => {
+  const tEnL = (key) => en[key] ?? key;
+  it("palier write : Super VL par défaut, Super 120B seulement si le modèle servi le nomme", () => {
+    assert.equal(llmSourceLabel("nemotron-super", tEnL), "Nemotron 3.5 Super VL · Token Factory");
+    assert.equal(llmSourceLabel("nemotron-super", tEnL, null, "nvidia/Nemotron-3.5-Super-VL"), "Nemotron 3.5 Super VL · Token Factory");
+    assert.equal(llmSourceLabel("nemotron-super", tEnL, null, "nvidia/nemotron-3-super-120b-a12b"), "Nemotron 3 Super 120B · Token Factory");
+    assert.equal(llmSourceI18nKey("nemotron-super", "nemotron-ultra", "nvidia/nemotron-3-super-120b-a12b"), "storySourceSuper120bReviewed");
+    assert.equal(llmSourceI18nKey("nemotron-super", "nemotron-ultra", "nvidia/Nemotron-3.5-Super-VL"), "storySourceSuperReviewed");
+    assert.equal(llmSourceI18nKey("nemotron", null, "nvidia/Nemotron-3_5-Lightning"), "storySourceLightning");
+    assert.equal(llmSourceShowsBrands("nvidia/nemotron-3-super-120b-a12b"), true);
+  });
+  it("aucun libellé i18n ne nomme encore « Nemotron 3 Super » sans 120B", () => {
+    for (const dict of [en, fr]) {
+      for (const [key, value] of Object.entries(dict)) {
+        if (typeof value !== "string") continue;
+        assert.doesNotMatch(value, /Nemotron 3 Super(?! 120B)/, key);
+        assert.doesNotMatch(value, /Nemotron 3 Nano(?! 30B)/, key);
+      }
+    }
   });
 });

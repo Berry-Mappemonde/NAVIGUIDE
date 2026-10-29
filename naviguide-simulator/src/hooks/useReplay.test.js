@@ -1258,13 +1258,21 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.equal(filmSourceKey("nemotron-super"), "storySourceSuper");
     assert.equal(filmSourceKey("nemotron-nano"), "storySourceNano");
     assert.equal(filmSourceKey("nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"), "storySourceNano");
-    assert.equal(en.storySourceNano, "Nemotron 3 Nano · Token Factory");
-    assert.equal(fr.storySourceNano, "Nemotron 3 Nano · Token Factory");
+    assert.equal(en.storySourceNano, "Nemotron 3 Nano 30B · Token Factory");
+    assert.equal(fr.storySourceNano, "Nemotron 3 Nano 30B · Token Factory");
+    // Le palier write sert Super VL : « nemotron-super » sans modèle se lit Super VL.
+    assert.equal(filmSourceKey("nemotron-super-vl"), "storySourceSuperVl");
+    assert.equal(filmSourceKey("nemotron-super", "", "nvidia/Nemotron-3.5-Super-VL"), "storySourceSuper");
+    assert.equal(filmSourceKey("nemotron-super", "", "nvidia/nemotron-3-super-120b-a12b"), "storySourceSuper120b");
+    assert.equal(filmSourceKey("nemotron-super", "nemotron-ultra", "nvidia/nemotron-3-super-120b-a12b"), "storySourceSuper120bReviewed");
+    assert.equal(filmSourceKey("nemotron-super", "", "nvidia/Nemotron-3_5-Lightning"), "storySourceLightning");
     assert.equal(en.filmModels, "Models");
     assert.equal(fr.filmModels, "Modèles");
     assert.equal(filmSourceKey("openrouter"), "storySourceOpenrouter");
     assert.equal(filmSourceKey("nvidia-gpt-oss-20b"), "storySourceNim");
-    assert.match(en.storySourceSuper, /Nemotron 3 Super/);
+    assert.match(en.storySourceSuper, /Nemotron 3\.5 Super VL/);
+    assert.match(fr.storySourceSuper, /Nemotron 3\.5 Super VL/);
+    assert.match(en.storySourceSuper120b, /Nemotron 3 Super 120B/);
     assert.match(en.storySourceSuper, /Token Factory/);
     assert.match(en.storySourceSuperReviewed, /Token Factory/);
     assert.match(en.storySourceSuperReviewed, /reviewed by Ultra/);

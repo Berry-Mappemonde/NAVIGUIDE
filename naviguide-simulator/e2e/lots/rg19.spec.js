@@ -30,7 +30,7 @@ const FAILED = /n.a pas pu répondre|aucun modèle n.a répondu|could not answer
 const MISSING = /n.a pas cette information dans ses données|does not hold that information/i;
 const RULES = /règles|rules/i;
 const ULTRA = /nemotron.*ultra|ultra/i;
-const SUPER = /nemotron 3 super|nemotron-super/i;
+const SUPER = /nemotron 3(?:\.5)? super|nemotron-super/i;
 
 async function askChat(page, question) {
   const chat = page.getByTestId("logbook-chat");
