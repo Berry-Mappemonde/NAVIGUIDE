@@ -411,8 +411,20 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             {replay && !replay.unavailable ? (
               <>
                 {replay.writing ? (
-                  <div data-testid="film-source" className="min-w-0 max-w-full whitespace-normal break-words text-xs leading-snug text-white/90">
-                    {replay.filmWriteError ? t("ed2WriteFailed") : t("ed2WritingWait")}
+                  <div
+                    data-testid="film-source"
+                    className="min-w-0 max-w-full whitespace-normal break-words text-xs leading-snug text-white/90"
+                  >
+                    <LlmSourceBadge
+                      source={replay.source}
+                      reviewedBy={replay.reviewedBy}
+                      label={filmSourceLabel(replay.source, replay.reviewedBy, t, replay.model)}
+                      textOnly
+                      className="min-w-0 max-w-full whitespace-normal break-words [&_span]:text-xs [&_span]:text-white/90"
+                    />
+                    <p className="mt-0.5 text-white/80">
+                      {replay.filmWriteError ? t("ed2WriteFailed") : t("ed2WritingNemotron")}
+                    </p>
                   </div>
                 ) : (
                   <LlmSourceBadge
