@@ -29,12 +29,13 @@ Manuels : [français](docs/MANUEL_UTILISATEUR.md), [anglais](docs/USER_MANUAL.md
 
 Sur [https://naviguide.fr](https://naviguide.fr). La première visite s’ouvre en anglais. Cliquez **FR** pour les libellés français.
 
+Raccourci : [https://naviguide.fr/?tour=1](https://naviguide.fr/?tour=1) ouvre la visite guidée des juges au chargement (le bouton **Visite guidée** l’ouvre aussi). Sa deuxième étape, **Qui fait quoi : Nemotron et Tavily**, nomme le modèle de chaque tâche, lu en direct dans `GET /ici/warm/status` (ou les défauts du code, signalés comme tels), ainsi que les appels Nemotron et les recherches Tavily du jour sur le serveur.
+
 1. Cliquez **Suivre l’expédition**.
 2. Cliquez **Revoir l’expédition**. S’il est grisé, l’info-bulle dit **en préparation**.
-3. Quand les commandes du film sont là, **Brut** et **Rédigé** sont côte à côte. **Rédigé** est la narration écrite. Si **Rédigé** est grisé, l’info-bulle dit **pas encore rédigé pour cette durée**.
+3. Quand les commandes du film sont là, **Brut** et **Rédigé** sont côte à côte. **Rédigé** est la narration écrite. Si **Rédigé** est grisé, l’info-bulle dit **pas encore rédigé pour cette durée**. Pour l’accessibilité, le bouton haut-parleur de la barre du film (libellé **Écouter**) lit le film à voix haute : pendant un replay, la synthèse vocale du navigateur (`speechSynthesis`, `naviguide-simulator/src/utils/speak.js`) lit chaque paragraphe au fil du film, en anglais ou en français, sans appel à Nemotron ni au serveur NAVIGUIDE.
 4. Quand le bateau est à une escale, le panneau s’intitule **Fiche d’escale**. Si cette escale est dans la fenêtre de veille et qu’une veille a été gardée, une carte porte le nom du port, les mots **veille du**, et une date, plus une phrase. Sans veille gardée, cette carte est absente. La fiche liste quand même les lieux qu’elle a.
-5. Dans le panneau latéral, **Journal de bord — posez une question**. Le champ dit **Quel vent au bateau ? Prochaine escale ?** Le bouton a pour info-bulle **Envoyer**.
-6. Cliquez **Tracer votre propre route**.
+5. Dans le panneau latéral, **Journal de bord — posez une question**. Le champ dit **Quel vent au bateau ? Prochaine escale ?** Le bouton a pour info-bulle **Envoyer**. Sous **Essayez une question :**, trois puces envoient une question prête en un clic : **Pourquoi ? · Ultra** (une question « pourquoi », répondue par Nemotron 3 Ultra), **Actu du port · Tavily** (ce que le web dit du port de la prochaine escale : Ultra avec les sources web Tavily) et **Vent · Lightning** (Lightning lit la question, les faits répondent).
 
 Une question simple du journal est répondue à partir des faits déjà collectés. Un pourquoi, un comment, ou une question longue est celle envoyée à Nemotron 3 Ultra quand le budget le permet. Le journal affiche alors : **Vous échangez avec une intelligence artificielle. Les réponses sont générées automatiquement et peuvent contenir des erreurs.**
 
@@ -51,6 +52,7 @@ L’inférence principale va sur Nebius Token Factory. Les identifiants ci-desso
 | Paragraphe de la fiche d’escale | `fast` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/escale_api.py` |
 | Résumé de veille en une phrase | `fast` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/escale_watch.py` |
 | Carte « ici » quand un récit écrit est demandé | `write` | `nvidia/Nemotron-3.5-Super-VL` | `naviguide-simulator/server/story_cache.py` |
+| Récit écrit d’une escale ou d’une alerte majeure (coup de vent, cyclone, alerte de profondeur, marina refuge, toute gravité `alert`) | `deep` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `naviguide-simulator/server/story_cascade.py` |
 | Chapitres du film écrit | `write` | `nvidia/Nemotron-3.5-Super-VL` | `naviguide-simulator/server/film_script.py` |
 | Commentaire de la revue du plan | `write` | `nvidia/Nemotron-3.5-Super-VL` | `naviguide-simulator/server/plan_review.py` |
 | Éditer, puis juger, le film écrit | `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `naviguide-simulator/server/film_script.py` |
@@ -58,9 +60,9 @@ L’inférence principale va sur Nebius Token Factory. Les identifiants ci-desso
 | Affirmation périmée sur un port officiel, seulement si ce juge est allumé | `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `naviguide-simulator/server/truth_judge.py` |
 | Regarder un dessin local de la route (pas le routage du bouton Tracer) | — | `nvidia/Nemotron-3.5-Super-VL` | `naviguide-simulator/server/vl_route.py` |
 
-Le palier `deep` utilise le même identifiant Ultra. Aucun module de `naviguide-simulator/server/` n’appelle `tier="deep"` sur ce commit. L’appel VL ne part que de `naviguide-simulator/scripts/one_shot.py` avec `--run`. L’image envoyée est dessinée localement. Les tuiles de la carte ne sont pas envoyées.
+Le palier `deep` utilise le même identifiant Ultra. `story_tier` dans `naviguide-simulator/server/story_cascade.py` le choisit pour le récit écrit (`POST /ici/story`) d’une escale ou d’une alerte majeure ; tout autre récit écrit reste sur `write`. L’appel VL ne part que de `naviguide-simulator/scripts/one_shot.py` avec `--run`. L’image envoyée est dessinée localement. Les tuiles de la carte ne sont pas envoyées.
 
-Nemotron 3 Nano 30B et Nemotron 3 Super 120B quittent Token Factory le 9 novembre 2026 : le palier `nano` sert donc Lightning, et le palier `write` sert Super VL. Les deux identifiants figurent dans `GET /v1/models` de Token Factory. Hôtes dans `naviguide-simulator/server/story_cascade.py` : le palier `nano` sur `https://api.tokenfactory.nebius.com/v1` (base EU), Lightning et Super VL sur la même base par défaut, Ultra (`deep` et `judge`) sur `https://api.tokenfactory.us-central1.nebius.com/v1`.
+Nemotron 3 Nano 30B et Nemotron 3 Super 120B quittent Token Factory le 9 novembre 2026 : le palier `nano` sert donc Lightning, et le palier `write` sert Super VL. Les deux identifiants figurent dans `GET /v1/models` de Token Factory. Hôtes dans `naviguide-simulator/server/story_cascade.py` : le palier `nano` sur `https://api.tokenfactory.nebius.com/v1` (base EU), Lightning (`fast`) et Super VL (`write`) sur la même base par défaut (`NAVIGUIDE_TF_BASE` la change), Ultra (`deep` et `judge`) sur `https://api.tokenfactory.us-central1.nebius.com/v1`.
 
 **Cascade.** Un cache SQLite de 24 h est lu d’abord. Si le budget du jour ou `NAVIGUIDE_LLM_MODE` refuse l’appel, rien n’est envoyé et la source est `budget`. Sinon l’ordre par défaut de `DEFAULT_PROVIDERS` est Token Factory, puis NIM, puis OpenRouter, puis Claude. Si l’appelant a fourni un texte de repli et que chaque fournisseur a échoué, la source est `rules`.
 
@@ -78,7 +80,7 @@ Sur le palier `fast` seulement, un corps Token Factory vide, un statut HTTP 500 
 | `deep` | 150 000 |
 | `judge` | 250 000 |
 
-Les questions difficiles du journal qui atteignent Ultra sont aussi plafonnées à 10 appels par jour. Il n’y a pas de coupure en dollars tant que `NAVIGUIDE_LLM_DAILY_USD` n’est pas posé. Les chiffres commentés dans `naviguide-simulator/server/.env.example` ne sont pas ces défauts. Le mode par défaut est `on-demand` (une action de la personne, pas un travail de fond). `off` ne paie jamais. `all` est explicite.
+L’édition et la relecture du film rédigé passent par Ultra par défaut, dans ce budget `judge` (`film_ultra_open` dans `naviguide-simulator/server/film_script.py`). Mettre `NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE` à `0`, à une valeur négative ou non numérique coupe Ultra pour le film, qui se replie alors sur Super VL. Les questions difficiles du journal sont bornées par le même budget `judge`. Un compteur séparé de 10 appels Ultra du chat par jour (`allow_chat_ultra` dans `naviguide-simulator/server/llm_budget.py`) figure dans l’état du budget, mais n’est pas vérifié avant une réponse du journal sur ce commit. Il n’y a pas de coupure en dollars tant que `NAVIGUIDE_LLM_DAILY_USD` n’est pas posé. Les chiffres commentés dans `naviguide-simulator/server/.env.example` ne sont pas ces défauts. Le mode par défaut est `on-demand` (une action de la personne, pas un travail de fond). `off` ne paie jamais. `all` est explicite.
 
 **Preuve publique.** `GET /ici/warm/status` contient `llm`, et `llm.lastSourceByTier` quand un palier a déjà répondu. La valeur est la source qui a répondu (`nemotron-lightning`, `nemotron-super-vl`, `nemotron-ultra`, ou le nom d’un repli), pas une phrase du modèle.
 
@@ -86,11 +88,15 @@ Les questions difficiles du journal qui atteignent Ultra sont aussi plafonnées 
 
 ## Tavily
 
-Tavily est appelé à l’exécution depuis le chat du journal. Chaque question envoyée avec le bouton **Envoyer** de « Journal de bord — posez une question » lance une recherche Tavily (`naviguide-simulator/server/port_web_context.py`) sur un port : le port le plus proche du bateau du film, ou la prochaine escale officielle quand on suit le bateau en direct. Elle est active par défaut (`NAVIGUIDE_PORT_WEB=0` la coupe), mise en cache par requête et par jour, et comptée dans les 80 crédits Tavily du jour. Les liens s’affichent sous **Sources web (Tavily)**, sous la réponse. Une question difficile transmet les extraits à Ultra, qui doit les attribuer (« selon une source web ») et ne jamais les mêler aux chiffres du bateau.
+Tavily est appelé à l’exécution à trois endroits qu’un visiteur atteint : le chat du journal, la puce **Actu du port · Tavily** (le même chemin du chat) et le film **Rédigé**.
+
+**Chat du journal.** Chaque question envoyée avec le bouton **Envoyer** de « Journal de bord — posez une question » lance une recherche Tavily (`naviguide-simulator/server/port_web_context.py`) sur un port : le port le plus proche du bateau du film, ou la prochaine escale officielle quand on suit le bateau en direct. Elle est active par défaut (`NAVIGUIDE_PORT_WEB=0` la coupe), mise en cache par requête et par jour, et comptée dans les 80 crédits Tavily du jour. Les liens s’affichent sous **Sources web (Tavily)**, sous la réponse. Une question difficile transmet les extraits à Ultra, qui doit les attribuer (« selon une source web ») et ne jamais les mêler aux chiffres du bateau. La puce **Actu du port · Tavily** envoie une question « comment » : sa réponse part donc à Ultra avec ces extraits.
+
+**Film rédigé.** Le clic sur **Rédigé** (`POST /voyage/official/film`) lance une recherche Tavily sur le dernier port atteint par le film (`naviguide-simulator/server/film_web_context.py`), avec le même cache et le même plafond de crédits du jour. Seuls les titres et les liens sont gardés, trois au plus, et aucun extrait n’est recopié dans le texte du film. Ils s’affichent sous la barre du film : **Sources web (Tavily) · {port} :**. Sans clé, sans crédit restant ou sans résultat, rien ne s’affiche.
 
 La veille d’escale ci-dessous est un travail serveur distinct.
 
-La veille est un travail du serveur. Elle reste éteinte tant que `NAVIGUIDE_TAVILY_WATCH` n’est pas `1` (le défaut est `0`). Allumée, elle couvre une escale de 10 jours avant l’arrivée jusqu’à 2 jours après, au plus deux tours, une fois par escale. Lightning écrit une phrase à partir des extraits. S’il faut un second tour, Nano choisit un id restant dans une liste fixe. Il n’invente pas de question. Plafonds, sauf surcharge : 2 recherches par escale, 6 recherches par jour, 80 crédits Tavily par jour. La carte datée, quand une veille est gardée et pas expirée, s’intitule `{name} · veille du {date}`.
+La veille est un travail du serveur. Elle reste éteinte tant que `NAVIGUIDE_TAVILY_WATCH` n’est pas `1` (le défaut est `0`). Allumée, elle couvre une escale de 10 jours avant l’arrivée jusqu’à 2 jours après, au plus deux tours, une fois par escale. Lightning écrit une phrase à partir des extraits. S’il faut un second tour, le palier `nano` (Lightning) choisit un id restant dans une liste fixe. Il n’invente pas de question. Plafonds, sauf surcharge : 2 recherches par escale, 6 recherches par jour, 80 crédits Tavily par jour. La carte datée, quand une veille est gardée et pas expirée, s’intitule `{name} · veille du {date}`.
 
 Le juge séparé « relire la page officielle du port » est éteint tant que `NAVIGUIDE_TRUTH_JUDGE` n’est pas `1`.
 
