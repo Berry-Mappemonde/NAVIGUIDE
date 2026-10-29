@@ -11,7 +11,7 @@ NAVIGUIDE is the expedition cockpit for the Berry-Mappemonde voyage: a map, the 
 
 **Live: https://naviguide.fr**
 
-**Demo video:** TODO (Berry)
+**Demo video:** https://youtu.be/pH5ZtAh_NQA
 
 > **Not for navigation.** Maps and figures come from public sources and calculations. This is not an official chart. Check government publications before any decision at sea.
 
@@ -92,6 +92,14 @@ The watch is a server job. It stays off until `NAVIGUIDE_TAVILY_WATCH=1` (the de
 
 The separate “re-read the official port page” judge is off unless `NAVIGUIDE_TRUTH_JUDGE=1`.
 
+## Where Nebius Token Factory accelerated us
+
+- **Drop-in provider.** Token Factory speaks the OpenAI chat-completions format, so adding it as the first provider of our existing cascade took one commit (`b8e294d`, September 20, 2026), four days after the cascade itself was wired (`a60f53e`, September 16).
+- **One table, one place to pick a model per job.** Tiers in `naviguide-simulator/server/llm_budget.py` map each job to a Nemotron size. Moving short JSON calls to Nano (`d665fff`) and short sentences to Lightning (`18ba74a`) changed that table plus the call sites, labels and tests, while every fallback was kept.
+- **A writer and an editor from the same provider.** In our local film runs, Super writes and Ultra edits and judges, so the quality loop runs inside one API and one bill.
+
+Other Nebius services: none beyond Token Factory.
+
 ## Architecture and data sources
 
 ```
@@ -169,6 +177,17 @@ A merge to `main` deploys [https://naviguide.fr](https://naviguide.fr) on Contab
 Measured from git on code files only. The sentence is copied from that measurement. It is not an estimate.
 
 In numbers (from git, code files only): on August 26, 2026 the repository held 0 code files and 0 lines — the NAVIGUIDE simulator did not exist. Today it holds 708 code files and 174,566 lines, and 100% of those lines (174,566) were written or rewritten since August 26, 2026 — 1094 commits, 811 files touched. The simulator (171,071 lines) is entirely post-August 26, 2026.
+
+## Known limitations
+
+- **Fallbacks are not NVIDIA-on-Nebius.** When Token Factory fails, the default order continues to NVIDIA NIM (`openai/gpt-oss-20b`), then OpenRouter (`openai/gpt-4o-mini`), then Claude (`claude-haiku-4-5`). Such answers are labelled with their provider, not as Nemotron.
+- **The number filter only checks numbers.** `filter_numbers` drops a sentence whose figures are not in the facts. A sentence with no number is kept, so a non-numeric invention is not caught.
+- **The official-port judge is off by default.** It runs only when `NAVIGUIDE_TRUTH_JUDGE=1`.
+- **No dollar cap by default.** Daily token budgets apply per tier, but there is no dollar cutoff unless `NAVIGUIDE_LLM_DAILY_USD` is set.
+- **Cached answers can be up to a day old.** The cascade cache lives 24 hours; a written film is cached for one day, a written story for seven days.
+- **Edited is not always available.** If no written film exists for the chosen duration, the **Edited** button is grey.
+- **No red-team evaluation.** This repository has no red-team eval directory or report, and was not adversarially tested with NVIDIA garak or promptfoo.
+- **Not for navigation.** Maps and figures come from public sources and calculations; this is not an official chart.
 
 ## Responsible AI and security
 
