@@ -10,6 +10,7 @@ _LLM_SOURCES = frozenset({
     "nemotron-nano",
     "nemotron-lightning",
     "nemotron-super",
+    "nemotron-super-vl",
     "nemotron-ultra",
     "openrouter",
     "claude",

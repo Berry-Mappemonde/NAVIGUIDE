@@ -58,7 +58,8 @@ CACHE_NS = "llm-cache"
 CACHE_TTL_S = 24 * 3600.0
 TF_PARALLEL_DEFAULT = 4
 KNOWN_SOURCES = frozenset({
-    "nemotron-nano", "nemotron-lightning", "nemotron-super", "nemotron-ultra",
+    "nemotron-nano", "nemotron-lightning", "nemotron-super", "nemotron-super-vl",
+    "nemotron-ultra",
     "openrouter", "claude", "rules", "budget", "cache",
 })
 
@@ -859,6 +860,7 @@ async def _call_tokenfactory(
     llm_budget.record(t, pt, ct)
     report_tier = cascade_tier if cascade_tier is not None else t
     llm_budget.remember_source(source, report_tier)
+    llm_budget.remember_served_model(model, report_tier)
     llm_budget.clear_tier_errors(report_tier)
     return _as_result(text, source, model=model, tier=t)
 

@@ -436,11 +436,13 @@ test("non-régression suivre, film, revue, polaire, exports, fiche", async ({ pa
     const replay = page.getByTestId("replay-start");
     if (await pill150.getAttribute("data-variant-absent") !== "1") await pill150.click();
     if (await replay.isEnabled()) {
+      // La pilule 150 s quitte le DOM pendant le rejeu : lire son état avant de lancer.
+      const pressed150 = await pill150.getAttribute("aria-pressed");
       await replay.click();
       const stop = page.getByTestId("replay-stop");
       await expect(stop).toBeVisible({ timeout: 8_000 });
       const budget = await page.evaluate(() => window.__naviguideFilm?.targetSeconds ?? null);
-      if (budget != null && await pill150.getAttribute("aria-pressed") === "true") {
+      if (budget != null && pressed150 === "true") {
         expect(budget).toBeGreaterThanOrEqual(150 * 0.9);
         expect(budget).toBeLessThanOrEqual(150 * 1.1);
       }
@@ -519,8 +521,7 @@ test("non-régression suivre, film, revue, polaire, exports, fiche", async ({ pa
       await page.locator(".naviguide-sidebar-toggle--right").evaluate((el) => el.click());
       await expect.poll(() => panelClosed(page, "right")).toBe(true);
     }
-    await bringOffscreenFlagsIntoView(page);
-    const freeIdx = await page.evaluate(() => [...document.querySelectorAll("[data-testid='waypoint-flag']")]
+    const findFreeFlag = () => page.evaluate(() => [...document.querySelectorAll("[data-testid='waypoint-flag']")]
       .findIndex((el) => {
         const r = el.getBoundingClientRect();
         if (!r.width || !r.height) return false;
@@ -529,7 +530,16 @@ test("non-régression suivre, film, revue, polaire, exports, fiche", async ({ pa
       }));
     const flags = page.locator("[data-testid='waypoint-flag']");
     const flagCount = await flags.count();
-    if (flagCount > 0) expect(freeIdx, "aucun drapeau dégagé").toBeGreaterThanOrEqual(0);
+    // Après l'arrêt du film, la carte peut encore glisser vers le bateau et
+    // repousser les drapeaux hors cadre : recadrer jusqu'à ce qu'un drapeau soit dégagé.
+    let freeIdx = -1;
+    if (flagCount > 0) {
+      await expect.poll(async () => {
+        await bringOffscreenFlagsIntoView(page);
+        freeIdx = await findFreeFlag();
+        return freeIdx;
+      }, { message: "aucun drapeau dégagé", timeout: 10_000 }).toBeGreaterThanOrEqual(0);
+    }
     if (freeIdx >= 0) {
       const flag = flags.nth(freeIdx);
       await flag.click({ force: true });
