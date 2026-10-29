@@ -14,6 +14,17 @@ const RECEIPT = {
   reread: "pass", reread_en: "pass", lightning: 1, at: "2026-10-29T13:40:00Z",
 };
 
+// Reçu avec sources web Tavily (webSourceCount > 0)
+const RECEIPT_WITH_TAVILY = {
+  ...RECEIPT,
+  llmCalls: 5,
+  cacheHits: 1,
+  rewritten: 8,
+  fallen: 0,
+  reread: "pass",
+  reread_en: "pass",
+};
+
 function filmPayload({ written, seconds = 150, lang = "fr", receipt }) {
   return {
     status: "ready",
@@ -85,3 +96,25 @@ test("sans reçu servi, aucun reçu affiché", async ({ page }) => {
   await openWritten(page, "fr", null);
   await expect(page.getByTestId("film-receipt")).toHaveCount(0);
 });
+
+/**
+ * Test d'affichage des sources Tavily dans le reçu du film (FR + EN).
+ * Le serveur range webContext avec le film quand le clic Rédigé a fait une recherche Tavily.
+ * Le reçu inclut alors `filmReceiptTavily` avec le nombre de sources.
+ */
+for (const lang of ["fr", "en"]) {
+  test(`${lang} : reçu film avec sources Tavily (webContext rangé)`, async ({ page }) => {
+    test.setTimeout(90_000);
+    const receiptWithTavily = { ...RECEIPT_WITH_TAVILY, llmCalls: 3, cacheHits: 1 };
+    await openWritten(page, lang, receiptWithTavily);
+    const receipt = page.getByTestId("film-receipt");
+    await expect(receipt).toBeVisible();
+    await receipt.locator("summary").click();
+    // La ligne Tavily doit être présente avec n=3 (3 sources)
+    await expect(page.getByTestId("film-receipt-filmReceiptTavily")).toBeVisible();
+    const tavilyText = lang === "fr"
+      ? "Sources web Tavily affichées avec le film : 3"
+      : "Web sources from Tavily shown with the film: 3";
+    await expect(page.getByTestId("film-receipt-filmReceiptTavily")).toHaveText(tavilyText);
+  });
+}
