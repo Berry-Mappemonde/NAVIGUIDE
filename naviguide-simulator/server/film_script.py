@@ -4173,11 +4173,26 @@ def chapter_metrics(w: dict, review: dict | None = None) -> dict[str, Any]:
     # de jours, à 8 nœuds ». Une moyenne sous 4 nœuds ne se dit pas : c'est la
     # trace qui s'allonge (détour, calmes), pas la vitesse du bateau.
     span = _clock_sea_days(w)
+    slow = False
     if span is not None and nm and isinstance(days, (int, float)) and span > max(days * 1.15, days + 1):
         days = round(span, 1)
         avg = float(nm) / (span * 24.0)
         kn = float(round(avg)) if avg >= FILM_MIN_SPOKEN_AVG_KNOTS else None
-    return {"legNm": nm, "daysAtSea": days, "plannedKnots": kn}
+        # 10b (tranché le 29/10) : sous 4 nœuds, la durée est celle de l'horloge
+        # climatologique (calmes, détour), pas des « jours de mer » du bateau —
+        # « 8 393 milles, 96 jours de mer » (3,6 nd) ne se dit plus. Les dates de
+        # départ et d'arrivée, elles, restent dites. `daysAtSea` garde la durée
+        # (forme « longue traversée ») ; seule la parole la tait.
+        slow = kn is None
+    return {"legNm": nm, "daysAtSea": days, "plannedKnots": kn, "slowTrace": slow}
+
+
+def _spoken_metrics_days(metrics: dict, lang: str) -> str:
+    """Jours de mer à dire — rien quand la durée vient d'une trace lente (10b)."""
+    days = metrics.get("daysAtSea")
+    if days is None or metrics.get("slowTrace"):
+        return ""
+    return spoken_sea_days(days, lang)
 
 
 FILM_MIN_SPOKEN_AVG_KNOTS = 4.0
@@ -5887,7 +5902,7 @@ def _resume_after_episode(w: dict, *, lang: str, display_t0: str | None = None) 
     # Cayenne → Papeete : milles, jours de mer et moyenne, comme toute étape
     # (la reprise ne disait que « 6 671 milles »).
     stats = [nm] if nm else []
-    days = spoken_sea_days(metrics.get("daysAtSea"), lang) if nm and metrics.get("daysAtSea") is not None else ""
+    days = _spoken_metrics_days(metrics, lang) if nm else ""
     if days:
         stats.append(days)
         kn = metrics.get("plannedKnots")
@@ -6106,6 +6121,26 @@ def _item_place(item: dict) -> tuple[str, str]:
     return short_name(item.get("name") or ""), kind or "port"
 
 
+_HARBOR_OF_TOWN_RE = re.compile(
+    r"^(?:le\s+)?port\s+(?:de\s+la\s+|de\s+l['’]|de\s+|du\s+|d['’])(?P<town>.+)$",
+    re.I,
+)
+
+
+def _harbor_names_other_town(name: str, dest_name: str) -> bool:
+    """Vrai si le port porte le nom d'une AUTRE commune que l'escale
+    (« Port de Saint-Martin-de-Ré » pour La Rochelle). Les marinas nommées
+    autrement (« marina Étang Z'Abricots », « Port Brunelet ») ne sont pas visées."""
+    found = _HARBOR_OF_TOWN_RE.match((name or "").strip())
+    if not found:
+        return False
+    town = norm_stop(found.group("town"))
+    dest = norm_stop(dest_name or "")
+    if not town or not dest:
+        return False
+    return not (town in dest or dest in town)
+
+
 def _arrival_harbor(items: list | None, dest: dict | None, lang: str) -> str:
     """Marina / port le plus proche de l'escale ; sinon le port d'arrivée nommé."""
     dest = dest or {}
@@ -6124,6 +6159,10 @@ def _arrival_harbor(items: list | None, dest: dict | None, lang: str) -> str:
             dest_name.casefold() in name.casefold() or name.casefold() in dest_name.casefold()
         )
         if not near and (dist is None or dist > 25.0):
+            continue
+        if not near and _harbor_names_other_town(name, dest_name):
+            # N13 : « Port de Saint-Martin-de-Ré » est le port d'une autre commune
+            # (île de Ré) — on n'arrive pas à La Rochelle « amarré à » lui.
             continue
         t = item.get("tMs") or _ms(item.get("t")) or 0
         scored.append(((0 if near else 1, dist if dist is not None else 999.0, -int(t)), name, k))
@@ -6152,7 +6191,7 @@ def _compact_sea_opening(
     nm_val = metrics.get("legNm")
     days_val = metrics.get("daysAtSea")
     nm = _opening_nm_label(nm_val, lang) if nm_val is not None else ""
-    days = spoken_sea_days(days_val, lang) if days_val is not None else ""
+    days = _spoken_metrics_days(metrics, lang)
     dep_ms = _window_depart_ms(w)
     when = ""
     if include_date and dep_ms:
@@ -6256,7 +6295,7 @@ def _opening_sentence(
 
     stats: list[str] = []
     nm = _opening_nm_label(metrics.get("legNm"), lang)
-    days = spoken_sea_days(metrics.get("daysAtSea"), lang) if metrics.get("daysAtSea") is not None else ""
+    days = _spoken_metrics_days(metrics, lang)
     kn = metrics.get("plannedKnots")
     kn_s = ""
     if isinstance(kn, (int, float)) and not isinstance(kn, bool):
@@ -6945,6 +6984,15 @@ def _group_changes(changes: list[dict], span_ms: int, clock: dict | None = None)
     return out
 
 
+def _station_ident(change: dict) -> str:
+    """Identité d'une station dite : code de campagne (CALICO, MAYOBS33) ou
+    numéro WMO du flotteur ; vide pour les autres changements."""
+    if str((change or {}).get("kind") or "") != "station":
+        return ""
+    item = _station_item(change)
+    return (_campaign_code(item) or _argo_identifier(item)).casefold()
+
+
 def _place_dedup_key(change: dict) -> str:
     kind = str(change.get("kind") or "")
     if kind == "zee-enter":
@@ -6966,6 +7014,14 @@ def _place_dedup_key(change: dict) -> str:
         return ""
     # Dédoublonnage par SITE — « Lilleau-des-Niges » et « Lilleau-des-Niges
     # - Zone de Protection » partagent le préfixe significatif (avant « - », « — », « ( »).
+    if kind == "station":
+        # N12 : deux jeux « Bathymétrie - … (campagne CALICO) » et « Bathymétrie -
+        # … (campagne MAYOBS33) » ne sont pas le même site — le préfixe commun
+        # fusionnait Mayotte dans le départ de Nouméa. La campagne / le flotteur
+        # fait l'identité.
+        ident = _station_ident(change)
+        if ident:
+            return f"station:{ident}"
     name = re.split(r"\s+[-—–]\s+|\s*\(", name, maxsplit=1)[0].strip() or name
     if kind in {"escale", "approche"}:
         return f"{kind}:{name}"
@@ -9365,6 +9421,7 @@ def build_raw_from_moments(
     chapters: list[dict] = []
     selected_all: list[dict] = []
     route_rows = official_dated_stops(marks, clock) if marks else []
+    stations_said: set[str] = set()
     for i, w in enumerate(windows):
         dest = _chapter_dest(w)
         dest_name = _window_dest_name(w)
@@ -9399,6 +9456,10 @@ def build_raw_from_moments(
         # de Guyane ni l'équateur du catamaran resté à quai.
         if _is_saint_pierre_depart(w):
             flat = _drop_guiana_equator_changes(flat)
+        # N12 : une campagne (ou un flotteur) se dit une fois dans le film —
+        # CALICO dit à l'approche de Nouméa ne se redit pas au départ de Nouméa.
+        if stations_said:
+            flat = [c for c in flat if _station_ident(c) not in stations_said]
         selected = select_chapter_changes(
             flat, w["tA"], w["tB"], budget=has_budget, tier=tier if has_budget else None,
             clock=w.get("clock") or clock, depart_ms=depart_ms,
@@ -9476,6 +9537,9 @@ def build_raw_from_moments(
             anchored.append((sentence, t_ms, extra))
             placed.append(_bubble_from_change(change, w, lang, char_idx))
             selected_all.append(change)
+            ident = _station_ident(change)
+            if ident:
+                stations_said.add(ident)
 
         # Ancres (27 sept.) : chaque phrase porte l'instant du trajet dont elle parle — le client y cale le
         # bateau pendant qu'elle est dite (« approche d'Ajaccio » quand le bateau approche d'Ajaccio).
@@ -11068,6 +11132,7 @@ async def reread_before_store(
     stop_names = [_stop_spoken(row.get("name") or "") for row in _as_stop_rows(stops)]
     faults: list[str] = []
     source_seen = ""
+    llm_groups = 0
     for group in _reread_groups(chapters):
         legs = [
             f"{short_name(c.get('fromName') or '')} → {short_name(c.get('toName') or c.get('destName') or '')}"
@@ -11108,6 +11173,7 @@ async def reread_before_store(
                 break
             return True, report
         source_seen = str(source or "nemotron-super")
+        llm_groups += 1
         verdict = _parse_reread_verdict(text)
         if verdict is None:
             # Verdict vide, tronqué ou illisible : jamais un pass.
@@ -11127,6 +11193,11 @@ async def reread_before_store(
             break
     if faults:
         return False, {"ok": False, "faults": faults, "source": source_seen or "nemotron-super"}
+    if source_seen and llm_groups:
+        # N16 : le verdict vient du modèle (Ultra, porte ouverte), le contrôle local
+        # n'en est que le premier filtre — le rapport ne dit plus « simulate ».
+        return True, {**report, "source": source_seen, "local": report.get("source"),
+                      "groups": llm_groups}
     return True, report
 
 
@@ -12619,6 +12690,7 @@ async def write_film_chain(
     stops = _route_stops_for_reread(raw)
     ok_fr, review_fr = await reread_before_store(accepted, stops, cascade=cascade, lang="fr")
     stats["reread"] = "pass" if ok_fr else "fail"
+    stats["rereadBy"] = str(review_fr.get("source") or "")
     if not ok_fr:
         stats["faults"] = review_fr.get("faults") or []
         return None, None, stats
@@ -12638,6 +12710,7 @@ async def write_film_chain(
         stats["lightning"] = 1
         ok_en, review_en = await reread_before_store(en_plan, stops, cascade=cascade, lang="en")
         stats["reread_en"] = "pass" if ok_en else "fail"
+        stats["rereadBy_en"] = str(review_en.get("source") or "")
         if not ok_en:
             stats["faults"] = review_en.get("faults") or []
             stats["lightning"] = 0
