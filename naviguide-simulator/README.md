@@ -8,7 +8,7 @@ Every merge on `main` deploys this version.
 
 NAVIGUIDE runs three open NVIDIA Nemotron models on Nebius Token Factory:
 
-- Nemotron 3.5 Lightning: fast routing (chat intent, stopover question pick, film moment ids, JSON only), short sentences and FR→EN translation of every story. It replaces Nemotron 3 Nano 30B, retired from Token Factory on 9 November 2026.
+- Nemotron 3.5 Lightning: fast routing (chat intent, stopover question pick, film moment ids, JSON only) and short sentences. The **written film** is generated directly in French and in English in parallel from the same raw script (not translated from French). It replaces Nemotron 3 Nano 30B, retired from Token Factory on 9 November 2026.
 - Nemotron 3.5 Super VL: writes the "Here" stories, the written film and the plan review (it replaces Nemotron 3 Super 120B, retired on 9 November 2026), and looks at a local drawing of the route.
 - Nemotron 3 Ultra 550B: writes stopover and alert stories, then edits and judges the written film.
 
