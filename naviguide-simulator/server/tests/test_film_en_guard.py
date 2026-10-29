@@ -15,9 +15,9 @@ def _translate(fr_text: str, en_text: str) -> str:
 # --- N1 : date française laissée dans l'anglais ---------------------------------------
 
 FR_N1 = ("Le 29 août, le catamaran reprend la mer, départ vers Papeete (Polynésie française). "
-         "6 671 milles, 46 jours de mer.")
+         "6 511 milles, 46 jours de mer.")
 EN_N1 = ("Le 29 août, the catamaran resumes the sea, departure for Papeete (French Polynesia). "
-         "6,671 miles, 46 days at sea.")
+         "6,511 miles, 46 days at sea.")
 
 
 def test_n1_no_french_date_in_english_film():
@@ -58,10 +58,10 @@ def test_n2_approx_helper():
     assert fs.fix_en_approx_days("1,200 miles, two weeks.", "1 200 milles, une quinzaine.") == \
         "1,200 miles, two weeks."
     # Durée exacte voisine : jamais réécrite.
-    fr2 = "Départ : 6 671 milles, 46 jours de mer. Puis 925 milles, une vingtaine de jours."
-    en2 = "Departure: 6,671 miles, 46 days at sea. Then 925 miles, a couple of weeks."
+    fr2 = "Départ : 6 511 milles, 46 jours de mer. Puis 925 milles, une vingtaine de jours."
+    en2 = "Departure: 6,511 miles, 46 days at sea. Then 925 miles, a couple of weeks."
     assert fs.fix_en_approx_days(en2, fr2) == \
-        "Departure: 6,671 miles, 46 days at sea. Then 925 miles, about twenty days."
+        "Departure: 6,511 miles, 46 days at sea. Then 925 miles, about twenty days."
 
 
 # --- N3 à N9 : toponymie et tournures ---------------------------------------------------

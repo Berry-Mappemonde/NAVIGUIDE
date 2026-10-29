@@ -3021,7 +3021,7 @@ async def write_film_on_click(
         en_raw = _raw_plan_for(body, "en", secs)
         if not en_raw:
             return serve_film(lang=lg, seconds=secs, style="written")
-        en_plan, _, _ = await write_film_chain(en_raw, seconds=secs, cascade=cascade_fn)
+        en_plan, _, _ = await write_film_chain(en_raw, seconds=secs, cascade=cascade_fn, lang="en")
         if not en_plan or not (en_plan.get("chapters") or []):
             return serve_film(lang=lg, seconds=secs, style="written")
         en_plan = {**en_plan, "receipt": film_receipt(
@@ -3035,7 +3035,10 @@ async def write_film_on_click(
         _log_fill_written(f"written clic {lg} {secs}s : plafond write — brut")
         return serve_film(lang=lg, seconds=secs, style="written")
 
-    fr_plan, en_plan, stats = await write_film_chain(fr_raw, seconds=secs, cascade=cascade_fn)
+    en_raw = _raw_plan_for(body, "en", secs)
+    fr_plan, en_plan, stats = await write_film_chain(
+        fr_raw, seconds=secs, cascade=cascade_fn, en_raw=en_raw if isinstance(en_raw, dict) else None,
+    )
     if not isinstance(fr_plan, dict) or not (fr_plan.get("chapters") or []):
         _log_fill_written(f"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})")
         return serve_film(lang=lg, seconds=secs, style="written")

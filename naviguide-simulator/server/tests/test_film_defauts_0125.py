@@ -152,7 +152,7 @@ def test_edit_keeps_digit_sentences_no_duplicate_arrival():
 def test_thin_dates_keeps_opening_and_arrival_dates():
     """2:30 : « Puis, le catamaran reprend la mer » perdait le 29 août (2 morceaux datés)."""
     bits = [
-        "Le 29 août, le catamaran reprend la mer, départ vers Papeete. 6 671 milles, 46 jours de mer.",
+        "Le 29 août, le catamaran reprend la mer, départ vers Papeete. 6 511 milles, 46 jours de mer.",
         "Arrivée à Papeete le 14 octobre.",
     ]
     out = fs.thin_chapter_dates(bits, "fr")

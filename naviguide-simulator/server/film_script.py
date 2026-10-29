@@ -12,6 +12,7 @@ Suivre ne rappelle rien.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -638,7 +639,13 @@ def _coast_is_arrival(
     except (KeyError, TypeError, ValueError) as exc:
         logging.warning("_arrival_harbor failed: %s", exc)
         harbor = ""
-    return bool(harbor) and same_stop(place, harbor)
+    if harbor and same_stop(place, harbor):
+        return True
+    for item in items or []:
+        name, _ = _item_place(item)
+        if name and same_stop(place, name):
+            return True
+    return False
 
 
 def _is_departure_port_echo(change: dict, from_name: str, dest_name: str) -> bool:
@@ -11124,8 +11131,6 @@ def _route_stops_for_reread(plan: dict | None) -> list[dict]:
         # Halifax manque aussi aux marques d'horloge du voyage officiel : le chapitre
         # du second bateau le nomme, on l'insère après l'escale qui la précède.
         rows = _insert_missing_air(rows, _chapter_stop_names(plan))
-        if len(rows) >= 8:
-            return rows
         named = [
             str(ch.get(key) or "")
             for ch in (plan or {}).get("chapters") or []
@@ -11133,6 +11138,8 @@ def _route_stops_for_reread(plan: dict | None) -> list[dict]:
             for key in ("fromName", "toName")
             if str(ch.get(key) or "").strip()
         ]
+        if len(rows) >= 8 and (not named or all(_known_stop(name, rows) for name in named)):
+            return rows
         if len(rows) >= 2 and named and all(_known_stop(name, rows) for name in named):
             return rows
     except (KeyError, TypeError, ValueError) as exc:
@@ -12650,15 +12657,16 @@ def _plan_digits_for_speech(plan: dict, raw_plan: dict, lang: str = "fr") -> dic
     return {**plan, "chapters": chapters}
 
 
-async def write_film_chain(
+async def _write_film_single(
     plan: dict,
     *,
-    seconds: Any = 150,
-    cascade: Callable = cascade_text,
-) -> tuple[Optional[dict], Optional[dict], dict[str, Any]]:
-    """Au clic : Super FR, puis Ultra édite + juge si plafond ouvert, puis Lightning EN."""
+    lang: str,
+    seconds: Any,
+    cascade: Callable,
+) -> tuple[Optional[dict], dict[str, Any]]:
+    """Rédige un film dans une langue (Super, Ultra si FR, relecture). Sans traduction."""
     stats: dict[str, Any] = {
-        "super": 0, "ultra_edit": 0, "ultra_judge": 0, "lightning": 0,
+        "super": 0, "ultra_edit": 0, "ultra_judge": 0,
         "source": "rules", "reviewed": False,
     }
     raw = dict(plan)
@@ -12667,21 +12675,22 @@ async def write_film_chain(
     if secs == 150:
         full_raw = {**raw, "targetSeconds": 0}
         super_plan, super_stats = await write_stored_plan(
-            full_raw, lang="fr", cascade=cascade, seconds=0,
+            full_raw, lang=lang, cascade=cascade, seconds=0,
         )
     else:
+        full_raw = raw
         super_plan, super_stats = await write_stored_plan(
-            raw, lang="fr", cascade=cascade, seconds=seconds,
+            raw, lang=lang, cascade=cascade, seconds=seconds,
         )
-    # Reçu du film (idée n° 3) : phrases réécrites / retombées sur les règles, mesurées.
     stats["rewritten"] = int((super_stats or {}).get("rewritten") or 0)
     stats["fallen"] = int((super_stats or {}).get("fallen") or 0)
     if super_plan is None or int((super_stats or {}).get("rewritten") or 0) <= 0:
-        return None, None, stats
+        return None, stats
     stats["super"] = 1
-    super_plan = _plan_digits_for_speech(super_plan, full_raw if secs == 150 else raw)
+    ref_raw = full_raw if secs == 150 else raw
+    super_plan = _plan_digits_for_speech(super_plan, ref_raw, lang)
     if secs == 150:
-        super_plan = condense_written_plan(super_plan, 150, lang="fr")
+        super_plan = condense_written_plan(super_plan, 150, lang=lang)
     origin = public_written_source(super_plan.get("source") or (super_stats or {}).get("source"))
     if origin == WRITTEN_SOURCE:
         stats["source"] = WRITTEN_SOURCE
@@ -12693,21 +12702,16 @@ async def write_film_chain(
         model = NIM_MODEL if (origin or "") == nim_source else (origin or None)
         accepted = _stamp_written_plan(super_plan, origin or "rules", seconds, model=model)
 
-    ref_raw = full_raw if secs == 150 else raw
-    if film_ultra_open():
+    if _en(lang) is False and film_ultra_open():
         edited = await edit_written_once(accepted, ref_raw, cascade=cascade)
         stats["ultra_edit"] = 1
         if edited and secs == 150:
-            # Ultra relit contre l'intégral : il peut rallonger, on retient le débit mesuré.
-            edited = condense_written_plan(edited, 150, lang="fr")
-        edited = _dedupe_plan(edited, ref_raw, "fr")
+            edited = condense_written_plan(edited, 150, lang=lang)
+        edited = _dedupe_plan(edited, ref_raw, lang)
         if edited:
             failed = await judge_written_chapters(edited, cascade=cascade, raw_plan=ref_raw)
             stats["ultra_judge"] = 1
             if failed:
-                # Un seul chapitre refusé (« Text omits projects… ») laissait tout le
-                # film sans relecture : on reprend Super sur ces chapitres et Ultra
-                # les rejuge ; le film n'est relu que si tout passe.
                 stats["judge_failed"] = list(failed)
                 edited = _restore_chapters(edited, accepted, failed)
                 again = await judge_written_chapters(
@@ -12715,8 +12719,7 @@ async def write_film_chain(
                 )
                 failed = again if again is not None else None
                 if failed and secs != 150:
-                    # Super omettait aussi : le chapitre brut (la référence même du juge).
-                    raw_digits = _plan_digits_for_speech(ref_raw, ref_raw)
+                    raw_digits = _plan_digits_for_speech(ref_raw, ref_raw, lang)
                     edited = _restore_chapters(edited, raw_digits, failed)
                     again = await judge_written_chapters(
                         edited, cascade=cascade, raw_plan=ref_raw, only=set(failed),
@@ -12733,40 +12736,62 @@ async def write_film_chain(
                 stats["reviewed"] = True
                 stats["source"] = WRITTEN_SOURCE
 
-    accepted = _dedupe_plan(accepted, ref_raw, "fr")
-    accepted = _polish_written_plan(accepted, ref_raw, "fr")
+    accepted = _dedupe_plan(accepted, ref_raw, lang)
+    accepted = _polish_written_plan(accepted, ref_raw, lang)
     if secs == 150:
-        # Dernier passage au débit mesuré : rien ne doit rallonger le 2:30 après Ultra.
-        accepted = {**condense_written_plan(accepted, 150, lang="fr"), "targetSeconds": accepted.get("targetSeconds", 150)}
+        accepted = {
+            **condense_written_plan(accepted, 150, lang=lang),
+            "targetSeconds": accepted.get("targetSeconds", 150),
+        }
     stops = _route_stops_for_reread(raw)
-    ok_fr, review_fr = await reread_before_store(accepted, stops, cascade=cascade, lang="fr")
-    stats["reread"] = "pass" if ok_fr else "fail"
-    stats["rereadBy"] = str(review_fr.get("source") or "")
-    if not ok_fr:
-        stats["faults"] = review_fr.get("faults") or []
-        return None, None, stats
+    ok, review = await reread_before_store(accepted, stops, cascade=cascade, lang=lang)
+    stats["reread"] = "pass" if ok else "fail"
+    stats["rereadBy"] = str(review.get("source") or "")
+    if not ok:
+        stats["faults"] = review.get("faults") or []
+        return None, stats
+    return accepted, stats
 
-    from official_store import _raw_plan_for  # noqa: PLC0415
-    # R25: direct parallel FR/EN generation from same raw plan (no translation)
-    en_raw = _raw_plan_for(accepted, "en", secs)
-    if en_raw and (en_raw.get("chapters") or []):
-        # Run write_film_chain for EN using the same ref_raw but lang="en"
-        en_raw["targetSeconds"] = secs
-        en_plan, _, en_stats = await write_film_chain(en_raw, seconds=secs, cascade=cascade)
+
+async def write_film_chain(
+    plan: dict,
+    *,
+    seconds: Any = 150,
+    cascade: Callable = cascade_text,
+    lang: str = "fr",
+    en_raw: dict | None = None,
+) -> tuple[Optional[dict], Optional[dict], dict[str, Any]]:
+    """Au clic : rédaction directe FR et EN en parallèle (brut EN), jamais traduite du FR."""
+    stats: dict[str, Any] = {
+        "super": 0, "ultra_edit": 0, "ultra_judge": 0, "lightning": 0,
+        "source": "rules", "reviewed": False,
+    }
+    if _en(lang):
+        en_plan, en_stats = await _write_film_single(plan, lang="en", seconds=seconds, cascade=cascade)
+        stats.update(en_stats)
         if en_plan:
             stats["lightning"] = 1
-            ok_en, review_en = await reread_before_store(en_plan, stops, cascade=cascade, lang="en")
-            stats["reread_en"] = "pass" if ok_en else "fail"
-            stats["rereadBy_en"] = str(review_en.get("source") or "")
-            if not ok_en:
-                stats["faults"] = review_en.get("faults") or []
-                stats["lightning"] = 0
-                en_plan = None
+        return None, en_plan, stats
+
+    en_payload = en_raw if isinstance(en_raw, dict) and (en_raw.get("chapters") or []) else None
+    if en_payload:
+        en_payload = {**en_payload, "targetSeconds": _film_seconds(seconds if seconds is not None else plan.get("targetSeconds"))}
+        (fr_plan, fr_stats), (en_plan, en_stats) = await asyncio.gather(
+            _write_film_single(plan, lang="fr", seconds=seconds, cascade=cascade),
+            _write_film_single(en_payload, lang="en", seconds=seconds, cascade=cascade),
+        )
+        stats.update(fr_stats)
+        if en_plan:
+            stats["lightning"] = 1
+            stats["reread_en"] = en_stats.get("reread")
+            stats["rereadBy_en"] = en_stats.get("rereadBy")
         else:
-            en_plan = None
-    else:
-        en_plan = None
-    return accepted, en_plan, stats
+            stats["faults"] = en_stats.get("faults") or stats.get("faults")
+        return fr_plan, en_plan, stats
+
+    fr_plan, fr_stats = await _write_film_single(plan, lang="fr", seconds=seconds, cascade=cascade)
+    stats.update(fr_stats)
+    return fr_plan, None, stats
 
 
 def _public_plan(plan: dict, source: str) -> dict:

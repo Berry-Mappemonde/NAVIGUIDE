@@ -29,14 +29,14 @@ def test_150_keeps_every_leg_distance_including_cayenne_papeete():
     plan = fs.condense_written_plan(full, 150, lang="fr")
     blob = " ".join(c["text"] for c in plan["chapters"])
     papeete = next(c["text"] for c in plan["chapters"] if "départ vers Papeete" in c["text"])
-    assert "6 671 milles" in papeete, papeete
+    assert "6 511 milles" in papeete, papeete
     # Toutes les distances d'étape de l'intégral sont encore dites au 2:30.
     legs = re.findall(r"(\d[\d ]*\d) milles, [^.]*?jours? de mer", " ".join(c["text"] for c in full["chapters"]))
     for nm in legs:
         assert f"{nm} milles" in blob, nm
     en = fs.condense_written_plan(_integral("en"), 150, lang="en")
     en_papeete = next(c["text"] for c in en["chapters"] if "Papeete (" in c["text"] and "departure" in c["text"])
-    assert "6,671 miles" in en_papeete, en_papeete
+    assert "6,511 miles" in en_papeete, en_papeete
 
 
 def test_leg_stats_sentence_never_condensed_and_folded():
@@ -44,7 +44,7 @@ def test_leg_stats_sentence_never_condensed_and_folded():
         "id": "c1", "fromName": "Cayenne (Guyane)", "toName": "Papeete (Polynésie française)",
         "text": (
             "Le 29 août, le catamaran reprend la mer, départ vers Papeete (Polynésie française). "
-            "6 671 milles, 46 jours de mer, à 6 nœuds de moyenne. "
+            "6 511 milles, 46 jours de mer, à 6 nœuds de moyenne. "
             "Puis, les alizés de sud-est s'installent : douze nœuds, la moyenne de saison. "
             "Arrivée à Papeete (Polynésie française) le 14 octobre."
         ),
@@ -52,7 +52,7 @@ def test_leg_stats_sentence_never_condensed_and_folded():
     chapters = [ch]
     fs._condense_to_spoken_seconds(chapters, 8)
     text = chapters[0]["text"]
-    assert re.search(r"départ vers Papeete(?: \(Polynésie française\))? : 6 671 milles, 46 jours", text), text
+    assert re.search(r"départ vers Papeete(?: \(Polynésie française\))? : 6 511 milles, 46 jours", text), text
     assert "Arrivée à Papeete" in text and "14 octobre" in text
 
 
@@ -118,10 +118,10 @@ def test_polish_written_plan_fr_and_en():
 
 def test_inline_region_repeated_word_for_word_said_once():
     chapters = [{"id": "a", "text": (
-        "Le 29 août, départ vers Papeete en Polynésie française : 6 671 milles, 46 jours. "
+        "Le 29 août, départ vers Papeete en Polynésie française : 6 511 milles, 46 jours. "
         "Arrivée à Papeete en Polynésie française le 14 octobre."
     )}, {"id": "b", "text": (
-        "On August 29, heading to Papeete in French Polynesia: 6,671 miles. "
+        "On August 29, heading to Papeete in French Polynesia: 6,511 miles. "
         "Arrival in Papeete in French Polynesia on October 14. Arrival in Halifax in August."
     )}]
     fs._drop_repeated_regions(chapters)

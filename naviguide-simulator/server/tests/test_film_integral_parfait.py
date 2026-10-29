@@ -6,6 +6,8 @@
    « le bateau longe Dégrad des Cannes […] amarré à la marina de Dégrad des
    Cannes » : on ne longe pas le port où l'on arrive.
 """
+import asyncio
+
 from climo_events import EQUATOR_BAND_DEG, _place_phrase
 import film_script as fs
 from film_script import _coast_is_arrival, spoken_sea_days
@@ -13,8 +15,9 @@ from film_script import _coast_is_arrival, spoken_sea_days
 
 def test_equator_only_near_the_line():
     assert EQUATOR_BAND_DEG <= 2.0
-    assert _place_phrase(0.4, -50.0, "fr") == "à l'équateur"
-    assert _place_phrase(-1.9, -30.0, "en") == "at the equator"
+    assert _place_phrase(0.4, -50.0, "fr") == "près de l'équateur"
+    assert _place_phrase(0.4, -50.0, "fr", prev_lat=-1.0) == "à l'équateur"
+    assert _place_phrase(-1.9, -30.0, "en") == "near the equator"
     for lat, lon in ((4.95, -52.35), (5.0, -86.33), (-4.9, -100.0), (3.0, -40.0)):
         assert "équateur" not in _place_phrase(lat, lon, "fr"), (lat, lon)
         assert "equator" not in _place_phrase(lat, lon, "en"), (lat, lon)
@@ -72,6 +75,36 @@ def test_reread_knows_halifax_from_chapters_when_voyage_marks_lack_it(monkeypatc
     text = ("Le 23 août, à Saint-Pierre (Saint-Pierre-et-Miquelon), l'équipage reprend le second "
             "voilier pour Halifax (Nouvelle-Écosse). Arrivée à Halifax (Nouvelle-Écosse) le 28 août.")
     assert not fs._absent_places(text, rows)
+
+
+def test_write_film_chain_never_calls_translate_written_plan(monkeypatch):
+    async def _trap(*_a, **_k):
+        raise AssertionError("translate_written_plan must not run in production chain")
+
+    monkeypatch.setattr(fs, "translate_written_plan", _trap)
+    monkeypatch.setattr(fs, "film_ultra_open", lambda: False)
+
+    async def _fake_write(_plan, *, lang, cascade, seconds):
+        text = (_plan.get("chapters") or [{}])[0].get("text") or "x"
+        ch = {"id": "a", "text": text, "source": fs.WRITTEN_SOURCE}
+        return (
+            {"chapters": [ch], "source": fs.WRITTEN_SOURCE, "targetSeconds": 150},
+            {"rewritten": 1, "source": fs.WRITTEN_SOURCE},
+        )
+
+    async def _ok_reread(*_a, **_k):
+        return True, {"source": "rules"}
+
+    monkeypatch.setattr(fs, "write_stored_plan", _fake_write)
+    monkeypatch.setattr(fs, "reread_before_store", _ok_reread)
+
+    fr_raw = {"targetSeconds": 150, "chapters": [{"id": "a", "text": "Le 1er juin, départ vers Ajaccio."}]}
+    en_raw = {"targetSeconds": 150, "chapters": [{"id": "a", "text": "On June 1, departure for Ajaccio."}]}
+    fr_plan, en_plan, stats = asyncio.run(
+        fs.write_film_chain(fr_raw, seconds=150, en_raw=en_raw, cascade=lambda *_a, **_k: ""),
+    )
+    assert fr_plan and en_plan
+    assert stats.get("lightning") == 1
 
 
 def test_en_upcoming_stops_sentence_is_not_an_invented_name():
