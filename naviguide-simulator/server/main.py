@@ -168,6 +168,25 @@ async def _startup_ici_warm():
         log.warning("startup ici warm: %s", exc)
 
 
+@app.on_event("startup")
+async def _startup_tf_catalog():
+    """Garde des modèles Token Factory : une lecture gratuite de `/models` par
+    hôte configuré, en fond (jamais en mode LLM off, ni sans clé, ni si
+    NAVIGUIDE_TF_MODEL_GUARD=0). Ensuite, relu à l'usage toutes les 6 h."""
+    try:
+        import llm_budget
+        import story_cascade
+        import tf_catalog
+
+        key = story_cascade.nebius_key()
+        if llm_budget.mode() == "off" or not key or not tf_catalog.enabled():
+            return
+        bases = [story_cascade.tf_base(t) for t in llm_budget.TIERS]
+        asyncio.get_running_loop().create_task(tf_catalog.prefetch(bases, key))
+    except Exception as exc:
+        log.warning("startup catalogue TF: %s", exc)
+
+
 def _dated_ici(reason: str, status: str = "unavailable") -> dict:
     return {"status": status, "reason": str(reason), "at": _now_iso()}
 
