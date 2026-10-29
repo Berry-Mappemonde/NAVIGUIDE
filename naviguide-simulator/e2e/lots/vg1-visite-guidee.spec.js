@@ -1,6 +1,6 @@
 // VG1 — visite guidée des juges (revue de la PR #121, @lazizbekravshanov).
-// Sur le stock figé : lanceur fr / en, 7 étapes (vue et panneaux), brouillon conservé
-// (bienvenue → tracé → retour → Fermer, et Échap au tracé), route terminée à l'étape 7
+// Sur le stock figé : lanceur fr / en, 8 étapes (vue et panneaux), brouillon conservé
+// (bienvenue → tracé → retour → Fermer, et Échap au tracé), route terminée à l'étape 8
 // (pilules et carte d'accord, aucun « film officiel »), film lancé / arrêté, passe 390 px.
 import { expect, test } from "@playwright/test";
 import { dismissNotForNav, panelClosed, probeOfficial } from "../helpers.js";
@@ -11,6 +11,7 @@ const END = { lat: 15.3, lon: -61.0 };
 // [étape, vue attendue, panneau gauche ouvert, panneau droit ouvert]
 const STEPS = [
   ["welcome", "suivre", false, false],
+  ["models", "suivre", false, false],
   ["live", "suivre", false, false],
   ["briefing", "suivre", true, false],
   ["layers", "suivre", false, true],
@@ -63,7 +64,7 @@ async function drawTwoPoints(page) {
   await expect.poll(() => drawnCount(page), { timeout: 10_000 }).toBe(2);
 }
 
-test("VG1 fr : lanceur, 7 étapes (vue + panneaux), focus, Fermer la visite", async ({ page }) => {
+test("VG1 fr : lanceur, 8 étapes (vue + panneaux), focus, Fermer la visite", async ({ page }) => {
   test.setTimeout(90_000);
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
@@ -71,7 +72,7 @@ test("VG1 fr : lanceur, 7 étapes (vue + panneaux), focus, Fermer la visite", as
   await expect(page.getByTestId("demo-walkthrough-launch")).toHaveText(/Visite guidée/);
   await startTour(page);
   await expect(page.getByTestId("demo-walkthrough-title")).toBeFocused();
-  await expect(panel(page).getByRole("progressbar")).toHaveAttribute("aria-valuetext", "Étape 1 sur 7");
+  await expect(panel(page).getByRole("progressbar")).toHaveAttribute("aria-valuetext", "Étape 1 sur 8");
   await expect(page.getByTestId("demo-walkthrough-body")).not.toContainText("données réelles");
   for (let i = 0; i < STEPS.length; i += 1) {
     const [id, view, left, right] = STEPS[i];
@@ -79,7 +80,7 @@ test("VG1 fr : lanceur, 7 étapes (vue + panneaux), focus, Fermer la visite", as
     await expect(page.getByTestId(`view-${view}`)).toHaveAttribute("aria-checked", "true");
     await expect.poll(() => panelClosed(page, "left")).toBe(!left);
     await expect.poll(() => panelClosed(page, "right")).toBe(!right);
-    await expect(page.getByTestId("demo-walkthrough-live")).toContainText(`Étape ${i + 1} sur 7`);
+    await expect(page.getByTestId("demo-walkthrough-live")).toContainText(`Étape ${i + 1} sur 8`);
   }
   // Placement : à l'opposé du panneau Outils quand l'étape l'ouvre.
   await page.getByTestId("demo-walkthrough-prev").click();
@@ -100,7 +101,7 @@ test("VG1 en : launcher and step copy in English, End tour", async ({ page }) =>
   await expect(page.getByTestId("demo-walkthrough-launch")).toHaveText(/Guided tour/);
   await startTour(page);
   await expect(page.getByTestId("demo-walkthrough-title")).toHaveText("NAVIGUIDE guided tour");
-  await expect(panel(page).getByRole("progressbar")).toHaveAttribute("aria-valuetext", "Step 1 of 7");
+  await expect(panel(page).getByRole("progressbar")).toHaveAttribute("aria-valuetext", "Step 1 of 8");
   for (const [id] of STEPS.slice(1)) await next(page, id);
   await expect(page.getByTestId("demo-walkthrough-end")).toHaveText("End tour");
   await expect(panel(page)).not.toContainText(/walkthrough|guided demo/i);
@@ -111,7 +112,7 @@ test("VG1 : un brouillon de 2 points survit à la visite, et Échap au tracé ne
   await open(page);
   await drawTwoPoints(page);
   await startTour(page);
-  for (const id of ["live", "briefing", "layers", "replay", "trace"]) await next(page, id);
+  for (const id of ["models", "live", "briefing", "layers", "replay", "trace"]) await next(page, id);
   expect(await drawnCount(page)).toBe(2);
   // Échap à l'étape Tracer : ferme la visite (capture) sans annuler le tracé.
   await page.keyboard.press("Escape");
@@ -120,7 +121,7 @@ test("VG1 : un brouillon de 2 points survit à la visite, et Échap au tracé ne
   await expect(page.getByTestId("demo-walkthrough-launch")).toBeFocused();
   // Deuxième passage jusqu'au bout.
   await startTour(page);
-  for (const id of ["live", "briefing", "layers", "replay", "trace", "return"]) await next(page, id);
+  for (const id of ["models", "live", "briefing", "layers", "replay", "trace", "return"]) await next(page, id);
   await page.getByTestId("demo-walkthrough-end").click();
   expect(await drawnCount(page)).toBe(2);
   // En Suivre, le dessin est parqué : un clic carte n'ajoute pas de point.
@@ -129,7 +130,7 @@ test("VG1 : un brouillon de 2 points survit à la visite, et Échap au tracé ne
   expect(await drawnCount(page)).toBe(2);
 });
 
-test("VG1 : route terminée → étape 7, pilules et carte d'accord, pas de « film officiel »", async ({ page }) => {
+test("VG1 : route terminée → étape 8, pilules et carte d'accord, pas de « film officiel »", async ({ page }) => {
   test.setTimeout(120_000);
   await open(page);
   await drawTwoPoints(page);
@@ -137,6 +138,7 @@ test("VG1 : route terminée → étape 7, pilules et carte d'accord, pas de « f
   await expect(finish).toBeEnabled({ timeout: 20_000 });
   await finish.click();
   await startTour(page);
+  await next(page, "models");
   await next(page, "live");
   await expect(page.getByTestId("demo-walkthrough-body")).toContainText("votre route terminée");
   for (const id of ["briefing", "layers", "replay"]) await next(page, id);
@@ -155,7 +157,7 @@ test("VG1 : le bouton film de la visite lance et arrête le film ; plein écran 
   const apiUp = Boolean(await probeOfficial(page));
   test.skip(!apiUp, "API du stock figé absente (PW_WITH_API=1)");
   await startTour(page);
-  for (const id of ["live", "briefing", "layers", "replay"]) await next(page, id);
+  for (const id of ["models", "live", "briefing", "layers", "replay"]) await next(page, id);
   const play = page.getByTestId("demo-walkthrough-play");
   await expect(play).toBeEnabled({ timeout: 45_000 });
   await expect(play).toHaveText(/Revoir l’expédition/);
@@ -178,12 +180,48 @@ test("VG1 390 px : panneau en bas, ne couvre pas le haut de l'écran", async ({ 
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page);
   await startTour(page);
-  for (const id of ["live", "briefing"]) await next(page, id);
+  for (const id of ["models", "live", "briefing"]) await next(page, id);
   const box = await panel(page).boundingBox();
   expect(box).not.toBeNull();
   expect(box.y).toBeGreaterThan(844 * 0.5);
   expect(box.y + box.height).toBeLessThanOrEqual(844);
   for (const id of ["layers", "replay", "trace", "return"]) await next(page, id);
   await page.getByTestId("demo-walkthrough-end").click();
+  await expect(panel(page)).toHaveCount(0);
+});
+
+test("VG1 ?tour=1 : la visite s'ouvre au chargement ; étape 2 « Qui fait quoi » (Nemotron, Tavily)", async ({ page }) => {
+  test.setTimeout(90_000);
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await stubRoute(page);
+  await page.goto("/?tour=1");
+  await dismissNotForNav(page);
+  await expect(panel(page)).toHaveAttribute("data-step", "welcome", { timeout: 30_000 });
+  await expect(panel(page).getByRole("progressbar")).toHaveAttribute("aria-valuetext", "Étape 1 sur 8");
+  await next(page, "models");
+  await expect(page.getByTestId("demo-walkthrough-title")).toHaveText(/Qui fait quoi/);
+  await expect(page.getByTestId("demo-walkthrough-body")).toContainText("Nebius Token Factory");
+  const box = page.getByTestId("demo-models");
+  await expect(page.getByTestId("demo-models-tavily")).toContainText("Tavily", { timeout: 20_000 });
+  await expect(page.getByTestId("demo-models-quick")).toContainText("Nemotron");
+  await expect(page.getByTestId("demo-models-write")).toContainText("Nemotron");
+  await expect(page.getByTestId("demo-models-deep")).toContainText("Nemotron");
+  const apiUp = Boolean(await probeOfficial(page));
+  if (apiUp) {
+    // Statut en direct : modèles lus dans /ici/warm/status, compteurs du jour.
+    await expect(box).toHaveAttribute("data-live", "true");
+    await expect(page.getByTestId("demo-models-today")).toContainText("appels Nemotron");
+    await expect(page.getByTestId("demo-models-default")).toHaveCount(0);
+  } else {
+    await expect(box).toHaveAttribute("data-live", "false");
+    await expect(page.getByTestId("demo-models-default")).toBeVisible();
+  }
+  expect(errors, errors.join("\n")).toEqual([]);
+});
+
+test("VG1 sans ?tour : la visite reste fermée au chargement", async ({ page }) => {
+  await open(page);
+  await expect(page.getByTestId("demo-walkthrough-launch")).toBeVisible();
   await expect(panel(page)).toHaveCount(0);
 });
