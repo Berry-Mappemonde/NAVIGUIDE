@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { MessageSquare, Send } from "lucide-react";
+import { MessageSquare, Send, Sparkles } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { hasAdminSecret } from "../utils/adminSecret.js";
 import { formatTimeUtc } from "../engine/journalFormat.js";
@@ -11,6 +11,21 @@ import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
  * faits du serveur, l'échange consigné au journal quand la clé admin est là.
  */
 const AI_CHAT_NOTICE_KEY = "naviguide-ai-act-chat-notice-v1";
+
+/**
+ * Questions d'exemple, une par usage réel du serveur (logbook_chat.py) :
+ * - deep : « pourquoi / why » → is_hard_question → cascade(tier="judge"), Ultra ;
+ * - web : « comment / how » → Ultra aussi, qui lit portWeb (port_web_context, Tavily),
+ *   et la réponse porte les liens webSources ;
+ * - fast : question courte de fait → understand_question(tier="nano"), Lightning,
+ *   puis gabarit des règles (aucun appel Ultra).
+ * Le texte vient de l'i18n ; le test pytest test_logbook_examples les route.
+ */
+export const LOGBOOK_EXAMPLES = [
+  { id: "deep", q: "logbookExampleDeepQ", label: "logbookExampleDeepLabel", hint: "logbookExampleDeepHint" },
+  { id: "web", q: "logbookExampleWebQ", label: "logbookExampleWebLabel", hint: "logbookExampleWebHint" },
+  { id: "fast", q: "logbookExampleFastQ", label: "logbookExampleFastLabel", hint: "logbookExampleFastHint" },
+];
 
 function aiNoticeDismissed() {
   try {
@@ -46,6 +61,14 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, pending]);
+
+  const askExample = (key) => {
+    const q = t(key);
+    if (!q || pending) return;
+    setDraft("");
+    if (!aiNoticeDismissed()) setAiNoticeArmed(true);
+    onAsk?.(q);
+  };
 
   const submit = (e) => {
     e?.preventDefault?.();
@@ -123,6 +146,25 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
           </button>
         </div>
       ) : null}
+      <div
+        data-testid="logbook-chat-examples"
+        className="mt-1 flex flex-nowrap items-center gap-0.5 flex-shrink-0 min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
+      >
+        <Sparkles size={11} className="text-violet-200/80" aria-label={t("logbookExamplesTitle")} role="img" />
+        {LOGBOOK_EXAMPLES.map((ex) => (
+          <button
+            key={ex.id}
+            type="button"
+            disabled={pending}
+            onClick={() => askExample(ex.q)}
+            data-testid={`logbook-chat-example-${ex.id}`}
+            title={`${t(ex.q)} — ${t(ex.hint)}`}
+            className="h-5 whitespace-nowrap rounded-full border border-violet-300/35 bg-violet-900/40 px-[5px] text-[10px] flex-shrink-0 text-violet-50 hover:bg-violet-800/60 disabled:opacity-40"
+          >
+            {t(ex.label)}
+          </button>
+        ))}
+      </div>
       <form onSubmit={submit} className="mt-1.5 flex items-center gap-1 flex-shrink-0">
         <input
           type="text"

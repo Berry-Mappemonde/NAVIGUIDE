@@ -206,7 +206,14 @@ test("parcours 60 secondes : suivre, revoir, journal, tracer, mention IA", async
   expect(size).toBeGreaterThanOrEqual(12);
   await dismissNotForNav(page);
   await expect(notice).toBeVisible();
-  await expect(page.getByRole("button", { name: /tavily/i })).toHaveCount(0);
+  // Seule la question d'exemple « web » nomme Tavily (elle l'annonce, le serveur l'appelle).
+  // Les boutons du tiroir gauche restent visibility: hidden pendant son glissement
+  // (index.css, .naviguide-drawer-settled) : on attend la liste exacte, sans l'affaiblir.
+  const tavilyButtons = page.getByRole("button", { name: /tavily/i });
+  await expect.poll(
+    () => tavilyButtons.evaluateAll((els) => els.map((el) => el.getAttribute("data-testid"))),
+    { timeout: 10_000 },
+  ).toEqual(["logbook-chat-example-web"]);
   await shot(page, "02-journal");
 
   const sheet = page.getByTestId("escale-sheet");
