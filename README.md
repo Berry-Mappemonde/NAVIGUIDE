@@ -62,7 +62,7 @@ Primary inference goes to Nebius Token Factory. The ids below are the defaults i
 
 The `deep` tier uses the same Ultra id. `story_tier` in `naviguide-simulator/server/story_cascade.py` picks it for the written story (`POST /ici/story`) of a stopover or a major alert; every other written story stays on `write`. The VL call runs only from `naviguide-simulator/scripts/one_shot.py` with `--run`. The image it sends is drawn locally. Map tiles are not sent.
 
-Nemotron 3 Nano 30B and Nemotron 3 Super 120B leave Token Factory on 9 November 2026, so the `nano` tier now serves Lightning and the `write` tier serves Super VL. Both ids are listed by `GET /v1/models` on Token Factory. Hosts in `naviguide-simulator/server/story_cascade.py`: the `nano` tier on `https://api.tokenfactory.nebius.com/v1` (EU base), Lightning (`fast`) and Super VL (`write`) on the same default base (`NAVIGUIDE_TF_BASE` changes it), Ultra (`deep` and `judge`) on `https://api.tokenfactory.nebius.com/v1` (EU base).
+Nemotron 3 Nano 30B and Nemotron 3 Super 120B leave Token Factory on 9 November 2026, so the `nano` tier now serves Lightning and the `write` tier serves Super VL. Both ids are listed by `GET /v1/models` on Token Factory. Hosts in `naviguide-simulator/server/story_cascade.py`: the `nano` tier on `https://api.tokenfactory.nebius.com/v1` (EU base), Lightning (`fast`) and Super VL (`write`) on the same default base (`NAVIGUIDE_TF_BASE` changes it), Ultra (`deep` and `judge`) on `https://api.tokenfactory.nebius.com/v1` (EU base) unless `NAVIGUIDE_TF_BASE_ULTRA` is set to override.
 
 **Cascade.** A 24-hour SQLite cache is read first. If the daily budget or `NAVIGUIDE_LLM_MODE` refuses the call, nothing is sent and the source is `budget`. Otherwise the default order in `DEFAULT_PROVIDERS` is Token Factory, then NIM, then OpenRouter, then Claude. If the caller passed a fallback string and every provider failed, the source is `rules`.
 
@@ -96,7 +96,7 @@ Tavily is called at runtime in three places a visitor reaches: the logbook chat,
 
 The stop watch below is a separate server job.
 
-The watch is a server job. It stays off until `NAVIGUIDE_TAVILY_WATCH=1` (the default is `0`). When it is on, it covers a stop from 10 days before arrival through 2 days after, at most two rounds, once per stop. Lightning writes one sentence from the extracts. If a second round is needed, the `nano` tier (Lightning) picks one remaining id from a fixed list. It does not invent a question. Caps, unless overridden: 2 searches per stop, 6 searches per day, 80 Tavily credits per day. The dated card, when a watch is stored and not expired, is titled `{name} · watch of {date}`.
+The watch is a server job. It is **active by default** (`NAVIGUIDE_TAVILY_WATCH=1` by default; set `NAVIGUIDE_TAVILY_WATCH=0` to disable). When it is on, it covers a stop from 10 days before arrival through 2 days after, at most two rounds, once per stop. Lightning writes one sentence from the extracts. If a second round is needed, the `nano` tier (Lightning) picks one remaining id from a fixed list. It does not invent a question. Caps, unless overridden: 2 searches per stop, 6 searches per day, 80 Tavily credits per day. The dated card, when a watch is stored and not expired, is titled `{name} · watch of {date}`.
 
 The separate “re-read the official port page” judge is off unless `NAVIGUIDE_TRUTH_JUDGE=1`.
 
@@ -158,7 +158,7 @@ npm run dev
 
 `npm run dev` is the Vite dev server. `npm run server` is the same API with `--reload` on `127.0.0.1:8010`.
 
-Names in [naviguide-simulator/server/.env.example](naviguide-simulator/server/.env.example), and nowhere a value: `NEBIUS_API_KEY`, `NAVIGUIDE_TF_BASE`, `NAVIGUIDE_TF_MODEL_NANO`, `NAVIGUIDE_TF_MODEL_FAST`, `NAVIGUIDE_TF_MODEL_WRITE`, `NAVIGUIDE_TF_MODEL_JUDGE`, `NAVIGUIDE_LLM_PROVIDERS`, `NAVIGUIDE_LLM_DAILY_TOKENS_NANO`, `NAVIGUIDE_LLM_DAILY_TOKENS_FAST`, `NAVIGUIDE_LLM_DAILY_TOKENS_WRITE`, `NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `NVIDIA_API_KEY`, `TAVILY_API_KEY`, `TAVILY_API_BASE`, `NAVIGUIDE_TAVILY_WATCH`, `NAVIGUIDE_WATCH_DAILY_SEARCHES`.
+Names in [naviguide-simulator/server/.env.example](naviguide-simulator/server/.env.example), and nowhere a value: `NEBIUS_API_KEY`, `NAVIGUIDE_TF_BASE`, `NAVIGUIDE_TF_BASE_ULTRA`, `NAVIGUIDE_TF_BASE_EU`, `NAVIGUIDE_PORT_WEB`, `NAVIGUIDE_TF_MODEL_NANO`, `NAVIGUIDE_TF_MODEL_FAST`, `NAVIGUIDE_TF_MODEL_WRITE`, `NAVIGUIDE_TF_MODEL_JUDGE`, `NAVIGUIDE_LLM_PROVIDERS`, `NAVIGUIDE_LLM_DAILY_TOKENS_NANO`, `NAVIGUIDE_LLM_DAILY_TOKENS_FAST`, `NAVIGUIDE_LLM_DAILY_TOKENS_WRITE`, `NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `NVIDIA_API_KEY`, `TAVILY_API_KEY`, `TAVILY_API_BASE`, `NAVIGUIDE_TAVILY_WATCH`, `NAVIGUIDE_WATCH_DAILY_SEARCHES`.
 
 `NAVIGUIDE_LLM_MODE` is read by the server and is not in that example. Set `NAVIGUIDE_LLM_MODE=off` to run with no paid model call. Stories then stay on rules, cache, or the local text.
 

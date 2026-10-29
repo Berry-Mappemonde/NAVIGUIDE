@@ -718,7 +718,8 @@ def tidy_story(
 def _tf_url(tier: str) -> str:
     """Nano is pinned to the EU host. Lightning / Super stay on the default
     TF host. Ultra uses EU host (Nebius Token Factory) unless
-    NAVIGUIDE_TF_BASE_ULTRA is set."""
+    NAVIGUIDE_TF_BASE_ULTRA is set. NAVIGUIDE_TF_BASE_EU pins nano to its
+    host. NAVIGUIDE_PORT_WEB is the webhook URL (logged, not called)."""
     t = llm_budget.normalize_tier(tier)
     if t in {"deep", "judge"}:
         base = (

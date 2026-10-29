@@ -87,3 +87,25 @@ test("sans reçu servi, aucun reçu affiché", async ({ page }) => {
   await openWritten(page, "fr", null);
   await expect(page.getByTestId("film-receipt")).toHaveCount(0);
 });
+
+for (const [lang, tavilyTitle] of [
+  ["fr", "Sources web Tavily affichées avec le film : 3"],
+  ["en", "Web sources from Tavily shown with the film: 3"],
+]) {
+  test(`${lang} : le reçu affiche le nombre de sources Tavily (webContext.sources)`, async ({ page }) => {
+    test.setTimeout(90_000);
+    const webSources = [
+      { title: "Port news", domain: "news.com", url: "https://news.com/port" },
+      { title: "Marine forecast", domain: "weather.org", url: "https://weather.org/marine" },
+      { title: "Tide tables", domain: "tides.net", url: "https://tides.net/rochelle" },
+    ];
+    await openWritten(page, lang, RECEIPT, webSources);
+    const receipt = page.getByTestId("film-receipt");
+    await expect(receipt).toBeVisible();
+    await expect(receipt.locator("summary")).toHaveText(
+      lang === "fr" ? "Comment ce film a été fait" : "How this film was made"
+    );
+    await receipt.locator("summary").click();
+    await expect(page.getByTestId("film-receipt-filmReceiptTavily")).toHaveText(tavilyTitle);
+  });
+}
