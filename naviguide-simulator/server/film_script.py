@@ -11001,9 +11001,9 @@ REREAD_MAX_TOKENS = 400
 
 
 def _reread_tier() -> str:
-    """Relecture par Ultra quand son plafond est ouvert : Super, relecteur de lui-même,
-    signalait des fautes qu'il démentait dans la même phrase (dates en ordre, escales
-    pourtant dans la liste). Sinon le palier historique (Super)."""
+    """Relecture par Ultra quand la porte film_ultra_open() est ouverte (par défaut) : Super,
+    relecteur de lui-même, signalait des fautes qu'il démentait dans la même phrase (dates
+    en ordre, escales pourtant dans la liste). Porte fermée : palier historique (Super)."""
     return "judge" if film_ultra_open() else "reread"
 REREAD_GROUP_CHARS = 3500
 
@@ -11510,17 +11510,28 @@ async def write_with_llm(
 
 
 def film_ultra_open() -> bool:
-    """Ultra (éditer + juger) seulement si le plafond juge est ouvert dans l'env."""
+    """Ultra (éditer + juger le film rédigé) ouvert PAR DÉFAUT, borné par le plafond judge.
+
+    - Variable NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE absente ou vide : plafond par défaut de
+      llm_budget (DEFAULT_CAPS["judge"]), donc ouvert tant que le plafond du jour n'est pas
+      atteint. C'est ce que README et la visite « Qui fait quoi » annoncent.
+    - Valeur explicite <= 0 : interrupteur de l'opérateur, fermé (repli Super VL).
+    - Valeur invalide (« off », « 250k »…) : fermé. Choix prudent : l'opérateur a voulu
+      régler le plafond ; on ne dépense pas Ultra sur une valeur qu'on ne comprend pas.
+    - Plafond du jour atteint, plafond dollar, ou NAVIGUIDE_LLM_MODE=off : llm_budget.allow
+      renvoie False, fermé, aucun appel payant.
+    """
     import os  # noqa: PLC0415
     import llm_budget  # noqa: PLC0415
 
     raw = (os.environ.get("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE") or "").strip()
-    if not raw:
-        return False
-    try:
-        if int(raw) <= 0:
+    if raw:
+        try:
+            if int(raw) <= 0:
+                return False
+        except ValueError:
             return False
-    except ValueError:
+    if llm_budget.daily_cap("judge") <= 0:
         return False
     return llm_budget.allow("judge")
 

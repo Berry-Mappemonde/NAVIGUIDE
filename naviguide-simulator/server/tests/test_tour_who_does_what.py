@@ -77,6 +77,22 @@ def test_deep_role_claims():
     assert llm_budget.DEFAULT_MODELS["deep"] == llm_budget.DEFAULT_MODELS["judge"]
 
 
+def test_ultra_edits_and_rereads_the_written_film_by_default(monkeypatch):
+    """« Ultra édite et relit le film Rédigé » est vrai sans réglage : porte ouverte par défaut
+    (écart n° 44), relecture au palier judge ; seul un 0 explicite de l'opérateur la ferme."""
+    import film_script
+
+    for k in ("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "NAVIGUIDE_LLM_DAILY_USD", "NAVIGUIDE_LLM_BACKGROUND"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    monkeypatch.setattr(llm_budget, "get_usage", lambda tier, day=None: llm_budget._empty())
+    assert film_script.film_ultra_open() is True
+    assert film_script._reread_tier() == "judge"
+    assert re.search(r"if film_ultra_open\(\):", _read("film_script.py"))
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")
+    assert film_script.film_ultra_open() is False
+
+
 def test_tavily_claims():
     """Tavily : sources web du journal de bord (port près du bateau ou prochaine escale) et du film Rédigé."""
     chat = _read("logbook_chat.py")

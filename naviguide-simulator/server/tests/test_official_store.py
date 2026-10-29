@@ -2119,7 +2119,7 @@ def test_ed1_write_query_runs_once_then_cache(client, tmp_path, monkeypatch):
     monkeypatch.setattr(official_store, "_INSTANCE", store)
     monkeypatch.setattr(official_store, "_load_official", lambda: voy)
     monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
-    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")  # Ultra fermé : chemin Super seul
     store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
     calls = {"n": 0}
 
@@ -2170,7 +2170,7 @@ def test_film_write_rate_limit_and_offered_durations(client, tmp_path, monkeypat
     monkeypatch.setattr(official_store, "_INSTANCE", store)
     monkeypatch.setattr(official_store, "_load_official", lambda: voy)
     monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
-    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")  # Ultra fermé : chemin Super seul
     store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
     calls = {"n": 0}
 
