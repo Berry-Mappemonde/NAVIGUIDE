@@ -2356,3 +2356,27 @@ def test_official_meta_route_fingerprints_on_fake_stock(client, monkeypatch):
     assert "routeFileFp" not in draft
     assert "routeVoyageFp" not in draft
     assert draft["routeRev"] == 0
+
+
+@pytest.mark.parametrize("today_present,expect_nudge", [(False, 1), (True, 0)])
+def test_repair_worker_restarts_dead_filler_and_nudges_only_on_new_day(tmp_path, monkeypatch, today_present, expect_nudge):
+    """PUT visiteur : remplisseur mort relancé ; réveil seulement si le climo du jour manque (revue #121, 1)."""
+    voy = {"t0": T0, "points": [{"lat": 1.0, "lon": 2.0}], "marks": []}
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_WORKER", "force")
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_STORE_DIR", str(tmp_path / "store"))
+    monkeypatch.setenv("NAVIGUIDE_FILL_NUDGE_MIN_S", "180")
+    monkeypatch.setattr(official_store, "WORKER_MODE", "process")
+    monkeypatch.setattr(official_store, "_LAST_REPAIR_AT", None)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    store = dict(_stores(tmp_path))["disk"]
+    store._now = lambda: TODAY
+    monkeypatch.setattr(official_store, "get_store", lambda **_: store)
+    store.put("climo", {"clock": {"t0": T0}}, store.family_key("climo", voy, YESTERDAY))
+    if today_present:
+        store.put("climo", {"clock": {"t0": T0}}, store.family_key("climo", voy, TODAY))
+    calls = {"ensure": 0, "nudge": 0}
+    monkeypatch.setattr(official_store, "ensure_fill_process", lambda: calls.__setitem__("ensure", calls["ensure"] + 1))
+    monkeypatch.setattr(official_store, "nudge_fill_process", lambda: calls.__setitem__("nudge", calls["nudge"] + 1))
+    official_store.repair_worker()
+    official_store.repair_worker()  # même fenêtre : plafonné
+    assert calls == {"ensure": 1, "nudge": expect_nudge}

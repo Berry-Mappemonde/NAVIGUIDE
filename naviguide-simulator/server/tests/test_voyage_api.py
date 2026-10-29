@@ -836,3 +836,22 @@ def test_ici_fill_failure_is_dated_200(client, monkeypatch):
     assert body["status"] == "unavailable"
     assert "bi down" in body["reason"]
     assert body["at"].endswith("Z")
+
+
+def test_anonymous_official_put_repairs_admin_kicks(client, monkeypatch):
+    """PUT anonyme : réparation bornée (repair_worker). Admin et création : kick_worker complet."""
+    import official_store
+
+    monkeypatch.setenv("NAVIGUIDE_ADMIN_SECRET", "test-secret")
+    calls = []
+    monkeypatch.setattr(official_store, "kick_worker", lambda: calls.append("kick"))
+    monkeypatch.setattr(official_store, "repair_worker", lambda: calls.append("repair"))
+    payload = _payload("2026-05-15T08:00:00Z")
+
+    assert client.put("/voyage/official", json=payload).status_code == 200
+    assert calls == ["kick"]  # création depuis un store vide
+    assert client.put("/voyage/official", json=payload).status_code == 200
+    assert calls == ["kick", "repair"]  # visiteur : réparation, pas de passage complet
+    admin = client.put("/voyage/official", json=payload, headers={"X-Naviguide-Admin": "test-secret"})
+    assert admin.status_code == 200
+    assert calls == ["kick", "repair", "kick"]
