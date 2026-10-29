@@ -14,7 +14,7 @@ const RECEIPT = {
   reread: "pass", reread_en: "pass", lightning: 1, at: "2026-10-29T13:40:00Z",
 };
 
-function filmPayload({ written, seconds = 150, lang = "fr", receipt }) {
+function filmPayload({ written, seconds = 150, lang = "fr", receipt, webContext }) {
   return {
     status: "ready",
     lang,
@@ -26,10 +26,11 @@ function filmPayload({ written, seconds = 150, lang = "fr", receipt }) {
     targetSeconds: seconds,
     chapters: [{ text: "Le 15 mai, Berry-Mappemonde quitte La Rochelle.", anchors: [{ t: 0, i: 0 }] }],
     ...(written && receipt ? { receipt } : {}),
+    ...(webContext ? { webContext } : {}),
   };
 }
 
-async function openWritten(page, lang, receipt) {
+async function openWritten(page, lang, receipt, webSources) {
   await page.addInitScript((l) => localStorage.setItem("naviguide_lang_v4", l), lang);
   const cached = new Set();
   await page.route("**/voyage/**/film**", async (route) => {
@@ -40,9 +41,10 @@ async function openWritten(page, lang, receipt) {
     const key = `${url.searchParams.get("lang") || lang}:${seconds}`;
     if (req.method() === "POST") cached.add(key);
     const written = req.method() === "POST" || (style === "written" && cached.has(key));
+    const webContext = webSources ? { sources: webSources } : undefined;
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify(filmPayload({ written, seconds, lang, receipt })),
+      body: JSON.stringify(filmPayload({ written, seconds, lang, receipt, webContext })),
     });
   });
   const official = await probeOfficial(page);
