@@ -24,8 +24,9 @@ os.environ.setdefault("NAVIGUIDE_STORY_PREGEN", "0")
 # MockTransport des tests ne servent que /chat/completions. Les tests du garde
 # le rallument eux-mêmes (test_tf_model_guard.py).
 os.environ.setdefault("NAVIGUIDE_TF_MODEL_GUARD", "0")
-# Nouveau défaut : 1 (PR #401). Les tests qui forcent 0 le font explicitement.
-os.environ.setdefault("NAVIGUIDE_TAVILY_WATCH", "1")
+# Nouveau défaut : 1 (PR #401). Les tests forcent 0 explicitement ; un seul test
+# vérifie le défaut = actif.
+os.environ.setdefault("NAVIGUIDE_TAVILY_WATCH", "0")
 
 # Le secret admin d'un .env local ne doit pas faire échouer les tests qui
 # écrivent (TestClient = appel local direct → mode dev). Les tests du garde
