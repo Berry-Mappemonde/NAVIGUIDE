@@ -104,9 +104,10 @@ describe("film — « Autour du bateau » suit la position du bateau du film", (
 
 describe("interface — pas de mot « règles » isolé", () => {
   it("l'étiquette de source « règles » dit ce qu'elle est", () => {
-    for (const [dict, word] of [[fr, /règles/], [en, /rules/]]) {
+    assert.equal(fr.storySourceRules, "Formulé par les données brutes");
+    assert.equal(en.storySourceRules, "Written from raw data");
+    for (const dict of [fr, en]) {
       const label = dict.storySourceRules;
-      assert.match(label, word);
       assert.ok(label.trim().split(/\s+/).length >= 3, `étiquette trop courte : « ${label} »`);
       assert.doesNotMatch(label, /sans IA|no AI/i);
     }

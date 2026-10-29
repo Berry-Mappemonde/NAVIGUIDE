@@ -123,7 +123,7 @@ export default {
   storySourceUltra: "Nemotron 3 Ultra · Token Factory",
   storySourceOpenrouter: "OpenRouter",
   storySourceClaude: "Claude",
-  storySourceRules: "Formulé par les règles NAVIGUIDE",
+  storySourceRules: "Formulé par les données brutes",
   storySourceBudget: "budget",
   storySourceCache: "cache",
   storySourceNim: "NVIDIA NIM (repli)",
