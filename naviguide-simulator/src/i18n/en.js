@@ -220,6 +220,8 @@ export default {
   escaleSheetEmpty: "Nothing recorded around this stop.",
   escaleSheetSources: "Sources",
   logbookChatTitle: "Logbook — ask a question",
+  logbookWebSourcesTitle: "Web sources (Tavily)",
+  logbookWebUnavailable: "Web watch unavailable (missing Tavily key or error).",
   logbookChatPlaceholder: "Wind at the boat? Next stop?",
   logbookChatSend: "Send",
   logbookChatYou: "You:",

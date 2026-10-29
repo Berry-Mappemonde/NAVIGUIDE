@@ -220,6 +220,8 @@ export default {
   escaleSheetEmpty: "Rien de recensé autour de cette escale.",
   escaleSheetSources: "Sources",
   logbookChatTitle: "Journal de bord — posez une question",
+  logbookWebSourcesTitle: "Sources web (Tavily)",
+  logbookWebUnavailable: "Veille web indisponible (clé Tavily absente ou erreur).",
   logbookChatPlaceholder: "Quel vent au bateau ? Prochaine escale ?",
   logbookChatSend: "Envoyer",
   logbookChatYou: "Vous :",
