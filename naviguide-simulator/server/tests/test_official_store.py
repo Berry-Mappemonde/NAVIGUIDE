@@ -1923,7 +1923,7 @@ def test_ed2_reservice_keeps_source_reviewed_by_and_model(tmp_path, monkeypatch)
         "hasWritten": True,
         "source": "nemotron-super",
         "reviewedBy": "nemotron-ultra",
-        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "model": "nvidia/Nemotron-3.5-Super-VL",
         "generated_at": "2026-10-17T10:00:00Z",
     }
     payload = _rg11a_payload()
@@ -1960,7 +1960,7 @@ def test_ed2_reservice_keeps_source_reviewed_by_and_model(tmp_path, monkeypatch)
         **plan,
         "hasWritten": True,
         "source": "nemotron-super-reviewed-ultra",
-        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "model": "nvidia/Nemotron-3.5-Super-VL",
         "generated_at": "2026-10-17T10:00:00Z",
     }
     payload["written"] = {"fr": {"150": legacy}}

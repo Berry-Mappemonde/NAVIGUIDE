@@ -18,12 +18,21 @@ NS = "llm-budget"
 LAST_SOURCE_NS = "llm"
 LAST_SOURCE_KEY = "last-source"
 LAST_SOURCE_BY_TIER_KEY = "last-source-by-tier"
+LAST_MODEL_BY_TIER_KEY = "last-model-by-tier"
 LAST_ERROR_KEY = "last-error"
 LAST_ERRORS_BY_TIER_KEY = "last-errors-by-tier"
 LAST_ERROR_AT_KEY = "last-error-at"
 FALLBACK_PROVIDERS = ("nim", "openrouter", "claude")
 
 TIERS = ("nano", "fast", "write", "deep", "judge")
+
+# Nebius Token Factory — deprecations November 2026 (serverless).
+# https://docs.tokenfactory.nebius.com/model-deprecations-november-2026
+DEPRECATED_TOKEN_FACTORY_MODELS = frozenset({
+    "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+    "nvidia/nemotron-3-nano-30b-a3b",
+    "nvidia/nemotron-3-super-120b-a12b",
+})
 
 # Tokens / jour — resserrés le 28 sept. (facture Nebius du mois : 6,58 $ sur 60 $ de crédits, dont 5,19 $ de
 # Nemotron Ultra pour un badge que personne ne voyait) : fast ≈ 0,05 $/j, write ≈ 0,08 $/j.
@@ -119,9 +128,11 @@ PRICES_PER_M = {
 }
 
 DEFAULT_MODELS = {
-    "nano": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+    # Nano 30B → Nemotron 3.5 Lightning (Nov. 2026 deprecation).
+    "nano": "nvidia/Nemotron-3_5-Lightning",
     "fast": "nvidia/Nemotron-3_5-Lightning",
-    "write": "nvidia/nemotron-3-super-120b-a12b",
+    # Super 120B → Nemotron 3.5 Super VL (Nov. 2026 deprecation).
+    "write": "nvidia/Nemotron-3.5-Super-VL",
     "deep": "nvidia/Nemotron-3-Ultra-550b-a55b",
     "judge": "nvidia/Nemotron-3-Ultra-550b-a55b",
 }
@@ -139,7 +150,7 @@ DEFAULT_MAX_TOKENS = {
 SOURCE_FOR_TIER = {
     "nano": "nemotron-nano",
     "fast": "nemotron-lightning",
-    "write": "nemotron-super",
+    "write": "nemotron-super-vl",
     "deep": "nemotron-ultra",
     "judge": "nemotron-ultra",
 }
@@ -189,6 +200,11 @@ def daily_cap(tier: str) -> int:
 def model_for(tier: str) -> str:
     t = normalize_tier(tier)
     return (os.environ.get(_ENV_MODEL[t]) or DEFAULT_MODELS[t]).strip() or DEFAULT_MODELS[t]
+
+
+def configured_models() -> dict[str, str]:
+    """Modèles Token Factory configurés par palier (override env inclus)."""
+    return {t: model_for(t) for t in TIERS}
 
 
 def max_tokens_for(tier: str) -> int:
@@ -350,6 +366,38 @@ def _last_source_by_tier_raw() -> dict[str, str]:
 def last_source_by_tier() -> dict[str, str]:
     """Dernière source réelle par palier (LT2) — pour `/ici/warm/status`."""
     return dict(_last_source_by_tier_raw())
+
+
+def _last_model_by_tier_raw() -> dict[str, str]:
+    import pearl_store  # noqa: PLC0415
+
+    hit = pearl_store.kv_get(LAST_SOURCE_NS, LAST_MODEL_BY_TIER_KEY)
+    val = (hit or {}).get("value")
+    if not isinstance(val, dict):
+        return {}
+    out: dict[str, str] = {}
+    for k, v in val.items():
+        if k in TIERS and isinstance(v, str) and v.strip():
+            out[k] = v.strip()
+    return out
+
+
+def last_model_by_tier() -> dict[str, str]:
+    """Dernier id modèle Token Factory servi par palier — `/ici/warm/status`."""
+    return dict(_last_model_by_tier_raw())
+
+
+def remember_served_model(model_id: str | None, tier: str | None = None) -> None:
+    """Id catalogue renvoyé par Token Factory pour ce palier (badge / warm status)."""
+    import pearl_store  # noqa: PLC0415
+
+    mid = (model_id or "").strip()
+    if not mid or tier is None:
+        return
+    t = normalize_tier(tier)
+    by = _last_model_by_tier_raw()
+    by[t] = mid
+    pearl_store.kv_put(LAST_SOURCE_NS, LAST_MODEL_BY_TIER_KEY, by)
 
 
 def remember_source(source: str | None, tier: str | None = None) -> None:
@@ -684,6 +732,10 @@ def status() -> dict[str, Any]:
         out["lastSourceByTier"] = by_tier
     out["fallback"] = fallback_usage()
     out["retrySuper"] = int(retry_super_usage()["count"])
+    out["configuredModels"] = configured_models()
+    by_model = last_model_by_tier()
+    if by_model:
+        out["lastModelByTier"] = by_model
     errs = last_errors()
     if errs:
         out["lastErrors"] = errs

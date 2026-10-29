@@ -185,7 +185,7 @@ def test_write_story_returns_tidy_text_and_flags_local_fallback(monkeypatch):
     out = asyncio.run(run(handler))
     assert out["status"] == "ready"
     assert out["text"] == "La ZEE française a été quittée."
-    assert out["source"] == "nemotron-super"
+    assert out["source"] == "nemotron-super-vl"
     assert "+local" not in out["engine"]
 
     def only_meta(request: httpx.Request) -> httpx.Response:
@@ -204,7 +204,7 @@ def test_slim_event_keeps_skipper_used_and_tavily_null():
     assert out["skipper"]["boat"]["name"] == "Leopard 46"
 
 
-def _chat_ok(text="Récit court de la ZEE.", model="nvidia/nemotron-3-super-120b-a12b"):
+def _chat_ok(text="Récit court de la ZEE.", model="nvidia/Nemotron-3.5-Super-VL"):
     return {
         "choices": [{"message": {"content": text}}],
         "model": model,
@@ -226,7 +226,7 @@ def test_cascade_tokenfactory_write_is_nemotron_super(monkeypatch):
         seen.append(str(request.url))
         assert "tokenfactory.nebius.com" in str(request.url)
         body = request.read().decode()
-        assert "nemotron-3-super-120b-a12b" in body
+        assert "Nemotron-3.5-Super-VL" in body
         return httpx.Response(200, json=_chat_ok("Entrée dans la ZEE française."))
 
     monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
@@ -237,7 +237,7 @@ def test_cascade_tokenfactory_write_is_nemotron_super(monkeypatch):
             return await cascade_text(system, user, client, **kw)
 
     text, source = asyncio.run(run())
-    assert source == "nemotron-super"
+    assert source == "nemotron-super-vl"
     assert "ZEE" in text
     assert len(seen) == 1
     assert not any("openrouter" in u or "anthropic" in u or "nvidia.com" in u for u in seen)
@@ -337,7 +337,7 @@ def test_cascade_lock_one_call_for_two_identical_requests(monkeypatch):
             return a, b
 
     (t1, s1), (t2, s2) = asyncio.run(run())
-    assert {s1, s2} <= {"nemotron-super", "cache"}
+    assert {s1, s2} <= {"nemotron-super", "nemotron-super-vl", "cache"}
     assert t1 == t2
     assert len(seen) == 1
 
@@ -356,7 +356,7 @@ def test_filter_numbers_always_applied_on_cascade(monkeypatch):
             return await cascade_text(system, user, client, **kw)
 
     text, source = asyncio.run(run())
-    assert source == "nemotron-super"
+    assert source == "nemotron-super-vl"
     assert "5677" in text
     assert "99" not in text
 
@@ -396,7 +396,7 @@ def test_write_story_tokenfactory_first_without_page(monkeypatch):
     assert out["status"] == "ready"
     assert out["tavily"] is None
     assert out["cascade"] == "tokenfactory-openrouter-claude"
-    assert out["source"] == "nemotron-super"
+    assert out["source"] == "nemotron-super-vl"
     assert any("tokenfactory" in u for u in seen)
     assert not any("openrouter" in u or "anthropic" in u or "nvidia.com" in u for u in seen)
 
@@ -428,10 +428,10 @@ def test_write_story_cache_returns_origin_and_cache_hit(monkeypatch):
             return first, second
 
     first, second = asyncio.run(run())
-    assert first["status"] == "ready" and first["source"] == "nemotron-super"
+    assert first["status"] == "ready" and first["source"] == "nemotron-super-vl"
     assert first["cache_hit"] is False
     assert second["status"] == "ready"
-    assert second["source"] == "nemotron-super"
+    assert second["source"] == "nemotron-super-vl"
     assert second["source"] != "cache"
     assert second["cache_hit"] is True
     assert len(seen) == 1
@@ -808,7 +808,7 @@ def test_cascade_think_block_keeps_final_sentence(monkeypatch):
 
     text, source = asyncio.run(run())
     assert text == "La Rochelle est un port."
-    assert source == "nemotron-super"
+    assert source == "nemotron-super-vl"
 
 
 def test_cascade_reasoning_only_falls_to_rules(monkeypatch):
@@ -856,7 +856,7 @@ def test_tokenfactory_payload_disables_thinking(monkeypatch):
 
     text, source = asyncio.run(run())
     assert "port" in text
-    assert source == "nemotron-super"
+    assert source == "nemotron-super-vl"
     assert seen["chat_template_kwargs"]["enable_thinking"] is False
     assert "thinking" not in seen["chat_template_kwargs"]
     assert seen["reasoning_effort"] == "none"
@@ -939,7 +939,7 @@ def test_fast_tokenfactory_empty_retries_super(monkeypatch):
             )
 
     text, source = asyncio.run(run())
-    assert source == "nemotron-super"
+    assert source == "nemotron-super-vl"
     assert "Super" in text
     assert len(calls) == 2
     assert any("Lightning" in m for m in calls)
@@ -947,7 +947,7 @@ def test_fast_tokenfactory_empty_retries_super(monkeypatch):
     import llm_budget
     st = llm_budget.status()
     assert st["retrySuper"] == 1
-    assert st["lastSourceByTier"]["fast"] == "nemotron-super"
+    assert st["lastSourceByTier"]["fast"] == "nemotron-super-vl"
 
 
 def test_fast_tokenfactory_success_clears_tier_errors(monkeypatch):
@@ -1125,7 +1125,7 @@ def test_empty_content_with_reasoning_stays_on_the_tier(monkeypatch):
 
     cases = (
         ("fast", "nvidia/Nemotron-3_5-Lightning", "nemotron-lightning", False),
-        ("write", "nvidia/nemotron-3-super-120b-a12b", "nemotron-super", False),
+        ("write", "nvidia/Nemotron-3.5-Super-VL", "nemotron-super-vl", False),
         ("deep", "nvidia/Nemotron-3-Ultra-550b-a55b", "nemotron-ultra", True),
         ("judge", "nvidia/Nemotron-3-Ultra-550b-a55b", "nemotron-ultra", True),
     )
@@ -1254,20 +1254,20 @@ def test_fast_leak_reasoning_still_retries_super(monkeypatch):
 
     result = asyncio.run(run())
     text, source = result
-    assert source == "nemotron-super"
+    assert source == "nemotron-super-vl"
     assert "port" in text
     assert "JSON" not in text
     assert len(calls) == 2
     assert "Lightning" in calls[0]
     assert "super" in calls[1].lower()
-    assert result.model == "nvidia/nemotron-3-super-120b-a12b"
+    assert result.model == "nvidia/Nemotron-3.5-Super-VL"
     assert result.tier == "write"
 
 
 def test_write_story_keeps_exact_super_model_and_tier(monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content.decode())
-        assert body["model"] == "nvidia/nemotron-3-super-120b-a12b"
+        assert body["model"] == "nvidia/Nemotron-3.5-Super-VL"
         return httpx.Response(200, json=_chat_ok("Entrée dans la ZEE.", model=body["model"]))
 
     monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
@@ -1284,10 +1284,10 @@ def test_write_story_keeps_exact_super_model_and_tier(monkeypatch):
 
     out = asyncio.run(run())
     assert out["status"] == "ready"
-    assert out["source"] == "nemotron-super"
+    assert out["source"] == "nemotron-super-vl"
     assert out["tier"] == "write"
-    assert out["model"] == "nvidia/nemotron-3-super-120b-a12b"
-    assert out["ai_model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert out["model"] == "nvidia/Nemotron-3.5-Super-VL"
+    assert out["ai_model"] == "nvidia/Nemotron-3.5-Super-VL"
     assert out["ai_generated"] is True
     assert "Token Factory" not in out["model"]
 
@@ -1459,17 +1459,17 @@ def test_plain_reasoning_sentence_stays_on_nemotron(monkeypatch):
     out = asyncio.run(run())
     text = out.get("text") or ""
     assert out["status"] == "ready"
-    assert out["source"] == "nemotron-super"
+    assert out["source"] == "nemotron-super-vl"
     assert out["tier"] == "write"
-    assert out["model"] == "nvidia/nemotron-3-super-120b-a12b"
-    assert out["ai_model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert out["model"] == "nvidia/Nemotron-3.5-Super-VL"
+    assert out["ai_model"] == "nvidia/Nemotron-3.5-Super-VL"
     assert "houle" in text
     assert "Rochelle" in text
     assert "The user" not in text
     assert "JSON" not in text
     assert "port reste calme" not in text
     assert not any(_url_host_is(url, "nvidia.com") for url, _model in seen)
-    assert llm_budget.status()["lastSourceByTier"]["write"] == "nemotron-super"
+    assert llm_budget.status()["lastSourceByTier"]["write"] == "nemotron-super-vl"
     assert "lastError" not in llm_budget.status()
 
 
@@ -1491,12 +1491,12 @@ def test_english_reasoning_falls_back_to_nim(monkeypatch):
 
     good = asyncio.run(run_ok())
     text, source = good
-    assert source == "nemotron-super"
+    assert source == "nemotron-super-vl"
     assert text == kept
     assert "harbour stays quiet" not in text
-    assert good.model == "nvidia/nemotron-3-super-120b-a12b"
+    assert good.model == "nvidia/Nemotron-3.5-Super-VL"
     assert good.tier == "write"
-    assert llm_budget.last_source_by_tier().get("write") == "nemotron-super"
+    assert llm_budget.last_source_by_tier().get("write") == "nemotron-super-vl"
     assert not any(_url_host_is(url, "nvidia.com") for url, _model in seen)
     assert "lastError" not in llm_budget.status()
 
@@ -1670,7 +1670,7 @@ def test_write_deep_judge_call_planned_token_factory_models(monkeypatch):
     import llm_budget
 
     cases = (
-        ("write", "nvidia/nemotron-3-super-120b-a12b", "nemotron-super", False, "Le bateau entre dans la ZEE."),
+        ("write", "nvidia/Nemotron-3.5-Super-VL", "nemotron-super-vl", False, "Le bateau entre dans la ZEE."),
         ("deep", "nvidia/Nemotron-3-Ultra-550b-a55b", "nemotron-ultra", True, "L'escale de La Rochelle est calme."),
         ("judge", "nvidia/Nemotron-3-Ultra-550b-a55b", "nemotron-ultra", True, "Le récit tient les faits du journal."),
     )
@@ -1741,22 +1741,23 @@ def test_write_story_calls_super_and_stop_calls_ultra(monkeypatch):
 
     written, stopped = asyncio.run(run())
     assert written["status"] == "ready"
-    assert written["source"] == "nemotron-super"
+    assert written["source"] == "nemotron-super-vl"
     assert written["tier"] == "write"
-    assert written["model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert written["model"] == "nvidia/Nemotron-3.5-Super-VL"
     assert stopped["status"] == "ready"
     assert stopped["source"] == "nemotron-ultra"
     assert stopped["tier"] == "deep"
     assert stopped["model"] == "nvidia/Nemotron-3-Ultra-550b-a55b"
     assert len(seen) == 2
-    assert seen[0][1] == "nvidia/nemotron-3-super-120b-a12b"
+    assert seen[0][1] == "nvidia/Nemotron-3.5-Super-VL"
     assert "us-central1" not in seen[0][0]
     assert seen[1][1] == "nvidia/Nemotron-3-Ultra-550b-a55b"
     assert "us-central1" in seen[1][0]
 
 
-NANO_ID = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+NANO_ID = "nvidia/Nemotron-3_5-Lightning"
 LIGHTNING_ID = "nvidia/Nemotron-3_5-Lightning"
+SUPER_VL_ID = "nvidia/Nemotron-3.5-Super-VL"
 
 
 def test_nano_call_stays_on_eu_host(monkeypatch):
@@ -1802,7 +1803,7 @@ def test_nano_call_stays_on_eu_host(monkeypatch):
 
 
 def test_nano_falls_back_to_lightning_with_its_label(monkeypatch):
-    """Nano en échec → Lightning, étiquette nemotron-lightning, toujours en EU."""
+    """Palier nano (Lightning id) en échec → repli fast Lightning, étiquette nemotron-lightning."""
     seen = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -1810,7 +1811,7 @@ def test_nano_falls_back_to_lightning_with_its_label(monkeypatch):
         url = str(request.url)
         model = body.get("model")
         seen.append((url, model))
-        if model == NANO_ID:
+        if len(seen) == 1:
             return httpx.Response(500, text='{"error":"nano down"}')
         if model == LIGHTNING_ID:
             return httpx.Response(200, json=_chat_ok("Le quai reste calme.", model=model))
@@ -1834,7 +1835,7 @@ def test_nano_falls_back_to_lightning_with_its_label(monkeypatch):
     assert "quai" in text
     assert source == "nemotron-lightning"
     assert result.model == LIGHTNING_ID
-    assert [m for _u, m in seen] == [NANO_ID, LIGHTNING_ID]
+    assert [m for _u, m in seen] == [LIGHTNING_ID, LIGHTNING_ID]
     assert all("us-central1" not in url for url, _m in seen)
     assert all(_url_host_is(url, "api.tokenfactory.nebius.com") for url, _m in seen)
     import llm_budget
@@ -1874,6 +1875,6 @@ def test_nano_then_lightning_then_nim_keeps_nim_label(monkeypatch):
     assert source != "nemotron-nano"
     assert source != "nemotron-lightning"
     models = [m for url, m in seen if "tokenfactory" in url]
-    assert models == [NANO_ID, LIGHTNING_ID]
+    assert models == [LIGHTNING_ID, LIGHTNING_ID]
     assert any(_url_host_is(url, "integrate.api.nvidia.com") for url, _m in seen)
     assert not any("openrouter" in url or "anthropic" in url for url, _m in seen)

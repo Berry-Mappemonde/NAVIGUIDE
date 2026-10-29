@@ -34,6 +34,7 @@ export function llmSourceI18nKey(source, reviewedBy) {
   if (/\bgpt-4o\b|\bgpt-4\b/i.test(lower)) return "storySourceOpenrouter";
   if (lower.endsWith("-nano") || lower.includes("-nano")) return "storySourceNano";
   if (s.endsWith("-lightning") || lower.includes("lightning")) return "storySourceLightning";
+  if (s.endsWith("-super-vl") || lower.includes("super-vl")) return "storySourceSuperVl";
   if (s.endsWith("-super")) return "storySourceSuper";
   if (s.endsWith("-ultra") || (lower.includes("ultra") && lower.includes("nemotron"))) return "storySourceUltra";
   if (lower.includes("nemotron-3-super") || lower.includes("nemotron-super")) return "storySourceSuper";
@@ -49,6 +50,7 @@ const TOKEN_FACTORY_LABELS = new Set([
   "storySourceNano",
   "storySourceLightning",
   "storySourceSuper",
+  "storySourceSuperVl",
   "storySourceSuperReviewed",
   "storySourceUltra",
 ]);

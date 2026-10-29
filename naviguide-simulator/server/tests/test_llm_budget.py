@@ -37,10 +37,10 @@ def test_allow_false_at_cap(monkeypatch):
 
 def test_models_and_sources_are_overridable(monkeypatch):
     assert llm_budget.model_for("fast") == "nvidia/Nemotron-3_5-Lightning"
-    assert llm_budget.model_for("write") == "nvidia/nemotron-3-super-120b-a12b"
+    assert llm_budget.model_for("write") == "nvidia/Nemotron-3.5-Super-VL"
     assert llm_budget.model_for("deep") == "nvidia/Nemotron-3-Ultra-550b-a55b"
     assert llm_budget.model_for("judge") == "nvidia/Nemotron-3-Ultra-550b-a55b"
-    assert llm_budget.source_for("write") == "nemotron-super"
+    assert llm_budget.source_for("write") == "nemotron-super-vl"
     assert llm_budget.source_for("deep") == "nemotron-ultra"
     monkeypatch.setenv("NAVIGUIDE_TF_MODEL_WRITE", "nvidia/nemotron-3-nano-30b-a3b")
     assert llm_budget.model_for("write") == "nvidia/nemotron-3-nano-30b-a3b"
@@ -261,8 +261,8 @@ def test_deferred_demand_allows_write_in_on_demand_background(monkeypatch):
 def test_nano_tier_uses_exact_catalog_id(monkeypatch):
     """Palier nano : id catalogue exact, source, prix, plafond, surcharge d'env."""
     assert "nano" in llm_budget.TIERS
-    assert llm_budget.DEFAULT_MODELS["nano"] == "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
-    assert llm_budget.model_for("nano") == "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+    assert llm_budget.DEFAULT_MODELS["nano"] == "nvidia/Nemotron-3_5-Lightning"
+    assert llm_budget.model_for("nano") == "nvidia/Nemotron-3_5-Lightning"
     assert llm_budget.source_for("nano") == "nemotron-nano"
     assert llm_budget.PRICES_PER_M["nano"] == (0.06, 0.24)
     assert llm_budget.estimate_usd("nano", 1_000_000, 0) == 0.06
@@ -270,9 +270,9 @@ def test_nano_tier_uses_exact_catalog_id(monkeypatch):
     assert llm_budget.DEFAULT_CAPS["nano"] == 100_000
     assert llm_budget.daily_cap("nano") == 100_000
     assert llm_budget.max_tokens_for("nano") == 256
-    monkeypatch.setenv("NAVIGUIDE_TF_MODEL_NANO", "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B")
+    monkeypatch.setenv("NAVIGUIDE_TF_MODEL_NANO", "nvidia/Nemotron-3_5-Lightning")
     monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_NANO", "42")
-    assert llm_budget.model_for("nano") == "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+    assert llm_budget.model_for("nano") == "nvidia/Nemotron-3_5-Lightning"
     assert llm_budget.daily_cap("nano") == 42
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     assert llm_budget.allow("nano") is True
