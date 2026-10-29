@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   DEMO_STEP_IDS, DEMO_TOUR_TARGETS, TOUR_DEFAULT_MODELS, TOUR_EDITED_WAIT_MS, describeModelRoles, getDemoSteps, modelDisplayName,
   tourEditedOffer, tourEditedStep, wantsTourFromUrl,
+  computePanelPosition, computeArrowDirection, getStagePadding,
 } from "./demoWalkthrough.js";
 import { readFileSync } from "node:fs";
 import en from "../i18n/en.js";
@@ -185,4 +186,54 @@ it("driver.js : chaque étape a un élément réel ou aucun (pas de cible invent
   assert.equal(DEMO_TOUR_TARGETS.briefing, '[data-tour="logbook"]');
   assert.equal(DEMO_TOUR_TARGETS.replay, '[data-tour="film"]');
   assert.equal(DEMO_TOUR_TARGETS.live, ".leaflet-container");
+});
+
+describe("placement logic (exported from demoWalkthrough.js)", () => {
+  const anchorTop = { top: 100, bottom: 150, height: 50 };
+  const anchorBottom = { top: 600, bottom: 650, height: 50 };
+
+  it("computePanelPosition returns undefined for null anchor or mobile width", () => {
+    assert.equal(computePanelPosition(null, "replay", 1024, 768), undefined);
+    assert.equal(computePanelPosition(anchorTop, "replay", 500, 768), undefined);
+  });
+
+  it("computePanelPosition for replay step with anchor in bottom half returns bottom position", () => {
+    const pos = computePanelPosition(anchorBottom, "replay", 1024, 768);
+    assert.ok(pos && pos.bottom && pos.top === "auto");
+    const bottom = Number(pos.bottom.replace("px", ""));
+    assert.ok(bottom > 768 - 600);
+  });
+
+  it("computePanelPosition for replay step with anchor in top half returns top position", () => {
+    const pos = computePanelPosition(anchorTop, "replay", 1024, 768);
+    assert.ok(pos && pos.top && !pos.bottom);
+  });
+
+  it("computePanelPosition for other steps returns clamped top position", () => {
+    const pos = computePanelPosition(anchorTop, "welcome", 1024, 768);
+    assert.ok(pos && pos.top);
+    const top = Number(pos.top.replace("px", ""));
+    assert.ok(top >= 56 && top <= 768 - 420);
+  });
+
+  it("computeArrowDirection returns undefined for null anchor or mobile width", () => {
+    assert.equal(computeArrowDirection(null, "replay", 1024, 768), undefined);
+    assert.equal(computeArrowDirection(anchorTop, "replay", 500, 768), undefined);
+  });
+
+  it("computeArrowDirection for replay step with anchor in bottom half returns 'down'", () => {
+    assert.equal(computeArrowDirection(anchorBottom, "replay", 1024, 768), "down");
+  });
+
+  it("computeArrowDirection for replay step with anchor in top half returns 'down'", () => {
+    assert.equal(computeArrowDirection(anchorTop, "replay", 1024, 768), "down");
+  });
+
+  it("getStagePadding returns 14 for trace step, 6 for others", () => {
+    assert.equal(getStagePadding("trace"), 14);
+    assert.equal(getStagePadding("welcome"), 6);
+    assert.equal(getStagePadding("models"), 6);
+    assert.equal(getStagePadding("live"), 6);
+    assert.equal(getStagePadding("replay"), 6);
+  });
 });

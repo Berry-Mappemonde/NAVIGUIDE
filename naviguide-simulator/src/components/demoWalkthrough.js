@@ -163,3 +163,74 @@ export function tourEditedStep({
   if (filmStyle !== "written" && loadedStyle === "raw") return "raw";
   return "wait";
 }
+
+const PANEL_HEIGHT = 420;
+const MIN_TOP = 56;
+const MOBILE_BREAKPOINT = 768;
+
+/**
+ * Compute panel position (top/bottom CSS) for the demo walkthrough panel.
+ * @param {{top: number, bottom: number, height: number} | null} anchor - Anchor element bounding rect
+ * @param {string} stepId - Current step id
+ * @param {number} innerWidth - window.innerWidth
+ * @param {number} innerHeight - window.innerHeight
+ * @returns {{top?: string, bottom?: string} | undefined}
+ */
+export function computePanelPosition(anchor, stepId, innerWidth, innerHeight) {
+  if (!anchor || innerWidth < MOBILE_BREAKPOINT) return undefined;
+
+  const maxTop = innerHeight - PANEL_HEIGHT;
+
+  // Step "replay": position above film bar when anchor is in bottom half
+  if (stepId === "replay") {
+    const anchorCenterY = anchor.top + anchor.height / 2;
+    const screenCenterY = innerHeight / 2;
+    if (anchorCenterY > screenCenterY) {
+      // Anchor in bottom half: position panel above it
+      const bottom = innerHeight - anchor.top + 12;
+      return { bottom: `${Math.round(bottom)}px`, top: "auto" };
+    }
+  }
+
+  // Default: clamp top between MIN_TOP and maxTop
+  const top = Math.max(MIN_TOP, Math.min(anchor.top, maxTop));
+  return { top: `${Math.round(top)}px` };
+}
+
+/**
+ * Compute data-arrow attribute for the bubble arrow based on anchor and panel position.
+ * @param {{top: number, bottom: number, height: number, left?: number, width?: number} | null} anchor - Anchor element bounding rect
+ * @param {string} stepId - Current step id
+ * @param {number} innerWidth - window.innerWidth
+ * @param {number} innerHeight - window.innerHeight
+ * @returns {"up" | "down" | "left" | "right" | undefined}
+ */
+export function computeArrowDirection(anchor, stepId, innerWidth, innerHeight) {
+  if (!anchor || innerWidth < MOBILE_BREAKPOINT) return undefined;
+  
+  const panelPos = computePanelPosition(anchor, stepId, innerWidth, innerHeight);
+  if (!panelPos) return undefined;
+
+  // Special case for replay step: panel is conceptually above film bar at bottom, arrow always points down
+  if (stepId === "replay") {
+    return "down";
+  }
+
+  // For all other steps with a target, arrow points horizontally based on panel side
+  // Panel is always on left or right side (never center) for demo steps
+  const panelSide = DEMO_PANEL_SIDE[stepId];
+  if (panelSide === "left") {
+    return "right";  // Arrow points from left panel toward anchor (right)
+  }
+  return "left";      // Arrow points from right panel toward anchor (left)
+}
+
+/**
+ * Get stagePadding for a specific step.
+ * @param {string} stepId - Current step id
+ * @returns {number}
+ */
+export function getStagePadding(stepId) {
+  if (stepId === "trace") return 14;
+  return 6;
+}
