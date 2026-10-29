@@ -9894,7 +9894,15 @@ def _pair_indexes(rows: list[dict], frm: str, to: str) -> tuple[Optional[int], O
     ia = _index_row(rows, frm)
     if ia is None:
         return None, None
-    return ia, _index_row(rows, to, after=ia)
+    ib = _index_row(rows, to, after=ia)
+    if ib is not None:
+        # Cayenne revient après l'aller-retour Halifax : on part du dernier passage.
+        while True:
+            nxt = _index_row(rows, frm, after=ia)
+            if nxt is None or nxt <= ia or nxt >= ib:
+                break
+            ia = nxt
+    return ia, ib
 
 
 def _sea_between(rows: list[dict], frm: str, to: str) -> list[str]:
@@ -10092,9 +10100,10 @@ def _cap_leg_faults(text: str, rows: list[dict], frm: str, chapter_to: str = "")
         if not match:
             continue
         cap_raw = (match.group(0) or "").strip().casefold()
-        if cap_raw.startswith(("départ vers", "departure for")):
+        if cap_raw.startswith(("départ vers", "departure for", "departure to")):
             continue
-        to = _place_core(match.group("to"))
+        # « Papeete (French Polynesia) » : la région traduite ne doit pas défaire le nom.
+        to = _place_core(re.sub(r"\s*\([^)]*\)", "", match.group("to") or ""))
         if not to or _is_air_leg(frm, to) or _is_side_leg(frm, to):
             continue
         if chapter_to and same_stop(to, chapter_to) and not _sea_between(rows, frm, to):
@@ -11057,6 +11066,7 @@ _EN_GEO_WORDS = frozenset({
     "chilean", "peruvian", "polynesian", "indonesian", "madeira", "azores", "balearic",
     "sicilian", "sardinian", "greek", "tunisian", "algerian", "maltese", "kiwi", "zealand",
     "year", "one", "two", "three", "four", "five", "phase",
+    "dutch", "german", "norwegian", "swedish", "danish", "icelandic", "japanese", "chinese",
 })
 
 # « une trentaine de jours » → « about thirty days » : l'approximation dite en anglais.
@@ -11146,6 +11156,8 @@ async def translate_written_plan(
             # Jamais un anglais mêlé de phrases françaises de repli.
             return None
         any_ok = True
+        sents = _sentences(guarded)
+        guarded = " ".join(x for i, x in enumerate(sents) if i == 0 or x != sents[i - 1])
         anchors = reanchor_written_chapter(ch, guarded, "en")
         out.append({**ch, "text": guarded, "anchors": anchors})
     if not any_ok:

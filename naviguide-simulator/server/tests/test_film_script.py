@@ -6339,3 +6339,14 @@ def test_non_breaking_hyphen_in_a_name_is_not_an_unknown_place():
     src = "Arrivée à Mata-Utu (Wallis-et-Futuna) le 27 octobre."
     out, rw, fb = fs.apply_written_guard(src, "Arrivée à Mata\u2011Utu (Wallis-et-Futuna) le 27 octobre.", {"raw": src})
     assert fb == 0 and "\u2011" not in out
+
+
+def test_return_to_a_stop_is_not_a_skip():
+    import film_script as fs
+    rows = [{"name": n} for n in ("Marigot", "Cayenne (Guyane)", "Halifax (Nouvelle-Écosse)",
+                                  "Saint-Pierre (Saint-Pierre-et-Miquelon)", "Halifax (Nouvelle-Écosse)",
+                                  "Cayenne (Guyane)", "Papeete (Polynésie française)")]
+    rows = fs._as_stop_rows(rows)
+    assert fs._sea_between(rows, "Cayenne (Guyane)", "Papeete") == []
+    t = "Then, the catamaran sets sail again, heading for Papeete (French Polynesia)."
+    assert fs._cap_leg_faults(t, rows, "Cayenne (Guyane)", "Papeete (Polynésie française)") == []
