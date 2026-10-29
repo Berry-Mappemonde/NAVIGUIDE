@@ -263,7 +263,7 @@ def test_nano_tier_uses_exact_catalog_id(monkeypatch):
     assert "nano" in llm_budget.TIERS
     assert llm_budget.DEFAULT_MODELS["nano"] == "nvidia/Nemotron-3_5-Lightning"
     assert llm_budget.model_for("nano") == "nvidia/Nemotron-3_5-Lightning"
-    assert llm_budget.source_for("nano") == "nemotron-nano"
+    assert llm_budget.source_for("nano") == "nemotron-lightning"
     assert llm_budget.PRICES_PER_M["nano"] == (0.06, 0.24)
     assert llm_budget.estimate_usd("nano", 1_000_000, 0) == 0.06
     assert llm_budget.estimate_usd("nano", 0, 1_000_000) == 0.24

@@ -148,7 +148,7 @@ DEFAULT_MAX_TOKENS = {
 }
 
 SOURCE_FOR_TIER = {
-    "nano": "nemotron-nano",
+    "nano": "nemotron-lightning",  # Nano 30B retiré : le palier sert Lightning 3.5
     "fast": "nemotron-lightning",
     "write": "nemotron-super-vl",
     "deep": "nemotron-ultra",

@@ -1793,7 +1793,7 @@ def test_nano_call_stays_on_eu_host(monkeypatch):
     result = asyncio.run(run())
     text, source = result
     assert text == "Le quai reste calme."
-    assert source == "nemotron-nano"
+    assert source == "nemotron-lightning"
     assert result.model == NANO_ID
     assert result.tier == "nano"
     assert len(seen) == 1
