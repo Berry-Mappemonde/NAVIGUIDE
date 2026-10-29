@@ -384,7 +384,7 @@ _COAST_GEO = (
     (re.compile(r"cascais|lisboa|lisbon|peniche|sines", re.I), ("le Portugal", "Portugal", "coast")),
     (re.compile(r"tanger|tangier|algeciras|ceuta|europa point|^gibraltar$", re.I), ("le détroit de Gibraltar", "the Strait of Gibraltar", "strait")),
     (re.compile(r"porto torres|cagliari|olbia|alghero", re.I), ("la Sardaigne", "Sardinia", "island")),
-    (re.compile(r"^calvi$|bastia|bonifacio|porto-vecchio", re.I), ("la Corse", "Corsica", "island")),
+    (re.compile(r"^calvi$|bastia|bonifacio|porto-vecchio|rousse", re.I), ("la Corse", "Corsica", "island")),
     (re.compile(r"almer[ií]a|motril|m[aá]laga|cartagena", re.I), ("l'Andalousie", "Andalusia", "coast")),
     (re.compile(r"mah[oó]n|palma|ibiza|ciutadella", re.I), ("les Baléares", "the Balearic Islands", "island")),
 )
@@ -402,6 +402,7 @@ _COAST_PORT_SHORT = (
     (re.compile(r"mah[oó]n", re.I), "Mahón"),
     (re.compile(r"porto torres", re.I), "Porto Torres"),
     (re.compile(r"\bcalvi\b", re.I), "Calvi"),
+    (re.compile(r"rousse", re.I), "L'Île-Rousse"),
     (re.compile(r"bastia", re.I), "Bastia"),
     (re.compile(r"porto[- ]?vecchio", re.I), "Porto-Vecchio"),
     (re.compile(r"bonifacio", re.I), "Bonifacio"),
@@ -625,6 +626,20 @@ def _moment_near_named_place(change: dict, clock: dict | None, marks: list | Non
     return d is not None and d <= 30.0
 
 
+def _marina_title_matches_coast(marina_name: str, coast_place: str) -> bool:
+    """« Degrad Des Cannes » (coast) vs titres marina du stock — pas sous-chaîne « Pierre »."""
+    if same_stop(marina_name, coast_place):
+        return True
+    stripped = re.sub(
+        r"^(?:marina|port)\s+(?:de\s+l['’]|de\s+)?",
+        "",
+        (marina_name or "").strip(),
+        flags=re.I,
+    )
+    stripped = re.sub(r"^de\s+", "", stripped.strip(), flags=re.I)
+    return same_stop(stripped, coast_place)
+
+
 def _coast_is_arrival(
     change: dict, dest_name: str, items: list | None, dest: dict | None, lang: str,
 ) -> bool:
@@ -643,7 +658,21 @@ def _coast_is_arrival(
         return True
     for item in items or []:
         name, _ = _item_place(item)
-        if name and same_stop(place, name):
+        if name and (
+            same_stop(place, name)
+            or (
+                str(item.get("kind") or "") == "marina"
+                and _marina_title_matches_coast(name, place)
+            )
+        ):
+            return True
+    if str(change.get("kind") or "") == "coast" and dest_name and dest:
+        dist = _nm_between(dest.get("lat"), dest.get("lon"), change.get("lat"), change.get("lon"))
+        if (
+            dist is not None
+            and dist <= 12.0
+            and not _harbor_names_other_town(place, dest_name)
+        ):
             return True
     return False
 
@@ -954,6 +983,24 @@ def _coast_port_short(name: str) -> str:
 
 _GALICE_PAIR_RE = re.compile(r"camari[nñ]as|mux[ií]a", re.I)
 
+# Ordre le long de la trace (Ajaccio → détroit de Gibraltar) pour la Corse.
+_CORSE_TRACE_RANK = (
+    (re.compile(r"\bcalvi\b", re.I), 0),
+    (re.compile(r"rousse", re.I), 1),
+    (re.compile(r"bastia", re.I), 2),
+    (re.compile(r"porto[- ]?vecchio", re.I), 3),
+    (re.compile(r"bonifacio", re.I), 4),
+)
+
+
+def _coast_port_trace_rank(name: str, geo_fr: str) -> int:
+    if "corse" not in (geo_fr or "").casefold():
+        return 999
+    for rx, rank in _CORSE_TRACE_RANK:
+        if rx.search(str(name or "")):
+            return rank
+    return 500
+
 
 def _coast_port_is_listed(name: str) -> bool:
     raw = str(name or "").strip()
@@ -976,6 +1023,9 @@ def _prefer_coast_ports(ports: list[str], geo: dict | None) -> list[str]:
     if len(uniq) <= 2:
         return uniq
     geo_fr = ((geo or {}).get("fr") or "").casefold()
+    if "corse" in geo_fr:
+        uniq.sort(key=lambda p: (_coast_port_trace_rank(p, geo_fr), p.casefold()))
+        return uniq[:2]
     if "galice" in geo_fr:
         pair = [p for p in uniq if _GALICE_PAIR_RE.search(p)]
         if len(pair) >= 2:
@@ -4278,7 +4328,7 @@ def spoken_sea_days(days: Any, lang: str = "fr") -> str:
         d = float(days)
     except (TypeError, ValueError):
         return ""
-    if not math.isfinite(d) or d < 0:
+    if not math.isfinite(d) or d <= 0:
         return ""
     en = _en(lang)
     if d < 0.75:
@@ -9528,6 +9578,13 @@ def build_raw_from_moments(
                 same_stop(title, dest_name)
             ):
                 return
+            if str(change.get("kind") or "") == "coast" and dest_name:
+                leg_items = [
+                    c for c in flat
+                    if str(c.get("kind") or "") in {"marina", "port", "poe"}
+                ]
+                if _coast_is_arrival(change, dest_name, leg_items, dest, lang):
+                    return
             place = change_place_name(change) or title
             geo = change.get("geo") if isinstance(change.get("geo"), dict) else None
             if geo and (geo.get("fr") or geo.get("en")):

@@ -49,11 +49,18 @@ def test_other_coasts_are_kept():
     assert not _coast_is_arrival(_coast("Saint-Denis"), "Saint-Gilles (La Réunion)", [], None, "fr")
 
 
-def test_coast_pierre_is_not_saint_pierre_arrival():
-    """W11 : « Pierre » ne doit pas être traité comme l'arrivée à Saint-Pierre."""
+def test_w11_pierre_is_not_saint_pierre_arrival_echo():
+    """W11 : « Pierre » (côte) ≠ arrivée à Saint-Pierre (repli distance ≤ 12 nm)."""
+    dest = {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "lat": 46.78, "lon": -56.18}
     assert not _coast_is_arrival(
-        _coast("Pierre"), "Saint-Pierre (Saint-Pierre-et-Miquelon)", [], None, "fr",
+        {"kind": "coast", "title": "Pierre", "fact": "Pierre", "lat": 46.5, "lon": -56.0},
+        "Saint-Pierre (Saint-Pierre-et-Miquelon)", [], dest, "fr",
     )
+
+
+def test_w11_spoken_sea_days_zero_is_empty():
+    assert spoken_sea_days(0, "fr") == ""
+    assert spoken_sea_days(0, "en") == ""
 
 
 def test_w10_build_raw_oct29_no_longe_arrival_or_equator_outside_band():
