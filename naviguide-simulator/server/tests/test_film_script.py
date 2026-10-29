@@ -4849,7 +4849,7 @@ def test_ed1_write_window_follows_budget_and_accepts_integral():
 
 
 def test_ed1_judge_closed_serves_super_without_ultra(monkeypatch):
-    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")  # Ultra fermé : chemin Super seul
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     assert film_ultra_open() is False
     plan = {
@@ -4960,7 +4960,7 @@ def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
 
 def test_ed2_mixed_nim_chapters_keep_nim_when_last_is_super(monkeypatch):
     """Deux chapitres NIM puis un Super : la source servie reste le repli, pas nemotron-super."""
-    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")  # Ultra fermé : chemin Super seul
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     assert film_ultra_open() is False
     plan = {
@@ -5839,7 +5839,7 @@ def test_pacific_chapter_does_not_announce_mata_utu_or_noumea():
 
 def test_write_chain_does_not_store_a_skipped_stop(monkeypatch):
     """Le contrôle local refuse avant l'appel de relecture."""
-    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")  # Ultra fermé : chemin Super seul
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     from film_script import nemotron_reread_report
 
@@ -5876,7 +5876,7 @@ def test_write_chain_does_not_store_a_skipped_stop(monkeypatch):
 
 def test_write_chain_stores_nothing_when_the_reread_says_no(monkeypatch):
     """Texte honnête, relecture simulée qui refuse : rien en stock, aucun appel réseau."""
-    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")  # Ultra fermé : chemin Super seul
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     plan = {
         "chapters": [{

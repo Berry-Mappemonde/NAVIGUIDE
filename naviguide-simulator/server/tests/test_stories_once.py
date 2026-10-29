@@ -158,7 +158,9 @@ def test_cached_story_makes_no_call_and_a_second_run_is_refused():
 def test_run_stops_at_the_cap_and_resumes_without_repaying(monkeypatch):
     from film_script import film_ultra_open
 
-    assert film_ultra_open() is False
+    # Porte Ultra du film ouverte par défaut (écart n° 44) : le job stories_once
+    # garde ses propres freins (plafond, reprise sans repayer), indépendants d'elle.
+    assert film_ultra_open() is True
     stories_once.set_inventory(_two())
     calls: list = []
     stories_once.set_cascade(_fake(calls))
