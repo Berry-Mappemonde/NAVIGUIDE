@@ -2435,54 +2435,6 @@ def kick_worker() -> None:
     ).start()
 
 
-_LAST_REPAIR_AT = None
-
-
-def _repair_due() -> bool:
-    """Même plancher que les réveils (NAVIGUIDE_FILL_NUDGE_MIN_S), fenêtre distincte."""
-    global _LAST_REPAIR_AT
-    gap = _nudge_min_s()
-    now = time.monotonic()
-    with _LOCK:
-        if gap and _LAST_REPAIR_AT is not None and now - _LAST_REPAIR_AT < gap:
-            return False
-        _LAST_REPAIR_AT = now
-        return True
-
-
-def today_climo_missing(now: Optional[datetime] = None) -> bool:
-    """Vrai si la clé climo du jour UTC n'est pas rangée (une entrée d'hier ne compte pas)."""
-    voy = _load_official()
-    if voy is None:
-        return False
-    st = get_store()
-    when = now or st._now()
-    hit = st.get("climo", st.family_key("climo", voy, when))
-    return not (hit and hit.get("payload") is not None)
-
-
-def repair_worker() -> None:
-    """Réparation bon marché sur le chemin visiteur (PUT anonyme).
-
-    Au plus une fois par fenêtre : relance le remplisseur s'il est mort, et ne le
-    réveille que si le climo du jour manque (nouveau jour UTC). Jamais de calcul ici.
-    """
-    if not worker_enabled():
-        return
-    if not _repair_due():
-        return
-    missing = today_climo_missing()
-    if WORKER_MODE != "thread":
-        ensure_fill_process()
-        if missing:
-            nudge_fill_process()
-        return
-    if missing:
-        kick_worker()
-    else:
-        start_worker()
-
-
 def _kick_refresh() -> None:
     refresh_missing()
     _force_film_once()
@@ -2503,10 +2455,9 @@ def _worker_loop() -> None:
 
 
 def reset_worker_flag() -> None:
-    global _WORKER_STARTED, _FILM_FORCED, _LAST_NUDGE_AT, _LAST_REPAIR_AT
+    global _WORKER_STARTED, _FILM_FORCED, _LAST_NUDGE_AT
     _WORKER_STARTED = False
     _FILM_FORCED = False
-    _LAST_REPAIR_AT = None
     _LAST_NUDGE_AT = None
 
 
@@ -2854,125 +2805,6 @@ def _put_written_variant(body: dict, lang: str, seconds: int, plan: dict, when: 
     return new_body
 
 
-async def attach_film_web_context(
-    *,
-    now: Optional[datetime] = None,
-    client=None,
-) -> Optional[dict]:
-    """Clic Rédigé : provenance Tavily du dernier port du film, rangée dans le snapshot.
-
-    Une recherche par port et par jour au plus (cache de port_web_context,
-    plafond `llm_budget.allow_tavily`). Ni clé, ni plafond, ni résultat :
-    rien n'est rangé et le film ne montre aucune source. Jamais au GET.
-    """
-    try:
-        import film_web_context  # noqa: PLC0415
-
-        hit = get("film")
-        body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
-        if not isinstance(body, dict):
-            return None
-        port = _stored_last_stop()
-        ctx = await film_web_context.fetch_for_port(port, now=now, client=client)
-        if ctx is None:
-            return film_web_context.public(body.get("webContext"))
-        if body.get("webContext") != ctx:
-            new_body = dict(body)
-            new_body["webContext"] = ctx
-            put("film", new_body, hit.get("key"))
-        return ctx
-    except Exception as exc:  # la source web ne bloque jamais le film
-        log.warning("film web context: %s", exc)
-        return None
-
-
-def _with_film_web_context(out: dict, body: Optional[dict]) -> dict:
-    """Champ `webContext` (+ `webSources`) servi avec le film, s'il est rangé."""
-    import film_web_context  # noqa: PLC0415
-
-    ctx = film_web_context.public((body or {}).get("webContext"))
-    if ctx:
-        out["webContext"] = ctx
-        out["webSources"] = [dict(s) for s in ctx["sources"]]
-    return out
-
-
-# Idée n° 3 (IDEATION-CRITERES-0615) : reçu « Comment ce film a été fait ».
-# Seulement ce que le serveur a réellement compté pendant la chaîne du clic :
-# chaque appel de la cascade (palier, source, id de modèle, cache), les phrases
-# réécrites ou retombées sur les règles, la relecture et ses défauts.
-_RECEIPT_STAT_INTS = ("rewritten", "fallen", "super", "ultra_edit", "ultra_judge", "lightning")
-
-
-def _receipt_recorder(cascade_fn):
-    calls: list[dict] = []
-
-    async def recorded(*args, **kwargs):
-        result = await cascade_fn(*args, **kwargs)
-        try:
-            source = str(result[1] or "")
-        except Exception:
-            source = ""
-        calls.append({
-            "tier": str(getattr(result, "tier", "") or kwargs.get("tier") or ""),
-            "source": source,
-            "model": str(getattr(result, "model", "") or ""),
-            "cache": bool(getattr(result, "cache_hit", False)) or source == "cache",
-        })
-        return result
-
-    return recorded, calls
-
-
-def film_receipt(calls: list[dict], stats: Optional[dict], when: datetime, base: Optional[dict] = None) -> dict:
-    """Reçu public du rédigé : compteurs mesurés, jamais un chiffre estimé ni inventé."""
-    st = stats if isinstance(stats, dict) else {}
-    prev = base if isinstance(base, dict) else {}
-    models: dict[tuple, dict] = {}
-    for row in prev.get("models") or []:
-        if isinstance(row, dict):
-            k = (row.get("model") or "", row.get("source") or "", row.get("tier") or "")
-            models[k] = dict(row)
-    llm = int(prev.get("llmCalls") or 0)
-    cached = int(prev.get("cacheHits") or 0)
-    rules = int(prev.get("ruleFallbacks") or 0)
-    for c in calls:
-        src = c.get("source") or ""
-        if src in {"rules", "budget"}:
-            rules += 1
-            continue
-        if c.get("cache"):
-            cached += 1
-        else:
-            llm += 1
-        k = (c.get("model") or "", src, c.get("tier") or "")
-        row = models.setdefault(k, {"model": k[0], "source": k[1], "tier": k[2], "calls": 0, "cached": 0})
-        row["calls"] += 1
-        if c.get("cache"):
-            row["cached"] = int(row.get("cached") or 0) + 1
-    out: dict[str, Any] = {k: v for k, v in prev.items() if k not in {"models", "llmCalls", "cacheHits", "ruleFallbacks", "at"}}
-    out.update({
-        "llmCalls": llm,
-        "cacheHits": cached,
-        "ruleFallbacks": rules,
-        "models": sorted(models.values(), key=lambda r: (-int(r["calls"]), r["model"], r["source"])),
-        "at": _iso(when),
-    })
-    for key in _RECEIPT_STAT_INTS:
-        if isinstance(st.get(key), (int, bool)):
-            out[key] = int(st[key])
-    for key in ("reread", "reread_en"):
-        if st.get(key) in {"pass", "fail"}:
-            out[key] = st[key]
-    if isinstance(st.get("reviewed"), bool):
-        out["reviewed"] = st["reviewed"]
-    if "faults" in st:
-        out["faults"] = len(st.get("faults") or [])
-    if isinstance(st.get("judge_failed"), list):
-        out["judgeFailed"] = len(st["judge_failed"])
-    return out
-
-
 async def write_film_on_click(
     lang: str = "fr",
     seconds: int = 150,
@@ -2980,14 +2812,12 @@ async def write_film_on_click(
     cascade=None,
     now: Optional[datetime] = None,
 ) -> dict:
-    """Chaîne Super → Ultra? → Lightning, une fois par (langue, durée). Au clic seulement."""
+    """Chaîne Super écrit FR et EN en parallèle, puis Ultra édite/juge les deux. Au clic seulement."""
     import llm_budget  # noqa: PLC0415
-    from film_script import translate_written_plan, write_film_chain  # noqa: PLC0415
+    from film_script import write_film_chain  # noqa: PLC0415
 
     lg = (lang or "fr")[:2].lower()
     secs = int(seconds or 0)
-    # Tavily au clic Rédigé (règle hackathon : appel à l'exécution, visible dans le film).
-    await attach_film_web_context(now=now)
     cached = serve_film(lang=lg, seconds=secs, style="written")
     if cached.get("hasWritten") and cached.get("status") == READY:
         return cached
@@ -3011,22 +2841,6 @@ async def write_film_on_click(
     if cascade_fn is None:
         from story_cascade import cascade_text  # noqa: PLC0415
         cascade_fn = cascade_text
-    cascade_fn, receipt_calls = _receipt_recorder(cascade_fn)
-
-    existing_fr = _pick_written_plan(body, "fr", secs)
-    if existing_fr and lg == "en":
-        if not llm_budget.allow("fast"):
-            return serve_film(lang=lg, seconds=secs, style="written")
-        en_raw = _raw_plan_for(body, "en", secs) or fr_raw
-        en_plan = await translate_written_plan(existing_fr, en_raw, cascade=cascade_fn)
-        if not en_plan:
-            return serve_film(lang=lg, seconds=secs, style="written")
-        en_plan = {**en_plan, "receipt": film_receipt(
-            receipt_calls, {"lightning": 1}, when, base=existing_fr.get("receipt"),
-        )}
-        body = _put_written_variant(body, "en", secs, en_plan, when, last_stop)
-        put("film", body, hit.get("key"))
-        return serve_film(lang=lg, seconds=secs, style="written")
 
     if not llm_budget.allow("write"):
         _log_fill_written(f"written clic {lg} {secs}s : plafond write — brut")
@@ -3034,18 +2848,22 @@ async def write_film_on_click(
 
     fr_plan, en_plan, stats = await write_film_chain(fr_raw, seconds=secs, cascade=cascade_fn)
     if not isinstance(fr_plan, dict) or not (fr_plan.get("chapters") or []):
-        _log_fill_written(f"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})")
+        faults = ",".join(str(x) for x in (stats.get("faults") or [])) or "none"
+        write_stats = stats.get("writeStats") if isinstance(stats.get("writeStats"), dict) else {}
+        _log_fill_written(
+            f"written clic {lg} {secs}s : pas de rédigé "
+            f"reason={stats.get('reason') or 'unknown'} source={stats.get('source') or 'rules'} "
+            f"reread={stats.get('reread') or 'not-run'} reread_en={stats.get('reread_en') or 'n/a'} faults={faults} "
+            f"rewritten={write_stats.get('rewritten', 'n/a')} fallen={write_stats.get('fallen', 'n/a')}"
+        )
         return serve_film(lang=lg, seconds=secs, style="written")
-    receipt = film_receipt(receipt_calls, stats, when)
-    fr_plan = {**fr_plan, "receipt": receipt}
     body = _put_written_variant(body, "fr", secs, fr_plan, when, last_stop)
     if isinstance(en_plan, dict) and (en_plan.get("chapters") or []):
-        en_plan = {**en_plan, "receipt": receipt}
         body = _put_written_variant(body, "en", secs, en_plan, when, last_stop)
     put("film", body, hit.get("key"))
     _log_fill_written(
         f"written clic {lg} {secs}s : source={stats.get('source')} "
-        f"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} lightning={stats.get('lightning')}"
+        f"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} reread={stats.get('reread') or 'n/a'} reread_en={stats.get('reread_en') or 'n/a'}"
     )
     return serve_film(lang=lg, seconds=secs, style="written")
 
@@ -3063,6 +2881,41 @@ def _repair_served_hop(plan: Optional[dict], lang: str, voy: Optional[dict]) -> 
     except Exception:
         review = None
     return repair_side_hop_plan(plan, clock=clock, marks=marks, review=review, lang=lang)
+
+
+def _sanitize_served_film_plan(plan: dict, lang: str = "fr") -> dict:
+    """Repair a stored legacy snapshot on read, without mutating its cache entry."""
+    chapters = []
+    for source in (plan.get("chapters") or []):
+        if not isinstance(source, dict):
+            continue
+        chapter = dict(source)
+        chapter["anchors"] = [
+            dict(anchor) for anchor in (source.get("anchors") or [])
+            if isinstance(anchor, dict)
+        ]
+        chapter["events"] = []
+        for source_event in (source.get("events") or []):
+            if not isinstance(source_event, dict):
+                continue
+            event = dict(source_event)
+            if isinstance(event.get("card"), dict):
+                event["card"] = dict(event["card"])
+            chapter["events"].append(event)
+        chapters.append(chapter)
+    safe = {**plan, "chapters": chapters}
+    from film_script import (  # noqa: PLC0415
+        _drop_stale_dated_sentences,
+        _reconcile_film_indices,
+        film_estimated_seconds,
+        script_chars,
+    )
+
+    _drop_stale_dated_sentences(safe["chapters"], lang=lang)
+    _reconcile_film_indices(safe["chapters"], lang=lang)
+    safe["chars"] = script_chars(safe["chapters"])
+    safe["estimatedSeconds"] = film_estimated_seconds(safe["chars"])
+    return safe
 
 
 def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
@@ -3104,6 +2957,7 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
         wplan = _pick_written_plan(body, lg, int(seconds or 0))
         if isinstance(wplan, dict) and (wplan.get("chapters") or []):
             wplan = _repair_served_hop(wplan, lg, voy)
+            wplan = _sanitize_served_film_plan(wplan, lg)
             out = _with_film_estimate(wplan)
             if isinstance(lang_est, dict) and lang_est:
                 out["estimates"] = lang_est
@@ -3121,14 +2975,11 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
                 out["model"] = wplan["model"]
             if wplan.get("generated_at"):
                 out["generated_at"] = wplan["generated_at"]
-            if isinstance(wplan.get("receipt"), dict):
-                out["receipt"] = wplan["receipt"]
             out["writtenAt"] = wplan.get("writtenAt")
             out["style"] = "written"
-            _with_film_web_context(out, body)
             out.update(_stamp(hit))
             return out
-    out = _with_film_estimate(_repair_served_hop(plan, lg, voy))
+    out = _with_film_estimate(_sanitize_served_film_plan(_repair_served_hop(plan, lg, voy), lg))
     if isinstance(lang_est, dict) and lang_est:
         out["estimates"] = lang_est
     out["status"] = READY
@@ -3138,7 +2989,6 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
     rev = body.get("film_script_rev")
     if rev:
         out["film_script_rev"] = rev
-    _with_film_web_context(out, body)
     out.update(_stamp(hit))
     return out
 
