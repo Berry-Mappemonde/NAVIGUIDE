@@ -3044,13 +3044,6 @@ async def start_film_write(
         cascade_fn = cascade_text
     cascade_fn, receipt_calls = _receipt_recorder(cascade_fn)
 
-    existing_fr = _pick_written_plan(body, "fr", secs)
-    if existing_fr and lg == "en":
-        if not llm_budget.allow("fast"):
-            return serve_film(lang=lg, seconds=secs, style="written")
-        # EN is now generated in parallel in write_film_chain, just serve cached
-        return serve_film(lang=lg, seconds=secs, style="written")
-
     if not llm_budget.allow("write"):
         _log_fill_written(f"written clic {lg} {secs}s : plafond write — brut")
         return serve_film(lang=lg, seconds=secs, style="written")
@@ -3138,13 +3131,6 @@ async def write_film_on_click(
         from story_cascade import cascade_text  # noqa: PLC0415
         cascade_fn = cascade_text
     cascade_fn, receipt_calls = _receipt_recorder(cascade_fn)
-
-    existing_fr = _pick_written_plan(body, "fr", secs)
-    if existing_fr and lg == "en":
-        if not llm_budget.allow("fast"):
-            return serve_film(lang=lg, seconds=secs, style="written")
-        # EN is now generated in parallel in write_film_chain, just serve cached
-        return serve_film(lang=lg, seconds=secs, style="written")
 
     if not llm_budget.allow("write"):
         _log_fill_written(f"written clic {lg} {secs}s : plafond write — brut")
