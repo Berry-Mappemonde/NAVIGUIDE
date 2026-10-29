@@ -14,8 +14,8 @@ Défauts de `server/llm_budget.py:116-137`, test `server/tests/test_llm_budget.p
 |---|---|---|---|
 | `fast` | `nvidia/Nemotron-3_5-Lightning` | `nemotron-lightning` | `https://api.tokenfactory.nebius.com/v1` (`server/story_cascade.py:33-36`, `server/story_cascade.py:581-590`) |
 | `write` | `nvidia/Nemotron-3.5-Super-VL` | `nemotron-super-vl` | même hôte que Lightning (`server/story_cascade.py:581-590`) |
-| `deep` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | `https://api.tokenfactory.us-central1.nebius.com/v1` (`server/story_cascade.py:37-41`, `server/story_cascade.py:585-589`) |
-| `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | même hôte que `deep` |
+| `deep` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | `https://api.tokenfactory.nebius.com/v1` (`server/story_cascade.py:37-41`, `server/story_cascade.py:585-589`) |
+| `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | même hôte que `deep` (base EU) |
 
 Le test `server/tests/test_story_cascade.py:1020-1032` exige `us-central1` pour `deep`, et l’interdit pour `fast` et pour `write`.
 
