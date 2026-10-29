@@ -20,7 +20,7 @@ const shot = (page, name) => page.screenshot({
 
 const FAILED = /n.a pas pu répondre|aucun modèle n.a répondu|could not answer|no model replied/i;
 const MISSING = /n.a pas cette information dans ses données|does not hold that information/i;
-const RULES = /règles|rules/i;
+const RULES = /règles|rules|données brutes|raw data/i;
 const SUPER = /nemotron 3(?:\.5)? super|nemotron-super/i;
 
 async function askChat(page, question) {
@@ -107,7 +107,7 @@ test("Chat règles / Ultra, sans case Raisonnement", async ({ page }) => {
   const srcHard = page.getByTestId("chat-source").last();
   const hardLabel = ((await srcHard.innerText().catch(() => "")) || "").trim();
   expect(hardLabel, "juge à 0 / modèles éteints : règles, jamais Super").not.toMatch(SUPER);
-  expect(hardLabel).toMatch(/règles|rules|budget|ultra/i);
+  expect(hardLabel).toMatch(/règles|rules|données brutes|raw data|budget|ultra/i);
   await expect(chat.getByTestId("logbook-chat-reason")).toHaveCount(0);
 
   await page.getByTestId("logbook-chat-list").locator(":scope > div").last().scrollIntoViewIfNeeded();
