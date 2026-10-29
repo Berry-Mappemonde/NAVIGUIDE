@@ -441,6 +441,22 @@
       "note": "MRGID 8462. Distinct du Guyana."
     },
     {
+      "id": "ns",
+      "iso": "NS",
+      "mrgid": 48945,
+      "territory": "nouvelle_ecosse",
+      "aliases": ["nova scotia", "nouvelle[- ]écosse"],
+      "fr": "Nouvelle-Écosse",
+      "en": "Nova Scotia",
+      "adj_fr": "néo-écossaises",
+      "adj_en": "Nova Scotian",
+      "prep_fr": "de Nouvelle-Écosse",
+      "shared": null,
+      "island": null,
+      "kind": "territory",
+      "note": "MRGID 48945. Ajouté le 29/10/2026 (océan Indien / Pacifique : plus de démonyme anglais dans le récit FR)."
+    },
+    {
       "id": "pf",
       "iso": "PF",
       "mrgid": 8440,
