@@ -50,7 +50,6 @@ def test_story_tier_ultra_for_escales_and_alerts():
 def test_default_cascade_is_token_factory_not_tavily():
     src = Path(__file__).resolve().parents[1].joinpath("story_cascade.py").read_text()
     assert "api.tokenfactory.nebius.com" in src
-    assert "api.tokenfactory.us-central1.nebius.com" in src
     assert "NAVIGUIDE_LLM_PROVIDERS" in src
     assert "integrate.api.nvidia.com" in src  # NIM : 2e maillon
     assert "openrouter.ai" in src
@@ -1027,9 +1026,9 @@ def test_ultra_payload_uses_cookbook_host_and_budget():
     assert "extra_body" not in payload
     assert payload["max_tokens"] == llm_budget.max_tokens_for("deep")
     assert payload["max_tokens"] == 2048
-    assert "us-central1" in story_cascade._tf_url("deep")
-    assert "us-central1" not in story_cascade._tf_url("fast")
-    assert "us-central1" not in story_cascade._tf_url("write")
+    assert "nebius.com" in story_cascade._tf_url("deep")
+    assert "nebius.com" not in story_cascade._tf_url("fast")
+    assert "nebius.com" not in story_cascade._tf_url("write")
 
 
 def test_tokenfactory_http_error_includes_body():

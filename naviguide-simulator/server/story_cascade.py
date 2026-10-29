@@ -44,7 +44,7 @@ TOKENFACTORY_EU_BASE = (
 # Cookbook Ultra: https://api.tokenfactory.us-central1.nebius.com/v1/
 TOKENFACTORY_ULTRA_BASE = (
     os.environ.get("NAVIGUIDE_TF_BASE_ULTRA")
-    or "https://api.tokenfactory.us-central1.nebius.com/v1"
+    or "https://api.tokenfactory.nebius.com/v1"
 ).rstrip("/")
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -717,7 +717,7 @@ def tidy_story(
 
 def _tf_url(tier: str) -> str:
     """Nano is pinned to the EU host. Lightning / Super stay on the default
-    TF host. Ultra uses us-central1 (Nebius cookbook) unless
+    TF host. Ultra uses EU host (Nebius Token Factory) unless
     NAVIGUIDE_TF_BASE_ULTRA is set."""
     t = llm_budget.normalize_tier(tier)
     if t in {"deep", "judge"}:
