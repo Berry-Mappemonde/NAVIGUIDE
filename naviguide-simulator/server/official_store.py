@@ -2976,6 +2976,7 @@ def film_receipt(calls: list[dict], stats: Optional[dict], when: datetime, base:
 
 # Film async writing — background task per (lang, seconds) key
 _FILM_WRITE_TASKS: dict[tuple[str, int], asyncio.Task] = {}
+_FILM_WRITE_FAILED: set[tuple[str, int], asyncio.Task] = {}
 
 
 def film_write_running(lang: str, seconds: int) -> bool:
@@ -3060,6 +3061,7 @@ async def start_film_write(
             fr_plan, en_plan, stats = await write_film_chain(fr_raw, seconds=secs, cascade=cascade_fn)
             if not isinstance(fr_plan, dict) or not (fr_plan.get("chapters") or []):
                 _log_fill_written(f"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})")
+                _FILM_WRITE_FAILED.add(key)
                 return
             receipt = film_receipt(receipt_calls, stats, when)
             fr_plan = {**fr_plan, "receipt": receipt}
@@ -3079,6 +3081,7 @@ async def start_film_write(
             )
         except Exception as exc:
             log.exception("Film write task failed for %s %ds", lg, secs)
+            _FILM_WRITE_FAILED.add(key)
         finally:
             # Clean up task reference
             _FILM_WRITE_TASKS.pop(key, None)
@@ -3181,6 +3184,16 @@ def _repair_served_hop(plan: Optional[dict], lang: str, voy: Optional[dict]) -> 
 
 
 def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
+    # Check if a write task failed for this key
+    lg = (lang or "fr")[:2].lower()
+    secs = int(seconds or 0)
+    if (lg, secs) in _FILM_WRITE_FAILED:
+        return {
+            "status": "failed",
+            "hasWritten": False,
+            "style": "written",
+        }
+
     extra = {
         "chapters": [], "source": "rules", "chars": 0,
         "targetSeconds": seconds, "hasWritten": False,

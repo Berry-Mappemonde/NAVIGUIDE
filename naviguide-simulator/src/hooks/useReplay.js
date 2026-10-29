@@ -2339,6 +2339,11 @@ export function useReplay({
 
         const status = data?.status?.toLowerCase();
         if (status === "preparing") continue;
+        if (status === "failed") {
+          setFilmWriteError(true);
+          setFilmWriting(false);
+          return "stop";
+        }
 
         const resolved = resolveServedFilm(data, "written");
         if (resolved.hasWritten) {
