@@ -11157,6 +11157,8 @@ async def translate_written_plan(
             out_w = set(re.findall(r"[^\W\d_]{3,}", (text or "").casefold()))
             if src_w and len(src_w & out_w) / len(src_w) > 0.6:
                 fb = max(fb, 1)  # Lightning a rendu le français
+            if re.search(r"\bfortnight\b", text or "", re.I) and "quinzaine" not in src.casefold():
+                fb = max(fb, 1)  # « une dizaine » n'est pas « a fortnight »
             if len(_sentences(speak_film_text(text, "en"))) < len(_sentences(src)):
                 fb = max(fb, 1)  # phrase manquante : le garde-fou recollerait le français
             if rw > 0 and fb == 0:

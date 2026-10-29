@@ -6379,3 +6379,16 @@ def test_truncated_reread_is_asked_again_shorter():
     stops = [{"name": "A"}, {"name": "B"}]
     ok, _ = asyncio.run(fs.reread_before_store(plan, stops, cascade=casc, lang="fr"))
     assert ok and len(seen) == 2 and seen[0] != seen[1]
+
+
+def test_fortnight_only_translates_quinzaine():
+    import asyncio
+    import film_script as fs
+    raw_ch = {"id": "c", "text": "Le 17 octobre, une dizaine de jours de mer.", "anchors": []}
+    answers = iter(["On October 17, a fortnight at sea.", "On October 17, about ten days at sea."])
+
+    async def tr(system, user, **kw):
+        return next(answers), "nemotron-lightning"
+
+    en = asyncio.run(fs.translate_written_plan({"chapters": [raw_ch]}, {"chapters": [raw_ch]}, cascade=tr))
+    assert en and "ten days" in en["chapters"][0]["text"]
