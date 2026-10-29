@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Compass, Play, X } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
-import { getDemoSteps } from "./demoWalkthrough.js";
+import { describeModelRoles, getDemoSteps } from "./demoWalkthrough.js";
+
+const API_URL = import.meta.env?.VITE_API_URL ?? "";
+
+async function defaultFetchStatus() {
+  const r = await fetch(`${API_URL}/ici/warm/status`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
 
 export { getDemoSteps } from "./demoWalkthrough.js";
 
@@ -17,6 +25,8 @@ export function DemoWalkthrough({
   customRoute = false,
   hidden = false,
   isLightMode = false,
+  autoStart = false,
+  fetchStatus = defaultFetchStatus,
   onStepChange,
   onPlayReplay,
   onClose,
@@ -29,6 +39,9 @@ export function DemoWalkthrough({
   const headingRef = useRef(null);
   const chipRef = useRef(null);
   const returnFocusRef = useRef(false);
+  const autoStartedRef = useRef(false);
+  // Étape « Qui fait quoi » : une lecture de /ici/warm/status par ouverture de la visite.
+  const [status, setStatus] = useState({ state: "idle", llm: null });
   const replayState = replayActive ? "playing" : replayReady ? "ready" : "unavailable";
   const steps = getDemoSteps(t, { replayState, custom: customRoute });
   const step = steps[index];
@@ -71,14 +84,42 @@ export function DemoWalkthrough({
     return () => window.removeEventListener("keydown", onEsc, true);
   }, [open, hidden]);
 
-  if (hidden) return null;
+  // La réponse d'une ancienne ouverture (session dépassée) est ignorée.
+  const sessionRef = useRef(0);
+  useEffect(() => {
+    if (!open || step?.id !== "models" || status.state !== "idle") return;
+    const session = sessionRef.current;
+    setStatus({ state: "loading", llm: null });
+    Promise.resolve()
+      .then(() => fetchStatus())
+      .then((data) => {
+        if (session !== sessionRef.current) return;
+        const llm = data && data.llm && typeof data.llm === "object" ? data.llm : null;
+        setStatus({ state: llm ? "ready" : "error", llm });
+      })
+      .catch(() => { if (session === sessionRef.current) setStatus({ state: "error", llm: null }); });
+  }, [open, step?.id, status.state, fetchStatus]);
 
   const start = () => {
     setIndex(0);
     setExpanded(true);
+    sessionRef.current += 1;
+    setStatus({ state: "idle", llm: null });
     setOpen(true);
     onStepChange?.(steps[0].action);
   };
+  const startRef = useRef(start);
+  startRef.current = start;
+
+  // Lien profond `?tour=1` : la visite s'ouvre une fois au chargement.
+  useEffect(() => {
+    if (!autoStart || autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    startRef.current();
+  }, [autoStart]);
+
+  if (hidden) return null;
+
   const goTo = (nextIndex) => {
     const next = Math.max(0, Math.min(total - 1, nextIndex));
     setIndex(next);
@@ -177,6 +218,27 @@ export function DemoWalkthrough({
       </p>
       <h2 ref={headingRef} tabIndex={-1} data-testid="demo-walkthrough-title" className="text-base font-semibold leading-snug outline-none">{step.title}</h2>
       <p data-testid="demo-walkthrough-body" className={`mt-2 text-sm leading-relaxed ${bodyText}`}>{step.body}</p>
+
+      {step.id === "models" ? (() => {
+        const roles = status.state === "loading" || status.state === "idle" ? null : describeModelRoles(status.llm, t);
+        return (
+          <div data-testid="demo-models" data-live={roles?.live ? "true" : "false"} className={`mt-3 rounded-xl border p-3 text-xs leading-relaxed ${light ? "border-slate-200 bg-slate-50 text-slate-700" : "border-white/10 bg-white/5 text-white/80"}`}>
+            {roles ? (
+              <>
+                <ul className="space-y-1.5">
+                  {roles.rows.map((r) => (
+                    <li key={r.id} data-testid={`demo-models-${r.id}`}>{r.text}</li>
+                  ))}
+                </ul>
+                {roles.today ? <p data-testid="demo-models-today" className={`mt-2 ${muted}`}>{roles.today}</p> : null}
+                {!roles.live ? <p data-testid="demo-models-default" className={`mt-2 ${muted}`}>{t("demoModelsDefault")}</p> : null}
+              </>
+            ) : (
+              <p className={muted}>{t("demoModelsLoading")}</p>
+            )}
+          </div>
+        );
+      })() : null}
 
       {step.id === "replay" ? (
         <div className={`mt-4 rounded-xl border p-3 ${light ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5"}`}>

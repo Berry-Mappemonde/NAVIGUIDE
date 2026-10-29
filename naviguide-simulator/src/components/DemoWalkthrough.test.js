@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { DEMO_STEP_IDS, getDemoSteps } from "./demoWalkthrough.js";
+import {
+  DEMO_STEP_IDS, TOUR_DEFAULT_MODELS, describeModelRoles, getDemoSteps, modelDisplayName, wantsTourFromUrl,
+} from "./demoWalkthrough.js";
 import en from "../i18n/en.js";
 import fr from "../i18n/fr.js";
 
@@ -10,7 +12,7 @@ const tr = (dict) => (key, vars = {}) => Object.entries(vars).reduce(
 );
 
 describe("visite guidée des juges", () => {
-  it("7 étapes stables, chaque texte vient d'une clé demo* (fr et en)", () => {
+  it("8 étapes stables, chaque texte vient d'une clé demo* (fr et en)", () => {
     for (const dict of [en, fr]) {
       for (const opts of [{}, { custom: true }, { replayState: "ready" }, { replayState: "playing" }]) {
         const steps = getDemoSteps(tr(dict), opts);
@@ -69,5 +71,65 @@ describe("visite guidée des juges", () => {
     assert.equal(side.layers, "left");
     assert.equal(side.trace, "left");
     assert.equal(side.briefing, "right");
+  });
+
+  it("étape 2 « Qui fait quoi » : Nemotron, Token Factory et Tavily nommés (fr et en)", () => {
+    assert.equal(DEMO_STEP_IDS.length, 8);
+    assert.equal(DEMO_STEP_IDS[1], "models");
+    for (const dict of [en, fr]) {
+      const step = getDemoSteps(tr(dict)).find((s) => s.id === "models");
+      assert.ok(step, "étape models présente");
+      assert.match(step.body, /Nemotron/);
+      assert.match(step.body, /Nebius Token Factory/);
+      assert.match(dict.demoModelsTavily, /^Tavily/);
+      assert.equal(step.side, "right");
+    }
+    assert.match(en.demoModelsTitle, /^Who does what/);
+    assert.match(fr.demoModelsTitle, /^Qui fait quoi/);
+  });
+
+  it("statut en direct : noms lus dans configuredModels, compteurs du jour", () => {
+    const llm = {
+      configuredModels: {
+        nano: "nvidia/Nemotron-3_5-Lightning",
+        fast: "nvidia/Nemotron-3_5-Lightning",
+        write: "nvidia/Nemotron-3.5-Super-VL",
+        deep: "nvidia/Nemotron-3-Ultra-550b-a55b",
+        judge: "nvidia/Nemotron-3-Ultra-550b-a55b",
+      },
+      nano: { calls: 2 }, fast: { calls: 3 }, write: { calls: 1 }, deep: { calls: 0 }, judge: { calls: 4 },
+      tavily: { calls: 5, credits: 5 },
+    };
+    const out = describeModelRoles(llm, tr(en));
+    assert.equal(out.live, true);
+    assert.deepEqual(out.rows.map((r) => r.id), ["quick", "write", "deep", "tavily"]);
+    assert.match(out.rows[0].text, /^Nemotron 3\.5 Lightning: /);
+    assert.match(out.rows[1].text, /^Nemotron 3\.5 Super VL: writes the film/);
+    assert.match(out.rows[2].text, /^Nemotron 3 Ultra: edits and re-reads/);
+    assert.match(out.rows[3].text, /^Tavily: /);
+    assert.equal(out.today, "Today on this server: 10 Nemotron calls, 5 Tavily searches.");
+  });
+
+  it("override serveur : un id inconnu reste brut, deux modèles d'un même rôle sont tous deux cités", () => {
+    const out = describeModelRoles({ configuredModels: { nano: "nvidia/nemotron-3-nano-30b-a3b", write: "acme/x-1" } }, tr(fr));
+    assert.match(out.rows[0].text, /^Nemotron 3 Nano 30B \+ Nemotron 3\.5 Lightning : /);
+    assert.match(out.rows[1].text, /^acme\/x-1 : /);
+    assert.equal(modelDisplayName(""), "");
+  });
+
+  it("sans statut : défauts du code signalés (live=false), aucun compteur inventé", () => {
+    const out = describeModelRoles(null, tr(en));
+    assert.equal(out.live, false);
+    assert.equal(out.today, null);
+    assert.match(out.rows[1].text, /^Nemotron 3\.5 Super VL/);
+    assert.equal(TOUR_DEFAULT_MODELS.write, "nvidia/Nemotron-3.5-Super-VL");
+  });
+
+  it("lien profond ?tour=1", () => {
+    assert.equal(wantsTourFromUrl("?tour=1"), true);
+    assert.equal(wantsTourFromUrl("?lang=en&tour=true"), true);
+    assert.equal(wantsTourFromUrl("?tour=0"), false);
+    assert.equal(wantsTourFromUrl(""), false);
+    assert.equal(wantsTourFromUrl(undefined), false);
   });
 });
