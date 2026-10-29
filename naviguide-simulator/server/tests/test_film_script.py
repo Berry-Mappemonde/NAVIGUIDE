@@ -4910,6 +4910,8 @@ def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
 
     async def accept(system, user, **kw):
         hops.append(system[:20])
+        if "real stops" in system:
+            return '{"ok": true, "faults": []}', "nemotron-super"
         if "judge an already-written" in system:
             return '{"ok": true, "reason": "ok"}', "nemotron-ultra"
         if "edit an already-written" in system:
@@ -5905,7 +5907,7 @@ def test_write_chain_stores_nothing_when_the_reread_says_no(monkeypatch):
 
     fr, en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=fake))
     assert fr is None and en is None
-    assert stats.get("faults") == ["nemotron"]
+    assert stats.get("faults") == ["skip"]
     assert stats.get("reread") == "fail"
 
 
@@ -6069,3 +6071,184 @@ def test_reread_reads_spelled_out_french_dates():
         "Le quinze octobre, à vingt-six milles, le projet Animlagon."
     )
     assert _dates_regress(text, "fr")
+
+
+# --- Lot PR #126 (2) : magasin désynchronisé, nombres épelés, verdicts tronqués, durée 150 s ---
+
+def test_moments_follow_their_leg_not_a_desynced_clock():
+    """Horloge et moments de deux simulations : Samoa (jambe Papeete → Mata-Utu)
+    ne parle jamais dans Cayenne → Papeete, même si sa date tombe dans cette fenêtre."""
+    from film_script import _align_moments_to_window
+
+    samoa = {
+        "t": "2026-10-01T15:00:00Z", "legIdx": 9, "changes": [],
+        "moment": {"leg": {"from": "Papeete (Polynésie française)", "to": "Mata-Utu (Wallis-et-Futuna)"}},
+    }
+    pacific = {
+        "t": "2026-09-01T00:00:00Z", "legIdx": 8, "changes": [],
+        "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Papeete (Polynésie française)"}},
+    }
+    free = {"t": "2026-09-10T00:00:00Z", "changes": []}
+    cay_pap = {
+        "fromName": "Cayenne (Guyane)", "destName": "Papeete (Polynésie française)",
+        "tA": _ms("2026-08-29T04:00:00Z"), "tB": _ms("2026-10-14T03:00:00Z"),
+    }
+    kept = _align_moments_to_window([samoa, pacific, free], cay_pap, None)
+    legs = [((m.get("moment") or {}).get("leg") or {}).get("to") for m in kept]
+    assert "Mata-Utu (Wallis-et-Futuna)" not in legs
+    assert "Papeete (Polynésie française)" in legs
+    assert free in kept
+    pap_mat = {
+        "fromName": "Papeete (Polynésie française)", "destName": "Mata-Utu (Wallis-et-Futuna)",
+        "tA": _ms("2026-10-14T03:00:00Z"), "tB": _ms("2026-10-27T13:00:00Z"),
+    }
+    moved = [m for m in _align_moments_to_window([samoa], pap_mat, None) if m.get("tSim")]
+    assert moved, "Samoa est reporté dans la fenêtre de SA jambe"
+    t = _ms(moved[0]["t"])
+    assert pap_mat["tA"] < t <= pap_mat["tB"]
+
+
+def test_spelled_number_is_checked_like_a_digit():
+    """173 épelé « cent soixante-dix-sept » (177) est un chiffre inventé."""
+    from story_cascade import filter_numbers, spelled_numbers_to_digits
+
+    assert spelled_numbers_to_digits("cent soixante-dix-sept milles") == "177 milles"
+    assert spelled_numbers_to_digits("quatre-vingt-dix-sept") == "97"
+    assert spelled_numbers_to_digits("vingt et un milles") == "21 milles"
+    assert spelled_numbers_to_digits("un mille deux cents milles") == "1200 milles"
+    assert spelled_numbers_to_digits("un bateau neuf") == "un bateau neuf"
+    facts = "Gustavia à 173 milles. 1 200 milles."
+    out, dropped = filter_numbers("Gustavia est à cent soixante-dix-sept milles.", facts, spelled=True)
+    assert dropped == 1 and out == ""
+    out, dropped = filter_numbers("Gustavia est à cent soixante-treize milles.", facts, spelled=True)
+    assert dropped == 0
+    out, dropped = filter_numbers("Un mille deux cents milles de mer.", facts, spelled=True)
+    assert dropped == 0
+
+
+def _one_chapter_plan():
+    return {
+        "chapters": [{
+            "id": "c0",
+            "text": "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Arrivée à Ajaccio le 26 mai.",
+            "tA": "2026-05-15T08:00:00Z", "tB": "2026-05-26T12:00:00Z",
+            "fromName": "La Rochelle", "toName": "Ajaccio (Corse)", "destName": "Ajaccio (Corse)",
+        }],
+    }
+
+
+def test_truncated_reread_verdict_is_never_a_pass():
+    from film_script import reread_before_store
+
+    stops = [{"name": "La Rochelle"}, {"name": "Ajaccio (Corse)"}]
+    for cut in ('{"ok": true, "faults": [', "", "The user wants me to check"):
+        async def fake(system, user, _cut=cut, **kw):
+            return _cut, "nemotron-super"
+        ok, rep = asyncio.run(reread_before_store(_one_chapter_plan(), stops, cascade=fake, lang="fr"))
+        assert ok is False, cut
+        assert rep["faults"] == ["verdict-illisible"]
+
+
+def test_truncated_ultra_judge_verdict_is_never_a_pass():
+    from film_script import judge_written_once
+
+    async def cut(system, user, **kw):
+        return '{"ok": tr', "nemotron-ultra"
+
+    assert asyncio.run(judge_written_once(_one_chapter_plan(), cascade=cut)) is False
+
+    seen = []
+
+    async def full(system, user, **kw):
+        seen.append(kw.get("max_tokens"))
+        assert '"facts"' in user, "le juge lit les faits du chapitre"
+        return '{"ok": true, "reason": "ok"}', "nemotron-ultra"
+
+    assert asyncio.run(judge_written_once(_one_chapter_plan(), cascade=full, raw_plan=_one_chapter_plan())) is True
+    assert seen and all(m >= 256 for m in seen)
+
+
+def test_ultra_edit_is_per_chapter_and_keeps_super_when_cut():
+    from film_script import edit_written_once
+
+    plan = _one_chapter_plan()
+    maxes = []
+
+    async def cut(system, user, **kw):
+        maxes.append(kw.get("max_tokens"))
+        return "Le 15 mai, Berry-Mappemonde laisse La", "nemotron-ultra"
+
+    assert asyncio.run(edit_written_once(plan, plan, cascade=cut)) is None
+    assert maxes and maxes[0] > len(plan["chapters"][0]["text"])
+
+
+def test_condensed_150_fits_the_measured_speech_rate():
+    from film_script import FILM_ESTIMATE_CPS, condense_written_plan, film_spoken_char_cap
+
+    sent = "Puis, les eaux d'un pays voisin, longées au large sous le vent."
+    chapters = []
+    for i in range(6):
+        body = " ".join([sent] * 12)
+        chapters.append({
+            "id": f"c{i}",
+            "text": f"Le {i + 1} juin, Berry-Mappemonde quitte Port{i}. {body} Arrivée à Port{i + 1} le {i + 2} juin.",
+            "tA": f"2026-06-{i + 1:02d}T08:00:00Z", "tB": f"2026-06-{i + 2:02d}T08:00:00Z",
+            "fromName": f"Port{i}", "destName": f"Port{i + 1}", "toName": f"Port{i + 1}",
+        })
+    out = condense_written_plan({"chapters": chapters}, 150, lang="fr")
+    assert out["chars"] <= film_spoken_char_cap(150) < 150 * FILM_ESTIMATE_CPS
+    assert out["estimatedSeconds"] <= 150
+    for ch in out["chapters"]:
+        assert "quitte" in ch["text"] and "Arrivée" in ch["text"]
+
+
+def test_llm_date_fault_needs_the_local_date_check():
+    """« date qui recule » du relecteur sur un texte aux dates en ordre : non retenue
+    (écrite dans le rapport) ; une escale sautée reste un refus."""
+    from film_script import reread_before_store
+
+    stops = [{"name": "La Rochelle"}, {"name": "Ajaccio (Corse)"}]
+
+    async def date_fault(system, user, **kw):
+        return '{"ok": false, "faults": ["date: 26 mai vs 15 mai"]}', "nemotron-ultra"
+
+    ok, rep = asyncio.run(reread_before_store(_one_chapter_plan(), stops, cascade=date_fault, lang="fr"))
+    assert ok is True
+    assert rep.get("unconfirmed") == ["date: 26 mai vs 15 mai"]
+
+    async def skip_fault(system, user, **kw):
+        return '{"ok": false, "faults": ["off-route: Rome", "date: x"]}', "nemotron-ultra"
+
+    ok, rep = asyncio.run(reread_before_store(_one_chapter_plan(), stops, cascade=skip_fault, lang="fr"))
+    assert ok is False and rep["faults"][0] == "off-route: Rome"
+
+
+def test_llm_skip_fault_is_checked_against_the_text():
+    from film_script import reread_before_store
+
+    stops = [{"name": "La Rochelle"}, {"name": "Ajaccio (Corse)"}]
+
+    async def named(system, user, **kw):
+        return '{"ok": false, "faults": ["skip: Ajaccio"]}', "nemotron-ultra"
+
+    ok, rep = asyncio.run(reread_before_store(_one_chapter_plan(), stops, cascade=named, lang="fr"))
+    assert ok is True and rep.get("unconfirmed") == ["skip: Ajaccio"]
+    plan = _one_chapter_plan()
+    plan["chapters"][0]["text"] = "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Le 26 mai, escale."
+    ok, rep = asyncio.run(reread_before_store(plan, stops, cascade=named, lang="fr"))
+    assert ok is False and rep["faults"] == ["skip: Ajaccio"]
+
+
+def test_partial_grouped_number_is_not_a_fact():
+    import story_cascade as sc
+    facts = {"raw": "départ vers La Rochelle : 8 393 milles, 96 jours de mer."}
+    out, dropped = sc.filter_numbers("Départ : 393 milles, 96 jours de mer.", facts, spelled=True)
+    assert dropped == 1 and out == ""
+    out, dropped = sc.filter_numbers("Départ : 8 393 milles, 96 jours de mer.", facts, spelled=True)
+    assert dropped == 0
+
+
+def test_super_spelled_numbers_become_digits_before_edit():
+    import film_script as fs
+    t = "Départ : huit mille trois cent quatre-vingt-treize milles, le trente et un mai 2026, un jour de mer."
+    assert fs._digits_for_speech(t) == "Départ : 8 393 milles, le 31 mai 2026, un jour de mer."

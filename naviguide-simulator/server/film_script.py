@@ -2920,6 +2920,7 @@ def _first_leg_moment_ms(moments: list | None, w: dict) -> Optional[int]:
         return None
     t_a, t_b = w.get("tA"), w.get("tB")
     best: Optional[int] = None
+    last: Optional[int] = None
     for m in moments or []:
         if not isinstance(m, dict):
             continue
@@ -2930,11 +2931,20 @@ def _first_leg_moment_ms(moments: list | None, w: dict) -> Optional[int]:
         t = _ms(m.get("t"))
         if t is None:
             continue
+        last = t if last is None else max(last, t)
         if (t_a is not None and t <= t_a) or (t_b is not None and t > t_b):
             continue
         if best is None or t < best:
             best = t
+    # Moments d'une autre simulation que l'horloge (magasin figé : jambe finie le
+    # 19 juillet côté moments, arrivée le 23 côté horloge) : leur premier instant
+    # n'avance pas l'appareillage — sinon « départ le 19, un jour de mer, arrivée le 23 ».
+    if best is not None and last is not None and t_b is not None and t_b - last > _LEG_DESYNC_MS:
+        return None
     return best
+
+
+_LEG_DESYNC_MS = 86_400_000
 
 
 def _window_depart_ms(w: dict) -> Optional[int]:
@@ -4059,7 +4069,23 @@ def chapter_metrics(w: dict, review: dict | None = None) -> dict[str, Any]:
             kn = float(PLANNED_KNOTS)
         if days is None:
             days = planned_sea_days(float(nm), float(kn))
+    # La trace dit plus long que le plan (attente météo, escale technique) : on dit
+    # les jours de la trace et la moyenne qui en découle — jamais « six jours de mer »
+    # entre un départ le 30 juillet et une arrivée le 15 août.
+    span = _clock_sea_days(w)
+    if span is not None and nm and isinstance(days, (int, float)) and span > max(days * 1.5, days + 2):
+        days = round(span, 1)
+        kn = max(1.0, round(float(nm) / (span * 24.0)))
     return {"legNm": nm, "daysAtSea": days, "plannedKnots": kn}
+
+
+def _clock_sea_days(w: dict) -> Optional[float]:
+    if _is_air_window(w) or _is_road_window(w) or not w.get("arrived", True):
+        return None
+    dep, t_b = w.get("departMs"), w.get("tB")
+    if not dep or not t_b or t_b <= dep:
+        return None
+    return (int(t_b) - int(dep)) / 86_400_000.0
 
 
 def chapter_shape(w: dict, i: int, n: int, metrics: dict | None = None) -> str:
@@ -4298,7 +4324,7 @@ def eta_payload_for_stop(eta: dict | None, name: str) -> dict | None:
 
 
 def _honest_bookend(text: str, facts: Any, lang: str) -> str:
-    filtered, _dropped = filter_numbers(text, facts)
+    filtered, _dropped = filter_numbers(text, facts, spelled=True)
     sentence = (filtered or "").strip()
     if not sentence:
         return ""
@@ -4568,7 +4594,7 @@ def _append_review_sentences(
     ]
     lane_anchor = min(lane_ts) if lane_ts else None
     for sentence in review_sentences(leg, lang, crossings=crossings, already=already):
-        filtered, _dropped = filter_numbers(sentence, facts)
+        filtered, _dropped = filter_numbers(sentence, facts, spelled=True)
         sentence = (filtered or "").strip()
         if not sentence:
             continue
@@ -8802,6 +8828,60 @@ def _climo_from_clock(clock: dict | None, t_a: int, t_b: int, first: bool) -> li
     return out
 
 
+def _leg_key(name: Any) -> str:
+    return norm_stop(re.split(r"\s*\(", str(name or ""))[0].strip())
+
+
+def _moment_leg_ends(m: dict) -> tuple[str, str]:
+    leg = (m.get("moment") or {}).get("leg") if isinstance(m.get("moment"), dict) else None
+    leg = leg or {}
+    return _leg_key(leg.get("from")), _leg_key(leg.get("to"))
+
+
+def _align_moments_to_window(moments: list[dict], w: dict, depart_ms: Optional[int]) -> list[dict]:
+    """Rattache les moments à la fenêtre par l'identité de leur jambe (départ → arrivée),
+    pas par la seule date.
+
+    Le journal des moments et l'horloge peuvent venir de deux simulations (magasin
+    figé : horloge du 27/09, moments du 15/10). Leurs calendriers divergent de
+    plusieurs jours : couper par date seule versait les eaux de Samoa ou Tonga dans
+    Cayenne → Papeete. Un moment qui porte sa jambe ne parle que dans la fenêtre de
+    la même jambe ; ses dates sont reportées proportionnellement dans cette fenêtre.
+    Les moments sans jambe gardent le découpage par date.
+    """
+    frm, dest = _leg_key(w.get("fromName")), _leg_key(w.get("destName") or w.get("toName"))
+    t_a, t_b = w.get("tA"), w.get("tB")
+    free: list[dict] = []
+    mine: list[tuple[int, dict]] = []
+    for m in moments:
+        if not isinstance(m, dict):
+            continue
+        mf, mt = _moment_leg_ends(m)
+        if not mf and not mt:
+            free.append(m)
+            continue
+        if frm and dest and mf == frm and mt == dest:
+            t = _change_t(m)
+            if t is not None:
+                mine.append((t, m))
+    if not mine or t_a is None or t_b is None:
+        return free
+    lo = max(int(depart_ms or t_a), int(t_a))
+    g0, g1 = min(t for t, _ in mine), max(t for t, _ in mine)
+    if lo < g0 and g1 <= t_b:
+        return free + [m for _, m in mine]
+    span = max(1, g1 - g0)
+    out = list(free)
+    for t, m in mine:
+        nt = lo + int((t - g0) * (t_b - lo) / span) if g1 > g0 else (lo + t_b) // 2
+        nt = min(max(nt, int(t_a) + 1), int(t_b))
+        row = {**m, "t": _iso(nt), "tSim": m.get("t")}
+        if isinstance(m.get("moment"), dict):
+            row["moment"] = {**m["moment"], "t": _iso(nt)}
+        out.append(row)
+    return out
+
+
 def build_raw_from_moments(
     clock: dict | None,
     marks: list | None,
@@ -8862,7 +8942,9 @@ def build_raw_from_moments(
         if _is_air_window(w):
             sail_moments: list[dict] = []
         else:
-            sail_moments = [m for m in moments if isinstance(m, dict) and not _moment_is_air(m)]
+            sail_moments = _align_moments_to_window(
+                [m for m in moments if isinstance(m, dict) and not _moment_is_air(m)], w, depart_ms,
+            )
         flat = _flatten_changes(sail_moments, w["tA"], w["tB"], first=i == 0)
         clock_climo = _climo_from_clock(w.get("clock") or clock, w["tA"], w["tB"], first=i == 0)
         if clock_climo:
@@ -8922,7 +9004,7 @@ def build_raw_from_moments(
             sentence = change_sentence(change, lang).strip()
             if not sentence or film_has_forbidden(sentence):
                 return
-            filtered, _dropped = filter_numbers(sentence, _facts_with_rounded(change))
+            filtered, _dropped = filter_numbers(sentence, _facts_with_rounded(change), spelled=True)
             sentence = (filtered or "").strip()
             if not sentence or film_has_forbidden(sentence):
                 return
@@ -9388,7 +9470,7 @@ def apply_written_guard(
     kept: list[str] = []
     for i, raw_s in enumerate(raw_sents):
         cand = written_sents[i] if i < len(written_sents) else raw_s
-        filtered, dropped = filter_numbers(cand, facts)
+        filtered, dropped = filter_numbers(cand, facts, spelled=True)
         ok = (
             not dropped
             and bool((filtered or "").strip())
@@ -9468,6 +9550,59 @@ def reanchor_written_chapter(chapter: dict, written_text: str, lang: str) -> lis
     return _strict_increasing_anchors(fallback, written_text, lang)
 
 
+# Marge sous la durée cible : le débit vocal mesuré (FILM_ESTIMATE_CPS = 15 car./s,
+# constant depuis le 27 sept.) fixe la durée ; 5 % de marge pour les pauses de phrase.
+FILM_CONDENSE_MARGIN = 0.95
+
+
+def film_spoken_char_cap(seconds: Any) -> int:
+    """Caractères qui tiennent dans `seconds` au débit mesuré, marge comprise."""
+    s = _film_seconds(seconds)
+    return int(s * FILM_ESTIMATE_CPS * FILM_CONDENSE_MARGIN) if s > 0 else 0
+
+
+def _condense_to_spoken_seconds(chapters: list[dict], seconds: Any) -> None:
+    """Le plafond doit tenir la DURÉE parlée : 2 917 car. ≈ 194 s pour un « 150 s ».
+
+    Après le rognage par priorités, on retire encore des phrases entières du
+    milieu du chapitre le plus long — jamais la première (départ) ni la
+    dernière (arrivée) — jusqu'à passer sous le plafond.
+    """
+    cap = film_spoken_char_cap(seconds)
+    if cap <= 0:
+        return
+    while script_chars(chapters) > cap:
+        best, best_len, best_i = None, 0, -1
+        for ch in chapters:
+            sents = _sentences(ch.get("text") or "")
+            i = _condensable_sentence(ch, sents)
+            if i < 0:
+                continue
+            n = len(ch.get("text") or "")
+            if n > best_len:
+                best, best_len, best_i = ch, n, i
+        if best is None:
+            break
+        sents = _sentences(best.get("text") or "")
+        del sents[best_i]
+        best["text"] = " ".join(sents).strip()
+
+
+def _condensable_sentence(ch: dict, sents: list[str]) -> int:
+    """Dernière phrase du milieu qui ne nomme ni le départ ni l'arrivée ; -1 sinon."""
+    keep = {
+        norm_stop(short_name(ch.get(k) or ""))
+        for k in ("fromName", "destName", "toName") if ch.get(k)
+    }
+    keep.discard("")
+    for i in range(len(sents) - 2, 0, -1):
+        low = norm_stop(sents[i])
+        if any(k and k in low for k in keep):
+            continue
+        return i
+    return -1
+
+
 def condense_written_plan(full_plan: dict, seconds: int, *, lang: str = "fr") -> dict:
     """Raccourcit le rédigé intégral au plafond (~15 car./s) sans rappeler Super."""
     import copy
@@ -9476,6 +9611,7 @@ def condense_written_plan(full_plan: dict, seconds: int, *, lang: str = "fr") ->
     secs = _film_seconds(seconds)
     chapters = [c for c in (plan.get("chapters") or []) if isinstance(c, dict)]
     _film_apply_char_budget(chapters, secs)
+    _condense_to_spoken_seconds(chapters, secs)
     for ch in chapters:
         text = ch.get("text") or ""
         if text:
@@ -9620,10 +9756,19 @@ def locate_events(tagged: str, events: list[dict]) -> tuple[str, list[dict]]:
 
 REREAD_SYSTEM = (
     "You re-read an expedition film against the real stops and the distance of each leg. "
-    "Return JSON only: {\"ok\": true|false, \"faults\": [\"skip\"]}. "
-    "ok is false when a stop is skipped, a place is not on the route, "
-    "an upcoming list omits a stop still ahead, or a date goes backward. "
-    "Do not rewrite the film."
+    "Return JSON only: {\"ok\": true|false, \"faults\": [\"skip: <stop>\"]}, "
+    "each fault a kind (skip, off-route, upcoming, date) and a short quote. "
+    "You read one part of the film: `legs` lists the legs it covers, `stops` the stops of this part, "
+    "`routeStops` the whole route (the other stops are told in other parts, never a skip here). "
+    "Waters, islands, coasts and projects passed at sea between two stops are on the route. "
+    "ok is false when a stop of these legs is skipped, a place is not on the route, "
+    "an upcoming list omits a stop still ahead, or a date goes backward inside this part. "
+    "Stops of other legs are told in other parts: their absence here is not a fault. "
+    "A skip is only a stop of `stops` missing from the text. "
+    "A date fault needs a later sentence giving an EARLIER calendar date than a previous one; "
+    "dates that move forward are never a fault. A place listed in stops is never off-route. "
+    "At most three faults, each under 120 characters. "
+    "Do not rewrite the film. Answer in one short line of JSON, no reasoning."
 )
 _LEAVE_FOR_RE = re.compile(
     r"(?:leaves|quitte|quitté)\s+(?P<frm>.+?)"
@@ -10116,36 +10261,152 @@ async def reread_before_store(
         return False, report
     if cascade is None:
         return True, report
-    user = json.dumps(
-        {
-            "stops": [_stop_spoken(row.get("name") or "") for row in _as_stop_rows(stops)],
-            "text": blob[:8000],
-        },
-        ensure_ascii=False,
-    )
-    try:
-        text, source = await cascade(
-            REREAD_SYSTEM, user, tier="reread", fallback="", facts=user, max_tokens=200,
+    stop_names = [_stop_spoken(row.get("name") or "") for row in _as_stop_rows(stops)]
+    faults: list[str] = []
+    source_seen = ""
+    for group in _reread_groups(chapters):
+        legs = [
+            f"{short_name(c.get('fromName') or '')} → {short_name(c.get('toName') or c.get('destName') or '')}"
+            for c in group
+        ]
+        here = []
+        for c in group:
+            for name in (c.get("fromName"), c.get("toName") or c.get("destName")):
+                n = _stop_spoken(name or "")
+                if n and n not in here:
+                    here.append(n)
+        user = json.dumps(
+            {"stops": here, "legs": legs, "routeStops": stop_names,
+             "text": " ".join(c.get("text") or "" for c in group)},
+            ensure_ascii=False,
         )
-    except Exception:
-        return True, report
-    if source in {"rules", "budget", ""} or not (text or "").strip():
-        return True, report
-    verdict = _parse_reread_verdict(text)
-    if verdict is None or verdict is True:
-        return True, report
-    return False, {
-        "ok": False,
-        "faults": ["nemotron"],
-        "source": str(source or "nemotron-super"),
-    }
+        text, source = "", "rules"
+        try:
+            for _attempt in range(2):
+                # Le verdict cite des dates du texte : pas de filtre des nombres.
+                text, source = await cascade(
+                    REREAD_SYSTEM, user, tier=_reread_tier(), fallback="", facts=_verdict_facts(user),
+                    max_tokens=REREAD_MAX_TOKENS,
+                )
+                if source not in {"rules", ""}:
+                    break
+        except Exception:
+            return True, report
+        if source in {"rules", "budget", ""}:
+            if cascade is cascade_text and _live_llm_configured():
+                # Un modèle était joignable et n'a rien rendu de lisible : pas un pass.
+                faults.append("verdict-illisible")
+                source_seen = source_seen or "nemotron"
+                break
+            return True, report
+        source_seen = str(source or "nemotron-super")
+        verdict = _parse_reread_verdict(text)
+        if verdict is None:
+            # Verdict vide, tronqué ou illisible : jamais un pass.
+            faults.append("verdict-illisible")
+            break
+        if verdict is False:
+            said = _reread_faults(text) or ["nemotron"]
+            group_text = " ".join(c.get("text") or "" for c in group)
+            if _only_unconfirmed_date_faults(said, group_text, lang, here, _as_stop_rows(stops)):
+                # Chaque faute dite se vérifie sur le texte : une « date qui recule »
+                # que _dates_regress (dates épelées comprises) ne retrouve pas, une
+                # « escale sautée » nommée en toutes lettres dans la partie, ne sont
+                # pas retenues. Elles restent écrites dans le rapport.
+                report.setdefault("unconfirmed", []).extend(said)
+                continue
+            faults.extend(said)
+            break
+    if faults:
+        return False, {"ok": False, "faults": faults, "source": source_seen or "nemotron-super"}
+    return True, report
+
+
+REREAD_MAX_TOKENS = 400
+
+
+def _reread_tier() -> str:
+    """Relecture par Ultra quand son plafond est ouvert : Super, relecteur de lui-même,
+    signalait des fautes qu'il démentait dans la même phrase (dates en ordre, escales
+    pourtant dans la liste). Sinon le palier historique (Super)."""
+    return "judge" if film_ultra_open() else "reread"
+REREAD_GROUP_CHARS = 3500
+
+
+def _verdict_facts(user: str) -> Any:
+    """Un verdict n'est pas publié : pas de filtre des nombres (il le vidait)."""
+    from story_cascade import NO_NUMBER_FILTER  # noqa: PLC0415
+    return NO_NUMBER_FILTER
+
+
+def _live_llm_configured() -> bool:
+    from story_cascade import nebius_key  # noqa: PLC0415
+    return bool(nebius_key())
+
+
+def _reread_groups(chapters: list[dict]) -> list[list[dict]]:
+    """Relecture par paquets de chapitres entiers : tout le film est lu, rien n'est coupé."""
+    groups: list[list[dict]] = []
+    cur: list[dict] = []
+    n = 0
+    for c in chapters:
+        size = len(c.get("text") or "")
+        if cur and n + size > REREAD_GROUP_CHARS:
+            groups.append(cur)
+            cur, n = [], 0
+        cur.append(c)
+        n += size
+    if cur:
+        groups.append(cur)
+    return groups
+
+
+def _fault_confirmed(
+    fault: str, text: str, lang: str, stops_here: list[str], rows: list | None = None,
+) -> bool:
+    """« skip », « date », « upcoming » se vérifient sur le texte ; les autres sont gardées."""
+    kind, _, what = str(fault).partition(":")
+    kind = kind.strip().lower()
+    if kind == "upcoming" and rows is not None:
+        return bool(_upcoming_omits(text, rows))
+    if kind == "date":
+        return _dates_regress(text, lang)
+    if kind == "skip":
+        name = norm_stop(short_name(what.strip().strip("'\"«» ")))
+        if not name:
+            return True
+        body = norm_stop(text)
+        if name not in {norm_stop(short_name(s)) for s in stops_here}:
+            return False  # escale d'une autre partie : jamais sautée ici
+        return name not in body
+    return True
+
+
+def _only_unconfirmed_date_faults(
+    faults: list[str], text: str, lang: str, stops_here: list[str] | None = None,
+    rows: list | None = None,
+) -> bool:
+    """Vrai si AUCUNE faute dite par le relecteur ne se vérifie sur le texte."""
+    if not faults:
+        return False
+    return not any(_fault_confirmed(f, text, lang, stops_here or [], rows) for f in faults)
+
+
+def _reread_faults(text: str) -> list[str]:
+    found = re.search(r"\{.*\}", (text or "").strip(), re.S)
+    try:
+        data = json.loads(found.group(0)) if found else {}
+    except json.JSONDecodeError:
+        return []
+    faults = data.get("faults") if isinstance(data, dict) else None
+    return [str(f)[:200] for f in faults] if isinstance(faults, list) else []
 
 
 def written_is_valid(
     text: str, facts: Any, event_ids: list[str], seconds: Any = 150,
 ) -> tuple[bool, str, int]:
     """No new number, every [[ev:id]] present, window from film_char_budget."""
-    filtered, dropped = filter_numbers(text, facts)
+    filtered, dropped = filter_numbers(text, facts, spelled=True)
     if dropped:
         return False, filtered, dropped
     for eid in event_ids:
@@ -10249,9 +10510,11 @@ EDIT_SYSTEM = (
     "Output only the edited French. Thinking OFF."
 )
 JUDGE_SYSTEM = (
-    "You judge an already-written film text. Do not rewrite it. "
-    "Return JSON only: {\"ok\": true|false, \"reason\": \"one line\"}. "
-    "ok=false if a number, name or date was invented."
+    "You judge an already-written film text, one chapter at a time. Do not rewrite it. "
+    "`facts` and `reference` are the verified sources for this chapter: every name, "
+    "number and date found there is true. "
+    "Return JSON only, one short line: {\"ok\": true|false, \"reason\": \"one line\"}. "
+    "ok=false only if the text states a number, name or date absent from facts and reference."
 )
 
 
@@ -10635,46 +10898,112 @@ def _redistribute_written_blob(raw_plan: dict, blob: str, *, lang: str = "fr") -
     return _stamp_written_plan({**raw_plan, "chapters": out}, WRITTEN_SOURCE, raw_plan.get("targetSeconds"))
 
 
+def _raw_for(ch: dict, i: int, raw_chapters: list[dict]) -> Optional[dict]:
+    cid = ch.get("id")
+    if cid is not None:
+        for r in raw_chapters:
+            if r.get("id") == cid:
+                return r
+    return raw_chapters[i] if i < len(raw_chapters) else None
+
+
+ULTRA_EDIT_MAX_TOKENS = 4096
+ULTRA_JUDGE_MAX_TOKENS = 512
+
+
+def _looks_cut(src: str, out: str) -> bool:
+    """Sortie tronquée : fin sans ponctuation, ou nettement plus courte que la source."""
+    o = (out or "").strip()
+    if not o:
+        return True
+    if not o.endswith((".", "!", "?", "…", "»", ")")):
+        return True
+    return len(o) < 0.7 * len((src or "").strip())
+
+
 async def edit_written_once(
     super_plan: dict,
     raw_plan: dict,
     *,
     cascade: Callable = cascade_text,
 ) -> Optional[dict]:
-    """Un seul appel Ultra : éditer le français déjà écrit par Super."""
+    """Ultra édite le français de Super chapitre par chapitre.
+
+    Le film entier (~11 000 car.) dépassait la sortie permise : l'édition revenait
+    tronquée (finish=length) et le juge la refusait. Par chapitre, chaque sortie
+    tient ; un chapitre tronqué garde le texte de Super.
+    """
     chapters = [c for c in (super_plan.get("chapters") or []) if isinstance(c, dict)]
-    blob = " ".join(c.get("text") or "" for c in chapters).strip()
-    if not blob:
+    if not any((c.get("text") or "").strip() for c in chapters):
         return None
-    facts = [chapter_structured_facts(c, lang="fr") for c in (raw_plan.get("chapters") or chapters) if isinstance(c, dict)]
-    user = f"facts={json.dumps(facts, ensure_ascii=False, default=str)}\ntext={blob}"
-    max_tok = min(2048, max(400, (len(blob) // 2) + 80))
-    text, source = await cascade(
-        EDIT_SYSTEM, user, tier="judge", fallback="", facts=facts, max_tokens=max_tok,
+    raw_chapters = [c for c in (raw_plan.get("chapters") or []) if isinstance(c, dict)]
+    out: list[dict] = []
+    rewritten = 0
+    for i, ch in enumerate(chapters):
+        src = (ch.get("text") or "").strip()
+        raw_ch = _raw_for(ch, i, raw_chapters) or ch
+        if not src:
+            out.append(ch)
+            continue
+        facts = chapter_structured_facts(raw_ch, lang="fr")
+        user = f"facts={json.dumps(facts, ensure_ascii=False, default=str)}\ntext={src}"
+        max_tok = min(ULTRA_EDIT_MAX_TOKENS, max(600, len(src) + 200))
+        text, source = await cascade(
+            EDIT_SYSTEM, user, tier="judge", fallback="", facts=facts, max_tokens=max_tok,
+        )
+        if not str(source).endswith("-ultra") or _looks_cut(src, text):
+            out.append(ch)
+            continue
+        guarded, rw, _fb = apply_written_guard(raw_ch.get("text") or src, text.strip(), facts, lang="fr")
+        if rw <= 0:
+            out.append(ch)
+            continue
+        out.append({**ch, "text": guarded, "anchors": reanchor_written_chapter(raw_ch, guarded, "fr")})
+        rewritten += 1
+    if rewritten <= 0:
+        return None
+    return _stamp_written_plan(
+        {**super_plan, "chapters": out}, WRITTEN_SOURCE, super_plan.get("targetSeconds"),
     )
-    if not (text or "").strip() or not str(source).endswith("-ultra"):
-        return None
-    return _redistribute_written_blob(raw_plan, text, lang="fr")
 
 
 async def judge_written_once(
     plan: dict,
     *,
     cascade: Callable = cascade_text,
+    raw_plan: dict | None = None,
 ) -> bool:
-    """Un autre appel Ultra : juger le texte déjà écrit, sans le réécrire."""
-    blob = " ".join(
-        c.get("text") or "" for c in (plan.get("chapters") or []) if isinstance(c, dict)
-    ).strip()
-    if not blob:
+    """Ultra juge chaque chapitre contre SES faits, sans le réécrire.
+
+    Sans les faits, le juge prenait les eaux et projets croisés pour des lieux
+    inventés. Un verdict vide, tronqué ou illisible n'est jamais un accord.
+    """
+    chapters = [c for c in (plan.get("chapters") or []) if isinstance(c, dict)]
+    raw_chapters = [c for c in ((raw_plan or {}).get("chapters") or []) if isinstance(c, dict)]
+    if not any((c.get("text") or "").strip() for c in chapters):
         return False
-    user = json.dumps({"text": blob[:8000]}, ensure_ascii=False)
-    text, source = await cascade(
-        JUDGE_SYSTEM, user, tier="judge", fallback="", facts=blob, max_tokens=128,
-    )
-    if source in {"rules", "budget"}:
-        return False
-    return _parse_judge_ok(text) is True
+    for i, ch in enumerate(chapters):
+        txt = (ch.get("text") or "").strip()
+        if not txt:
+            continue
+        raw_ch = _raw_for(ch, i, raw_chapters)
+        facts = chapter_structured_facts(raw_ch or ch, lang="fr")
+        ref = (raw_ch or {}).get("text") or ""
+        user = json.dumps({"facts": facts, "reference": ref, "text": txt}, ensure_ascii=False, default=str)
+        text, source = "", "rules"
+        for _attempt in range(2):
+            # Une coupure réseau (cascade → « rules ») est retentée une fois.
+            text, source = await cascade(
+                JUDGE_SYSTEM, user, tier="judge", fallback="", facts=_verdict_facts(user),
+                max_tokens=ULTRA_JUDGE_MAX_TOKENS,
+            )
+            if source != "rules":
+                break
+        if source in {"rules", "budget"}:
+            return False
+        if _parse_judge_ok(text) is not True:
+            return False
+    return True
 
 
 async def translate_written_plan(
@@ -10696,17 +11025,22 @@ async def translate_written_plan(
         raw_ch = raw_chapters[i] if i < len(raw_chapters) else ch
         src = ch.get("text") or ""
         facts = chapter_structured_facts(raw_ch, lang="fr")
-        text, source = await cascade(
-            TRANSLATE_SYSTEM,
-            f"French text:\n{src}",
-            tier="fast",
-            fallback="",
-            facts=facts,
-            max_tokens=min(1200, max(256, (len(src) // 2) + 80)),
-        )
-        if not (text or "").strip() or source in {"rules", "budget"}:
-            return None
-        guarded, rw, _fb = apply_written_guard(raw_ch.get("text") or src, text, facts, lang="en")
+        guarded, rw = "", 0
+        for _attempt in range(2):
+            # Lightning rend parfois le français tel quel : une seconde demande.
+            text, source = await cascade(
+                TRANSLATE_SYSTEM,
+                f"French text:\n{src}",
+                tier="fast",
+                fallback="",
+                facts=facts,
+                max_tokens=min(1200, max(256, (len(src) // 2) + 80)),
+            )
+            if not (text or "").strip() or source in {"rules", "budget"}:
+                return None
+            guarded, rw, _fb = apply_written_guard(raw_ch.get("text") or src, text, facts, lang="en")
+            if rw > 0:
+                break
         if rw <= 0:
             return None
         any_ok = True
@@ -10722,6 +11056,36 @@ async def translate_written_plan(
         model=fr_plan.get("model"),
     )
     return stamped
+
+
+def _digits_for_speech(text: str) -> str:
+    """Super écrit parfois « huit mille trois cent… » : on remet des chiffres (« 8 393 »)."""
+    from story_cascade import spelled_numbers_to_digits  # noqa: PLC0415
+
+    out = spelled_numbers_to_digits(text or "")
+
+    def _group(m: re.Match) -> str:
+        n = m.group(0)
+        if len(n) == 4 and 1900 <= int(n) <= 2099:
+            return n
+        return f"{int(n):,}".replace(",", " ")
+
+    return re.sub(r"(?<![\d.,])\d{4,}(?!\d)", _group, out)
+
+
+def _plan_digits_for_speech(plan: dict, raw_plan: dict, lang: str = "fr") -> dict:
+    raws = {c.get("id"): c for c in (raw_plan.get("chapters") or []) if isinstance(c, dict)}
+    chapters = []
+    for ch in plan.get("chapters") or []:
+        if not isinstance(ch, dict):
+            continue
+        text = _digits_for_speech(ch.get("text") or "")
+        if text == (ch.get("text") or ""):
+            chapters.append(ch)
+            continue
+        raw_ch = raws.get(ch.get("id")) or ch
+        chapters.append({**ch, "text": text, "anchors": reanchor_written_chapter(raw_ch, text, lang)})
+    return {**plan, "chapters": chapters}
 
 
 async def write_film_chain(
@@ -10750,6 +11114,7 @@ async def write_film_chain(
     if super_plan is None or int((super_stats or {}).get("rewritten") or 0) <= 0:
         return None, None, stats
     stats["super"] = 1
+    super_plan = _plan_digits_for_speech(super_plan, full_raw if secs == 150 else raw)
     if secs == 150:
         super_plan = condense_written_plan(super_plan, 150, lang="fr")
     origin = public_written_source(super_plan.get("source") or (super_stats or {}).get("source"))
@@ -10763,11 +11128,12 @@ async def write_film_chain(
         model = NIM_MODEL if (origin or "") == nim_source else (origin or None)
         accepted = _stamp_written_plan(super_plan, origin or "rules", seconds, model=model)
 
+    ref_raw = full_raw if secs == 150 else raw
     if film_ultra_open():
-        edited = await edit_written_once(accepted, raw, cascade=cascade)
+        edited = await edit_written_once(accepted, ref_raw, cascade=cascade)
         stats["ultra_edit"] = 1
         if edited:
-            ok = await judge_written_once(edited, cascade=cascade)
+            ok = await judge_written_once(edited, cascade=cascade, raw_plan=ref_raw)
             stats["ultra_judge"] = 1
             if ok and accepted.get("source") == WRITTEN_SOURCE:
                 accepted = _stamp_written_plan(

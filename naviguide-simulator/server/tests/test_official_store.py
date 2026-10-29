@@ -1898,6 +1898,8 @@ def _rg11a_payload(plan=None):
 async def _rg11a_honest_cascade(system, user, **kw):
     import json
     import re
+    if "real stops" in (system or ""):
+        return '{"ok": true, "faults": []}', "nemotron-super"
     match = re.search(r"sentences=(\[.*\])", user or "", re.S)
     sents = json.loads(match.group(1)) if match else ["ok."]
     return " ".join(

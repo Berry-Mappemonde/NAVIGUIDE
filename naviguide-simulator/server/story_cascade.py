@@ -231,20 +231,121 @@ def _numbers(text: str) -> set[str]:
     return out
 
 
-def filter_numbers(answer: str, facts: Any) -> tuple[str, int]:
+_FR_UNITS = {
+    "zéro": 0, "zero": 0, "un": 1, "une": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5,
+    "six": 6, "sept": 7, "huit": 8, "neuf": 9, "dix": 10, "onze": 11, "douze": 12,
+    "treize": 13, "quatorze": 14, "quinze": 15, "seize": 16, "vingt": 20, "vingts": 20,
+    "trente": 30, "quarante": 40, "cinquante": 50, "soixante": 60,
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "seven": 7, "eight": 8,
+    "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+    "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70,
+    "eighty": 80, "ninety": 90,
+}
+_NUM_HUNDRED = {"cent", "cents", "hundred", "hundreds"}
+_NUM_THOUSAND = {"mille", "thousand", "thousands"}
+_NUM_LINK = {"et", "and"}
+# Mots seuls trop ambigus pour être des nombres (« un bateau », « un mille » nautique,
+# « bateau neuf », « one of »).
+_NUM_ALONE_SKIP = {"un", "une", "neuf", "one", "mille"}
+_NUM_WORD_RE = re.compile(r"[A-Za-zÀ-ÿ]+|[\s\-]+|[^A-Za-zÀ-ÿ\s\-]+")
+
+
+def _words_value(words: list[str]) -> int:
+    total, cur, prev = 0, 0, ""
+    for w in words:
+        if w in _NUM_HUNDRED:
+            cur = max(1, cur) * 100
+        elif w in _NUM_THOUSAND:
+            total += max(1, cur) * 1000
+            cur = 0
+        elif w in ("vingt", "vingts") and prev == "quatre" and cur % 100 == 4:
+            cur += 76
+        else:
+            cur += _FR_UNITS[w]
+        prev = w
+    return total + cur
+
+
+def spelled_numbers_to_digits(text: str) -> str:
+    """« cent soixante-dix-sept » → « 177 » : les nombres en lettres comparés en chiffres.
+
+    Sans cela, un modèle qui épelle un chiffre (173 → « cent soixante-dix-sept »)
+    passait le garde-fou des nombres.
+    """
+    toks = _NUM_WORD_RE.findall(text or "")
+    out: list[str] = []
+    i = 0
+    while i < len(toks):
+        low = toks[i].lower()
+        if low in _FR_UNITS or low in _NUM_HUNDRED or low in _NUM_THOUSAND:
+            words, j, last = [low], i + 1, i
+            while j < len(toks):
+                t = toks[j].lower()
+                if t.strip(" -") == "" and "\n" not in t:
+                    j += 1
+                    continue
+                if t in _NUM_LINK and j + 2 < len(toks) and toks[j + 2].lower() in _FR_UNITS:
+                    j += 1
+                    continue
+                if t in _FR_UNITS or t in _NUM_HUNDRED or t in _NUM_THOUSAND:
+                    # « un mille » / « deux milles » : le mille nautique n'est pas 1000.
+                    if t == "mille" and (j + 1 >= len(toks) or not any(
+                        toks[k].lower() in _FR_UNITS or toks[k].lower() in _NUM_HUNDRED
+                        for k in range(j + 1, min(j + 3, len(toks)))
+                    )) and words[-1] in ("un", "une"):
+                        break
+                    words.append(t)
+                    last = j
+                    j += 1
+                    continue
+                break
+            if len(words) == 1 and words[0] in _NUM_ALONE_SKIP:
+                out.append(toks[i])
+                i += 1
+                continue
+            try:
+                out.append(str(_words_value(words)))
+            except KeyError:
+                out.append("".join(toks[i:last + 1]))
+            i = last + 1
+            continue
+        out.append(toks[i])
+        i += 1
+    return "".join(out)
+
+
+_GROUPED_NUM_RE = re.compile(r"\b\d{1,3}(?:[ \u202f\u00a0]\d{3})+\b")
+
+
+def _numbers_spoken(text: str) -> set[str]:
+    norm = spelled_numbers_to_digits(text or "")
+    norm = _GROUPED_NUM_RE.sub(lambda m: re.sub(r"\D", "", m.group(0)), norm)
+    # « 8 393 » vaut 8393 seulement : « 393 » seul n'est pas un fait.
+    return _numbers(norm)
+
+
+# Verdict JSON d'un relecteur : il cite des chiffres pour décrire une faute, il n'en
+# publie aucun. Le filtre des nombres le viderait (« rules » → lu comme un pass).
+NO_NUMBER_FILTER = object()
+
+
+def filter_numbers(answer: str, facts: Any, *, spelled: bool = False) -> tuple[str, int]:
     """Drop every sentence whose figures are not already in `facts`.
 
     Same contract as logbook_chat.filter_numbers: a year or a time present
     in the facts is allowed. Returns (text, dropped).
     """
     blob = facts if isinstance(facts, str) else json.dumps(facts, ensure_ascii=False, default=str)
-    allowed = _numbers(blob)
+    allowed = _numbers_spoken(blob) if spelled else _numbers(blob)
     kept, dropped = [], 0
     for s in _SENT_SPLIT_RE.split(answer or ""):
         s = s.strip()
         if not s:
             continue
-        nums = _numbers(s)
+        norm = spelled_numbers_to_digits(s) if spelled else s
+        norm = norm if not spelled else _GROUPED_NUM_RE.sub(lambda m: re.sub(r"\D", "", m.group(0)), norm)
+        nums = _numbers(norm)
         if nums and not nums.issubset(allowed):
             dropped += 1
             continue
@@ -1090,7 +1191,8 @@ async def _cascade_once(
         try:
             result = await step()
             text, source = result
-            text = _apply_filter(text, facts if facts is not None else user)
+            if facts is not NO_NUMBER_FILTER:
+                text = _apply_filter(text, facts if facts is not None else user)
             if _clean_text(text):
                 if failures:
                     llm_budget.remember_cascade_errors(failures, tier=norm_tier)
