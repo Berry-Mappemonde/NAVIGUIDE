@@ -4133,30 +4133,21 @@ def _window_leg_nm(w: dict) -> Optional[float]:
                 return float(val)
         return None
 
-    # Try nm on both ends first
-    a_nm = num(frm, "nm")
-    b_nm = num(dest, "nm")
-    a_film_nm = num(frm, "filmNm")
-    b_film_nm = num(dest, "filmNm")
-
-    # Check if nm is valid at both ends
-    # nm is invalid if: mirrored (0 with filmNm > 1), or 0 with filmNm > 1
-    nm_invalid_a = (a_nm is None or (a_nm == 0 and a_film_nm is not None and a_film_nm > 1))
-    nm_invalid_b = (b_nm is None or (b_nm == 0 and b_film_nm is not None and b_film_nm > 1))
-
-    if not nm_invalid_a and not nm_invalid_b and a_nm is not None and b_nm is not None:
-        gap = b_nm - a_nm
-        if gap > 1:
-            return gap
-
-    # Fall back to filmNm on both ends
-    a = a_film_nm
-    b = b_film_nm
-    if b is None and isinstance(w.get("destNm"), (int, float)):
-        b = float(w["destNm"])
-    # If we used nm for a but filmNm for b, scale mismatch - try destNm as fallback
-    if a is not None and b is None and isinstance(w.get("destNm"), (int, float)):
-        b = float(w["destNm"])
+    a_nm, b_nm = num(frm, "nm"), num(dest, "nm")
+    a_fm, b_fm = num(frm, "filmNm"), num(dest, "filmNm")
+    # Jamais nm d'un côté et filmNm de l'autre (417 = nm − filmNm).
+    mirrored = (
+        None not in (a_nm, b_nm, a_fm, b_fm)
+        and abs(b_fm - b_nm) <= 1
+        and abs(a_fm - a_nm) > 1
+    )
+    if not mirrored and a_nm is not None and b_nm is not None and (b_nm - a_nm) > 1:
+        return b_nm - a_nm
+    if a_fm is not None and b_fm is not None and (b_fm - a_fm) > 1:
+        return b_fm - a_fm
+    a = a_fm if a_fm is not None else a_nm
+    d = w.get("destNm")
+    b = float(d) if isinstance(d, (int, float)) and not isinstance(d, bool) else None
     if a is None or b is None:
         return None
     gap = b - a
@@ -5696,11 +5687,9 @@ def _review_hop_trusted(
     raw = leg.get("legNm")
     if not isinstance(raw, (int, float)) or isinstance(raw, bool):
         return False
-    if abs(float(nm) - float(raw)) > 0.6:
+    if float(raw) > cap:
         return False
-    if float(nm) > cap:
-        return False
-    if _same_odometer(float(nm), dest) and float(nm) > 1500:
+    if _same_odometer(float(raw), dest) and float(raw) > 1500:
         return False
     return True
 
@@ -5717,24 +5706,35 @@ def _side_hop_metrics(w: dict, review: dict | None) -> dict[str, Any]:
     voyage = isinstance(nm, (int, float)) and not isinstance(nm, bool) and (
         float(nm) > cap or (_same_odometer(float(nm), dest) and float(nm) > 1500)
     )
-    mixed = not _review_hop_trusted(w, chosen, nm, cap, dest) and _side_scale_disagrees(nm, scale)
-    if voyage or mixed or not isinstance(nm, (int, float)) or isinstance(nm, bool):
-        hop = scale
-        if hop is None or hop > cap:
-            hop = _nm_between(
-                (w.get("from") or {}).get("lat"), (w.get("from") or {}).get("lon"),
-                (dest or {}).get("lat"), (dest or {}).get("lon"),
-            )
-            if hop is not None and hop > cap:
-                hop = None
-        metrics["legNm"] = hop
+    raw = None
+    if isinstance(chosen, dict) and isinstance(chosen.get("legs"), list) and chosen.get("legs"):
+        raw = chosen["legs"][0].get("legNm")
+    trusted = (
+        raw is not None
+        and isinstance(raw, (int, float))
+        and not isinstance(raw, bool)
+        and _review_hop_trusted(w, chosen, raw, cap, dest)
+    )
+    if trusted:
+        metrics["legNm"] = float(raw)
         metrics["daysAtSea"] = None
+    else:
+        mixed = _side_scale_disagrees(nm, scale) if isinstance(nm, (int, float)) and not isinstance(nm, bool) else True
+        if voyage or mixed or not isinstance(nm, (int, float)) or isinstance(nm, bool):
+            hop = scale
+            if hop is None or hop > cap:
+                hop = _nm_between(
+                    (w.get("from") or {}).get("lat"), (w.get("from") or {}).get("lon"),
+                    (dest or {}).get("lat"), (dest or {}).get("lon"),
+                )
+                if hop is not None and hop > cap:
+                    hop = None
+            metrics["legNm"] = hop
+            metrics["daysAtSea"] = None
     days = metrics.get("daysAtSea")
-    if window_days and (
-        not isinstance(days, (int, float)) or isinstance(days, bool)
-        or float(days) > max(window_days * 1.5, window_days + 2)
-    ):
-        metrics["daysAtSea"] = window_days
+    if window_days and isinstance(days, (int, float)) and not isinstance(days, bool):
+        if float(days) > max(window_days * 1.5, window_days + 2):
+            metrics["daysAtSea"] = window_days
     elif (
         not isinstance(days, (int, float)) or isinstance(days, bool)
     ) and isinstance(metrics.get("legNm"), (int, float)) and not isinstance(metrics.get("legNm"), bool):

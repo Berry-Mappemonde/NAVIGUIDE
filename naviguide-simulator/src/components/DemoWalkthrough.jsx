@@ -373,8 +373,6 @@ export function DemoWalkthrough({
       }}
     >
       {step.id === "models" ? (() => {
-
-      {step.id === "models" ? (() => {
         const roles = status.state === "loading" || status.state === "idle" ? null : describeModelRoles(status.llm, t);
         return (
           <div data-testid="demo-models" data-live={roles?.live ? "true" : "false"} className={`mt-3 rounded-xl border p-3 text-xs leading-relaxed ${light ? "border-slate-200 bg-slate-50 text-slate-700" : "border-white/10 bg-white/5 text-white/80"}`}>
@@ -459,30 +457,34 @@ export function DemoWalkthrough({
         );
       })() : null}
 
-      <div className={`mt-5 flex items-center justify-between gap-2 border-t pt-3 ${light ? "border-slate-200" : "border-white/10"}`}>
-        <button type="button" data-testid="demo-walkthrough-prev" onClick={() => goTo(index - 1)} disabled={index === 0} className={secondaryButton}>
-          <ArrowLeft size={14} aria-hidden="true" />
-          {t("demoPrev")}
+      <div className={`mt-5 flex flex-col gap-2 border-t pt-3 ${light ? "border-slate-200" : "border-white/10"}`}>
+        <div className="flex items-center justify-between gap-2">
+          <button type="button" data-testid="demo-walkthrough-prev" onClick={() => goTo(index - 1)} disabled={index === 0} className={secondaryButton}>
+            <ArrowLeft size={14} aria-hidden="true" />
+            {t("demoPrev")}
+          </button>
+          {index < total - 1 ? (
+            <button type="button" data-testid="demo-walkthrough-next" onClick={() => goTo(index + 1)} className={primaryButton}>
+              {t("demoNext")}
+              <ArrowRight size={14} aria-hidden="true" />
+            </button>
+          ) : (
+            <button type="button" data-testid="demo-walkthrough-end" onClick={close} className={primaryButton}>
+              {t("demoEnd")}
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          data-testid="demo-walkthrough-exit"
+          onClick={close}
+          className={`self-start rounded-md px-1 py-1 text-xs underline underline-offset-2 ${muted}`}
+        >
+          {t("demoExit")}
         </button>
-        {index < total - 1 ? (
-          <button type="button" data-testid="demo-walkthrough-next" onClick={() => goTo(index + 1)} className={primaryButton}>
-            {t("demoNext")}
-            <ArrowRight size={14} aria-hidden="true" />
-          </button>
-        ) : (
-          <button type="button" data-testid="demo-walkthrough-end" onClick={close} className={primaryButton}>
-            {t("demoEnd")}
-          </button>
-        )}
       </div>
-      <button
-        type="button"
-        data-testid="demo-walkthrough-exit"
-        onClick={close}
-        className={`mt-2 self-start rounded-md px-1 py-1 text-xs underline underline-offset-2 ${muted}`}
-      >
-        {t("demoExit")}
-      </button>
+    </div>
+  )}
     </aside>
   );
 }

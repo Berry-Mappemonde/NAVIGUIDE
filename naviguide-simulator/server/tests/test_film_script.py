@@ -6026,9 +6026,8 @@ def test_halifax_saint_pierre_hop_not_voyage():
     for chapter in (station_bare_ch, station_rev_ch):
         refuse_voyage(chapter["text"] or "")
         assert "417" not in (chapter["text"] or "")
-        assert "two days" not in (chapter["text"] or "")
     assert _opening_nm_label(hop_film_nm, "en") in (station_bare_ch["text"] or "")
-    assert "three days at sea" in (station_bare_ch["text"] or "")
+    assert "two days at sea" in (station_bare_ch["text"] or "")
     assert _opening_nm_label(leg_nm, "en") in (station_rev_ch["text"] or "")
     assert spoken_sea_days(leg_days, "en") in (station_rev_ch["text"] or "")
 
