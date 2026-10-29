@@ -37,4 +37,10 @@ describe("toponyms RC32", () => {
     assert.equal(originName("MUXIA"), "Muxía");
     assert.equal(originName("Porto Torres"), "Porto Torres");
   });
+
+  it("donne un exonyme français aux eaux de l'océan Indien (plus de « les eaux Sri Lankan »)", () => {
+    assert.equal(watersLabel("Sri Lankan Exclusive Economic Zone", "fr"), "les eaux sri-lankaises");
+    assert.equal(watersLabel("Maldivian Exclusive Economic Zone", "fr"), "les eaux maldiviennes");
+    assert.equal(watersLabel("Maldivian Exclusive Economic Zone", "en"), "Maldivian waters");
+  });
 });
