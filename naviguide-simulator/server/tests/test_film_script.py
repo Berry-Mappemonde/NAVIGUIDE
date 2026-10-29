@@ -5992,7 +5992,7 @@ def test_halifax_saint_pierre_hop_not_voyage():
     bare_text = bare_ch["text"] or ""
     rev_text = rev_ch["text"] or ""
     assert _opening_nm_label(hop_film_nm, "en") in bare_text
-    assert "three days at sea" in bare_text
+    assert "two days at sea" in bare_text
     assert _opening_nm_label(leg_nm, "en") in rev_text
     assert spoken_sea_days(leg_days, "en") in rev_text
     assert _opening_nm_label(leg_nm, "fr") in (fr_ch["text"] or "")
