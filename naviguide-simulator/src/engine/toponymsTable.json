@@ -1841,7 +1841,7 @@
       "iso": "GM",
       "mrgid": null,
       "territory": null,
-      "aliases": ["gambi"],
+      "aliases": ["\\bgambi(a|an|e)\\b"],
       "fr": "Gambie",
       "en": "Gambia",
       "adj_fr": "gambiennes",
