@@ -77,6 +77,30 @@ def test_reread_knows_halifax_from_chapters_when_voyage_marks_lack_it(monkeypatc
     assert not fs._absent_places(text, rows)
 
 
+def test_r2_arrival_harbor_failure_is_logged_not_silent(caplog, monkeypatch):
+    import logging
+
+    def _boom(*_a, **_k):
+        raise ValueError("simulated harbor lookup failure")
+
+    caplog.set_level(logging.WARNING)
+    monkeypatch.setattr(fs, "_arrival_harbor", _boom)
+    dest = {"name": "Mata-Utu", "lat": -13.2, "lon": -176.2}
+    assert fs._coast_is_arrival(
+        {"kind": "coast", "title": "Pago Pago", "fact": "Pago Pago"},
+        "Mata-Utu (Wallis-et-Futuna)", [], dest, "fr",
+    ) is False
+    assert any("_arrival_harbor failed" in r.message for r in caplog.records)
+
+
+def test_r4_insert_missing_air_at_head_when_no_anchor():
+    rows = [{"name": "La Rochelle"}, {"name": "Ajaccio (Corse)"}]
+    clock = [{"name": "Halifax (Nouvelle-Écosse)", "filmNm": 8780.0}]
+    out = fs._insert_missing_air(rows, clock)
+    assert out[0]["name"] == "Halifax (Nouvelle-Écosse)"
+    assert [r["name"] for r in out[1:]] == ["La Rochelle", "Ajaccio (Corse)"]
+
+
 def test_write_film_chain_never_calls_translate_written_plan(monkeypatch):
     async def _trap(*_a, **_k):
         raise AssertionError("translate_written_plan must not run in production chain")
