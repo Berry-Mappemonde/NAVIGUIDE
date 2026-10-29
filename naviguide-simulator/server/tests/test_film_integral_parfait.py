@@ -7,8 +7,12 @@
    Cannes » : on ne longe pas le port où l'on arrive.
 """
 import asyncio
+import re
+from datetime import datetime, timezone
 
 from climo_events import EQUATOR_BAND_DEG, _place_phrase
+from film_script import build_raw_from_moments
+from tests.test_film_script import CLOCK, JOURNAL, LIVE, MOMENTS, _rg6_review
 import film_script as fs
 from film_script import _coast_is_arrival, spoken_sea_days
 
@@ -43,6 +47,31 @@ def test_other_coasts_are_kept():
     assert not _coast_is_arrival(_coast("Pago Pago"), "Mata-Utu (Wallis-et-Futuna)", [], None, "fr")
     assert not _coast_is_arrival(_coast("Paramaribo"), "Cayenne (Guyane)", [], {"name": "Cayenne (Guyane)"}, "fr")
     assert not _coast_is_arrival(_coast("Saint-Denis"), "Saint-Gilles (La Réunion)", [], None, "fr")
+
+
+def test_coast_pierre_is_not_saint_pierre_arrival():
+    """W11 : « Pierre » ne doit pas être traité comme l'arrivée à Saint-Pierre."""
+    assert not _coast_is_arrival(
+        _coast("Pierre"), "Saint-Pierre (Saint-Pierre-et-Miquelon)", [], None, "fr",
+    )
+
+
+def test_w10_build_raw_oct29_no_longe_arrival_or_equator_outside_band():
+    """W10 : brut regénéré au now 29/10/2026 (hors ligne, stock CLOCK/JOURNAL)."""
+    now_ms = int(datetime(2026, 10, 29, 14, 30, tzinfo=timezone.utc).timestamp() * 1000)
+    for lang in ("fr", "en"):
+        plan = build_raw_from_moments(
+            CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS},
+            lang=lang, seconds=0, now_ms=now_ms, review=_rg6_review(),
+        )
+        blob = "\n".join(str(ch.get("text") or "") for ch in plan.get("chapters") or [])
+        assert blob.strip(), lang
+        assert not re.search(r"longe\s+Mata[- ]Utu", blob, re.I), blob[:400]
+        assert not re.search(r"longe\s+D[ée]grad", blob, re.I), blob[:400]
+        if lang == "fr":
+            assert not re.search(r"longe\s+Pierre\b", blob, re.I), blob[:400]
+        else:
+            assert not re.search(r"along\s+Pierre\b", blob, re.I), blob[:400]
 
 
 def test_short_hop_is_not_a_day_at_sea():
