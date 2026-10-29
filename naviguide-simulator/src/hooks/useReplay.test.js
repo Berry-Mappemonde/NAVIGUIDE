@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt, sentenceSpan, stepFilmTime } from "../engine/replay.js";
-import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, arrivalBubbleFitsDestination, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmBudgetCanPlay, filmCharRatesStable, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, arrivalBubbleFitsDestination, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmBudgetCanPlay, filmCharRatesStable, filmChapterPlayheadCapped, filmEndCharIdx, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
 import { briefingForReplayPosition, replayPlace } from "./useReplay.js";
 import { VOICE_LEAD_MS, VOICE_MS_PER_CHAR } from "../utils/speak.js";
 import { shouldStopSpeakingOnChapterChange } from "./useReplayVoice.js";
@@ -1026,6 +1026,24 @@ describe("useReplay — client robuste (E2, E3, E4)", () => {
     assert.doesNotMatch(resume.text, /s'envole/);
   });
 
+  it("Vol retour élidé « s'envole d’Halifax » (et apostrophe typographique) reconnu", () => {
+    const glued = [
+      "Le 18 août, l’équipage s’envole de Cayenne pour Halifax ; le catamaran attend à Cayenne.",
+      "Le 28 août, l'équipage s'envole d’Halifax pour Cayenne.",
+    ].join(" ");
+    const back = visibleFilmSubtitle(glued, {
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Cayenne (Guyane)",
+    });
+    assert.equal(back, "Le 28 août, l'équipage s'envole d’Halifax pour Cayenne.");
+    const out = visibleFilmSubtitle(glued, {
+      fromName: "Cayenne (Guyane)",
+      toName: "Halifax (Nouvelle-Écosse)",
+    });
+    assert.equal(out, "Le 18 août, l’équipage s’envole de Cayenne pour Halifax ; le catamaran attend à Cayenne.");
+    assert.ok(filmSubtitleShowsAir("Le 28 août, l’équipage s’envole d’Halifax pour Cayenne."));
+  });
+
   it("Phrase side sous le curseur même si le chapitre fusionné est étiqueté vol", () => {
     const merged = [
       "À Halifax, l'équipage embarque sur un second voilier pour Saint-Pierre.",
@@ -1476,5 +1494,28 @@ describe("Bateau sur la phrase, pas à tB", () => {
     assert.match(hook, /filmBoatAtPhrase/);
     assert.match(hook, /RC52/);
     assert.doesNotMatch(hook, /FILM_FLIP_HOLD_MS|panBy/);
+  });
+});
+
+describe("useReplay — fin du film (fl1)", () => {
+  const text = "Le 17 octobre, départ vers Mata-Utu : 1 642 milles, une dizaine de jours de mer. "
+    + "Arrivée à Mata-Utu (Wallis-et-Futuna) le 27 octobre, à la marina de Fineveke. "
+    + "Aujourd’hui, le bateau est à Mata-Utu (Wallis-et-Futuna). "
+    + "Les escales à venir : Nouméa, Dzaoudzi, Tromelin, Saint-Gilles, Europa, La Rochelle.";
+  const last = { text, chars: text.length };
+
+  it("au tick de fin, le sous-titre montre la clôture et pas la 1re phrase du dernier chapitre", () => {
+    const charIdx = filmEndCharIdx(last, 12, 13, 0);
+    assert.equal(charIdx, text.length);
+    const end = filmBarSubtitle({ chapterText: text, charIdx, pinned: false });
+    assert.match(end.text, /Dzaoudzi/);
+    const before = filmBarSubtitle({ chapterText: text, charIdx: 0, pinned: false });
+    assert.doesNotMatch(before.text, /Dzaoudzi/);
+  });
+
+  it("hors dernier chapitre ou sans longueur, garde l'index courant", () => {
+    assert.equal(filmEndCharIdx(last, 5, 13, 7), 7);
+    assert.equal(filmEndCharIdx(null, 12, 13, 3), 3);
+    assert.equal(filmEndCharIdx({ chars: 0 }, 12, 13, 4), 4);
   });
 });

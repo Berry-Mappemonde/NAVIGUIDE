@@ -386,6 +386,16 @@ export function abandonVoiceToLinear({
  * voiceSpokenAll termine ; le budget n'arrête jamais la clôture au milieu
  * (« Aujourd'hui, le » coupé, transcription du 14 oct.).
  */
+/**
+ * Index de caractère publié au tick de fin : la fin du dernier chapitre,
+ * pour que le sous-titre montre la phrase de clôture et non la 1re phrase.
+ */
+export function filmEndCharIdx(lastChapter, chapterIdx, chapterCount, fallback = 0) {
+  if (!lastChapter || chapterIdx !== chapterCount - 1) return fallback;
+  const chars = Number(lastChapter.chars);
+  return Number.isFinite(chars) && chars > 0 ? Math.max(fallback, chars) : fallback;
+}
+
 export function filmShouldFinish({
   voiceClock = false,
   speaking = false,
@@ -776,16 +786,16 @@ export function closingSubtitle(text) {
 
 /** Phrases avion RF5 déjà présentes dans le chapitre — on ne les invente pas. */
 export const FILM_AIR_PHRASE_RE =
-  /prend l[''']avion pour|s'envole|the crew flies(?: to| from)|retour en avion vers|return flight to/i;
+  /prend l['’]avion pour|s['’]envole|the crew flies(?: to| from)|retour en avion vers|return flight to/i;
 
 const FILM_AIR_SENTENCE_RE =
-  /[^.!?…\n]*?(?:prend l[''']avion pour|s'envole|the crew flies(?: to| from)|retour en avion vers|return flight to)[^.!?…]*(?:[.!?…]|$)/gi;
+  /[^.!?…\n]*?(?:prend l['’]avion pour|s['’]envole|the crew flies(?: to| from)|retour en avion vers|return flight to)[^.!?…]*(?:[.!?…]|$)/gi;
 
 const FILM_AIR_OUT_PHRASE_RE =
-  /s'envole de Cayenne|prend l[''']avion pour Halifax|flies from Cayenne|the crew flies to Halifax/i;
+  /s['’]envole de Cayenne|prend l['’]avion pour Halifax|flies from Cayenne|the crew flies to Halifax/i;
 
 const FILM_AIR_BACK_PHRASE_RE =
-  /s'envole de Halifax|prend l[''']avion pour Cayenne|flies from Halifax|retour en avion vers Cayenne|return flight to Cayenne/i;
+  /s['’]envole (?:de |d['’])Halifax|prend l['’]avion pour Cayenne|flies from Halifax|retour en avion vers Cayenne|return flight to Cayenne/i;
 
 function collectAirSentences(text) {
   const found = String(text || "").match(FILM_AIR_SENTENCE_RE) || [];
@@ -1927,6 +1937,9 @@ export function useReplay({
       if (done) {
         const last = plan.chapters[plan.chapters.length - 1];
         ingest(last?.tB ?? w.endMs);
+        // Fin du film : le sous-titre reste sur la dernière phrase (sans voix,
+        // voiceCharRef vaut 0 et ramenait la 1re phrase du dernier chapitre).
+        charIdx = filmEndCharIdx(last, chapterIdxRef.current, plan.chapters.length, charIdx);
         finish();
       } else if (catchup) {
         const spokenCh = plan.chapters[chapterIdxRef.current];
@@ -2110,7 +2123,8 @@ export function useReplay({
         toName: chapter?.toName,
         anchors: chapter?.anchors,
       });
-      if (uiDue && sub.text !== lastSubtitleRef.current) {
+      // Tick de fin : le sous-titre de clôture part au DOM même hors cadence UI.
+      if ((uiDue || done) && sub.text !== lastSubtitleRef.current) {
         lastSubtitleRef.current = sub.text;
         setSubtitle(sub.text);
         setSubtitlePlace(sub.place);
