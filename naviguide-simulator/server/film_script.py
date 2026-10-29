@@ -4120,7 +4120,9 @@ def review_leg_for_chapter(review: dict | None, from_name: str, to_name: str) ->
 
 
 def _window_leg_nm(w: dict) -> Optional[float]:
-    """Écart de milles de l'horloge / des marques — même source que plan-review."""
+    """Écart de milles de l'horloge / des marques — même source que plan-review.
+    Une seule échelle : nm si réel aux deux bouts (et pas miroir / 0 avec filmNm>1),
+    sinon filmNm aux deux bouts. destNm de même échelle si dispo."""
     frm = w.get("from") or {}
     dest = w.get("to") or {}
 
@@ -4131,12 +4133,29 @@ def _window_leg_nm(w: dict) -> Optional[float]:
                 return float(val)
         return None
 
-    a_nm, b_nm = num(frm, "nm"), num(dest, "nm")
-    if a_nm is not None and b_nm is not None and (b_nm - a_nm) > 1:
-        return b_nm - a_nm
-    a = num(frm, "nm", "filmNm")
-    b = num(dest, "nm", "filmNm")
+    # Try nm on both ends first
+    a_nm = num(frm, "nm")
+    b_nm = num(dest, "nm")
+    a_film_nm = num(frm, "filmNm")
+    b_film_nm = num(dest, "filmNm")
+
+    # Check if nm is valid at both ends
+    # nm is invalid if: mirrored (0 with filmNm > 1), or 0 with filmNm > 1
+    nm_invalid_a = (a_nm is None or (a_nm == 0 and a_film_nm is not None and a_film_nm > 1))
+    nm_invalid_b = (b_nm is None or (b_nm == 0 and b_film_nm is not None and b_film_nm > 1))
+
+    if not nm_invalid_a and not nm_invalid_b and a_nm is not None and b_nm is not None:
+        gap = b_nm - a_nm
+        if gap > 1:
+            return gap
+
+    # Fall back to filmNm on both ends
+    a = a_film_nm
+    b = b_film_nm
     if b is None and isinstance(w.get("destNm"), (int, float)):
+        b = float(w["destNm"])
+    # If we used nm for a but filmNm for b, scale mismatch - try destNm as fallback
+    if a is not None and b is None and isinstance(w.get("destNm"), (int, float)):
         b = float(w["destNm"])
     if a is None or b is None:
         return None
@@ -6155,9 +6174,7 @@ def _arrival_harbor(items: list | None, dest: dict | None, lang: str) -> str:
         if not name or looks_english_title(name):
             continue
         dist = _nm_between(dest_lat, dest_lon, item.get("lat"), item.get("lon"))
-        near = bool(dest_name) and (
-            dest_name.casefold() in name.casefold() or name.casefold() in dest_name.casefold()
-        )
+        near = bool(dest_name) and same_stop(dest_name, name)
         if not near and (dist is None or dist > 25.0):
             continue
         if not near and _harbor_names_other_town(name, dest_name):
@@ -9489,7 +9506,7 @@ def build_raw_from_moments(
             if _is_air_only_stop(title) and not (_is_air_window(w) or _is_side_window(w)):
                 return
             if change.get("kind") == "approche" and dest_name and title and (
-                same_stop(title, dest_name) or dest_name.casefold() in title.casefold()
+                same_stop(title, dest_name)
             ):
                 return
             place = change_place_name(change) or title
