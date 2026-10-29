@@ -450,7 +450,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 {replay.receipt && !replay.writing && (replay.style || "raw") === "written" && replay.hasWritten ? (
                   <FilmReceipt
                     receipt={replay.receipt}
-                    webSourceCount={replay.webContext?.sources?.length || 0}
+                    webSourceCount={replay.receipt.webSourceCount ?? (replay.webContext?.sources?.length || 0)}
                     t={t}
                     lang={lang}
                   />
