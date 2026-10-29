@@ -6278,3 +6278,15 @@ def test_english_exonyms_pass_but_invented_place_does_not():
         "Arrivée à Ajaccio (Corse). Puis les eaux samoanes.",
     )
     assert {"corsica", "samoan"} <= got and "rome" not in got
+
+
+def test_translation_keeps_an_english_exonym_sentence():
+    import asyncio
+    import film_script as fs
+    raw_ch = {"id": "c1", "text": "Arrivée à Ajaccio (Corse).", "anchors": []}
+
+    async def tr(system, user, **kw):
+        return "Arrival at Ajaccio (Corsica).", "nemotron-lightning"
+
+    en = asyncio.run(fs.translate_written_plan({"chapters": [raw_ch]}, {"chapters": [raw_ch]}, cascade=tr))
+    assert en and en["chapters"][0]["text"] == "Arrival at Ajaccio (Corsica)."

@@ -11067,7 +11067,7 @@ async def translate_written_plan(
             )
             if not (text or "").strip() or source in {"rules", "budget"}:
                 return None
-            facts_en = {**facts, "en_names": sorted(_en_translation_names(text or "", src))} \
+            facts_en = {**facts, "en_names": sorted(n.title() for n in _en_translation_names(text or "", src))} \
                 if isinstance(facts, dict) else facts
             guarded, rw, fb = apply_written_guard(src, text, facts_en, lang="en")
             if len(_sentences(speak_film_text(text, "en"))) < len(_sentences(src)):
