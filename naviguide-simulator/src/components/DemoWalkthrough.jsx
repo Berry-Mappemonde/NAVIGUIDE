@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Compass, Loader2, Play, X } from "lucide-react";
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
 import { useLang } from "../i18n/LangContext.jsx";
-import { describeModelRoles, getDemoSteps, tourEditedOffer, computePanelPosition, computeArrowDirection, getStagePadding } from "./demoWalkthrough.js";
+import {
+  describeModelRoles, getDemoSteps, tourEditedOffer, computePanelPosition, computeArrowDirection,
+  getStagePadding, PANEL_HEIGHT,
+} from "./demoWalkthrough.js";
 import { describeTfLatency } from "../utils/tfLatency.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
@@ -129,6 +132,8 @@ export function DemoWalkthrough({
   // Projecteur driver.js (MIT) : assombrit tout l'écran sauf l'élément réel de l'étape.
   // Le panneau React reste la bulle (boutons, i18n, focus) ; driver.js ne gère que le spot.
   const driverRef = useRef(null);
+  const panelRef = useRef(null);
+  const [panelHeight, setPanelHeight] = useState(PANEL_HEIGHT);
   const [anchor, setAnchor] = useState(null);
   const spotOn = open && !hidden && !collapsed;
   const target = step?.target || null;
@@ -215,6 +220,19 @@ export function DemoWalkthrough({
   }, [spotOn, target, step.id]);
   useEffect(() => () => { driverRef.current?.destroy(); driverRef.current = null; }, []);
 
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!el || collapsed || !open) return undefined;
+    const measure = () => {
+      const h = el.getBoundingClientRect().height;
+      if (h > 0) setPanelHeight(h);
+    };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [open, collapsed, index, step.id]);
+
   // Pulse animation on "trace" step target — unique useEffect, réessaye si le bouton n'existe pas encore
   // R10: use separate counter (attempts) instead of rAF ID
   useEffect(() => {
@@ -295,15 +313,16 @@ export function DemoWalkthrough({
 
   // Compute panel position using pure logic from demoWalkthrough.js
   const panelStyle = anchor && typeof window !== "undefined" && window.innerWidth >= 768
-    ? computePanelPosition(anchor, step.id, window.innerWidth, window.innerHeight)
+    ? computePanelPosition(anchor, step.id, window.innerWidth, window.innerHeight, panelHeight)
     : undefined;
 
   const arrowDir = (anchor && window && window.innerWidth >= 768)
-    ? computeArrowDirection(anchor, step.id, window.innerWidth, window.innerHeight)
+    ? computeArrowDirection(anchor, step.id, window.innerWidth, window.innerHeight, panelHeight)
     : undefined;
 
   return (
     <aside
+      ref={panelRef}
       role="region"
       aria-label={t("demoRegion")}
       data-testid="demo-walkthrough-panel"

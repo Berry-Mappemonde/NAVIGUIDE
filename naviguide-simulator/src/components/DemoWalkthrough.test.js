@@ -181,6 +181,11 @@ describe("visite guidée des juges", () => {
   });
 });
 
+it("R11 : onResize relance le suivi du projecteur", () => {
+  const src = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
+  assert.match(src, /onResize[\s\S]*tries = 0[\s\S]*requestAnimationFrame\(track\)/);
+});
+
 it("R9 : le cleanup du projecteur appelle destroy() au changement d'étape", () => {
   const src = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
   assert.match(
@@ -211,6 +216,20 @@ describe("placement logic (exported from demoWalkthrough.js)", () => {
     assert.ok(pos && pos.bottom && pos.top === "auto");
     const bottom = Number(pos.bottom.replace("px", ""));
     assert.ok(bottom > 768 - 600);
+  });
+
+  it("R12 : replay borde le panneau haut quand la hauteur mesurée dépasse l'écran", () => {
+    const tallPanel = 500;
+    const minTop = 56;
+    const minBottom = 56;
+    for (const innerHeight of [400, 600, 900]) {
+      const pos = computePanelPosition(anchorBottom, "replay", 1024, innerHeight, tallPanel);
+      assert.ok(pos?.bottom, `replay bottom attendu pour h=${innerHeight}`);
+      const bottom = Number(pos.bottom.replace("px", ""));
+      const effective = Math.min(tallPanel, Math.max(120, innerHeight - minTop - minBottom));
+      const topEdge = innerHeight - bottom - effective;
+      assert.ok(topEdge >= minTop, `haut du panneau >= MIN_TOP pour h=${innerHeight}, got ${topEdge}`);
+    }
   });
 
   it("computePanelPosition for replay step with anchor in top half returns top position", () => {

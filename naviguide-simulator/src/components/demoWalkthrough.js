@@ -164,7 +164,7 @@ export function tourEditedStep({
   return "wait";
 }
 
-const PANEL_HEIGHT = 420;
+export const PANEL_HEIGHT = 420;
 const MIN_TOP = 56;
 const MOBILE_BREAKPOINT = 768;
 const MIN_BOTTOM = 56;
@@ -177,30 +177,37 @@ const MIN_BOTTOM = 56;
  * @param {number} innerHeight - window.innerHeight
  * @returns {{top?: string, bottom?: string} | undefined}
  */
-export function computePanelPosition(anchor, stepId, innerWidth, innerHeight) {
+export function computePanelPosition(
+  anchor, stepId, innerWidth, innerHeight, panelHeight = PANEL_HEIGHT,
+) {
   if (!anchor || innerWidth < MOBILE_BREAKPOINT) return undefined;
 
-  const maxTop = innerHeight - PANEL_HEIGHT;
+  const requested = Math.max(120, Number(panelHeight) || PANEL_HEIGHT);
+  const height = Math.min(requested, Math.max(120, innerHeight - MIN_TOP - MIN_BOTTOM));
+  const maxTop = innerHeight - height;
 
   // Step "replay": position above film bar when anchor is in bottom half
   if (stepId === "replay") {
     const anchorCenterY = anchor.top + anchor.height / 2;
     const screenCenterY = innerHeight / 2;
     if (anchorCenterY > screenCenterY) {
-      // Anchor in bottom half: position panel above it
-      const bottom = innerHeight - anchor.top + 12;
+      let bottom = innerHeight - anchor.top + 12;
+      const topOfPanel = innerHeight - bottom - height;
+      if (topOfPanel < MIN_TOP) {
+        bottom = innerHeight - MIN_TOP - height;
+      }
+      bottom = Math.max(MIN_BOTTOM, bottom);
       return { bottom: `${Math.round(bottom)}px`, top: "auto" };
     }
   }
 
   // Default: clamp top between MIN_TOP and maxTop, ensure bottom >= MIN_BOTTOM
-  const maxTopClamped = innerHeight - PANEL_HEIGHT - MIN_TOP;
+  const maxTopClamped = innerHeight - height - MIN_TOP;
   const clampedTop = Math.max(MIN_TOP, Math.min(anchor.top, maxTopClamped));
-  const bottom = innerHeight - clampedTop - PANEL_HEIGHT;
+  const bottom = innerHeight - clampedTop - height;
   if (bottom < MIN_BOTTOM) {
-    // Clamp bottom instead
     const clampedBottom = Math.max(MIN_BOTTOM, bottom);
-    const topFromBottom = innerHeight - PANEL_HEIGHT - clampedBottom;
+    const topFromBottom = innerHeight - height - clampedBottom;
     return { top: `${Math.round(topFromBottom)}px` };
   }
   return { top: `${Math.round(clampedTop)}px` };
@@ -214,10 +221,12 @@ export function computePanelPosition(anchor, stepId, innerWidth, innerHeight) {
  * @param {number} innerHeight - window.innerHeight
  * @returns {"up" | "down" | "left" | "right" | undefined}
  */
-export function computeArrowDirection(anchor, stepId, innerWidth, innerHeight) {
+export function computeArrowDirection(
+  anchor, stepId, innerWidth, innerHeight, panelHeight = PANEL_HEIGHT,
+) {
   if (!anchor || innerWidth < MOBILE_BREAKPOINT) return undefined;
   
-  const panelPos = computePanelPosition(anchor, stepId, innerWidth, innerHeight);
+  const panelPos = computePanelPosition(anchor, stepId, innerWidth, innerHeight, panelHeight);
   if (!panelPos) return undefined;
 
   // Special case for replay step: panel is conceptually above film bar at bottom, arrow always points down
