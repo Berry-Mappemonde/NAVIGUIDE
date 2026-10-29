@@ -11979,6 +11979,144 @@ def _translate_keep_names(facts: Any, src: str) -> str:
     return "\nKeep these names exactly as written, untranslated: " + "; ".join(names)
 
 
+# --- Garde de traduction EN déterministe (VERIF-FILM-0515 N1-N9) ---------------------
+# Lightning varie d'un run à l'autre : « Le 29 août, the catamaran… », « une vingtaine
+# de jours » → « a couple of weeks », « eaux de la Guyane » → « Guyanese waters ».
+# Ces corrections ne disent jamais un fait absent du français : elles ramènent
+# l'anglais à ce que dit la phrase française (date, approximation, nom de pays).
+
+_FR_DATE_IN_EN_RE = re.compile(
+    r"\b(?P<le>[Ll]e\s+)?(?P<d>1er|\d{1,2})\s+(?P<m>" + "|".join(_FR_MONTHS_EN) + r")\b(?:\s+(?P<y>\d{4})\b)?",
+    re.I,
+)
+
+
+def en_french_dates(text: str) -> str:
+    """« Le 29 août, the catamaran… » → « On August 29, the catamaran… » (N1)."""
+    def _one(m: re.Match) -> str:
+        day = "1" if m.group("d").casefold() == "1er" else str(int(m.group("d")))
+        month = _FR_MONTHS_EN[m.group("m").casefold()].capitalize()
+        date = f"{month} {day}, {m.group('y')}" if m.group("y") else f"{month} {day}"
+        le = m.group("le")
+        if not le:
+            return date
+        return ("On " if le[0] == "L" else "on ") + date
+
+    return _FR_DATE_IN_EN_RE.sub(_one, text or "")
+
+
+# Approximations FR sans équivalent anglais figé ici (quinzaine ≈ fortnight, douzaine) : intouchées.
+_APPROX_EN_CANON = {**_APPROX_EN_DAYS, "centaine": "about a hundred days"}
+_FR_APPROX_DAYS_RE = re.compile(
+    r"\b(" + "|".join(_APPROX_EN_CANON) + r")(?=\s+de\s+jours\b|\s*[.,;:!?)]|\s*$)", re.I,
+)
+_EN_DURATION_WORDS = (
+    r"one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|"
+    r"sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred"
+)
+# Une durée approximative anglaise : « a couple of weeks », « about three weeks »,
+# « a fortnight », « some fifteen days », « about 25 days », « nearly a month ».
+_EN_APPROX_DURATION_RE = re.compile(
+    r"\b(?:(?:about|around|roughly|some|nearly|almost|approximately|close to|over|just over|under)\s+)?"
+    r"(?:a\s+couple\s+of\s+weeks|a\s+few\s+weeks|several\s+weeks|a\s+fortnight|a\s+month|a\s+week|"
+    r"(?:a\s+)?(?:" + _EN_DURATION_WORDS + r"|\d+)(?:-odd)?\s+(?:weeks|days|months))\b",
+    re.I,
+)
+_EN_APPROX_LEAD = re.compile(
+    r"^(?:about|around|roughly|some|nearly|almost|approximately|close to|over|just over|under)\b|"
+    r"couple|few|several|fortnight|month|week|-odd",
+    re.I,
+)
+
+
+def _fix_approx_pair(en: str, fr: str) -> str:
+    hits = {m.group(1).casefold() for m in _FR_APPROX_DAYS_RE.finditer(fr or "")}
+    if len(hits) != 1:
+        return en
+    canon = _APPROX_EN_CANON[hits.pop()]
+    if canon in (en or "").casefold():
+        return en
+    for m in _EN_APPROX_DURATION_RE.finditer(en or ""):
+        phrase = m.group(0)
+        # Une durée exacte (« 46 days at sea ») n'est pas une approximation : intouchée.
+        if not _EN_APPROX_LEAD.search(phrase):
+            continue
+        return en[: m.start()] + canon + en[m.end():]
+    return en
+
+
+def fix_en_approx_days(text: str, fr_src: str) -> str:
+    """« une vingtaine de jours » se dit « about twenty days », jamais « a couple of
+    weeks » (N2). Phrase à phrase quand les découpages s'alignent, sinon le chapitre."""
+    fr_s, en_s = _sentences(fr_src or ""), _sentences(text or "")
+    if fr_s and len(fr_s) == len(en_s):
+        out = [_fix_approx_pair(en, fr) for fr, en in zip(fr_s, en_s)]
+        return " ".join(out) if out != en_s else text
+    return _fix_approx_pair(text or "", fr_src or "")
+
+
+def _fr_name_pattern(name: str) -> str:
+    return r"[\s\-]+".join(re.escape(p) for p in re.split(r"[\s\-]+", name.strip()) if p)
+
+
+_EN_EXONYM_RE: Optional[list[tuple[re.Pattern[str], str]]] = None
+
+
+def _en_exonym_rules() -> list[tuple[re.Pattern[str], str]]:
+    """Table des toponymes : nom français → exonyme anglais, seulement après
+    « the waters of » / « those of » (jamais un nom d'escale, qui ancre le film)."""
+    global _EN_EXONYM_RE
+    if _EN_EXONYM_RE is None:
+        rules = []
+        rows = sorted(toponyms.territories(), key=lambda r: len(str(r.get("fr") or "")), reverse=True)
+        for row in rows:
+            fr, en = str(row.get("fr") or "").strip(), str(row.get("en") or "").strip()
+            if not fr or not en or fr == en or row.get("kind") == "high_seas":
+                continue
+            rx = re.compile(
+                r"\b(?P<lead>(?:waters|those)\s+of\s+(?:the\s+)?)(?:l[ae]\s+|les\s+)?" + _fr_name_pattern(fr) + r"(?![\w\-])",
+            )
+            rules.append((rx, en))
+        _EN_EXONYM_RE = rules
+    return _EN_EXONYM_RE
+
+
+def fix_en_toponyms(text: str, fr_src: str) -> str:
+    """Noms de pays et d'eaux justes en anglais (N3-N7, N9), selon le français source."""
+    out = text or ""
+    for rx, en in _en_exonym_rules():
+        out = rx.sub(lambda m, en=en: m.group("lead") + en, out)
+    low = (fr_src or "").casefold()
+    # N4 : la Guyane (française) n'est pas le Guyana.
+    if re.search(r"\b(?:de la guyane|eaux guyanaises)\b", low) and not re.search(r"guyanien|eaux du guyana", low):
+        out = re.sub(r"\bGuyanese waters\b", "French Guiana waters", out)
+    # N4 bis (run réel 06 h 03) : « Cayenne (Guyane) » rendu « Cayenne (Guyana) ».
+    if "(guyane)" in low and "(guyana)" not in low:
+        out = out.replace("(Guyana)", "(French Guiana)")
+    # N5 : « eaux indiennes » = les eaux de l'Inde, pas l'océan Indien.
+    if "eaux indiennes" in low and "océan indien" not in low:
+        out = re.sub(r"\bIndian Ocean waters\b", "Indian waters", out)
+    # « eaux grenadiennes » = la Grenade (Grenadian), pas les Grenadines.
+    if "grenadiennes" in low:
+        out = re.sub(r"\bGrenadine waters\b", "Grenadian waters", out)
+    # N7 : une seule unité dans le film anglais (« miles » partout ailleurs).
+    out = re.sub(r"\bnautical miles\b", "miles", out)
+    # N9 : « reprend le second voilier » = remonte à bord, pas « prend le contrôle ».
+    if "reprend le second" in low:
+        out = re.sub(
+            r"\btakes over the second (vessel|sailboat|boat|yacht)\b",
+            r"boards the second \1 again", out,
+        )
+    return out
+
+
+def en_translation_guard(text: str, fr_src: str) -> str:
+    """Toutes les corrections déterministes de l'anglais, dans l'ordre (idempotent)."""
+    out = en_french_dates(text)
+    out = fix_en_approx_days(out, fr_src)
+    return fix_en_toponyms(out, fr_src)
+
+
 async def translate_written_plan(
     fr_plan: dict,
     raw_plan: dict,
@@ -12019,7 +12157,10 @@ async def translate_written_plan(
             )
             if not (text or "").strip() or source in {"rules", "budget"}:
                 return None
-            text = _repair_en_days(src, text or "")
+            # Date et durée remises d'aplomb AVANT le garde-fou (il les compare au
+            # français) ; les noms de pays, eux, après (ses listes de noms tolérés
+            # partent du texte de Lightning).
+            text = _repair_en_days(src, fix_en_approx_days(en_french_dates(text or ""), src))
             facts_en = {**facts, "en_names": sorted(n.title() for n in _en_translation_names(text or "", src)),
                         "approx": _fr_approx_numbers(src)} \
                 if isinstance(facts, dict) else facts
@@ -12053,6 +12194,8 @@ async def translate_written_plan(
         guarded = en_le_month(guarded)
         guarded = unit_numbers_to_digits(guarded)
         guarded = en_argo_float(guarded)
+        # Garde EN déterministe après le garde-fou (recollages compris) : N1-N9.
+        guarded = en_translation_guard(guarded, src)
         # « par la route jusqu'à La Rochelle » rendu « by the route to » : « by road ».
         guarded = re.sub(r"\bby (?:the )?route to\b|\bby the road to\b", "by road to", guarded)
         # « le bateau longe X » rendu « the boat follows X » : on dit la côte longée.
