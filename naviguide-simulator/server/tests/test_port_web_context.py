@@ -85,3 +85,71 @@ def test_pick_port_label_falls_back_to_nearest_named_port():
     assert pick_port_label(ctx) == "Lorient"
     assert pick_port_label({"nextStop": {"name": "Mindelo"}, **ctx}) == "Mindelo"
     assert pick_port_label({"around": {"ports": [{"nm": 1}]}}) is None
+
+
+def test_pick_port_label_prefers_port_like_name():
+    from port_web_context import pick_port_label
+
+    ctx = {"around": {"marinas": [{"name": "Technimarine"}, {"name": "Marina de Papeete"}]}}
+    assert pick_port_label(ctx) == "Marina de Papeete"
+    assert pick_port_label({"around": {"marinas": [{"name": "Technimarine"}]}}) == "Technimarine"
+
+
+def test_region_hint_keeps_country_inside_parentheses():
+    from port_web_context import pick_region_hint
+
+    ctx = {"around": {"zee": {"name": "French Exclusive Economic Zone (French Polynesia)"}}}
+    assert pick_region_hint(ctx) == "French Polynesia"
+    assert pick_region_hint({"around": {"zee": {"name": "Irish EEZ"}}}) == "Irish EEZ"
+
+
+def test_search_uses_general_topic_without_day_window(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    bodies = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content.decode()))
+        return httpx.Response(200, json={"results": []})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await port_web_context.fetch_port_web("Papeete", region="French Polynesia", client=client)
+
+    asyncio.run(run())
+    assert bodies[0]["topic"] == "general"
+    assert "days" not in bodies[0]
+    assert bodies[0]["query"].startswith("Papeete French Polynesia")
+
+
+def test_film_boat_uses_port_near_boat_not_official_next_stop():
+    from port_web_context import pick_port_label
+
+    ctx = {
+        "nextStop": {"name": "Nouméa (Nouvelle-Calédonie)"},
+        "boat": {"lat": -17.5, "lon": -149.6, "basis": "simulation"},
+        "around": {"marinas": [{"name": "Marina de Papeete"}]},
+    }
+    assert pick_port_label(ctx) == "Marina de Papeete"
+    ctx["boat"]["basis"] = "clock"
+    assert pick_port_label(ctx) == "Nouméa (Nouvelle-Calédonie)"
+
+
+def test_official_stop_query_has_no_boat_region(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    bodies = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content.decode()))
+        return httpx.Response(200, json={"results": []})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            ctx = {
+                "nextStop": {"name": "Nouméa"},
+                "boat": {"basis": "clock"},
+                "around": {"zee": {"name": "French Exclusive Economic Zone (French Polynesia)"}},
+            }
+            await port_web_context.attach(ctx, client, datetime.now(timezone.utc))
+
+    asyncio.run(run())
+    assert "Polynesia" not in bodies[0]["query"]
