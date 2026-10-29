@@ -17,6 +17,22 @@ export const DEMO_PANEL_SIDE = {
 };
 
 /**
+ * Élément réel éclairé par driver.js à chaque étape (le reste de l'écran est assombri).
+ * Sélecteurs stables : `data-tour=…` posés sur les composants, `.leaflet-container` (Leaflet)
+ * et `view-tracer` (bouton Tracer). `null` = étape sans élément : rien n'est assombri.
+ */
+export const DEMO_TOUR_TARGETS = {
+  welcome: null,
+  models: null,
+  live: ".leaflet-container",
+  briefing: '[data-tour="logbook"]',
+  layers: '[data-tour="layers"]',
+  replay: '[data-tour="film"]',
+  trace: '[data-testid="view-tracer"]',
+  return: null,
+};
+
+/**
  * @param {(key: string, vars?: object) => string} t
  * @param {{ replayState?: "ready" | "playing" | "unavailable", custom?: boolean }} [opts]
  */
@@ -46,7 +62,7 @@ export function getDemoSteps(t, { replayState = "unavailable", custom = false } 
     trace: t("demoTraceTitle"),
     return: t("demoReturnTitle"),
   };
-  return DEMO_STEP_IDS.map((id) => ({ id, action: id, title: title[id], body: body[id], side: DEMO_PANEL_SIDE[id] }));
+  return DEMO_STEP_IDS.map((id) => ({ id, action: id, title: title[id], body: body[id], side: DEMO_PANEL_SIDE[id], target: DEMO_TOUR_TARGETS[id] }));
 }
 
 // Étape « Qui fait quoi » : modèles Nemotron (Nebius Token Factory) par palier, lus en direct

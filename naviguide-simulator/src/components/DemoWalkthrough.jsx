@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Compass, Loader2, Play, X } from "lucide-react";
+import { driver } from "driver.js";
+import "driver.js/dist/driver.css";
 import { useLang } from "../i18n/LangContext.jsx";
 import { describeModelRoles, getDemoSteps, tourEditedOffer } from "./demoWalkthrough.js";
 import { describeTfLatency } from "../utils/tfLatency.js";
@@ -124,6 +126,66 @@ export function DemoWalkthrough({
     startRef.current();
   }, [autoStart]);
 
+  // Projecteur driver.js (MIT) : assombrit tout l'écran sauf l'élément réel de l'étape.
+  // Le panneau React reste la bulle (boutons, i18n, focus) ; driver.js ne gère que le spot.
+  const driverRef = useRef(null);
+  const [anchor, setAnchor] = useState(null);
+  const spotOn = open && !hidden && !collapsed;
+  const target = step?.target || null;
+  useEffect(() => {
+    if (!spotOn || !target) {
+      driverRef.current?.destroy();
+      driverRef.current = null;
+      setAnchor(null);
+      return undefined;
+    }
+    let raf = 0;
+    let tries = 0;
+    let last = "";
+    let stable = 0;
+    const make = () => driver({
+      animate: false,
+      allowClose: false,
+      allowKeyboardControl: false,
+      overlayClickBehavior: () => {},
+      overlayOpacity: 0.62,
+      stagePadding: 6,
+      stageRadius: 10,
+      smoothScroll: false,
+    });
+    const show = (el) => {
+      // Nouvelle instance à chaque mesure : refresh() / highlight() du même élément gardent l'ancien cadre.
+      driverRef.current?.destroy();
+      driverRef.current = make();
+      driverRef.current.highlight({ element: el });
+      const r = el.getBoundingClientRect();
+      setAnchor({ top: r.top, bottom: r.bottom, height: r.height });
+    };
+    // Les panneaux s'ouvrent puis glissent : on suit la position de l'élément et on recale
+    // le projecteur dès qu'il bouge (pas de projecteur sur un élément encore hors écran).
+    let shown = "";
+    const track = () => {
+      const el = document.querySelector(target);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const key = `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`;
+        stable = key === last ? stable + 1 : 0;
+        last = key;
+        if (stable >= 3 && key !== shown) { shown = key; show(el); }
+      }
+      tries += 1;
+      if (tries < 600) raf = window.requestAnimationFrame(track);
+    };
+    raf = window.requestAnimationFrame(track);
+    const onResize = () => { shown = ""; };
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [spotOn, target]);
+  useEffect(() => () => { driverRef.current?.destroy(); driverRef.current = null; }, []);
+
   if (hidden) return null;
 
   const goTo = (nextIndex) => {
@@ -186,6 +248,11 @@ export function DemoWalkthrough({
       data-testid="demo-walkthrough-panel"
       data-step={step.id}
       data-side={step.side}
+      data-target={step.target || ""}
+      data-spot={anchor ? "on" : "off"}
+      style={anchor && typeof window !== "undefined" && window.innerWidth >= 768
+        ? { top: `${Math.round(Math.max(56, Math.min(anchor.top, window.innerHeight - 420)))}px` }
+        : undefined}
       className={`naviguide-demo-panel fixed z-[2300] flex flex-col overflow-y-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-md inset-x-2 bottom-2 max-h-[45dvh] md:inset-x-auto md:bottom-auto md:top-14 md:w-[min(23rem,calc(100vw-1.5rem))] md:max-h-[calc(100dvh-5rem)] ${side} ${surface}`}
     >
       <p className="sr-only" aria-live="polite" data-testid="demo-walkthrough-live">

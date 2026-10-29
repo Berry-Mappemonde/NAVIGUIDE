@@ -761,3 +761,10 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
     padding-right: 3px;
   }
 }
+
+/* Visite des juges : projecteur driver.js sous la bulle React (z 2300) et au-dessus de l'appli. */
+.driver-overlay { z-index: 2250 !important; }
+.driver-active .naviguide-demo-panel,
+.driver-active .naviguide-demo-panel *,
+.driver-active .naviguide-demo-launch,
+.driver-active .naviguide-demo-launch * { pointer-events: auto; }
