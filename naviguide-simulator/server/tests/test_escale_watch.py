@@ -436,3 +436,13 @@ def test_run_daily_without_enrich_skips_pearls(monkeypatch):
     assert called == []
     assert out["enrich"]["skipped"] is True
     assert out["enrich"]["reason"] == "watch-only"
+
+
+def test_watch_enabled_by_default(monkeypatch):
+    """Default is now 1 (watch enabled) — no env var means watch runs."""
+    monkeypatch.delenv("NAVIGUIDE_TAVILY_WATCH", raising=False)
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert escale_watch.watch_enabled() is True

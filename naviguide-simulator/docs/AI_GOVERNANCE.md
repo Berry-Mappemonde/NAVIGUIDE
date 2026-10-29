@@ -111,7 +111,7 @@ Article 4 (culture de l’IA) : pas de module ni de registre de formation dans c
 - Ce n’est pas une carte marine (`../../README.md:10`).
 - Les plafonds et les identifiants se changent par l’environnement (`server/llm_budget.py:174-181`).
 - Sans `NAVIGUIDE_LLM_DAILY_USD`, il n’y a pas de coupure en dollars (`server/llm_budget.py:227-228`).
-- La veille Tavily est éteinte par défaut (`server/escale_watch.py:94-102`).
+- La veille Tavily est **activée par défaut** (`NAVIGUIDE_TAVILY_WATCH=1`, `server/escale_watch.py:94-102`).
 
 Lien REDTEAM : aucun `evals/redteam/` ni `docs/security/REDTEAM_2026-10.md` sur cette branche. **à vérifier**.
 
