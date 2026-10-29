@@ -16,6 +16,7 @@ import { isAirLegNames } from "../utils/berryLegs.js";
 import { filmShownEstimateSeconds, filmVariantAbsent } from "../engine/playSpeeds.js";
 import { exitDocumentFullscreen } from "../utils/cinemaHotkey.js";
 import { restoreFollowView } from "./useFilmCamera.js";
+import { publicFilmWebContext } from "../utils/filmWebSources.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
 
@@ -182,6 +183,8 @@ export function filmSourceKey(source, reviewedBy, model) {
  */
 export function resolveServedFilm(data, requestedStyle) {
   const askedWritten = requestedStyle === "written";
+  // Écart n° 43 : provenance web rangée par le serveur au clic Rédigé (port, liens), quel que soit le style.
+  const webContext = publicFilmWebContext(data);
   if (askedWritten) {
     const hasWritten = Boolean(data?.hasWritten);
     if (hasWritten) {
@@ -193,6 +196,7 @@ export function resolveServedFilm(data, requestedStyle) {
         reviewedBy: data?.reviewedBy || "",
         model: data?.model || "",
         applyPlan: true,
+        webContext,
       };
     }
     return {
@@ -203,6 +207,7 @@ export function resolveServedFilm(data, requestedStyle) {
       reviewedBy: "",
       model: "",
       applyPlan: true,
+      webContext,
     };
   }
   return {
@@ -213,6 +218,7 @@ export function resolveServedFilm(data, requestedStyle) {
     model: "",
     source: data?.source || "rules",
     applyPlan: true,
+    webContext,
   };
 }
 
@@ -380,6 +386,16 @@ export function abandonVoiceToLinear({
  * voiceSpokenAll termine ; le budget n'arrête jamais la clôture au milieu
  * (« Aujourd'hui, le » coupé, transcription du 14 oct.).
  */
+/**
+ * Index de caractère publié au tick de fin : la fin du dernier chapitre,
+ * pour que le sous-titre montre la phrase de clôture et non la 1re phrase.
+ */
+export function filmEndCharIdx(lastChapter, chapterIdx, chapterCount, fallback = 0) {
+  if (!lastChapter || chapterIdx !== chapterCount - 1) return fallback;
+  const chars = Number(lastChapter.chars);
+  return Number.isFinite(chars) && chars > 0 ? Math.max(fallback, chars) : fallback;
+}
+
 export function filmShouldFinish({
   voiceClock = false,
   speaking = false,
@@ -1124,6 +1140,7 @@ export function useReplay({
   const [filmSource, setFilmSource] = useState("rules");
   const [filmReviewedBy, setFilmReviewedBy] = useState("");
   const [filmModel, setFilmModel] = useState("");
+  const [filmWebContext, setFilmWebContext] = useState(null);
   const [filmWriting, setFilmWriting] = useState(false);
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
@@ -1351,6 +1368,7 @@ export function useReplay({
       setFilmSource(resolved.source);
       setFilmReviewedBy(resolved.reviewedBy || "");
       setFilmModel(resolved.model || "");
+      setFilmWebContext(resolved.webContext || null);
       applyEstimates(data);
       applyStory(data);
     };
@@ -1397,6 +1415,7 @@ export function useReplay({
       setFilmSource("rules");
       setFilmReviewedBy("");
       setFilmModel("");
+      setFilmWebContext(null);
       setFilmWriting(false);
       setEstimatedSeconds(0);
       setVariantEstimates(null);
@@ -1416,6 +1435,7 @@ export function useReplay({
           setFilmSource(resolved.source);
           setFilmReviewedBy(resolved.reviewedBy || "");
           setFilmModel(resolved.model || "");
+          if (resolved.webContext) setFilmWebContext(resolved.webContext);
         })
         .catch((err) => {
           if (err?.name === "AbortError" || cancelled || ac.signal.aborted) return;
@@ -1601,6 +1621,7 @@ export function useReplay({
     setFilmSource(picked.source || local.source || "rules");
     setFilmReviewedBy("");
     setFilmModel("");
+    setFilmWebContext(remoteOk ? publicFilmWebContext(remoteToUse) : null);
     const userBudget = Number(targetSeconds) > 0 ? Number(targetSeconds) : 0;
     const playedChars = chapters.reduce((n, c) => n + String(c?.text || "").length, 0);
     if (!filmBudgetCanPlay({ chars: playedChars, budgetSeconds: userBudget })) return false;
@@ -1916,6 +1937,9 @@ export function useReplay({
       if (done) {
         const last = plan.chapters[plan.chapters.length - 1];
         ingest(last?.tB ?? w.endMs);
+        // Fin du film : le sous-titre reste sur la dernière phrase (sans voix,
+        // voiceCharRef vaut 0 et ramenait la 1re phrase du dernier chapitre).
+        charIdx = filmEndCharIdx(last, chapterIdxRef.current, plan.chapters.length, charIdx);
         finish();
       } else if (catchup) {
         const spokenCh = plan.chapters[chapterIdxRef.current];
@@ -2099,7 +2123,8 @@ export function useReplay({
         toName: chapter?.toName,
         anchors: chapter?.anchors,
       });
-      if (uiDue && sub.text !== lastSubtitleRef.current) {
+      // Tick de fin : le sous-titre de clôture part au DOM même hors cadence UI.
+      if ((uiDue || done) && sub.text !== lastSubtitleRef.current) {
         lastSubtitleRef.current = sub.text;
         setSubtitle(sub.text);
         setSubtitlePlace(sub.place);
@@ -2269,6 +2294,7 @@ export function useReplay({
           setFilmSource(resolved.source);
           setFilmReviewedBy(resolved.reviewedBy || "");
           setFilmModel(resolved.model || "");
+          setFilmWebContext(resolved.webContext || null);
         }
       })
       .catch(() => {})
@@ -2314,6 +2340,7 @@ export function useReplay({
     filmSource,
     filmReviewedBy,
     filmModel,
+    filmWebContext,
     filmWriting,
     filmStyle,
     setFilmStyle: chooseFilmStyle,
