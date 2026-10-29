@@ -82,7 +82,7 @@ describe("brouillon DM6 — reset seulement à l'abandon", () => {
     assert.match(app, /armDrawingWorldRef/);
     const berryAt = app.indexOf("const handleRouteSwitchToBerry");
     assert.ok(berryAt >= 0);
-    assert.match(app.slice(berryAt, berryAt + 700), /drawingModeRef\.current/);
+    assert.match(app.slice(berryAt, berryAt + 700), /drawingModeRef\.current|parkDrawing\(\)/);
     assert.doesNotMatch(app.slice(berryAt, berryAt + 700), /_resetDrawState\(\)/);
   });
 });

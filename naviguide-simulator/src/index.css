@@ -178,6 +178,8 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 }
 
 /* Plein écran film : masque les sidebars sans les démonter. */
+.film-fullscreen .naviguide-demo-launch,
+.film-fullscreen .naviguide-demo-panel,
 .film-fullscreen .naviguide-sidebar-panel,
 .film-fullscreen .naviguide-sidebar-toggle {
   display: none !important;
