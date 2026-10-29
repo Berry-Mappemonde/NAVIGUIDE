@@ -7375,7 +7375,7 @@ def _spread_free_changes(
     return _pin_spine_waters(out, rows)
 
 
-def _would_speak(change: dict) -> bool:
+def _would_speak(change: dict, lang: str = "fr") -> bool:
     """Un item ne prend une fenêtre que s'il donnera vraiment une phrase
     Mêmes gardes que speak_change — escale d'avion, titre anglais,
     phrase vide ou interdite."""
@@ -12746,26 +12746,26 @@ async def write_film_chain(
         stats["faults"] = review_fr.get("faults") or []
         return None, None, stats
 
-    en_plan = await translate_written_plan(accepted, ref_raw, cascade=cascade)
-    if en_plan and secs == 150:
-        # Lightning rallonge parfois : l'anglais tient lui aussi dans 2:30.
-        en_plan = condense_written_plan(en_plan, 150, lang="en")
-    if en_plan:
-        en_plan = _stamp_written_plan(
-            en_plan,
-            accepted.get("source") or WRITTEN_SOURCE,
-            seconds,
-            reviewed_by=accepted.get("reviewedBy"),
-            model=accepted.get("model"),
-        )
-        stats["lightning"] = 1
-        ok_en, review_en = await reread_before_store(en_plan, stops, cascade=cascade, lang="en")
-        stats["reread_en"] = "pass" if ok_en else "fail"
-        stats["rereadBy_en"] = str(review_en.get("source") or "")
-        if not ok_en:
-            stats["faults"] = review_en.get("faults") or []
-            stats["lightning"] = 0
+    from official_store import _raw_plan_for  # noqa: PLC0415
+    # R25: direct parallel FR/EN generation from same raw plan (no translation)
+    en_raw = _raw_plan_for(accepted, "en", secs)
+    if en_raw and (en_raw.get("chapters") or []):
+        # Run write_film_chain for EN using the same ref_raw but lang="en"
+        en_raw["targetSeconds"] = secs
+        en_plan, _, en_stats = await write_film_chain(en_raw, seconds=secs, cascade=cascade)
+        if en_plan:
+            stats["lightning"] = 1
+            ok_en, review_en = await reread_before_store(en_plan, stops, cascade=cascade, lang="en")
+            stats["reread_en"] = "pass" if ok_en else "fail"
+            stats["rereadBy_en"] = str(review_en.get("source") or "")
+            if not ok_en:
+                stats["faults"] = review_en.get("faults") or []
+                stats["lightning"] = 0
+                en_plan = None
+        else:
             en_plan = None
+    else:
+        en_plan = None
     return accepted, en_plan, stats
 
 
