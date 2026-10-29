@@ -5927,6 +5927,47 @@ def _halifax_hop_marks():
     ]
 
 
+def test_review_hop_trusted_rejects_mixed_scale_417():
+    """Revue 417 (nm−filmNm) vs jambe réelle ~497 : revue non fiable."""
+    from film_script import _cross_scale_hop_nm, _hop_nm_cap, _review_hop_trusted, _side_hop_metrics
+
+    w = {
+        "from": {"lat": 44.65, "lon": -63.57, "filmNm": 8780.6263},
+        "to": {
+            "lat": 46.78, "lon": -56.18, "nm": 9197.415837873954, "filmNm": 9160.2308,
+            "name": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+        },
+        "fromName": "Halifax (Nouvelle-Écosse)",
+        "toName": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+        "tA": "2026-08-12T03:59:04Z",
+        "tB": "2026-08-15T08:59:54Z",
+    }
+    cross = _cross_scale_hop_nm(w)
+    assert cross is not None and abs(cross - 416.79) < 1
+    cap = _hop_nm_cap(3)
+    dest = w["to"]
+    review417 = {
+        "legs": [{
+            "from": "Halifax (Nouvelle-Écosse)",
+            "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+            "legNm": 417,
+            "daysAtSea": 2,
+        }],
+    }
+    assert _review_hop_trusted(w, review417, 417, cap, dest) is False
+    metrics417 = _side_hop_metrics(w, review417)
+    assert metrics417["legNm"] != 417
+    review497 = {
+        "legs": [{
+            "from": "Halifax (Nouvelle-Écosse)",
+            "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+            "legNm": 497,
+            "daysAtSea": 2.6,
+        }],
+    }
+    assert _review_hop_trusted(w, review497, 497, cap, dest) is True
+
+
 def test_halifax_saint_pierre_hop_not_voyage():
     """Le second bateau dit les milles et les jours de Halifax → Saint-Pierre.
 

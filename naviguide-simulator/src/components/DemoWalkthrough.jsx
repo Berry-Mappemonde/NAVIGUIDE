@@ -208,6 +208,9 @@ export function DemoWalkthrough({
     return () => {
       window.cancelAnimationFrame(raf);
       window.removeEventListener("resize", onResize);
+      driverRef.current?.destroy();
+      driverRef.current = null;
+      setAnchor(null);
     };
   }, [spotOn, target, step.id]);
   useEffect(() => () => { driverRef.current?.destroy(); driverRef.current = null; }, []);
@@ -215,7 +218,7 @@ export function DemoWalkthrough({
   // Pulse animation on "trace" step target — unique useEffect, réessaye si le bouton n'existe pas encore
   // R10: use separate counter (attempts) instead of rAF ID
   useEffect(() => {
-    if (step.id !== "trace" || !target) return;
+    if (step.id !== "trace" || !target || !spotOn) return;
     let el = document.querySelector(target);
     let checkRaf = 0;
     let attempts = 0;
@@ -233,7 +236,7 @@ export function DemoWalkthrough({
       window.cancelAnimationFrame(checkRaf);
       if (el) el.classList.remove("naviguide-tour-pulse");
     };
-  }, [step.id, target]);
+  }, [step.id, target, spotOn]);
 
   if (hidden) return null;
 

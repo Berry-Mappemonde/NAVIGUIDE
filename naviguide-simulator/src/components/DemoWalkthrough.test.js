@@ -181,6 +181,15 @@ describe("visite guidée des juges", () => {
   });
 });
 
+it("R9 : le cleanup du projecteur appelle destroy() au changement d'étape", () => {
+  const src = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
+  assert.match(
+    src,
+    /return \(\) => \{[\s\S]*cancelAnimationFrame\(raf\)[\s\S]*driverRef\.current\?\.destroy\(\)/,
+    "le cleanup rAF doit détruire driver.js",
+  );
+});
+
 it("driver.js : chaque étape a un élément réel ou aucun (pas de cible inventée)", () => {
   assert.deepEqual(Object.keys(DEMO_TOUR_TARGETS), DEMO_STEP_IDS);
   assert.equal(DEMO_TOUR_TARGETS.briefing, '[data-tour="logbook"]');

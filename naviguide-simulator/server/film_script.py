@@ -5691,7 +5691,34 @@ def _review_hop_trusted(
         return False
     if _same_odometer(float(raw), dest) and float(raw) > 1500:
         return False
+    cross = _cross_scale_hop_nm(w)
+    if cross is not None and not _side_scale_disagrees(raw, cross):
+        return False
     return True
+
+
+def _cross_scale_hop_nm(w: dict) -> Optional[float]:
+    """Écart nm−filmNm quand l'arrivée porte l'odomètre voile (417, pas la jambe)."""
+    frm = w.get("from") or {}
+    dest = w.get("to") or {}
+
+    def num(row: dict | None, *keys: str) -> Optional[float]:
+        for key in keys:
+            val = (row or {}).get(key)
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                return float(val)
+        return None
+
+    a_nm, b_nm = num(frm, "nm"), num(dest, "nm")
+    a_fm, b_fm = num(frm, "filmNm"), num(dest, "filmNm")
+    if a_fm is None or b_nm is None or b_fm is None:
+        return None
+    if abs(b_nm - b_fm) <= 1:
+        return None
+    if a_nm is not None and abs(a_fm - a_nm) <= 1:
+        return None
+    gap = b_nm - a_fm
+    return gap if gap > 1 else None
 
 
 def _side_hop_metrics(w: dict, review: dict | None) -> dict[str, Any]:
