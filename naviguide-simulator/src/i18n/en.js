@@ -114,6 +114,7 @@ export default {
   iciBriefingFallback: "The pack around the boat has no story yet.",
   storySourceLightning: "Nemotron 3.5 Lightning · Token Factory",
   storySourceSuper: "Nemotron 3 Super · Token Factory",
+  storySourceSuperVl: "Nemotron 3.5 Super VL · Token Factory",
   storySourceSuperReviewed: "Nemotron 3 Super · Token Factory · reviewed by Ultra",
   storySourceUltra: "Nemotron 3 Ultra · Token Factory",
   storySourceOpenrouter: "OpenRouter",
