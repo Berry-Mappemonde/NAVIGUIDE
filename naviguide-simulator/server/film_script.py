@@ -24,6 +24,7 @@ from climo_events import climo_sentence, dose_climo_changes, notable_climo_chang
 from story_cascade import cascade_text, expand_spoken_units, filter_numbers, split_short_sentences
 import toponyms
 from voyage_clock import OFFICIAL_T0
+from plan_review import legs_from_clock
 
 FILM_MAX_CHARS = 2400
 FILM_BUDGET_CHARS = 2400
@@ -4139,7 +4140,21 @@ def _window_leg_nm(w: dict) -> Optional[float]:
     """Écart de milles de l'horloge / des marques — même source que plan-review."""
     frm = w.get("from") or {}
     dest = w.get("to") or {}
+    frm_name = (frm.get("name") or "").strip()
+    to_name = (dest.get("name") or "").strip()
 
+    # If we have the clock in the window, use legs_from_clock to get the
+    # planned leg distance from the same source as plan-review.
+    clock = w.get("clock")
+    if isinstance(clock, dict) and frm_name and to_name:
+        legs = legs_from_clock(clock)
+        for leg in legs:
+            if same_stop(leg.get("from") or "", frm_name) and same_stop(leg.get("to") or "", to_name):
+                leg_nm = leg.get("legNm")
+                if isinstance(leg_nm, (int, float)) and leg_nm > 1:
+                    return float(leg_nm)
+
+    # Fallback: use filmNm/ nm from the window (legacy behavior)
     def num(row: dict | None, *keys: str) -> Optional[float]:
         for key in keys:
             val = (row or {}).get(key)
