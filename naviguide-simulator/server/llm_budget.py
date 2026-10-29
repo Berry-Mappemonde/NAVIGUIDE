@@ -43,10 +43,19 @@ DEFAULT_CAPS = {
     # reste sous le palier fast, les appels tiennent en quelques centaines de tokens.
     "nano": 100_000,
     "fast": 200_000,
-    "write": 150_000,
-    "deep": 80_000,
-    "judge": 60_000,
+    # Relevés réels du 28 oct. (PR #126) : un film rédigé intégral = ~18 000 tokens write
+    # + ~15 000 tokens Ultra (édition + relecture, palier judge). À 60 000, un seul juge
+    # (film + quelques questions « Raisonnement ») coupait Ultra pour tous jusqu'à minuit UTC.
+    # Dimensionné pour la période de jugement (1er-15 déc.) : ~15 films intégraux / jour.
+    "write": 450_000,
+    "deep": 150_000,
+    "judge": 250_000,
 }
+
+# Garde-fou : coût maximal d'une journée aux plafonds par défaut, en comptant TOUS les
+# tokens au prix de sortie (borne haute). ~1,68 $/j → ~80 $ sur les 47 jours jusqu'au
+# 15 déc. : la réserve de crédits des juges reste couverte. Un test vérifie la borne.
+MAX_DEFAULT_DAY_USD = 1.75
 
 # Appels Ultra du chat / jour (geste explicite seulement). En plus du plafond tokens judge.
 DEFAULT_CHAT_ULTRA_PER_DAY = 10
@@ -705,6 +714,27 @@ def remember_tavily_port(port: str | None) -> None:
         pearl_store.kv_put(NS, _tavily_key(), _tavily_persist(cur))
 
 
+def worst_case_day_usd(caps: dict[str, int] | None = None) -> float:
+    """Borne haute d'une journée : tous les tokens au plafond, facturés au prix de sortie."""
+    c = caps if caps is not None else {t: daily_cap(t) for t in TIERS}
+    return round(sum(int(c[t]) * PRICES_PER_M[t][1] / 1_000_000 for t in TIERS), 6)
+
+
+def caps_status() -> dict[str, Any]:
+    """Plafonds effectifs (env inclus) et reste du jour — pour vérifier que les juges
+    ne tombent pas sur `source=budget`. Aucun montant de solde n'est lu ni écrit."""
+    tokens = {t: daily_cap(t) for t in TIERS}
+    remaining = {t: max(0, tokens[t] - int(get_usage(t)["tokens"])) for t in TIERS}
+    usd_cap = daily_usd_cap()
+    return {
+        "tokens": tokens,
+        "remaining": remaining,
+        "dailyUsd": usd_cap,
+        "worstCaseDayUsd": worst_case_day_usd(tokens),
+        "tavilyCredits": tavily_cap(),
+    }
+
+
 def status() -> dict[str, Any]:
     """Shape for `/ici/warm/status` → `llm: {tier: {tokens, calls, usd}}`."""
     out: dict[str, Any] = {}
@@ -722,6 +752,7 @@ def status() -> dict[str, Any]:
         "lastAt": tv.get("lastAt"),
         "lastPort": tv.get("lastPort"),
     }
+    out["caps"] = caps_status()
     ultra = chat_ultra_usage()
     out["chatUltra"] = {"calls": int(ultra["calls"]), "cap": chat_ultra_cap()}
     src = last_source()

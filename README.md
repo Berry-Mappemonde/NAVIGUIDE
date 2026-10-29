@@ -74,9 +74,9 @@ On the `fast` tier only, an empty Token Factory body, an HTTP status of 500 or h
 |---|---|
 | `nano` | 100,000 |
 | `fast` | 200,000 |
-| `write` | 150,000 |
-| `deep` | 80,000 |
-| `judge` | 60,000 |
+| `write` | 450,000 |
+| `deep` | 150,000 |
+| `judge` | 250,000 |
 
 Hard logbook questions that reach Ultra are also capped at 10 calls per day. There is no dollar cutoff unless `NAVIGUIDE_LLM_DAILY_USD` is set. The commented figures in `naviguide-simulator/server/.env.example` are not these defaults. Default mode is `on-demand` (a user action, not a background job). `off` never pays. `all` is explicit.
 

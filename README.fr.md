@@ -74,9 +74,9 @@ Sur le palier `fast` seulement, un corps Token Factory vide, un statut HTTP 500 
 |---|---|
 | `nano` | 100 000 |
 | `fast` | 200 000 |
-| `write` | 150 000 |
-| `deep` | 80 000 |
-| `judge` | 60 000 |
+| `write` | 450 000 |
+| `deep` | 150 000 |
+| `judge` | 250 000 |
 
 Les questions difficiles du journal qui atteignent Ultra sont aussi plafonnées à 10 appels par jour. Il n’y a pas de coupure en dollars tant que `NAVIGUIDE_LLM_DAILY_USD` n’est pas posé. Les chiffres commentés dans `naviguide-simulator/server/.env.example` ne sont pas ces défauts. Le mode par défaut est `on-demand` (une action de la personne, pas un travail de fond). `off` ne paie jamais. `all` est explicite.
 
