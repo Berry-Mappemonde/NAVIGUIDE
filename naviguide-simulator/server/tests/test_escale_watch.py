@@ -248,6 +248,14 @@ def test_flag_closed_zero_tavily_search(monkeypatch):
     assert not escale_watch.watch_done("Nouméa")
 
 
+def test_default_watch_enabled(monkeypatch):
+    """Défaut actif : sans variable d'env, watch_enabled() est True (PR #401)."""
+    _keys(monkeypatch)
+    # Ne pas forcer NAVIGUIDE_TAVILY_WATCH — on teste le défaut
+    monkeypatch.delenv("NAVIGUIDE_TAVILY_WATCH", raising=False)
+    assert escale_watch.watch_enabled() is True
+
+
 def test_two_rounds_max_lightning_picks_from_list(monkeypatch):
     _keys(monkeypatch)
     journal.reset()
