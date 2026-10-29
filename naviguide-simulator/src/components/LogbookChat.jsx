@@ -148,7 +148,7 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
       ) : null}
       <div
         data-testid="logbook-chat-examples"
-        className="mt-1 flex flex-wrap items-center gap-1 flex-shrink-0"
+        className="mt-1 flex flex-nowrap items-center gap-0.5 flex-shrink-0 min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
       >
         <Sparkles size={11} className="text-violet-200/80" aria-label={t("logbookExamplesTitle")} role="img" />
         {LOGBOOK_EXAMPLES.map((ex) => (
@@ -159,7 +159,7 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
             onClick={() => askExample(ex.q)}
             data-testid={`logbook-chat-example-${ex.id}`}
             title={`${t(ex.q)} — ${t(ex.hint)}`}
-            className="h-5 whitespace-nowrap rounded-full border border-violet-300/35 bg-violet-900/40 px-2 text-[10px] text-violet-50 hover:bg-violet-800/60 disabled:opacity-40"
+            className="h-5 whitespace-nowrap rounded-full border border-violet-300/35 bg-violet-900/40 px-[5px] text-[10px] flex-shrink-0 text-violet-50 hover:bg-violet-800/60 disabled:opacity-40"
           >
             {t(ex.label)}
           </button>

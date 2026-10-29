@@ -86,6 +86,9 @@ describe("LogbookChat example questions (one click, three real paths)", () => {
     assert.match(src, /data-testid="logbook-chat-examples"/);
     assert.match(src, /title=\{`\$\{t\(ex\.q\)\} — \$\{t\(ex\.hint\)\}`\}/, "full question in the tooltip");
     assert.match(src, /h-5 whitespace-nowrap rounded-full/, "small chips: the reply and the input keep their room");
+    // Une seule rangée : sur deux lignes (281 px en FR), le cadre de réponse tombe sous 40 px (ra6).
+    assert.match(src, /data-testid="logbook-chat-examples"\s+className="[^"]*\bflex-nowrap\b[^"]*\boverflow-x-auto\b/);
+    assert.doesNotMatch(src, /data-testid="logbook-chat-examples"\s+className="[^"]*\bflex-wrap\b/);
   });
 
   it("a click sends the translated question through the existing onAsk flow, no new endpoint", () => {
