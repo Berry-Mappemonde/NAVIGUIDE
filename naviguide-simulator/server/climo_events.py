@@ -248,12 +248,18 @@ def _compass(deg: float, lang: str) -> str:
 EQUATOR_BAND_DEG = 2.0
 
 
-def _place_phrase(lat: float, lon: float, lang: str) -> str:
+def _place_phrase(lat: float, lon: float, lang: str, prev_lat: float | None = None) -> str:
     """Lieu de la phrase climato = position du bateau à cet instant :
     un jalon trop loin (> PLACE_MAX_NM) ne se dit pas — mieux vaut le silence
     qu'un « au nord de Gibraltar » quand le bateau longe la Galice."""
+    # R3: "à l'équateur" only if leg crosses equator (prev_lat * lat <= 0)
+    # otherwise "près de l'équateur"
     if abs(lat) <= EQUATOR_BAND_DEG:
-        return "at the equator" if _en(lang) else "à l'équateur"
+        crosses_equator = prev_lat is not None and prev_lat * lat <= 0
+        if crosses_equator:
+            return "at the equator" if _en(lang) else "à l'équateur"
+        else:
+            return "near the equator" if _en(lang) else "près de l'équateur"
     best = None
     best_d = PLACE_MAX_NM
     for mlat, mlon, fr, en, art_fr, art_en in _LANDMARKS:
@@ -483,8 +489,8 @@ def _make_event(prev: dict, cur: dict, kind: str) -> dict:
     speak_kn = cur.get("knots") if nature != "zone" else None
     speak_dir = cur.get("dir") if nature != "zone" else None
     event = belt if kind == "belt" and belt else kind
-    place_fr = _place_phrase(cur["lat"], cur["lon"], "fr")
-    place_en = _place_phrase(cur["lat"], cur["lon"], "en")
+    place_fr = _place_phrase(cur["lat"], cur["lon"], "fr", prev.get("lat"))
+    place_en = _place_phrase(cur["lat"], cur["lon"], "en", prev.get("lat"))
     out = {
         "kind": "climo",
         "score": SCORE_NAMED if named else SCORE_JUMP,
