@@ -8,6 +8,7 @@ import { isLandLegNames } from "../utils/berryLegs.js";
 import { displayStopName, filmClockWithoutRoadNm, roadTransferLabel } from "../utils/stopLabels.js";
 import { ListenButton } from "./ListenButton.jsx";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
+import FilmReceipt from "./FilmReceipt.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
 import { filmDurationClass, filmDurationPill } from "../engine/playSpeeds.js";
@@ -445,6 +446,14 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                       </span>
                     ))}
                   </div>
+                ) : null}
+                {replay.receipt && !replay.writing && (replay.style || "raw") === "written" && replay.hasWritten ? (
+                  <FilmReceipt
+                    receipt={replay.receipt}
+                    webSourceCount={replay.webContext?.sources?.length || 0}
+                    t={t}
+                    lang={lang}
+                  />
                 ) : null}
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
                   {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => {
