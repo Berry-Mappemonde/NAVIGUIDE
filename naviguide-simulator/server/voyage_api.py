@@ -1286,7 +1286,9 @@ def ensure_official(body: VoyageCreate, background: BackgroundTasks, request: Re
         if changed:
             save_voyage(existing)
             log.info("voyage officiel mis à jour par l'admin (%s points)", len(existing["points"]))
-        background.add_task(official_store.kick_worker)
+        # Admin : passage complet (kick_worker). Visiteur : réparation bornée —
+        # relance un remplisseur mort et ne le réveille que si le climo du jour manque.
+        background.add_task(official_store.kick_worker if is_admin(request) else official_store.repair_worker)
         clock = official_store.stored_clock() or existing.get("clock")
         meta = _public_meta(existing)
         if clock:

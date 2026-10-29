@@ -2435,6 +2435,54 @@ def kick_worker() -> None:
     ).start()
 
 
+_LAST_REPAIR_AT = None
+
+
+def _repair_due() -> bool:
+    """Même plancher que les réveils (NAVIGUIDE_FILL_NUDGE_MIN_S), fenêtre distincte."""
+    global _LAST_REPAIR_AT
+    gap = _nudge_min_s()
+    now = time.monotonic()
+    with _LOCK:
+        if gap and _LAST_REPAIR_AT is not None and now - _LAST_REPAIR_AT < gap:
+            return False
+        _LAST_REPAIR_AT = now
+        return True
+
+
+def today_climo_missing(now: Optional[datetime] = None) -> bool:
+    """Vrai si la clé climo du jour UTC n'est pas rangée (une entrée d'hier ne compte pas)."""
+    voy = _load_official()
+    if voy is None:
+        return False
+    st = get_store()
+    when = now or st._now()
+    hit = st.get("climo", st.family_key("climo", voy, when))
+    return not (hit and hit.get("payload") is not None)
+
+
+def repair_worker() -> None:
+    """Réparation bon marché sur le chemin visiteur (PUT anonyme).
+
+    Au plus une fois par fenêtre : relance le remplisseur s'il est mort, et ne le
+    réveille que si le climo du jour manque (nouveau jour UTC). Jamais de calcul ici.
+    """
+    if not worker_enabled():
+        return
+    if not _repair_due():
+        return
+    missing = today_climo_missing()
+    if WORKER_MODE != "thread":
+        ensure_fill_process()
+        if missing:
+            nudge_fill_process()
+        return
+    if missing:
+        kick_worker()
+    else:
+        start_worker()
+
+
 def _kick_refresh() -> None:
     refresh_missing()
     _force_film_once()
@@ -2455,9 +2503,10 @@ def _worker_loop() -> None:
 
 
 def reset_worker_flag() -> None:
-    global _WORKER_STARTED, _FILM_FORCED, _LAST_NUDGE_AT
+    global _WORKER_STARTED, _FILM_FORCED, _LAST_NUDGE_AT, _LAST_REPAIR_AT
     _WORKER_STARTED = False
     _FILM_FORCED = False
+    _LAST_REPAIR_AT = None
     _LAST_NUDGE_AT = None
 
 
