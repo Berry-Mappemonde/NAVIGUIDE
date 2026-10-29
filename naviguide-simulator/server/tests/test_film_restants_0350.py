@@ -74,7 +74,9 @@ def test_air_back_sentence_elides_halifax_and_both_regexes_match():
     assert fs._AIR_BACK_RE.search(s)
     assert fs._AIR_BACK_RE.search("Le 28 août, l’équipage s’envole de Halifax pour Cayenne.")
     assert not fs._AIR_OUT_RE.search(s)
-    assert fs.fr_elide_de("l'équipage s'envole de Halifax pour Cayenne") == "l'équipage s'envole d’Halifax pour Cayenne"
+    # Lot film-restants-2 : l'apostrophe suit celle du texte (plus « s'envole d’Halifax »).
+    assert fs.fr_elide_de("l'équipage s'envole de Halifax pour Cayenne") == "l'équipage s'envole d'Halifax pour Cayenne"
+    assert fs.fr_elide_de("l’équipage s’envole de Halifax pour Cayenne") == "l’équipage s’envole d’Halifax pour Cayenne"
     # Sigles et consonnes : inchangés.
     assert fs.fr_elide_de("de TAAF, de Papeete") == "de TAAF, de Papeete"
 
@@ -106,7 +108,7 @@ def test_polish_written_plan_fr_and_en():
         {"chapters": [{"id": "a", "text": "Le 28 août, l'équipage s'envole de Halifax pour Cayenne. Puis, à vingt-sept milles."}]},
         raw, "fr",
     )
-    assert fr["chapters"][0]["text"] == "Le 28 août, l'équipage s'envole d’Halifax pour Cayenne. Puis, à 27 milles."
+    assert fr["chapters"][0]["text"] == "Le 28 août, l'équipage s'envole d'Halifax pour Cayenne. Puis, à 27 milles."
     en = fs._polish_written_plan(
         {"chapters": [{"id": "a", "text": "Le August 28, the crew flies from Halifax. Then, at twenty-seven miles."}]},
         raw, "en",
