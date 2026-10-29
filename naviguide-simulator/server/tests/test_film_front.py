@@ -93,7 +93,7 @@ def test_post_film_calls_the_chain_and_is_not_405(tmp_path, monkeypatch):
     store.put("film", _one_chapter_film(), store.family_key("film", voy, NOW))
     calls = {"n": 0}
 
-    async def fake_chain(plan, *, seconds=150, cascade=None):
+    async def fake_chain(plan, *, seconds=150, cascade=None, **kwargs):
         calls["n"] += 1
         written = {
             "chapters": list(plan.get("chapters") or []),
@@ -108,6 +108,11 @@ def test_post_film_calls_the_chain_and_is_not_405(tmp_path, monkeypatch):
         }
 
     monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
+
+    async def _noop_attach(**_kw):
+        return None
+
+    monkeypatch.setattr(official_store, "attach_film_web_context", _noop_attach)
     client = TestClient(film_front.app)
 
     denied = client.post("/voyage/official/film?lang=fr&seconds=101")

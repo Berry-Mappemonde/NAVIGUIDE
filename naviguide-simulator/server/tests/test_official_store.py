@@ -2123,7 +2123,7 @@ def test_ed1_write_query_runs_once_then_cache(client, tmp_path, monkeypatch):
     store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
     calls = {"n": 0}
 
-    async def fake_chain(plan, *, seconds=150, cascade=None):
+    async def fake_chain(plan, *, seconds=150, cascade=None, **kwargs):
         calls["n"] += 1
         written = {
             "chapters": list(plan.get("chapters") or []),
@@ -2138,6 +2138,11 @@ def test_ed1_write_query_runs_once_then_cache(client, tmp_path, monkeypatch):
         }
 
     monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
+
+    async def _noop_attach(**_kw):
+        return None
+
+    monkeypatch.setattr(official_store, "attach_film_web_context", _noop_attach)
 
     first = client.post("/voyage/official/film?lang=fr&seconds=150")
     assert first.status_code == 200
@@ -2221,6 +2226,58 @@ def test_film_async_write_failed_then_retry(client, tmp_path, monkeypatch):
     assert ready.json()["status"] == "ready"
     assert ready.json()["hasWritten"] is True
     assert calls["n"] == 2
+
+
+def test_film_async_tavily_runs_in_background_task(client, tmp_path, monkeypatch):
+    import asyncio
+    import film_script
+
+    store = OfficialStore(DiskBackend(tmp_path / "film-tavily-bg"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    official_store.reset_store()
+    official_store._FILM_WRITE_FAILED.clear()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")
+    store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
+    order: list[str] = []
+    proceed_attach = asyncio.Event()
+
+    async def slow_attach(**_kw):
+        order.append("attach_start")
+        await proceed_attach.wait()
+        order.append("attach_done")
+
+    async def fake_chain(plan, *, seconds=150, cascade=None, **kwargs):
+        order.append("chain")
+        written = {
+            "chapters": list(plan.get("chapters") or []),
+            "source": official_store.WRITTEN_SOURCE,
+            "hasWritten": True,
+            "chars": 40,
+            "targetSeconds": seconds,
+        }
+        return written, None, {
+            "super": 1,
+            "ultra_edit": 0,
+            "ultra_judge": 0,
+            "lightning": 0,
+            "source": official_store.WRITTEN_SOURCE,
+            "reviewed": False,
+        }
+
+    monkeypatch.setattr(official_store, "attach_film_web_context", slow_attach)
+    monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
+
+    first = client.post("/voyage/official/film?lang=fr&seconds=150")
+    assert first.status_code == 200
+    body = first.json()
+    assert body["status"] == "writing"
+    assert body["writing"] is True
+    # Tavily a démarré dans la tâche de fond : le POST a répondu avant attach_done/chain.
+    assert order == ["attach_start"]
+    proceed_attach.set()
 
 
 # Visiteur public (nginx pose X-Real-IP). Sans ces en-têtes, l'appel local

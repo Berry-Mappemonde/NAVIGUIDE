@@ -3004,9 +3004,6 @@ async def start_film_write(
     secs = int(seconds or 0)
     key = (lg, secs)
 
-    # Tavily at Rédigé click (hackathon rule: call at execution, visible in film)
-    await attach_film_web_context(now=now)
-
     # Check cache first — if written film ready, serve it immediately
     cached = serve_film(lang=lg, seconds=secs, style="written")
     if cached.get("hasWritten") and cached.get("status") == READY:
@@ -3054,6 +3051,8 @@ async def start_film_write(
     # Launch background task
     async def _write_task():
         try:
+            # Tavily au clic Rédigé : dans la tâche de fond pour ne pas bloquer le POST.
+            await attach_film_web_context(now=when)
             fr_plan, en_plan, stats = await write_film_chain(
                 fr_raw, seconds=secs, cascade=cascade_fn, en_raw=en_raw,
             )
