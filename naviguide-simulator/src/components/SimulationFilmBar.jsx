@@ -424,6 +424,28 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     className="min-w-0 max-w-full whitespace-normal break-words [&_span]:text-xs [&_span]:text-white/90"
                   />
                 )}
+                {replay.webContext?.sources?.length && !replay.writing ? (
+                  <div
+                    data-testid="film-web-sources"
+                    className="min-w-0 max-w-full whitespace-normal break-words text-[10px] leading-snug text-violet-200/90"
+                  >
+                    <span>{t("filmWebSourcesTitle", { port: replay.webContext.port })}</span>{" "}
+                    {replay.webContext.sources.map((s, i) => (
+                      <span key={s.url}>
+                        {i ? " · " : ""}
+                        <a
+                          href={s.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={s.title}
+                          className="underline underline-offset-2"
+                        >
+                          {s.domain}
+                        </a>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
                   {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => {
                     const filmReady = replay.remoteStatus === "ready" || replay.remoteStatus === "stale";

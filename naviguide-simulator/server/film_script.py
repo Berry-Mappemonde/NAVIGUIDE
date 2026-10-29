@@ -817,7 +817,9 @@ def _is_spine_route_item(change: dict | None) -> bool:
     if kind == "zee-enter" and _SPINE_WATERS_RE.search(blob):
         return True
     geo = change.get("geo") if isinstance(change.get("geo"), dict) else {}
-    return kind == "coast" and geo.get("kind") == "strait"
+    # Une île (la Sardaigne, les Baléares) est un jalon rare comme un détroit :
+    # elle ne cède pas sa place aux eaux du jour (RG2, intégral).
+    return kind == "coast" and geo.get("kind") in {"strait", "island"}
 
 
 def _pacific_arrival_ms(
@@ -831,6 +833,7 @@ def _pacific_arrival_ms(
     first: Optional[int] = None
     last_lon: Optional[float] = None
     last_t: Optional[int] = None
+    outside = False
     for v in clock.get("vertices") or []:
         if not isinstance(v, dict) or v.get("vehicle") in {"plane", "land"}:
             continue
@@ -851,9 +854,13 @@ def _pacific_arrival_ms(
             continue
         _lat, lon = pair
         last_lon, last_t = lon, t
+        if lon > -80.0 and first is None:
+            outside = True
         if lon <= -80.0 and first is None:
             first = t
-    if first is None or last_lon is None or last_lon > -80.0:
+    # Une jambe déjà toute dans le Pacifique (Papeete → Mata-Utu) n'y « arrive »
+    # pas : sinon « Pacifique. » orphelin, redit et collé à l'arrivée.
+    if first is None or last_lon is None or last_lon > -80.0 or not outside:
         return None
     if t_b is not None:
         return int(t_b)
@@ -2026,6 +2033,13 @@ def apply_chosen_subjects(
             a, b, t = _ms(home.get("tA")), _ms(home.get("tB")), _ms(rec.get("t"))
             if a is None or b is None or t is None or not (a <= t <= b):
                 home = None
+        if (
+            str(rec.get("kind") or "") == "buoy"
+            and home is not None
+            and _STATION_SPOKEN_RE.search(home.get("text") or "")
+        ):
+            # RG5 : au plus une station par chapitre — la bouée en est une.
+            continue
         pick = None
         for k, (ch, idx) in enumerate(slots):
             if k in taken:
@@ -2054,6 +2068,8 @@ def apply_chosen_subjects(
                 continue
             text = (ch.get("text") or "").strip()
             phrase = rec["phrase"]
+            if str(rec.get("kind") or "") == "buoy" and _STATION_SPOKEN_RE.search(text):
+                continue
             if phrase and phrase not in text:
                 ch["text"] = f"{text} {phrase}".strip() if text else phrase
                 spoken.append(rec)
@@ -2079,6 +2095,14 @@ def apply_chosen_subjects(
         "estimatedSeconds": film_estimated_seconds(chars),
         "filmChoice": list(ids or []),
     }
+
+
+# Stations qualifiées dites à la voix (RG5 : au plus une par chapitre).
+_STATION_SPOKEN_RE = re.compile(
+    r"flotteur Argo|campagne PELGAS|une bouée|station côtière|un observatoire|une campagne"
+    r"|Argo float|PELGAS campaign|a buoy|coastal station|an observatory|a research cruise",
+    re.I,
+)
 
 
 def dose_dc2_leg_changes(changes: list[dict], span_ms: int = 0) -> list[dict]:
@@ -7374,6 +7398,9 @@ def select_chapter_changes(
         pool, spare = _cap_argo_candidates(pool, spare)
         picked_free = _spread_free_changes(pool, t_a, t_b, depart_ms=depart_ms, spare=spare)
         dc2 = dose_dc2_leg_changes(usable, span)
+        if any(str(c.get("kind") or "") == "station" or _is_buoy_change(c) for c in picked_free):
+            # RG5 : au plus une station par chapitre — la bouée DC2 en est une.
+            dc2 = [c for c in dc2 if str(c.get("kind") or "") != "buoy"]
         dc3 = dose_dc3_leg_changes(usable, span)
         out = picked_free + keep + dc2 + dc3  # escale, approche, marina ; DC hors fenêtres
         seen_ids: set[str] = set()

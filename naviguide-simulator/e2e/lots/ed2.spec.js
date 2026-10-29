@@ -29,6 +29,17 @@ function filmPayload({ written, source, seconds = 150 }) {
     model: written ? "nvidia/Nemotron-3.5-Super-VL" : undefined,
     writtenAt: written ? "2026-10-17T10:00:00Z" : undefined,
     targetSeconds: seconds,
+    // Écart n° 43 : provenance Tavily rangée au clic Rédigé (port, liens, jamais d'extrait).
+    webContext: written ? {
+      basis: "tavily",
+      port: "La Rochelle",
+      fetchedAt: "2026-10-17T10:00:00Z",
+      sources: [{
+        title: "La Rochelle — Noonsite",
+        url: "https://www.noonsite.com/place/france/la-rochelle/",
+        domain: "noonsite.com",
+      }],
+    } : undefined,
     chapters: [{
       text: "On 15 May, Berry-Mappemonde leaves La Rochelle. 432 nautical miles, 9 days at sea.",
       anchors: [{ t: 0, i: 0 }],
@@ -109,6 +120,10 @@ test("EN, Follow, Replay, Written: text label, no third-party logo", async ({ pa
   await expect(source.locator("svg")).toHaveCount(0);
   const inCommands = await source.evaluate((el) => Boolean(el.closest("[data-testid='film-commands']")));
   expect(inCommands).toBe(true);
+  const web = page.getByTestId("film-web-sources");
+  await expect(web).toContainText("Web sources (Tavily) · La Rochelle");
+  await expect(web.getByRole("link", { name: "noonsite.com" }))
+    .toHaveAttribute("href", "https://www.noonsite.com/place/france/la-rochelle/");
   expect(llmHits).toEqual([]);
   await shot(page, "01-barre-lecture");
 
