@@ -1339,7 +1339,7 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(bar, /data-testid="film-source"/);
     assert.match(bar, /testId="film-source"/);
     assert.match(bar, /textOnly/);
-    assert.match(bar, /ed2WritingWait/);
+    assert.match(bar, /ed2WritingNemotron/);
     assert.match(bar, /ed2WriteFailed/);
     const probeAt = hook.indexOf("const probeWritten");
     assert.ok(probeAt > 0);
