@@ -4910,6 +4910,8 @@ def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
 
     async def accept(system, user, **kw):
         hops.append(system[:20])
+        if "real stops" in system:
+            return '{"ok": true, "faults": []}', "nemotron-super"
         if "judge an already-written" in system:
             return '{"ok": true, "reason": "ok"}', "nemotron-ultra"
         if "edit an already-written" in system:
@@ -5641,6 +5643,57 @@ def test_reread_refuses_a_date_that_goes_backward():
     assert "date" in bar["faults"]
 
 
+def test_reanchor_never_moves_the_bar_back_before_a_later_depart():
+    """« Le 15 octobre » dit après un départ le 17 : défaut du texte, la barre ne recule pas."""
+    from film_script import _dates_regress, reanchor_written_chapter
+
+    text = (
+        "Le 17 octobre, Berry-Mappemonde quitte Papeete (Polynésie française), cap à l'ouest. "
+        "Le 15 octobre, à vingt-six milles, le projet Programme Animlagon en Nouvelle-Calédonie."
+    )
+    chapter = {
+        "text": text,
+        "tA": "2026-10-14T03:34:42Z",
+        "tB": "2026-10-27T13:55:18Z",
+        "anchors": [
+            {"charIdx": 0, "t": "2026-10-17T00:00:00Z"},
+            {"charIdx": text.index("Le 15 octobre"), "t": "2026-10-15T00:00:00Z"},
+        ],
+    }
+    out = reanchor_written_chapter(chapter, text, "fr")
+    ts = [a["t"] for a in out]
+    assert ts == sorted(ts)
+    assert _dates_regress(text, "fr")
+
+
+def test_reanchor_keeps_the_year_of_the_chapter_for_spoken_dates():
+    """« Le 9 février » d'un chapitre de 2027 reste en 2027 (pas 2026 par défaut)."""
+    from film_script import reanchor_written_chapter
+
+    text = (
+        "Le 30 janvier, Berry-Mappemonde quitte Saint-Gilles (La Réunion), cap à l'ouest pour Europa (TAAF). "
+        "Puis, les eaux malgaches. "
+        "Le 9 février, à dix-neuf milles, le projet ISEO. "
+        "Arrivée à Europa (TAAF) le 21 février."
+    )
+    chapter = {
+        "text": text,
+        "tA": "2027-01-27T07:32:22Z",
+        "tB": "2027-02-21T14:02:26Z",
+        "anchors": [
+            {"charIdx": 0, "t": "2027-01-30T07:32:22Z"},
+            {"charIdx": text.index("Puis"), "t": "2027-01-30T07:32:22Z"},
+            {"charIdx": text.index("Le 9 février"), "t": "2027-02-05T00:00:00Z"},
+            {"charIdx": text.index("Arrivée"), "t": "2027-02-21T14:02:26Z"},
+        ],
+    }
+    out = reanchor_written_chapter(chapter, text, "fr")
+    ts = [a["t"] for a in out]
+    assert all(t.startswith("2027") for t in ts), ts
+    assert ts == sorted(ts)
+    assert any(t.startswith("2027-02-09") for t in ts), ts
+
+
 def test_reread_refuses_a_later_stop_announced_on_the_wrong_leg():
     from film_script import nemotron_reread_report
 
@@ -5854,7 +5907,7 @@ def test_write_chain_stores_nothing_when_the_reread_says_no(monkeypatch):
 
     fr, en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=fake))
     assert fr is None and en is None
-    assert stats.get("faults") == ["nemotron"]
+    assert stats.get("faults") == ["skip"]
     assert stats.get("reread") == "fail"
 
 
@@ -6005,3 +6058,337 @@ def test_halifax_saint_pierre_hop_not_voyage():
     assert _opening_nm_label(leg_nm, "en") in repaired_text
     assert spoken_sea_days(leg_days, "en") in repaired_text
     assert "Arrival on 15 August." in repaired_text
+
+
+def test_reread_reads_spelled_out_french_dates():
+    """Nemotron écrit « le quinze octobre » : la relecture doit voir le recul de date."""
+    from film_script import _dates_regress, _parse_spoken_date
+
+    assert _parse_spoken_date("Le quinze octobre, une campagne.", "fr").day == 15
+    assert _parse_spoken_date("Le trente et un décembre, arrivée.", "fr").day == 31
+    text = (
+        "Le 17 octobre, Berry-Mappemonde quitte Papeete (Polynésie française). "
+        "Le quinze octobre, à vingt-six milles, le projet Animlagon."
+    )
+    assert _dates_regress(text, "fr")
+
+
+# --- Lot PR #126 (2) : magasin désynchronisé, nombres épelés, verdicts tronqués, durée 150 s ---
+
+def test_moments_follow_their_leg_not_a_desynced_clock():
+    """Horloge et moments de deux simulations : Samoa (jambe Papeete → Mata-Utu)
+    ne parle jamais dans Cayenne → Papeete, même si sa date tombe dans cette fenêtre."""
+    from film_script import _align_moments_to_window
+
+    samoa = {
+        "t": "2026-10-01T15:00:00Z", "legIdx": 9, "changes": [],
+        "moment": {"leg": {"from": "Papeete (Polynésie française)", "to": "Mata-Utu (Wallis-et-Futuna)"}},
+    }
+    pacific = {
+        "t": "2026-09-01T00:00:00Z", "legIdx": 8, "changes": [],
+        "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Papeete (Polynésie française)"}},
+    }
+    free = {"t": "2026-09-10T00:00:00Z", "changes": []}
+    cay_pap = {
+        "fromName": "Cayenne (Guyane)", "destName": "Papeete (Polynésie française)",
+        "tA": _ms("2026-08-29T04:00:00Z"), "tB": _ms("2026-10-14T03:00:00Z"),
+    }
+    kept = _align_moments_to_window([samoa, pacific, free], cay_pap, None)
+    legs = [((m.get("moment") or {}).get("leg") or {}).get("to") for m in kept]
+    assert "Mata-Utu (Wallis-et-Futuna)" not in legs
+    assert "Papeete (Polynésie française)" in legs
+    assert free in kept
+    pap_mat = {
+        "fromName": "Papeete (Polynésie française)", "destName": "Mata-Utu (Wallis-et-Futuna)",
+        "tA": _ms("2026-10-14T03:00:00Z"), "tB": _ms("2026-10-27T13:00:00Z"),
+    }
+    moved = [m for m in _align_moments_to_window([samoa], pap_mat, None) if m.get("tSim")]
+    assert moved, "Samoa est reporté dans la fenêtre de SA jambe"
+    t = _ms(moved[0]["t"])
+    assert pap_mat["tA"] < t <= pap_mat["tB"]
+
+
+def test_spelled_number_is_checked_like_a_digit():
+    """173 épelé « cent soixante-dix-sept » (177) est un chiffre inventé."""
+    from story_cascade import filter_numbers, spelled_numbers_to_digits
+
+    assert spelled_numbers_to_digits("cent soixante-dix-sept milles") == "177 milles"
+    assert spelled_numbers_to_digits("quatre-vingt-dix-sept") == "97"
+    assert spelled_numbers_to_digits("vingt et un milles") == "21 milles"
+    assert spelled_numbers_to_digits("un mille deux cents milles") == "1200 milles"
+    assert spelled_numbers_to_digits("un bateau neuf") == "un bateau neuf"
+    facts = "Gustavia à 173 milles. 1 200 milles."
+    out, dropped = filter_numbers("Gustavia est à cent soixante-dix-sept milles.", facts, spelled=True)
+    assert dropped == 1 and out == ""
+    out, dropped = filter_numbers("Gustavia est à cent soixante-treize milles.", facts, spelled=True)
+    assert dropped == 0
+    out, dropped = filter_numbers("Un mille deux cents milles de mer.", facts, spelled=True)
+    assert dropped == 0
+
+
+def _one_chapter_plan():
+    return {
+        "chapters": [{
+            "id": "c0",
+            "text": "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Arrivée à Ajaccio le 26 mai.",
+            "tA": "2026-05-15T08:00:00Z", "tB": "2026-05-26T12:00:00Z",
+            "fromName": "La Rochelle", "toName": "Ajaccio (Corse)", "destName": "Ajaccio (Corse)",
+        }],
+    }
+
+
+def test_truncated_reread_verdict_is_never_a_pass():
+    from film_script import reread_before_store
+
+    stops = [{"name": "La Rochelle"}, {"name": "Ajaccio (Corse)"}]
+    for cut in ('{"ok": true, "faults": [', "", "The user wants me to check"):
+        async def fake(system, user, _cut=cut, **kw):
+            return _cut, "nemotron-super"
+        ok, rep = asyncio.run(reread_before_store(_one_chapter_plan(), stops, cascade=fake, lang="fr"))
+        assert ok is False, cut
+        assert rep["faults"] == ["verdict-illisible"]
+
+
+def test_truncated_ultra_judge_verdict_is_never_a_pass():
+    from film_script import judge_written_once
+
+    async def cut(system, user, **kw):
+        return '{"ok": tr', "nemotron-ultra"
+
+    assert asyncio.run(judge_written_once(_one_chapter_plan(), cascade=cut)) is False
+
+    seen = []
+
+    async def full(system, user, **kw):
+        seen.append(kw.get("max_tokens"))
+        assert '"facts"' in user, "le juge lit les faits du chapitre"
+        return '{"ok": true, "reason": "ok"}', "nemotron-ultra"
+
+    assert asyncio.run(judge_written_once(_one_chapter_plan(), cascade=full, raw_plan=_one_chapter_plan())) is True
+    assert seen and all(m >= 256 for m in seen)
+
+
+def test_ultra_edit_is_per_chapter_and_keeps_super_when_cut():
+    from film_script import edit_written_once
+
+    plan = _one_chapter_plan()
+    maxes = []
+
+    async def cut(system, user, **kw):
+        maxes.append(kw.get("max_tokens"))
+        return "Le 15 mai, Berry-Mappemonde laisse La", "nemotron-ultra"
+
+    assert asyncio.run(edit_written_once(plan, plan, cascade=cut)) is None
+    assert maxes and maxes[0] > len(plan["chapters"][0]["text"])
+
+
+def test_condensed_150_fits_the_measured_speech_rate():
+    from film_script import FILM_ESTIMATE_CPS, condense_written_plan, film_spoken_char_cap
+
+    sent = "Puis, les eaux d'un pays voisin, longées au large sous le vent."
+    chapters = []
+    for i in range(6):
+        body = " ".join([sent] * 12)
+        chapters.append({
+            "id": f"c{i}",
+            "text": f"Le {i + 1} juin, Berry-Mappemonde quitte Port{i}. {body} Arrivée à Port{i + 1} le {i + 2} juin.",
+            "tA": f"2026-06-{i + 1:02d}T08:00:00Z", "tB": f"2026-06-{i + 2:02d}T08:00:00Z",
+            "fromName": f"Port{i}", "destName": f"Port{i + 1}", "toName": f"Port{i + 1}",
+        })
+    out = condense_written_plan({"chapters": chapters}, 150, lang="fr")
+    assert out["chars"] <= film_spoken_char_cap(150) < 150 * FILM_ESTIMATE_CPS
+    assert out["estimatedSeconds"] <= 150
+    for ch in out["chapters"]:
+        assert "quitte" in ch["text"] and "Arrivée" in ch["text"]
+
+
+def test_llm_date_fault_needs_the_local_date_check():
+    """« date qui recule » du relecteur sur un texte aux dates en ordre : non retenue
+    (écrite dans le rapport) ; une escale sautée reste un refus."""
+    from film_script import reread_before_store
+
+    stops = [{"name": "La Rochelle"}, {"name": "Ajaccio (Corse)"}]
+
+    async def date_fault(system, user, **kw):
+        return '{"ok": false, "faults": ["date: 26 mai vs 15 mai"]}', "nemotron-ultra"
+
+    ok, rep = asyncio.run(reread_before_store(_one_chapter_plan(), stops, cascade=date_fault, lang="fr"))
+    assert ok is True
+    assert rep.get("unconfirmed") == ["date: 26 mai vs 15 mai"]
+
+    async def skip_fault(system, user, **kw):
+        return '{"ok": false, "faults": ["off-route: Rome", "date: x"]}', "nemotron-ultra"
+
+    ok, rep = asyncio.run(reread_before_store(_one_chapter_plan(), stops, cascade=skip_fault, lang="fr"))
+    assert ok is False and rep["faults"][0] == "off-route: Rome"
+
+
+def test_llm_skip_fault_is_checked_against_the_text():
+    from film_script import reread_before_store
+
+    stops = [{"name": "La Rochelle"}, {"name": "Ajaccio (Corse)"}]
+
+    async def named(system, user, **kw):
+        return '{"ok": false, "faults": ["skip: Ajaccio"]}', "nemotron-ultra"
+
+    ok, rep = asyncio.run(reread_before_store(_one_chapter_plan(), stops, cascade=named, lang="fr"))
+    assert ok is True and rep.get("unconfirmed") == ["skip: Ajaccio"]
+    plan = _one_chapter_plan()
+    plan["chapters"][0]["text"] = "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Le 26 mai, escale."
+    ok, rep = asyncio.run(reread_before_store(plan, stops, cascade=named, lang="fr"))
+    assert ok is False and rep["faults"] == ["skip: Ajaccio"]
+
+
+def test_partial_grouped_number_is_not_a_fact():
+    import story_cascade as sc
+    facts = {"raw": "départ vers La Rochelle : 8 393 milles, 96 jours de mer."}
+    out, dropped = sc.filter_numbers("Départ : 393 milles, 96 jours de mer.", facts, spelled=True)
+    assert dropped == 1 and out == ""
+    out, dropped = sc.filter_numbers("Départ : 8 393 milles, 96 jours de mer.", facts, spelled=True)
+    assert dropped == 0
+
+
+def test_super_spelled_numbers_become_digits_before_edit():
+    import film_script as fs
+    t = "Départ : huit mille trois cent quatre-vingt-treize milles, le trente et un mai 2026, un jour de mer."
+    assert fs._digits_for_speech(t) == "Départ : 8 393 milles, le 31 mai 2026, un jour de mer."
+
+
+def test_translation_never_mixes_french_fallback_sentences():
+    import asyncio
+    import film_script as fs
+    raw_ch = {"id": "c1", "text": "Le 4 juin, départ vers Fort-de-France. Arrivée le 14 juillet.", "anchors": []}
+    fr = {"chapters": [{**raw_ch, "text": "Le 4 juin, départ vers Fort-de-France. Arrivée le 14 juillet."}]}
+
+    async def half(system, user, **kw):
+        return "On June 4, departure for Fort-de-France.", "nemotron-lightning"
+
+    async def full(system, user, **kw):
+        return "On June 4, departure for Fort-de-France. Arrival on July 14.", "nemotron-lightning"
+
+    assert asyncio.run(fs.translate_written_plan(fr, {"chapters": [raw_ch]}, cascade=half)) is None
+    en = asyncio.run(fs.translate_written_plan(fr, {"chapters": [raw_ch]}, cascade=full))
+    assert en and "juin" not in en["chapters"][0]["text"]
+
+
+def test_english_exonyms_pass_but_invented_place_does_not():
+    import film_script as fs
+    got = fs._en_translation_names(
+        "Arrival at Ajaccio (Corsica). Then Samoan waters. Then Rome.",
+        "Arrivée à Ajaccio (Corse). Puis les eaux samoanes.",
+    )
+    assert {"corsica", "samoan"} <= got and "rome" not in got
+
+
+def test_translation_keeps_an_english_exonym_sentence():
+    import asyncio
+    import film_script as fs
+    raw_ch = {"id": "c1", "text": "Arrivée à Ajaccio (Corse).", "anchors": []}
+
+    async def tr(system, user, **kw):
+        return "Arrival at Ajaccio (Corsica).", "nemotron-lightning"
+
+    en = asyncio.run(fs.translate_written_plan({"chapters": [raw_ch]}, {"chapters": [raw_ch]}, cascade=tr))
+    assert en and en["chapters"][0]["text"] == "Arrival at Ajaccio (Corsica)."
+
+
+def test_translation_retry_asks_differently_and_skips_raw_number_filter():
+    import asyncio
+    import story_cascade as sc
+    import film_script as fs
+    raw_ch = {"id": "c1", "text": "Trois jours d'escale.", "anchors": []}
+    seen = []
+
+    async def tr(system, user, **kw):
+        seen.append((user, kw.get("facts")))
+        if len(seen) == 1:
+            return "Trois jours d'escale.", "nemotron-lightning"
+        return "3 days of stopover.", "nemotron-lightning"
+
+    en = asyncio.run(fs.translate_written_plan({"chapters": [raw_ch]}, {"chapters": [raw_ch]}, cascade=tr))
+    assert seen[0][0] != seen[1][0]
+    assert all(f is sc.NO_NUMBER_FILTER for _, f in seen)
+    assert en and en["chapters"][0]["text"] == "3 days of stopover."
+
+
+def test_english_translation_keeps_approximations_and_nationalities():
+    import film_script as fs
+    src = "Le 4 juin : 5 153 milles, une trentaine de jours de mer. Puis, les eaux espagnoles. Puis, L'ile Rousse."
+    en = "On June 4: 5 153 miles, about thirty days at sea. Then, Spanish waters. Then, L'Île-Rousse."
+    facts = {"raw": src, "en_names": sorted(n.title() for n in fs._en_translation_names(en, src)),
+             "approx": fs._fr_approx_numbers(src)}
+    _, rw, fb = fs.apply_written_guard(src, en, facts, lang="en")
+    assert fb == 0 and rw == 3
+
+
+def test_condense_150_drops_berth_and_repeated_region_before_cutting_facts():
+    import film_script as fs
+    chs = [{"id": f"c{i}", "fromName": "A", "toName": "Gustavia (Saint-Barthélemy)",
+            "text": "Le 21 juillet, départ vers Gustavia : 173 milles nautiques, un jour de mer. "
+                    "Arrivée à Gustavia (Saint-Barthélemy) le 23 juillet, à la marina de Gustavia. "
+                    "Arrivée à Gustavia (Saint-Barthélemy) le 23 juillet, à la marina de Gustavia."}
+           for i in range(20)]
+    fs._condense_to_spoken_seconds(chs, 150)
+    t = chs[0]["text"]
+    assert "173 milles" in t and "23 juillet" in t and "marina" not in t
+    assert t.count("Arrivée") == 1
+
+
+def test_non_breaking_hyphen_in_a_name_is_not_an_unknown_place():
+    import film_script as fs
+    src = "Arrivée à Mata-Utu (Wallis-et-Futuna) le 27 octobre."
+    out, rw, fb = fs.apply_written_guard(src, "Arrivée à Mata\u2011Utu (Wallis-et-Futuna) le 27 octobre.", {"raw": src})
+    assert fb == 0 and "\u2011" not in out
+
+
+def test_return_to_a_stop_is_not_a_skip():
+    import film_script as fs
+    rows = [{"name": n} for n in ("Marigot", "Cayenne (Guyane)", "Halifax (Nouvelle-Écosse)",
+                                  "Saint-Pierre (Saint-Pierre-et-Miquelon)", "Halifax (Nouvelle-Écosse)",
+                                  "Cayenne (Guyane)", "Papeete (Polynésie française)")]
+    rows = fs._as_stop_rows(rows)
+    assert fs._sea_between(rows, "Cayenne (Guyane)", "Papeete") == []
+    t = "Then, the catamaran sets sail again, heading for Papeete (French Polynesia)."
+    assert fs._cap_leg_faults(t, rows, "Cayenne (Guyane)", "Papeete (Polynésie française)") == []
+
+
+def test_grouped_distance_fact_keeps_its_thousands():
+    import film_script as fs
+    facts = fs.chapter_structured_facts({"text": "Le 4 juin : 5 153 milles, à 8 nœuds."}, lang="fr")
+    assert "5 153 milles" in facts["distances"] and "153 milles" not in facts["distances"]
+
+
+def test_close_but_different_place_is_not_an_exonym():
+    import film_script as fs
+    got = fs._en_translation_names("The Focolari Movement project. Then Rochefort.", "Mouvement des Focolari. La Rochelle.")
+    assert "movement" in got and "rochefort" not in got
+
+
+def test_truncated_reread_is_asked_again_shorter():
+    import asyncio
+    import film_script as fs
+    seen = []
+
+    async def casc(system, user, **kw):
+        seen.append(user)
+        if len(seen) == 1:
+            return '{"ok": false, "faults": ["date: a very long ramble that never', "nemotron-ultra"
+        return '{"ok": true, "faults": []}', "nemotron-ultra"
+
+    plan = {"chapters": [{"id": "c", "fromName": "A", "toName": "B", "text": "Départ de A. Arrivée à B."}]}
+    stops = [{"name": "A"}, {"name": "B"}]
+    ok, _ = asyncio.run(fs.reread_before_store(plan, stops, cascade=casc, lang="fr"))
+    assert ok and len(seen) == 2 and seen[0] != seen[1]
+
+
+def test_fortnight_only_translates_quinzaine():
+    import asyncio
+    import film_script as fs
+    raw_ch = {"id": "c", "text": "Le 17 octobre, une dizaine de jours de mer.", "anchors": []}
+    answers = iter(["On October 17, a fortnight at sea."] * 2)
+
+    async def tr(system, user, **kw):
+        return next(answers), "nemotron-lightning"
+
+    en = asyncio.run(fs.translate_written_plan({"chapters": [raw_ch]}, {"chapters": [raw_ch]}, cascade=tr))
+    assert en and "ten days" in en["chapters"][0]["text"]
