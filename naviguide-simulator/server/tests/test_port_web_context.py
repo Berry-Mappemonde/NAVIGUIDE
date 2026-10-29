@@ -76,3 +76,12 @@ def test_attach_puts_port_web_on_context(monkeypatch):
     ctx = asyncio.run(run())
     assert "portWeb" in ctx
     assert ctx["portWeb"]["status"] in {"ready", "unavailable"}
+
+
+def test_pick_port_label_falls_back_to_nearest_named_port():
+    from port_web_context import pick_port_label
+
+    ctx = {"around": {"portsOfEntry": [], "ports": [{"name": "Lorient", "nm": 3.2}], "marinas": [{"name": "Kernevel"}]}}
+    assert pick_port_label(ctx) == "Lorient"
+    assert pick_port_label({"nextStop": {"name": "Mindelo"}, **ctx}) == "Mindelo"
+    assert pick_port_label({"around": {"ports": [{"nm": 1}]}}) is None

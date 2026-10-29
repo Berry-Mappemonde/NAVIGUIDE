@@ -67,6 +67,12 @@ def pick_port_label(ctx: dict[str, Any]) -> str | None:
     at = official.get("atMark") if isinstance(official.get("atMark"), dict) else None
     if at and isinstance(at.get("name"), str) and at["name"].strip():
         return at["name"].strip()
+    # Film / simulation sans horloge officielle : port nommé le plus proche du bateau.
+    around = ctx.get("around") if isinstance(ctx.get("around"), dict) else {}
+    for key in ("portsOfEntry", "ports", "marinas", "harbourMasters"):
+        for row in around.get(key) or []:
+            if isinstance(row, dict) and isinstance(row.get("name"), str) and row["name"].strip():
+                return row["name"].strip()
     return None
 
 
