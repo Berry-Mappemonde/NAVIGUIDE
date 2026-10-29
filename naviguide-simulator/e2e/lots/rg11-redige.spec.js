@@ -119,7 +119,7 @@ test("Rédigé actif si hasWritten ou film prêt, jamais Rédigé comme source",
   await expect(sourceOff).toBeAttached();
   const srcText = (await sourceOff.innerText()).trim();
   expect(srcText, "jamais le mot Rédigé comme source").not.toMatch(/Rédigé/i);
-  expect(srcText).toMatch(/règles/i);
+  expect(srcText).toMatch(/données brutes/i);
   expect(llmHits, "aucun appel LLM depuis le navigateur").toEqual([]);
   await shot(page, "02-brut");
 });
