@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import re
 import unicodedata
@@ -634,7 +635,8 @@ def _coast_is_arrival(
         return True
     try:
         harbor = _arrival_harbor(items, dest, lang) if dest else ""
-    except Exception:
+    except (KeyError, TypeError, ValueError) as exc:
+        logging.warning("_arrival_harbor failed: %s", exc)
         harbor = ""
     return bool(harbor) and same_stop(place, harbor)
 
@@ -11086,6 +11088,22 @@ def _insert_missing_air(rows: list[dict], clock_marks: list | None) -> list[dict
     return out
 
 
+def _chapter_stop_names(plan: dict | None) -> list[str]:
+    """Extract stop names from plan chapters (fromName, toName)."""
+    names: list[str] = []
+    for chapter in (plan or {}).get('chapters', []) or []:
+        if not isinstance(chapter, dict):
+            continue
+        for key in ('fromName', 'toName'):
+            name = str(chapter.get(key) or '').strip()
+            if not name:
+                continue
+            if names and same_stop(names[-1], name):
+                continue
+            names.append(name)
+    return names
+
+
 def _route_stops_for_reread(plan: dict | None) -> list[dict]:
     """Escales du plan s'il les donne, sinon les marques du voyage (ordre de route).
 
@@ -11117,8 +11135,8 @@ def _route_stops_for_reread(plan: dict | None) -> list[dict]:
         ]
         if len(rows) >= 2 and named and all(_known_stop(name, rows) for name in named):
             return rows
-    except Exception:
-        pass
+    except (KeyError, TypeError, ValueError) as exc:
+        logging.warning("_route_stops_for_reread failed: %s", exc)
     return _stops_from_chapters((plan or {}).get("chapters") or [])
 
 
