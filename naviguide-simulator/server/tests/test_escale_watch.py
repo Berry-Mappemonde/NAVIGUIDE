@@ -248,6 +248,14 @@ def test_flag_closed_zero_tavily_search(monkeypatch):
     assert not escale_watch.watch_done("Nouméa")
 
 
+def test_default_watch_enabled(monkeypatch):
+    """Défaut actif : sans variable d'env, watch_enabled() est True (PR #401)."""
+    _keys(monkeypatch)
+    # Ne pas forcer NAVIGUIDE_TAVILY_WATCH — on teste le défaut
+    monkeypatch.delenv("NAVIGUIDE_TAVILY_WATCH", raising=False)
+    assert escale_watch.watch_enabled() is True
+
+
 def test_two_rounds_max_lightning_picks_from_list(monkeypatch):
     _keys(monkeypatch)
     journal.reset()
@@ -436,3 +444,13 @@ def test_run_daily_without_enrich_skips_pearls(monkeypatch):
     assert called == []
     assert out["enrich"]["skipped"] is True
     assert out["enrich"]["reason"] == "watch-only"
+
+
+def test_watch_enabled_by_default(monkeypatch):
+    """Default is now 1 (watch enabled) — no env var means watch runs."""
+    monkeypatch.delenv("NAVIGUIDE_TAVILY_WATCH", raising=False)
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert escale_watch.watch_enabled() is True

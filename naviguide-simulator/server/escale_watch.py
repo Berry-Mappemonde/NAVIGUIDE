@@ -4,8 +4,8 @@ Liste pré-écrite (avis, travaux, fermeture), nom du port et date
 substitués. Au plus deux tours par escale : Lightning lit le 1er, et s'il
 manque une réponse il choisit une question de la même liste — il n'en
 invente pas. Une phrase, une URL, `filter_numbers`. Prochaines escales
-seulement (fenêtre J-10 → J+2). Éteint tant que `NAVIGUIDE_TAVILY_WATCH`
-n'est pas ouvert. Jamais d'appel depuis le navigateur.
+seulement (fenêtre J-10 → J+2). Active par défaut (`NAVIGUIDE_TAVILY_WATCH=1`) ;
+`NAVIGUIDE_TAVILY_WATCH=0` la coupe. Jamais d'appel depuis le navigateur.
 """
 from __future__ import annotations
 
@@ -94,10 +94,10 @@ def slug(name: str) -> str:
 def watch_enabled() -> bool:
     """Zéro recherche tant que le drapeau n'est pas ouvert.
 
-    Défaut 0 (PR #401). Le 15 oct. `ici_warm` lisait 1 ; le poste
-    ouvre `NAVIGUIDE_TAVILY_WATCH=1`. Les tests forcent 0.
+    Défaut 1 (U0 / PR #159). La veille est active par défaut ;
+    NAVIGUIDE_TAVILY_WATCH=0 la coupe. Les tests forcent 0.
     """
-    return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "0").strip().lower() in (
+    return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "1").strip().lower() in (
         "1", "true", "yes", "on",
     )
 
