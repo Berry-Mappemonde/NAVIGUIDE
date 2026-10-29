@@ -1598,14 +1598,14 @@ def test_reasoning_leak_is_a_labelled_nim_fallback(monkeypatch, tier, lang, reas
     assert err["provider"] == "tokenfactory"
     assert err["reason"].startswith("tokenfactory empty")
     tf = [url for url, _model in seen if "tokenfactory" in url]
-    assert any("nvidia.com" in url for url, _model in seen)
+    assert any(_url_host_is(url, "nvidia.com") for url, _model in seen)
     if tier == "fast":
         assert len(tf) == 2
-        assert all("nebius.com" in url for url in tf)
+        assert all(_url_host_is(url, "api.tokenfactory.nebius.com") for url in tf)
     elif tier == "deep":
-        assert len(tf) == 1 and "nebius.com" in tf[0]
+        assert len(tf) == 1 and _url_host_is(tf[0], "api.tokenfactory.nebius.com")
     else:
-        assert len(tf) == 1 and "us-central1" not in tf[0]
+        assert len(tf) == 1 and not _url_host_is(tf[0], "api.tokenfactory.us-central1.nebius.com")
 
 
 def test_lightning_reasoning_content_finish_length_stays_lightning(monkeypatch):
