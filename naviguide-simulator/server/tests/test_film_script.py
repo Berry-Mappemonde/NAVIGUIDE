@@ -4889,6 +4889,38 @@ def test_ed1_judge_closed_serves_super_without_ultra(monkeypatch):
     assert all(tier != "judge" for tier, _sys in hops)
 
 
+def test_write_film_chain_never_calls_translate_written_plan(monkeypatch):
+    import film_script as fs
+
+    async def _trap(*_a, **_k):
+        raise AssertionError("translate_written_plan must not run in production chain")
+
+    monkeypatch.setattr(fs, "translate_written_plan", _trap)
+    monkeypatch.setattr(fs, "film_ultra_open", lambda: False)
+
+    async def _fake_write(_plan, *, lang, cascade, seconds):
+        text = (_plan.get("chapters") or [{}])[0].get("text") or "x"
+        ch = {"id": "a", "text": text, "source": fs.WRITTEN_SOURCE}
+        return (
+            {"chapters": [ch], "source": fs.WRITTEN_SOURCE, "targetSeconds": 150},
+            {"rewritten": 1, "source": fs.WRITTEN_SOURCE},
+        )
+
+    async def _ok_reread(*_a, **_k):
+        return True, {"source": "rules"}
+
+    monkeypatch.setattr(fs, "write_stored_plan", _fake_write)
+    monkeypatch.setattr(fs, "reread_before_store", _ok_reread)
+
+    fr_raw = {"targetSeconds": 150, "chapters": [{"id": "a", "text": "Le 1er juin, départ vers Ajaccio."}]}
+    en_raw = {"targetSeconds": 150, "chapters": [{"id": "a", "text": "On June 1, departure for Ajaccio."}]}
+    fr_plan, en_plan, stats = asyncio.run(
+        fs.write_film_chain(fr_raw, seconds=150, en_raw=en_raw, cascade=lambda *_a, **_k: ""),
+    )
+    assert fr_plan and en_plan
+    assert stats.get("lightning") == 1
+
+
 def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "80000")
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)

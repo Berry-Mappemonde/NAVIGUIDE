@@ -2976,7 +2976,7 @@ def film_receipt(calls: list[dict], stats: Optional[dict], when: datetime, base:
 
 # Film async writing — background task per (lang, seconds) key
 _FILM_WRITE_TASKS: dict[tuple[str, int], asyncio.Task] = {}
-_FILM_WRITE_FAILED: set[tuple[str, int], asyncio.Task] = {}
+_FILM_WRITE_FAILED: set[tuple[str, int]] = set()
 
 
 def film_write_running(lang: str, seconds: int) -> bool:
@@ -3037,6 +3037,7 @@ async def start_film_write(
     fr_raw = _raw_plan_for(body, "fr", secs)
     if not isinstance(fr_raw, dict) or not (fr_raw.get("chapters") or []):
         return serve_film(lang=lg, seconds=secs, style="written")
+    en_raw = _raw_plan_for(body, "en", secs)
 
     cascade_fn = cascade
     if cascade_fn is None:
@@ -3048,10 +3049,14 @@ async def start_film_write(
         _log_fill_written(f"written clic {lg} {secs}s : plafond write — brut")
         return serve_film(lang=lg, seconds=secs, style="written")
 
+    _FILM_WRITE_FAILED.discard(key)
+
     # Launch background task
     async def _write_task():
         try:
-            fr_plan, en_plan, stats = await write_film_chain(fr_raw, seconds=secs, cascade=cascade_fn)
+            fr_plan, en_plan, stats = await write_film_chain(
+                fr_raw, seconds=secs, cascade=cascade_fn, en_raw=en_raw,
+            )
             if not isinstance(fr_plan, dict) or not (fr_plan.get("chapters") or []):
                 _log_fill_written(f"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})")
                 _FILM_WRITE_FAILED.add(key)
@@ -3068,6 +3073,7 @@ async def start_film_write(
                 en_plan = {**en_plan, "receipt": receipt}
                 body = _put_written_variant(body, "en", secs, en_plan, when, last_stop)
             put("film", body, hit.get("key"))
+            _FILM_WRITE_FAILED.discard(key)
             _log_fill_written(
                 f"written clic {lg} {secs}s : source={stats.get('source')} "
                 f"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} lightning={stats.get('lightning')}"
@@ -3125,6 +3131,7 @@ async def write_film_on_click(
     fr_raw = _raw_plan_for(body, "fr", secs)
     if not isinstance(fr_raw, dict) or not (fr_raw.get("chapters") or []):
         return serve_film(lang=lg, seconds=secs, style="written")
+    en_raw = _raw_plan_for(body, "en", secs)
 
     cascade_fn = cascade
     if cascade_fn is None:
@@ -3136,7 +3143,9 @@ async def write_film_on_click(
         _log_fill_written(f"written clic {lg} {secs}s : plafond write — brut")
         return serve_film(lang=lg, seconds=secs, style="written")
 
-    fr_plan, en_plan, stats = await write_film_chain(fr_raw, seconds=secs, cascade=cascade_fn)
+    fr_plan, en_plan, stats = await write_film_chain(
+        fr_raw, seconds=secs, cascade=cascade_fn, en_raw=en_raw,
+    )
     if not isinstance(fr_plan, dict) or not (fr_plan.get("chapters") or []):
         _log_fill_written(f"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})")
         return serve_film(lang=lg, seconds=secs, style="written")

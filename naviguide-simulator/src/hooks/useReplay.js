@@ -1148,6 +1148,8 @@ export function useReplay({
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
   const [filmWriteError, setFilmWriteError] = useState(false);
+  const filmWritePollGenRef = useRef(0);
+  const filmWriteNextStepRef = useRef(async () => "stop");
   // Style du plan chargé (visite des juges, bouton Rédigé) : "written" / "raw" quand le serveur
   // a servi le style demandé, "mismatch" quand il a servi le Brut à une demande Rédigé.
   const [filmLoadedStyle, setFilmLoadedStyle] = useState("");
@@ -2296,11 +2298,17 @@ export function useReplay({
     if (!isOfficialFilmVoyage(voyageId)) return;
     const path = filmRequestPath(voyageId);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
+    setFilmWriteError(false);
     setFilmWriting(true);
     fetch(`${API}${path}?${q}`, { method: "POST" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) return;
+        const status = String(data?.status || "").toLowerCase();
+        if (status === "writing" || data?.writing) {
+          void filmWriteNextStepRef.current();
+          return;
+        }
         const resolved = resolveServedFilm(data, "written");
         if (resolved.hasWritten) {
           setHasWritten(true);
@@ -2310,6 +2318,7 @@ export function useReplay({
           setFilmModel(resolved.model || "");
           setFilmWebContext(resolved.webContext || null);
           setFilmReceipt(resolved.receipt || null);
+          setFilmWriting(false);
         }
       })
       .catch(() => {
@@ -2322,17 +2331,38 @@ export function useReplay({
   const filmWriteNextStep = useCallback(async () => {
     if (!isOfficialFilmVoyage(voyageId)) return "stop";
 
+    const gen = ++filmWritePollGenRef.current;
+    const ac = new AbortController();
     const path = filmRequestPath(voyageId);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=written&t0=${encodeURIComponent(t0)}`;
     const maxAttempts = 150; // 4s * 150 = 600s = 10min
     let attempts = 0;
 
+    const sleep = (ms) => new Promise((resolve, reject) => {
+      const id = setTimeout(resolve, ms);
+      ac.signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(id);
+          reject(new DOMException("aborted", "AbortError"));
+        },
+        { once: true },
+      );
+    });
+
     while (attempts < maxAttempts) {
-      await new Promise((resolve) => setTimeout(resolve, 4000));
+      if (gen !== filmWritePollGenRef.current) return "stop";
+      try {
+        await sleep(4000);
+      } catch (err) {
+        if (err?.name === "AbortError") return "stop";
+        throw err;
+      }
       attempts++;
+      if (gen !== filmWritePollGenRef.current) return "stop";
 
       try {
-        const res = await fetch(`${API}${path}?${q}`);
+        const res = await fetch(`${API}${path}?${q}`, { signal: ac.signal });
         if (!res.ok) continue;
         const data = await res.json();
         if (!data) continue;
@@ -2362,14 +2392,25 @@ export function useReplay({
           // still writing
           continue;
         }
-      } catch {
+      } catch (err) {
+        if (err?.name === "AbortError") return "stop";
         // ignore network errors, keep polling
       }
     }
+    if (gen !== filmWritePollGenRef.current) return "stop";
     setFilmWriteError(true);
     setFilmWriting(false);
     return "stop";
-  }, [hasWritten, lang, targetSeconds, t0, voyageId]);
+  }, [lang, targetSeconds, t0, voyageId]);
+
+  filmWriteNextStepRef.current = filmWriteNextStep;
+
+  useEffect(() => {
+    filmWritePollGenRef.current += 1;
+    return () => {
+      filmWritePollGenRef.current += 1;
+    };
+  }, [voyageId, lang, targetSeconds, t0]);
 
   return {
     active,

@@ -2167,6 +2167,62 @@ def test_ed1_write_query_runs_once_then_cache(client, tmp_path, monkeypatch):
     assert calls["n"] == 1
 
 
+def test_film_async_write_failed_then_retry(client, tmp_path, monkeypatch):
+    import asyncio
+    import film_script
+
+    store = OfficialStore(DiskBackend(tmp_path / "film-failed-retry"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    official_store.reset_store()
+    official_store._FILM_WRITE_FAILED.clear()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")
+    store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
+    calls = {"n": 0}
+
+    async def fake_chain(plan, *, seconds=150, cascade=None, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None, None, {"source": "rules", "super": 0}
+        written = {
+            "chapters": list(plan.get("chapters") or []),
+            "source": official_store.WRITTEN_SOURCE,
+            "hasWritten": True,
+            "chars": 40,
+            "targetSeconds": seconds,
+        }
+        return written, None, {
+            "super": 1,
+            "ultra_edit": 0,
+            "ultra_judge": 0,
+            "lightning": 0,
+            "source": official_store.WRITTEN_SOURCE,
+            "reviewed": False,
+        }
+
+    monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
+
+    first = client.post("/voyage/official/film?lang=fr&seconds=150")
+    assert first.status_code == 200
+    asyncio.run(asyncio.sleep(0))
+
+    failed_get = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
+    assert failed_get.status_code == 200
+    assert failed_get.json()["status"] == "failed"
+
+    retry = client.post("/voyage/official/film?lang=fr&seconds=150")
+    assert retry.status_code == 200
+    assert retry.json()["status"] == "writing"
+    asyncio.run(asyncio.sleep(0))
+
+    ready = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
+    assert ready.json()["status"] == "ready"
+    assert ready.json()["hasWritten"] is True
+    assert calls["n"] == 2
+
+
 # Visiteur public (nginx pose X-Real-IP). Sans ces en-têtes, l'appel local
 # est admin et le limiteur ne s'applique pas — comme pour POST /ici/story.
 _PUBLIC_FILM = {"X-Real-IP": "203.0.113.40", "X-Forwarded-For": "203.0.113.40"}
