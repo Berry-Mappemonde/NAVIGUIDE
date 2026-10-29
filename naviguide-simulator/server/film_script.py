@@ -381,7 +381,7 @@ _COAST_GEO = (
     (re.compile(r"cascais|lisboa|lisbon|peniche|sines", re.I), ("le Portugal", "Portugal", "coast")),
     (re.compile(r"tanger|tangier|algeciras|ceuta|europa point|^gibraltar$", re.I), ("le détroit de Gibraltar", "the Strait of Gibraltar", "strait")),
     (re.compile(r"porto torres|cagliari|olbia|alghero", re.I), ("la Sardaigne", "Sardinia", "island")),
-    (re.compile(r"^calvi$|bastia|bonifacio|porto-vecchio|^l['’]?\s*[iî]le[- ]rousse$", re.I), ("la Corse", "Corsica", "island")),
+    (re.compile(r"^calvi$|bastia|bonifacio|porto-vecchio", re.I), ("la Corse", "Corsica", "island")),
     (re.compile(r"almer[ií]a|motril|m[aá]laga|cartagena", re.I), ("l'Andalousie", "Andalusia", "coast")),
     (re.compile(r"mah[oó]n|palma|ibiza|ciutadella", re.I), ("les Baléares", "the Balearic Islands", "island")),
 )
@@ -399,7 +399,6 @@ _COAST_PORT_SHORT = (
     (re.compile(r"mah[oó]n", re.I), "Mahón"),
     (re.compile(r"porto torres", re.I), "Porto Torres"),
     (re.compile(r"\bcalvi\b", re.I), "Calvi"),
-    (re.compile(r"l['’]?\s*[iî]le[- ]rousse", re.I), "L'Île-Rousse"),
     (re.compile(r"bastia", re.I), "Bastia"),
     (re.compile(r"porto[- ]?vecchio", re.I), "Porto-Vecchio"),
     (re.compile(r"bonifacio", re.I), "Bonifacio"),
@@ -624,7 +623,7 @@ def _moment_near_named_place(change: dict, clock: dict | None, marks: list | Non
 def _coast_is_arrival(
     change: dict, dest_name: str, items: list | None, dest: dict | None, lang: str,
 ) -> bool:
-    """Une côte « longée » qui est le port (ou la marina) d'arrivée de la jambe."""
+    """Une côte " longée " qui est le port (ou la marina) d'arrivée de la jambe."""
     place = change_place_name(change) or short_name(change.get("title") or "")
     if not place:
         return False
@@ -4254,7 +4253,6 @@ def spoken_sea_days(days: Any, lang: str = "fr") -> str:
     except (TypeError, ValueError):
         return ""
     en = _en(lang)
-    # 41 milles à 8 nœuds (Gustavia → Marigot) font 5 heures : pas « un jour de mer ».
     if d < 0.75:
         return "less than a day at sea" if en else "moins d'un jour de mer"
     if d < 1.5:
@@ -9512,12 +9510,6 @@ def build_raw_from_moments(
                 same_stop(title, dest_name) or dest_name.casefold() in title.casefold()
             ):
                 return
-            # « Le bateau longe Mata-Utu. […] Arrivée à Mata-Utu » : on ne longe pas
-            # le port où l'on arrive (ni sa marina : Dégrad des Cannes, Cayenne).
-            if change.get("kind") == "coast" and _coast_is_arrival(
-                change, dest_name or "", selected, dest, lang,
-            ):
-                return
             place = change_place_name(change) or title
             geo = change.get("geo") if isinstance(change.get("geo"), dict) else None
             if geo and (geo.get("fr") or geo.get("en")):
@@ -9946,7 +9938,7 @@ _NAME_STOP = frozenset({
     "august", "september", "october", "november", "december", "l", "expédition",
     "expedition", "catamaran", "bateau", "boat", "équipage", "equipage", "crew",
     "approche", "approach", "quitte", "leaves", "left", "departed", "today",
-    "aujourd’hui", "upcoming",  # « Upcoming stops: … » : l’adjectif en tête de phrase, pas un nom
+    "aujourd’hui", "upcoming",
 })
 _NAME_TOKEN_RE = re.compile(
     r"[A-ZÉÈÊÀÂÙÛÎÔÇ][A-Za-zÀ-ÿ'’]*(?:-[A-ZÉÈÊÀÂÙÛÎÔÇ]?[A-Za-zÀ-ÿ'’]*)*"
@@ -11085,17 +11077,6 @@ def _insert_missing_air(rows: list[dict], clock_marks: list | None) -> list[dict
     return out
 
 
-def _chapter_stop_names(plan: dict | None) -> list[dict]:
-    """Départs et arrivées des chapitres, dans l'ordre du film."""
-    return [
-        {"name": str(ch.get(key) or "")}
-        for ch in (plan or {}).get("chapters") or []
-        if isinstance(ch, dict)
-        for key in ("fromName", "toName")
-        if str(ch.get(key) or "").strip()
-    ]
-
-
 def _route_stops_for_reread(plan: dict | None) -> list[dict]:
     """Escales du plan s'il les donne, sinon les marques du voyage (ordre de route).
 
@@ -11114,7 +11095,7 @@ def _route_stops_for_reread(plan: dict | None) -> list[dict]:
         clock = voy.get("clock") if isinstance(voy.get("clock"), dict) else {}
         rows = _insert_missing_air(_as_stop_rows(marks), clock.get("marks"))
         # Halifax manque aussi aux marques d'horloge du voyage officiel : le chapitre
-        # du second bateau le nomme, on l'insère après l'escale qui le précède.
+        # du second bateau le nomme, on l'insère après l'escale qui la précède.
         rows = _insert_missing_air(rows, _chapter_stop_names(plan))
         if len(rows) >= 8:
             return rows

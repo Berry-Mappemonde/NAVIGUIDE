@@ -252,8 +252,6 @@ def _place_phrase(lat: float, lon: float, lang: str) -> str:
     """Lieu de la phrase climato = position du bateau à cet instant :
     un jalon trop loin (> PLACE_MAX_NM) ne se dit pas — mieux vaut le silence
     qu'un « au nord de Gibraltar » quand le bateau longe la Galice."""
-    # « À l'équateur » seulement près de la ligne (≤ 2°, ~120 milles) : à 4,95° N
-    # (Dégrad des Cannes, Cayenne) le bateau n'a jamais coupé l'équateur.
     if abs(lat) <= EQUATOR_BAND_DEG:
         return "at the equator" if _en(lang) else "à l'équateur"
     best = None
