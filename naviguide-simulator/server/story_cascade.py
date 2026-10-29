@@ -41,7 +41,7 @@ TOKENFACTORY_EU_BASE = (
     os.environ.get("NAVIGUIDE_TF_BASE_EU")
     or "https://api.tokenfactory.nebius.com/v1"
 ).rstrip("/")
-# Cookbook Ultra: https://api.tokenfactory.us-central1.nebius.com/v1/
+# Ultra default host is EU Token Factory: https://api.tokenfactory.nebius.com/v1/
 TOKENFACTORY_ULTRA_BASE = (
     os.environ.get("NAVIGUIDE_TF_BASE_ULTRA")
     or "https://api.tokenfactory.nebius.com/v1"

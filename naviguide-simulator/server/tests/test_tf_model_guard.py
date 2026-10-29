@@ -114,9 +114,10 @@ def test_super_vl_missing_on_us_host_falls_to_lightning_labelled(monkeypatch):
 
 
 def test_ultra_missing_falls_to_super_vl_on_eu_host():
+    """Ultra absent de l'hôte EU → repli sur Super-VL sur le même hôte EU."""
     seen = []
-    us_without_ultra = [i for i in US_IDS if "Ultra" not in i]
-    h = _handler(seen, {EU: EU_IDS, US: us_without_ultra})
+    eu_without_ultra = [i for i in EU_IDS if "Ultra" not in i]
+    h = _handler(seen, {EU: eu_without_ultra})
     res = _run(h, tier="deep")
     assert res[1] == "nemotron-super-vl"
     assert res.model == "nvidia/Nemotron-3.5-Super-VL"
