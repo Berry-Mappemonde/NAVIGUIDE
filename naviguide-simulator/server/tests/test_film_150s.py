@@ -49,3 +49,40 @@ def test_cut_sentence_does_not_steal_a_kept_anchor():
     chapter = {"text": text, "anchors": anchors}
     assert not _anchor_dates_regress([chapter], "fr")
     assert fs.nemotron_reread_report(text, [], lang="fr", chapters=[chapter]).get("faults", []).count("date") == 0
+
+
+FR_LEG8 = ("Le 23 août, à Saint-Pierre, l'équipage reprend le second voilier pour Halifax : "
+           "417 milles, 5 jours de mer. Arrivée à Halifax le 28 août.")
+# Réponse réelle de Lightning (run TF du 29/10, 150 s, leg-8) : le français, espaces mangées.
+GLUED_LEG8 = ("Le 23août, àSaint-Pierre, l'équipagereprend le secondvoilierpourHalifax : "
+              "417milles, 5jours de mer. Arrivée àHalifaxle28août.")
+EN_LEG8 = ("On August 23, at Saint-Pierre, the crew boards the second vessel again for Halifax: "
+           "417 miles, 5 days at sea. Arrival in Halifax on August 28.")
+
+
+def test_glued_french_share_separates_copy_from_translation():
+    src_w = set(__import__("re").findall(r"[^\W\d_]{3,}", FR_LEG8.casefold()))
+    assert fs._glued_french_share(src_w, GLUED_LEG8) > 0.8
+    assert fs._glued_french_share(src_w, EN_LEG8) < 0.6
+
+
+def test_glued_french_is_retried_never_served_as_english():
+    import asyncio
+    raw_ch = {"id": "leg-8", "text": FR_LEG8, "anchors": []}
+    answers = [GLUED_LEG8, EN_LEG8]
+    calls = []
+
+    async def tr(system, user, **kw):
+        calls.append(user)
+        return answers[min(len(calls) - 1, 1)], "nemotron-lightning"
+
+    en = asyncio.run(fs.translate_written_plan({"chapters": [raw_ch]}, {"chapters": [raw_ch]}, cascade=tr))
+    assert len(calls) == 2, "la réponse soudée doit être redemandée"
+    assert en and "août" not in en["chapters"][0]["text"]
+    assert en["chapters"][0]["text"].startswith("On August 23")
+
+    async def always_glued(system, user, **kw):
+        return GLUED_LEG8, "nemotron-lightning"
+
+    assert asyncio.run(fs.translate_written_plan(
+        {"chapters": [raw_ch]}, {"chapters": [raw_ch]}, cascade=always_glued)) is None

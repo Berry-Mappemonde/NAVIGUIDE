@@ -12392,6 +12392,17 @@ def en_translation_guard(text: str, fr_src: str) -> str:
     return fix_en_toponyms(out, fr_src)
 
 
+def _glued_french_share(src_words: set[str], text: str) -> float:
+    """Part des mots français (≥ 3 lettres) retrouvés dans la sortie, espaces ôtées.
+
+    Une vraie traduction anglaise en garde ≤ 0,51 (noms propres, « marina »…) sur les
+    films du 29/10 ; un français recopié, même soudé, en garde 1,0."""
+    if not src_words:
+        return 0.0
+    blob = re.sub(r"\s+", "", (text or "").casefold())
+    return sum(1 for w in src_words if w in blob) / len(src_words)
+
+
 async def translate_written_plan(
     fr_plan: dict,
     raw_plan: dict,
@@ -12444,6 +12455,11 @@ async def translate_written_plan(
             out_w = set(re.findall(r"[^\W\d_]{3,}", (text or "").casefold()))
             if src_w and len(src_w & out_w) / len(src_w) > 0.6:
                 fb = max(fb, 1)  # Lightning a rendu le français
+            if src_w and _glued_french_share(src_w, text or "") > 0.8:
+                # Lightning a rendu le français aux espaces mangées (« l'équipagereprend
+                # le secondvoilierpourHalifax ») : les mots soudés échappent au
+                # recouvrement ci-dessus (150 s du 29/10, leg-8).
+                fb = max(fb, 1)
             if re.search(r"\bfortnight\b", text or "", re.I) and "quinzaine" not in src.casefold():
                 # Lightning rend « une dizaine de jours » par « a fortnight » : on remet la
                 # traduction exacte de l'approximation dite en français, sinon refus.
