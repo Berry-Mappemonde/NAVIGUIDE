@@ -1147,6 +1147,9 @@ export function useReplay({
   const [filmWriting, setFilmWriting] = useState(false);
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
+  // Style du plan chargé (visite des juges, bouton Rédigé) : "written" / "raw" quand le serveur
+  // a servi le style demandé, "mismatch" quand il a servi le Brut à une demande Rédigé.
+  const [filmLoadedStyle, setFilmLoadedStyle] = useState("");
   const [estimatedSeconds, setEstimatedSeconds] = useState(0);
   const [variantEstimates, setVariantEstimates] = useState(null);
   const [filmParagraphs, setFilmParagraphs] = useState([]);
@@ -1364,10 +1367,11 @@ export function useReplay({
       return resolved;
     };
 
-    const applyPlan = (data, resolved) => {
+    const applyPlan = (data, resolved, requestedStyle = style) => {
       // Texte + anchors du stock (RG11A) : pas de réécriture navigateur.
       remotePlanRef.current = data;
       remotePlanKeyRef.current = q;
+      setFilmLoadedStyle(resolved.effectiveStyle === requestedStyle ? requestedStyle : "mismatch");
       setFilmSource(resolved.source);
       setFilmReviewedBy(resolved.reviewedBy || "");
       setFilmModel(resolved.model || "");
@@ -1399,13 +1403,13 @@ export function useReplay({
         return "over-budget";
       }
       if (isReadyRemoteFilm(data, { official })) {
-        if (!isProbe) applyPlan(data, resolved);
+        if (!isProbe) applyPlan(data, resolved, requestedStyle);
         if (!isProbe) setFilmStatus("ready");
         return isProbe ? "probed" : true;
       }
       if (data?.chapters?.length) {
         if (!isProbe) {
-          applyPlan(data, resolved);
+          applyPlan(data, resolved, requestedStyle);
           setFilmStatus("stale");
         }
         return isProbe ? "probed" : true;
@@ -1422,6 +1426,7 @@ export function useReplay({
       setFilmWebContext(null);
       setFilmReceipt(null);
       setFilmWriting(false);
+      setFilmLoadedStyle("");
       setEstimatedSeconds(0);
       setVariantEstimates(null);
       setFilmParagraphs([]);
@@ -2354,6 +2359,7 @@ export function useReplay({
     filmStyle,
     setFilmStyle: chooseFilmStyle,
     hasWritten,
+    filmLoadedStyle,
     canStart,
     seekChapter,
     remoteStatus,

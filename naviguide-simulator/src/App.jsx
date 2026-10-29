@@ -13,7 +13,7 @@ import { useLang } from "./i18n/LangContext.jsx";
 import { ITINERARY_POINTS } from "./constants/itineraryPoints";
 import { SimulationFilmBar } from "./components/SimulationFilmBar.jsx";
 import { DemoWalkthrough } from "./components/DemoWalkthrough.jsx";
-import { wantsTourFromUrl } from "./components/demoWalkthrough.js";
+import { TOUR_EDITED_WAIT_MS, tourEditedStep, wantsTourFromUrl } from "./components/demoWalkthrough.js";
 import { RecomputeDialog } from "./components/RecomputeDialog.jsx";
 import { useRouteWindProfile } from "./hooks/useRouteWindProfile.js";
 import { useExpeditionSpeed } from "./hooks/useExpeditionSpeed.js";
@@ -30,7 +30,7 @@ import { useMoment } from "./hooks/useMoment.js";
 import { useMomentJournal } from "./hooks/useMomentJournal.js";
 import { useEscaleSheetState } from "./hooks/useEscaleSheetState.js";
 import { useLogbookChat } from "./hooks/useLogbookChat.js";
-import { followClockLineFromT0, useReplay, visibleFilmSubtitle } from "./hooks/useReplay.js";
+import { filmSourceKey, followClockLineFromT0, useReplay, visibleFilmSubtitle } from "./hooks/useReplay.js";
 import { useReplayVoice } from "./hooks/useReplayVoice.js";
 import { dayMonth, expeditionStory } from "./engine/expeditionStory.js";
 import { sumRainHours } from "./engine/eventRules.js";
@@ -182,6 +182,9 @@ export default function App() {
   const [filmFullscreen, setFilmFullscreen] = useState(false);
   const filmLayerSnapRef = useRef(null);
   const demoReplayStartedRef = useRef(false);
+  // Visite, étape film : « Lire le film Rédigé » attend que le plan rédigé soit chargé.
+  const [demoEditedPending, setDemoEditedPending] = useState(false);
+  const [demoEditedFellBack, setDemoEditedFellBack] = useState(false);
   // Lien profond `?tour=1` (README, Devpost) : la visite guidée s'ouvre au chargement.
   const [tourFromUrl] = useState(() => typeof window !== "undefined" && wantsTourFromUrl(window.location.search));
   const [hideFilmBar, setHideFilmBar] = useState(false);
@@ -1379,7 +1382,10 @@ export default function App() {
   }, [replay.active]);
 
   const applyDemoAction = useCallback((action) => {
-    if (action !== "replay") stopDemoOwnedReplay();
+    if (action !== "replay") {
+      stopDemoOwnedReplay();
+      setDemoEditedPending(false);
+    }
     const showFollow = (leftOpen, rightOpen) => {
       // selectView ne parque le dessin que s'il change de vue : un brouillon lancé
       // depuis la carte Berry en Suivre resterait armé (les clics ajouteraient des points).
@@ -1435,7 +1441,49 @@ export default function App() {
     replayControls.onStart();
   }, [replay.active, replayControls]);
 
+  // Un clic : choisir Rédigé (sans appel Nemotron, le rédigé existe déjà : hasWritten),
+  // puis lancer le film dès que le plan rédigé est chargé (effet ci-dessous).
+  const startDemoEditedReplay = useCallback(() => {
+    if (replay.active || !replayControls) return;
+    setDemoEditedFellBack(false);
+    if (!replay.hasWritten) {
+      // Repli annoncé dans la visite : le Brut joue.
+      setDemoEditedFellBack(true);
+      startDemoReplay();
+      return;
+    }
+    setDemoEditedPending(true);
+    if (replay.filmStyle !== "written") replay.setFilmStyle("written");
+  }, [replay.active, replay.hasWritten, replay.filmStyle, replay.setFilmStyle, replayControls, startDemoReplay]);
+
+  const demoEditedNext = tourEditedStep({
+    pending: demoEditedPending,
+    active: replay.active,
+    filmStyle: replay.filmStyle,
+    loadedStyle: replay.filmLoadedStyle,
+    remoteStatus: replay.remoteStatus,
+    canStart: Boolean(replayControls?.canStart),
+  });
+  useEffect(() => {
+    if (demoEditedNext === "idle" || demoEditedNext === "wait") return;
+    setDemoEditedPending(false);
+    // Le serveur a servi le Brut à la demande Rédigé : le repli est annoncé dans la visite.
+    setDemoEditedFellBack(demoEditedNext === "raw");
+    startDemoReplay();
+  }, [demoEditedNext, startDemoReplay]);
+  // Rédigé jamais servi dans le délai : retour au Brut, annoncé.
+  useEffect(() => {
+    if (!demoEditedPending) return undefined;
+    const timer = setTimeout(() => {
+      setDemoEditedFellBack(true);
+      replay.setFilmStyle("raw");
+    }, TOUR_EDITED_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [demoEditedPending, replay.setFilmStyle]);
+
   const closeDemo = useCallback(() => {
+    setDemoEditedPending(false);
+    setDemoEditedFellBack(false);
     stopDemoOwnedReplay();
     parkDrawing();
     if (view !== VIEW_SUIVRE) selectView(VIEW_SUIVRE);
@@ -2339,6 +2387,11 @@ export default function App() {
         autoStart={tourFromUrl}
         onStepChange={applyDemoAction}
         onPlayReplay={startDemoReplay}
+        editedReady={Boolean(replay.hasWritten)}
+        editedSource={replay.hasWritten ? t(filmSourceKey(replay.filmSource, replay.filmReviewedBy, replay.filmModel)) : ""}
+        editedPending={demoEditedPending}
+        editedFellBack={demoEditedFellBack}
+        onPlayEdited={startDemoEditedReplay}
         onClose={closeDemo}
       />
 
