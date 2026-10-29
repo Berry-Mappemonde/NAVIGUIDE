@@ -11082,7 +11082,7 @@ def _insert_missing_air(rows: list[dict], clock_marks: list | None) -> list[dict
         if isinstance(nm, (int, float)) and not isinstance(nm, bool):
             row["nm"] = float(nm)
         if anchor is None:
-            out.append(row)
+            out.insert(0, row)
         else:
             out.insert(anchor + 1, row)
     return out
