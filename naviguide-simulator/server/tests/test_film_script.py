@@ -6005,3 +6005,50 @@ def test_halifax_saint_pierre_hop_not_voyage():
     assert _opening_nm_label(leg_nm, "en") in repaired_text
     assert spoken_sea_days(leg_days, "en") in repaired_text
     assert "Arrival on 15 August." in repaired_text
+
+
+def _fc2_side_plan() -> dict:
+    """Deux jambes : La Rochelle → Ajaccio (mai) puis Halifax → Saint-Pierre (août)."""
+    return {
+        "chapters": [
+            {
+                "id": "leg-1", "tA": "2026-05-15T08:00:01Z", "tB": "2026-06-01T22:13:28Z",
+                "fromName": "La Rochelle", "toName": "Ajaccio (Corse)",
+                "text": "Le 15 mai, départ vers Ajaccio : 1 820 milles, une vingtaine de jours de mer. "
+                        "Arrivée à Ajaccio (Corse) le 1er juin.",
+            },
+            {
+                "id": "leg-8", "tA": "2026-08-19T04:28:25Z", "tB": "2026-08-21T18:34:56Z",
+                "fromName": "Halifax (Nouvelle-Écosse)",
+                "toName": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+                "text": "Le 19 août, à Halifax (Nouvelle-Écosse), l'équipage embarque sur un second voilier "
+                        "pour Saint-Pierre (Saint-Pierre-et-Miquelon). 497 milles, trois jours de mer. "
+                        "Arrivée à Saint-Pierre (Saint-Pierre-et-Miquelon) le 21 août.",
+            },
+        ],
+    }
+
+
+def test_fc2_side_boat_opening_is_never_a_redite():
+    """fc2 : l'ouverture du second bateau n'est ni remplacée ni coupée en premier."""
+    from film_script import _trim_sentence_rank  # noqa: PLC0415
+
+    for sent in (
+        "Le 19 août, à Halifax (Nouvelle-Écosse), l'équipage embarque sur un second voilier pour Saint-Pierre.",
+        "Puis, à Saint-Pierre, l'équipage reprend un second voilier pour Halifax.",
+        "On 19 August, in Halifax, the crew boards a second sailing boat for Saint-Pierre.",
+    ):
+        assert _trim_sentence_rank(sent) == 0, sent
+
+
+def test_fc2_dated_subject_stays_in_its_own_leg():
+    """« Le 21 mai, une bouée » ne remplace pas une phrase de la jambe d'août."""
+    bag = [{
+        "id": "dc:buoy", "kind": "buoy", "phrase": "Le 21 mai, une bouée.",
+        "name": "EMSO", "t": "2026-05-21T14:39:18Z",
+    }]
+    out = apply_chosen_subjects(_fc2_side_plan(), ["dc:buoy"], bag, 150)
+    side = out["chapters"][1]["text"]
+    assert "une bouée" not in side
+    assert "embarque sur un second voilier" in side
+    assert "497 milles" in side
