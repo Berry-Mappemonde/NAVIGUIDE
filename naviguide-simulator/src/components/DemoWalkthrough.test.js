@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  DEMO_STEP_IDS, TOUR_DEFAULT_MODELS, describeModelRoles, getDemoSteps, modelDisplayName, wantsTourFromUrl,
+  DEMO_STEP_IDS, TOUR_DEFAULT_MODELS, TOUR_EDITED_WAIT_MS, describeModelRoles, getDemoSteps, modelDisplayName,
+  tourEditedOffer, tourEditedStep, wantsTourFromUrl,
 } from "./demoWalkthrough.js";
+import { readFileSync } from "node:fs";
 import en from "../i18n/en.js";
 import fr from "../i18n/fr.js";
 
@@ -131,5 +133,49 @@ describe("visite guidée des juges", () => {
     assert.equal(wantsTourFromUrl("?tour=0"), false);
     assert.equal(wantsTourFromUrl(""), false);
     assert.equal(wantsTourFromUrl(undefined), false);
+  });
+
+  it("C4-c : phrase-thèse à l'étape « Qui fait quoi » (fr et en)", () => {
+    assert.equal(en.demoModelsThesis, "The rules decide when, Nemotron decides how, sources decide what is true.");
+    assert.match(fr.demoModelsThesis, /^Les règles décident quand, Nemotron décide comment, les sources décident de ce qui est vrai\.$/);
+    const jsx = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
+    assert.match(jsx, /data-testid="demo-models-thesis"[^>]*>\{t\("demoModelsThesis"\)\}/);
+  });
+
+  it("C2-b : bouton Rédigé seulement si le rédigé existe ; sinon repli Brut annoncé", () => {
+    assert.equal(tourEditedOffer({ hasWritten: true }), "edited");
+    assert.equal(tourEditedOffer({ hasWritten: false }), "fallback");
+    assert.equal(tourEditedOffer(), "fallback");
+    assert.equal(en.demoPlayEdited, "Play the Edited film");
+    assert.equal(fr.demoPlayEdited, "Lire le film Rédigé");
+    for (const dict of [en, fr]) {
+      for (const k of ["demoEditedLoading", "demoEditedBy", "demoEditedFallback", "demoEditedFallbackCustom", "demoEditedFellBack"]) {
+        assert.ok(dict[k], `${k} présent`);
+      }
+      assert.match(dict.demoEditedBy, /\{source\}/);
+      // Repli annoncé : le texte nomme le film Brut et ne promet pas de rédigé.
+      assert.match(dict.demoEditedFallback, /Brut|Raw/);
+      assert.match(dict.demoEditedFellBack, /Brut|Raw/);
+      // Aucune promesse d'IA absente : le Brut est « formulé par les règles », jamais « sans IA ».
+      assert.doesNotMatch(dict.demoEditedFallback, /sans IA|no AI/i);
+    }
+    assert.match(en.demoEditedFallback, /Edited pill/);
+    assert.match(fr.demoEditedFallback, /pastille Rédigé/);
+  });
+
+  it("C2-b : un clic Rédigé attend le plan rédigé, ou retombe sur le Brut", () => {
+    const base = { pending: true, active: false, remoteStatus: "ready", canStart: true };
+    assert.equal(tourEditedStep({ ...base, pending: false, filmStyle: "written", loadedStyle: "written" }), "idle");
+    assert.equal(tourEditedStep({ ...base, active: true, filmStyle: "written", loadedStyle: "written" }), "idle");
+    // Juste après le clic : style Rédigé demandé, plan Brut encore chargé → attendre.
+    assert.equal(tourEditedStep({ ...base, filmStyle: "written", loadedStyle: "raw" }), "wait");
+    assert.equal(tourEditedStep({ ...base, filmStyle: "written", loadedStyle: "written", remoteStatus: "pending" }), "wait");
+    assert.equal(tourEditedStep({ ...base, filmStyle: "written", loadedStyle: "written", canStart: false }), "wait");
+    assert.equal(tourEditedStep({ ...base, filmStyle: "written", loadedStyle: "written" }), "edited");
+    // Le serveur sert le Brut à la demande Rédigé : attendre le rechargement Brut, puis le lancer.
+    assert.equal(tourEditedStep({ ...base, filmStyle: "raw", loadedStyle: "mismatch" }), "wait");
+    assert.equal(tourEditedStep({ ...base, filmStyle: "raw", loadedStyle: "raw" }), "raw");
+    assert.equal(tourEditedStep(), "idle");
+    assert.ok(TOUR_EDITED_WAIT_MS >= 30_000 && TOUR_EDITED_WAIT_MS <= 60_000);
   });
 });
