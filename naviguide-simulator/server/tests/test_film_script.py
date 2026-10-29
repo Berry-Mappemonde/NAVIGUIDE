@@ -6269,3 +6269,12 @@ def test_translation_never_mixes_french_fallback_sentences():
     assert asyncio.run(fs.translate_written_plan(fr, {"chapters": [raw_ch]}, cascade=half)) is None
     en = asyncio.run(fs.translate_written_plan(fr, {"chapters": [raw_ch]}, cascade=full))
     assert en and "juin" not in en["chapters"][0]["text"]
+
+
+def test_english_exonyms_pass_but_invented_place_does_not():
+    import film_script as fs
+    got = fs._en_translation_names(
+        "Arrival at Ajaccio (Corsica). Then Samoan waters. Then Rome.",
+        "Arrivée à Ajaccio (Corse). Puis les eaux samoanes.",
+    )
+    assert {"corsica", "samoan"} <= got and "rome" not in got

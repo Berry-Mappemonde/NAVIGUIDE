@@ -11006,6 +11006,32 @@ async def judge_written_once(
     return True
 
 
+_EN_GEO_WORDS = frozenset({
+    "islands", "island", "isles", "waters", "sea", "ocean", "coast", "bay", "harbour", "harbor",
+    "port", "marina", "north", "south", "east", "west", "northern", "southern", "eastern",
+    "western", "french", "african", "malagasy", "canary", "cape", "verde", "atlantic",
+    "pacific", "indian", "southern", "antarctic", "lands", "territories", "nova", "scotia",
+    "guiana", "polynesia", "caledonia", "new", "corsica", "reunion", "réunion", "barts",
+    "saint", "st", "and", "of", "the", "a", "on", "at", "by", "for", "to", "with", "then",
+    "today", "after", "before", "next", "day", "days", "high", "seas", "float", "station",
+    "project", "protected", "area", "marine", "crew", "boat", "catamaran", "expedition",
+})
+
+
+def _en_translation_names(en_text: str, fr_src: str) -> set[str]:
+    """Noms anglais tolérés : exonyme ou adjectif d'un mot déjà dans le français (« Samoan » ← « samoanes »)."""
+    fr_words = {w.casefold() for w in re.findall(r"[^\W\d_]+", fr_src or "")}
+    out: set[str] = set()
+    for tok in _name_tokens(en_text):
+        parts = [p for p in tok.split("-") if p] or [tok]
+        if all(
+            p in _EN_GEO_WORDS or any(len(p) >= 4 and w.startswith(p[:4]) for w in fr_words)
+            for p in parts
+        ):
+            out.add(tok)
+    return out
+
+
 async def translate_written_plan(
     fr_plan: dict,
     raw_plan: dict,
@@ -11041,7 +11067,9 @@ async def translate_written_plan(
             )
             if not (text or "").strip() or source in {"rules", "budget"}:
                 return None
-            guarded, rw, fb = apply_written_guard(src, text, facts, lang="en")
+            facts_en = {**facts, "en_names": sorted(_en_translation_names(text or "", src))} \
+                if isinstance(facts, dict) else facts
+            guarded, rw, fb = apply_written_guard(src, text, facts_en, lang="en")
             if len(_sentences(speak_film_text(text, "en"))) < len(_sentences(src)):
                 fb = max(fb, 1)  # phrase manquante : le garde-fou recollerait le français
             if rw > 0 and fb == 0:
