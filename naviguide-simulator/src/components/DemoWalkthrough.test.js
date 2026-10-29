@@ -47,4 +47,13 @@ describe("judges walkthrough", () => {
     assert.match(returnAction, /handleRouteSwitchToBerry\(\)/);
   });
 
+  it("names the NVIDIA open models and Token Factory up front, in both languages", () => {
+    for (const lang of ["en", "fr"]) {
+      const [welcome] = getDemoSteps(lang, false);
+      assert.match(welcome.body, /Nemotron/);
+      assert.match(welcome.body, /Nebius Token Factory/);
+      const briefing = getDemoSteps(lang, false).find((step) => step.id === "briefing");
+      assert.match(briefing.body, /Nemotron 3 Ultra/);
+    }
+  });
 });

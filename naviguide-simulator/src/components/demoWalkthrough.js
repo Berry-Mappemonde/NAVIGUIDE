@@ -6,8 +6,8 @@ export function getDemoSteps(lang = "en", replayReady = false) {
       action: "welcome",
       title: fr ? "Visite guidée de NAVIGUIDE" : "NAVIGUIDE guided tour",
       body: fr
-        ? "Parcourez les fonctions principales avec les données réelles de l’application. Le mode démo ne fabrique ni position, ni météo, ni résultat."
-        : "Explore the main features using the app’s real data. Demo mode does not fabricate boat positions, weather, or results.",
+        ? "NAVIGUIDE transforme les données réelles d’une expédition en briefing, récit et film. Les textes rédigés viennent des modèles ouverts NVIDIA Nemotron servis par Nebius Token Factory. Le mode démo ne fabrique ni position, ni météo, ni résultat."
+        : "NAVIGUIDE turns a real expedition’s data into a briefing, a story and a replay. Written text comes from NVIDIA Nemotron open models served by Nebius Token Factory. Demo mode does not fabricate boat positions, weather, or results.",
     },
     {
       id: "live",
@@ -22,8 +22,8 @@ export function getDemoSteps(lang = "en", replayReady = false) {
       action: "briefing",
       title: fr ? "Briefing, récit et journal de bord" : "Briefing, story, and logbook",
       body: fr
-        ? "Le panneau gauche rassemble le contexte « Ici », le briefing, le récit de l’expédition, les escales et le journal. Parcourez-le pour voir les éléments disponibles."
-        : "The left panel brings together the “Here” context, briefing, expedition story, stopovers, and logbook. Browse it to inspect the information currently available.",
+        ? "Le panneau gauche rassemble le contexte « Ici », le briefing, le récit de l’expédition, les escales et le journal. Posez une question au journal : une question « pourquoi » part vers Nemotron 3 Ultra, une question courte vers un modèle rapide."
+        : "The left panel brings together the “Here” context, briefing, expedition story, stopovers, and logbook. Ask the logbook a question: a “why” question goes to Nemotron 3 Ultra, a short one to a fast model.",
     },
     {
       id: "layers",

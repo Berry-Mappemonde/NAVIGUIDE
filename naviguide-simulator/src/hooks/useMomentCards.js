@@ -85,7 +85,8 @@ export function useMomentCards({
   const eventNow = enabled ? state.now : null;
   const eventFree = enabled && !eventNow ? state.free : null;
   const officialNow = enabled && !officialUi.hideNow ? official.now : null;
-  const officialFree = enabled ? (official.freeQueue[officialUi.freeIndex] || null) : null;
+  const freeCount = official.freeQueue.length;
+  const officialFree = enabled && freeCount ? official.freeQueue[officialUi.freeIndex % freeCount] : null;
   const shown = selectDisplayedMoments({
     eventNow,
     eventFree,

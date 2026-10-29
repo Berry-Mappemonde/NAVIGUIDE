@@ -36,6 +36,7 @@ export function useEscaleSheetState({
 
   const close = useCallback(() => {
     userPickedRef.current = false;
+    holdRef.current = true; // fermer ne rouvre pas aussitôt la fiche du quai (B17)
     if (stop) autoRef.current = stop.name;
     setStop(null);
   }, [stop]);
