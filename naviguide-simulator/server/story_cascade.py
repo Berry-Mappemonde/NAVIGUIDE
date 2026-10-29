@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ import httpx
 from dotenv import load_dotenv
 
 import llm_budget
+import tf_catalog
 from ai_transparency import with_ai_transparency
 
 log = logging.getLogger("naviguide-simulator.story-cascade")
@@ -62,6 +64,34 @@ KNOWN_SOURCES = frozenset({
     "nemotron-ultra",
     "openrouter", "claude", "rules", "budget", "cache",
 })
+
+
+def tf_timeout(tier: str) -> httpx.Timeout:
+    """Timeout par palier pour Token Factory (garde de latence, C1-a).
+
+    Jamais `None` : avec httpx 0.28, `timeout=None` coupe tout délai et un
+    appel lent bloquait la visite des juges.
+    deep/judge : lit NAVIGUIDE_TF_TIMEOUT_ULTRA_S (float > 0), défaut 45.0
+    autres paliers : lit NAVIGUIDE_TF_TIMEOUT_S, défaut 25.0
+    Valeurs invalides/≤0 → défaut.
+    Retourne httpx.Timeout(seconds, connect=min(8.0, seconds)).
+    """
+    t = llm_budget.normalize_tier(tier)
+    if t in {"deep", "judge"}:
+        raw = _env("NAVIGUIDE_TF_TIMEOUT_ULTRA_S")
+        default = 45.0
+    else:
+        raw = _env("NAVIGUIDE_TF_TIMEOUT_S")
+        default = 25.0
+    try:
+        val = float(raw) if raw else default
+    except (TypeError, ValueError):
+        val = default
+    if val <= 0:
+        val = default
+    connect = min(8.0, val)
+    return httpx.Timeout(val, connect=connect)
+
 
 _NUM_RE = re.compile(r"\d+(?:[.,]\d+)?")
 _INFLIGHT: dict[str, asyncio.Future] = {}
@@ -701,6 +731,60 @@ def _tf_url(tier: str) -> str:
     return TOKENFACTORY_URL
 
 
+def tf_base(tier: str) -> str:
+    """Hôte Token Factory (`…/v1`) qui sert ce palier — celui de `_tf_url`."""
+    url = _tf_url(tier)
+    suffix = "/chat/completions"
+    return url[: -len(suffix)] if url.endswith(suffix) else url.rsplit("/", 2)[0]
+
+
+# Garde de disponibilité (C1-b) : si l'id d'un palier manque au catalogue de
+# son hôte, on essaie ces paliers Token Factory, dans l'ordre. Ce sont d'autres
+# Nemotron TF (jamais NIM / OpenRouter ici) ; la réponse garde la source et le
+# modèle du palier qui a vraiment répondu.
+GUARD_SUBSTITUTES: dict[str, tuple[str, ...]] = {
+    "nano": ("fast", "write"),
+    "fast": ("write",),
+    "write": ("fast",),
+    "deep": ("write", "fast"),
+    "judge": ("write", "fast"),
+}
+
+
+async def _guarded_tier(tier: str, client: httpx.AsyncClient) -> str:
+    """Palier à appeler après la garde du catalogue.
+
+    Inconnu (catalogue illisible, garde coupée) : on garde le palier demandé.
+    Absent : premier remplaçant présent dans le catalogue de son hôte et dans
+    le budget du jour, compté dans `modelGuard.missing`. Aucun remplaçant :
+    RuntimeError, la cascade passe au repli suivant (déjà étiqueté).
+    """
+    t = llm_budget.normalize_tier(tier)
+    key = nebius_key()
+    if not tf_catalog.enabled() or not key:
+        return t
+    model = llm_budget.model_for(t)
+    base = tf_base(t)
+    await tf_catalog.ensure_fresh(base, key, client)
+    if tf_catalog.has_model(base, model) is not False:
+        return t
+    for alt in GUARD_SUBSTITUTES.get(t, ()):
+        alt_model = llm_budget.model_for(alt)
+        alt_base = tf_base(alt)
+        if alt_model.lower() == model.lower() and alt_base == base:
+            continue
+        await tf_catalog.ensure_fresh(alt_base, key, client)
+        if tf_catalog.has_model(alt_base, alt_model) is True and llm_budget.allow(alt):
+            llm_budget.record_model_missing(t, model, alt, alt_model)
+            log.warning(
+                "garde catalogue : %s absent de %s — palier %s servi par %s (%s)",
+                model, base, t, alt, alt_model,
+            )
+            return alt
+    llm_budget.record_model_missing(t, model)
+    raise RuntimeError(f"tokenfactory model missing from catalog: {model} @ {base}")
+
+
 class CascadeResult(tuple):
     """`(text, source)` plus the model id and tier that actually answered.
 
@@ -934,16 +1018,32 @@ async def _call_tokenfactory(
         raise RuntimeError("NEBIUS_API_KEY missing")
     t = llm_budget.normalize_tier(tier)
     payload = _tf_payload(system, user, t, max_tokens)
-    timeout = TIMEOUT_ULTRA if t in {"deep", "judge"} else None
-    async with _tf_limiter():
+    timeout = tf_timeout(t)
+    sema = _tf_limiter()
+    try:
+        await asyncio.wait_for(sema.acquire(), timeout=timeout.read)
+    except asyncio.TimeoutError as exc:
+        # File d'attente du limiteur pleine trop longtemps : repli étiqueté.
+        llm_budget.record_latency_timeout(t)
+        raise RuntimeError("tokenfactory queue timeout") from exc
+    started = time.monotonic()
+    try:
         r = await client.post(
             _tf_url(t),
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
             json=payload,
             timeout=timeout,
         )
+        elapsed_ms = (time.monotonic() - started) * 1000.0
+    except httpx.TimeoutException as exc:
+        llm_budget.record_latency_timeout(t)
+        raise RuntimeError(f"tokenfactory timeout after {int(timeout.read)} s") from exc
+    finally:
+        sema.release()
     if r.status_code >= 400:
         raise _http_error("tokenfactory", r)
+    # Latence par palier du modèle appelé (C1-a) : aller-retour HTTP réussi.
+    llm_budget.record_latency(t, elapsed_ms)
     data = r.json()
     text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
     reported = str((data or {}).get("model") or "")
@@ -1145,6 +1245,13 @@ async def _cascade_once(
     asked_lang = "en" if _is_en(lang) else "fr"
 
     async def _tokenfactory_hop() -> tuple[str, str]:
+        call_tier = await _guarded_tier(norm_tier, http)
+        if call_tier != norm_tier:
+            # Remplaçant étiqueté : source et modèle du palier qui répond.
+            return await _call_tokenfactory(
+                system, user, call_tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
+                lang=asked_lang,
+            )
         try:
             return await _call_tokenfactory(
                 system, user, tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
