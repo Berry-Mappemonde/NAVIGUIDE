@@ -1964,9 +1964,29 @@ def apply_chosen_subjects(
         seen_kind.add(kind)
         remaining.append(rec)
     slots = _repeat_slots(chapters)
+    taken: set[int] = set()
     used = 0
     spoken: list[dict] = []
-    for rec, (ch, idx) in zip(remaining, slots):
+    for rec in remaining:
+        # Un sujet daté se dit dans le chapitre qui contient sa date, jamais
+        # dans une autre jambe (« Le 21 mai, une bouée » au chapitre d'août).
+        home = _chapter_for_subject(chapters, rec) if rec.get("t") else None
+        if home is not None:
+            a, b, t = _ms(home.get("tA")), _ms(home.get("tB")), _ms(rec.get("t"))
+            if a is None or b is None or t is None or not (a <= t <= b):
+                home = None
+        pick = None
+        for k, (ch, idx) in enumerate(slots):
+            if k in taken:
+                continue
+            if rec.get("t") and ch is not home:
+                continue
+            pick = k
+            break
+        if pick is None:
+            continue
+        taken.add(pick)
+        ch, idx = slots[pick]
         sents = _sentences(ch.get("text") or "")
         if idx < 0 or idx >= len(sents):
             continue
@@ -8274,7 +8294,9 @@ _CORE_KEEP_SENT = re.compile(
     r"envole|par la route|by road|attend à|waits at|aujourd|today|"
     r"expédition|expedition|escales|stops|destination|entre le |between |"
     r"à venir|still to come|le plan compte|the plan has|"
-    r"cap au |cap sur |heading ",
+    r"cap au |cap sur |heading |"
+    # Ouverture du second bateau (Halifax ↔ Saint-Pierre) : jamais une redite.
+    r"second voilier|second sailing boat|embarque sur|boards |sails again on|l'équipage reprend",
     re.I,
 )
 _KEEP_SENT = re.compile(
