@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   consecutiveHomonyms,
+  lookup,
   originName,
   sheetLabel,
   spokenZeeName,
@@ -42,5 +43,10 @@ describe("toponyms RC32", () => {
     assert.equal(watersLabel("Sri Lankan Exclusive Economic Zone", "fr"), "les eaux sri-lankaises");
     assert.equal(watersLabel("Maldivian Exclusive Economic Zone", "fr"), "les eaux maldiviennes");
     assert.equal(watersLabel("Maldivian Exclusive Economic Zone", "en"), "Maldivian waters");
+  });
+  it("ne prend pas les îles Gambier pour la Gambie (alias borné)", () => {
+    assert.notEqual(lookup("Gambier Islands")?.id, "gm");
+    assert.equal(lookup("Gambia")?.id, "gm");
+    assert.equal(watersLabel("Gambian Exclusive Economic Zone", "fr"), "les eaux gambiennes");
   });
 });

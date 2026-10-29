@@ -2012,8 +2012,12 @@ def apply_chosen_subjects(
         remaining.append(rec)
     slots = _repeat_slots(chapters)
     taken: set[int] = set()
-    used = 0
     spoken: list[dict] = []
+    # Liste explicite des sujets non placés : depuis la règle de date, un sujet
+    # daté sans emplacement dans sa jambe est sauté, donc les placés ne forment
+    # plus un préfixe de ``remaining`` (``remaining[used:]`` redisait un sujet
+    # placé et en perdait un autre en intégral).
+    unplaced: list[dict] = []
     for rec in remaining:
         # Un sujet daté se dit dans le chapitre qui contient sa date, jamais
         # dans une autre jambe (« Le 21 mai, une bouée » au chapitre d'août).
@@ -2031,19 +2035,20 @@ def apply_chosen_subjects(
             pick = k
             break
         if pick is None:
+            unplaced.append(rec)
             continue
         taken.add(pick)
         ch, idx = slots[pick]
         sents = _sentences(ch.get("text") or "")
         if idx < 0 or idx >= len(sents):
+            unplaced.append(rec)
             continue
         sents[idx] = rec["phrase"]
         ch["text"] = " ".join(sents).strip()
-        used += 1
         spoken.append(rec)
     budget = film_char_budget(seconds)
     if budget <= 0:
-        for rec in remaining[used:]:
+        for rec in unplaced:
             ch = _chapter_for_subject(chapters, rec)
             if ch is None:
                 continue
@@ -8720,6 +8725,32 @@ def _finalize_chapter_zero_opens(
     _prepend_film_opens_to_chapter(chapters[0], opens, w0["tA"], w0["tB"], lang)
 
 
+# 3:00 (gabarit RG6 long) : presque tout est au rang 0, donc rien n'est coupable
+# et le film brut restait à ~3 450 car. pour 2 700. On raccourcit des incises
+# de rang 0 sans retirer de phrase ni de fait de jambe (lieu, date, milles) :
+# l'amarrage (« , amarré au port de … »), la vitesse moyenne de gabarit, puis
+# les tournures de forme (« la longue traversée vers », « d'île en île, »).
+_RANK0_TRIMS = (
+    re.compile(r",\s*(?:amarré|amarrée|moored)\s+(?:au|à la|à l['’]|à|aux|at)\s+[^.;!?]*(?=[.;!?])", re.I),
+    re.compile(r",\s*(?:à \d+ nœuds de moyenne|at \d+ knots on average)(?=[.;!?])", re.I),
+    re.compile(r"(?:(?<=milles)|(?<=miles)), (?:jusqu['’]à|through to) [^.;!?]*(?=[.;!?])", re.I),
+    re.compile(r"\b(?:la longue traversée vers|the long crossing to)\s+", re.I),
+    re.compile(r"(?<=, )(?:d['’]île en île|pour la dernière étape|from island to island|for the last stage),\s+", re.I),
+)
+
+
+def _compact_rank0_to_budget(chapters: list[dict], target: int) -> None:
+    """Retire des incises de rang 0, une par une depuis la fin, jusqu'au plafond."""
+    for rx in _RANK0_TRIMS:
+        for ch in reversed(chapters):
+            if script_chars(chapters) <= target:
+                return
+            text = ch.get("text") or ""
+            new = rx.sub("", text)
+            if new != text:
+                ch["text"] = re.sub(r"\s{2,}", " ", new).strip()
+
+
 def _film_apply_char_budget(chapters: list[dict], seconds: Any) -> None:
     """Plafond film_char_budget (15 car./s), pas 110 %. 2:30 : keep_head=1."""
     target = film_char_budget(seconds)
@@ -8729,6 +8760,9 @@ def _film_apply_char_budget(chapters: list[dict], seconds: Any) -> None:
     if _film_compact_template(seconds):
         _keep_one_amp_in_script(chapters)
     _trim_script_to_char_budget(chapters, target, keep_head=keep)
+    if script_chars(chapters) > target and not _film_compact_template(seconds):
+        _compact_rank0_to_budget(chapters, target)
+        _trim_script_to_char_budget(chapters, target, keep_head=keep)
 
 
 def fit_chapter_text(text: str, budget: int, extras: list[str], lang: str) -> str:
@@ -11408,7 +11442,14 @@ _EN_GEO_WORDS = frozenset({
     "trinidad", "tobago", "kitts", "nevis", "eustatius", "lucia", "vincent", "grenadines",
     "christopher", "virgin", "turks", "caicos", "cayman", "falkland", "helena", "ascension",
     "dutch", "german", "norwegian", "swedish", "danish", "icelandic", "japanese", "chinese",
-})
+    # Ajouts de #136 que le préfixe FR ne retrouve pas (« sri-lankaises » → « Lankan »).
+    "lankan", "omani", "thai", "myanmar", "malaysian", "palauan", "gambian",
+}) | frozenset(
+    # Une seule source : les démonymes anglais de la table des toponymes.
+    w.casefold()
+    for row in toponyms.territories()
+    for w in re.findall(r"[^\W\d_]+", str(row.get("adj_en") or ""))
+)
 
 # « une trentaine de jours » → « about thirty days » : l'approximation dite en anglais.
 _FR_APPROX = {
