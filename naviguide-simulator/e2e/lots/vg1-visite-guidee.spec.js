@@ -367,3 +367,18 @@ test("VG1 — flèche bulle → élément : data-arrow up/down/left/right + ::be
   await next(page, "return");
   await expect(panel(page)).not.toHaveAttribute("data-arrow");
 });
+
+test("VG1 — R13 : dix Tab consécutifs restent dans le panneau de visite", async ({ page }) => {
+  await open(page);
+  await startTour(page);
+  const p = panel(page);
+  await expect(p).toBeVisible();
+  for (let i = 0; i < 10; i += 1) {
+    await page.keyboard.press("Tab");
+    const inside = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="demo-walkthrough-panel"]');
+      return Boolean(el && el.contains(document.activeElement));
+    });
+    expect(inside).toBe(true);
+  }
+});

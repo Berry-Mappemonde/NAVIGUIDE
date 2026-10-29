@@ -181,6 +181,11 @@ describe("visite guidée des juges", () => {
   });
 });
 
+it("R13 : piège Tab documenté dans le panneau visite", () => {
+  const src = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
+  assert.match(src, /R13 : Tab[\s\S]*e\.key !== "Tab"/);
+});
+
 it("R11 : onResize relance le suivi du projecteur", () => {
   const src = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
   assert.match(src, /onResize[\s\S]*tries = 0[\s\S]*requestAnimationFrame\(track\)/);

@@ -233,6 +233,45 @@ export function DemoWalkthrough({
     return () => ro?.disconnect();
   }, [open, collapsed, index, step.id]);
 
+  // R13 : Tab / Maj+Tab restent dans le panneau tant que la visite est ouverte.
+  useEffect(() => {
+    if (!open || hidden || collapsed) return undefined;
+    const root = panelRef.current;
+    if (!root) return undefined;
+    const focusables = () => [...root.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )].filter((el) => el.getClientRects().length > 0);
+    const onTab = (e) => {
+      if (e.key !== "Tab") return;
+      const items = focusables();
+      if (items.length < 2) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    const onFocusOut = (e) => {
+      const next = e.relatedTarget;
+      if (next && root.contains(next)) return;
+      requestAnimationFrame(() => {
+        if (!root.contains(document.activeElement)) {
+          focusables()[0]?.focus({ preventScroll: true });
+        }
+      });
+    };
+    root.addEventListener("keydown", onTab);
+    root.addEventListener("focusout", onFocusOut);
+    return () => {
+      root.removeEventListener("keydown", onTab);
+      root.removeEventListener("focusout", onFocusOut);
+    };
+  }, [open, hidden, collapsed, index, step.id]);
+
   // Pulse animation on "trace" step target — unique useEffect, réessaye si le bouton n'existe pas encore
   // R10: use separate counter (attempts) instead of rAF ID
   useEffect(() => {
