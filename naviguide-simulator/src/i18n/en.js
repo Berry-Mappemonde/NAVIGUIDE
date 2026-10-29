@@ -705,6 +705,8 @@ export default {
 
   // ED2
   ed2WritingNemotron: "Writing…",
+  ed2WritingWait:    "Waiting for writing…",
+  ed2WriteFailed:    "Writing failed",
   ed2BrandLine: "NVIDIA · Nebius",
 
   // FM1

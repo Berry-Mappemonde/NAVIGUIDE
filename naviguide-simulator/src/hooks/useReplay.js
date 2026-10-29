@@ -2291,6 +2291,7 @@ export function useReplay({
       setFilmStyle("written");
       return;
     }
+    if (filmWriting) return; // double-click guard
     if (!isOfficialFilmVoyage(voyageId)) return;
     const path = filmRequestPath(voyageId);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
@@ -2310,9 +2311,58 @@ export function useReplay({
           setFilmReceipt(resolved.receipt || null);
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        setFilmWriteError(true);
+      })
       .finally(() => setFilmWriting(false));
   }, [hasWritten, lang, targetSeconds, t0, voyageId]);
+
+  // filmWriteNextStep: polls GET /voyage/official/film?style=written every 4s, up to 10min
+  const filmWriteNextStep = useCallback(async () => {
+    if (!isOfficialFilmVoyage(voyageId)) return "stop";
+    if (!filmWriting && !hasWritten) return "stop";
+
+    const path = filmRequestPath(voyageId);
+    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=written&t0=${encodeURIComponent(t0)}`;
+    const maxAttempts = 150; // 4s * 150 = 600s = 10min
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+      attempts++;
+
+      try {
+        const res = await fetch(`${API}${path}?${q}`);
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (!data) continue;
+
+        const status = data?.status?.toLowerCase();
+        if (status === "preparing") continue;
+
+        const resolved = resolveServedFilm(data, "written");
+        if (resolved.hasWritten) {
+          setHasWritten(true);
+          setFilmStyle("written");
+          setFilmSource(resolved.source);
+          setFilmReviewedBy(resolved.reviewedBy || "");
+          setFilmModel(resolved.model || "");
+          setFilmWebContext(resolved.webContext || null);
+          setFilmReceipt(resolved.receipt || null);
+          setFilmWriteError(false);
+          return "ready";
+        }
+        if (resolved.effectiveStyle === "raw" && data.hasWritten === false) {
+          // still writing
+          continue;
+        }
+      } catch {
+        // ignore network errors, keep polling
+      }
+    }
+    setFilmWriteError(true);
+    return "stop";
+  }, [filmWriting, hasWritten, lang, targetSeconds, t0, voyageId]);
 
   return {
     active,
@@ -2358,6 +2408,7 @@ export function useReplay({
     filmWriting,
     filmStyle,
     setFilmStyle: chooseFilmStyle,
+    filmWriteNextStep,
     hasWritten,
     filmLoadedStyle,
     canStart,

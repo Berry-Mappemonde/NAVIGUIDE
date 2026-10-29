@@ -412,7 +412,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               <>
                 {replay.writing ? (
                   <div data-testid="film-source" className="min-w-0 max-w-full whitespace-normal break-words text-xs leading-snug text-white/90">
-                    {t("ed2WritingNemotron")}
+                    {replay.filmWriteError ? t("ed2WriteFailed") : t("ed2WritingWait")}
                   </div>
                 ) : (
                   <LlmSourceBadge

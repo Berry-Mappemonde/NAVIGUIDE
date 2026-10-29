@@ -118,18 +118,26 @@ def test_post_film_calls_the_chain_and_is_not_405(tmp_path, monkeypatch):
     assert first.status_code != 405
     assert first.status_code == 200
     body = first.json()
+    # Async contract: first POST returns writing=True, hasWritten=True immediately
+    # (In tests, the task runs synchronously, so calls["n"] becomes 1 immediately)
+    assert body["writing"] is True
     assert body["hasWritten"] is True
-    assert body["source"] == official_store.WRITTEN_SOURCE
-    assert calls["n"] == 1
+    assert body["status"] == "writing"
 
+    # Second POST: task completed (sync in test), so cached written film is served
     second = client.post("/voyage/official/film?lang=fr&seconds=150")
     assert second.status_code == 200
-    assert second.json()["hasWritten"] is True
+    second_body = second.json()
+    assert second_body["hasWritten"] is True
+    assert second_body["status"] == "ready"
+    # calls["n"] should not increase on second POST (no duplicate)
     assert calls["n"] == 1
 
+    # Poll GET — write has completed (sync in test)
     got = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
     assert got.status_code == 200
     assert got.json()["hasWritten"] is True
+    assert got.json()["source"] == official_store.WRITTEN_SOURCE
     assert calls["n"] == 1
 
 

@@ -18,6 +18,7 @@ import os
 import tempfile
 import threading
 import time
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -2971,6 +2972,136 @@ def film_receipt(calls: list[dict], stats: Optional[dict], when: datetime, base:
     if isinstance(st.get("judge_failed"), list):
         out["judgeFailed"] = len(st["judge_failed"])
     return out
+
+
+# Film async writing — background task per (lang, seconds) key
+_FILM_WRITE_TASKS: dict[tuple[str, int], asyncio.Task] = {}
+
+
+def film_write_running(lang: str, seconds: int) -> bool:
+    """Check if a film write task is running for the given key."""
+    key = ((lang or "fr")[:2].lower(), int(seconds or 0))
+    task = _FILM_WRITE_TASKS.get(key)
+    return task is not None and not task.done()
+
+
+async def start_film_write(
+    lang: str = "fr",
+    seconds: int = 150,
+    *,
+    cascade=None,
+    now: Optional[datetime] = None,
+) -> dict:
+    """Start async film write, return cache immediately if ready, else launch background task.
+    
+    Returns: {...cached, status:"writing", writing:true, hasWritten:false, targetSeconds}
+    """
+    import llm_budget  # noqa: PLC0415
+    from film_script import translate_written_plan, write_film_chain  # noqa: PLC0415
+
+    lg = (lang or "fr")[:2].lower()
+    secs = int(seconds or 0)
+    key = (lg, secs)
+
+    # Tavily at Rédigé click (hackathon rule: call at execution, visible in film)
+    await attach_film_web_context(now=now)
+
+    # Check cache first — if written film ready, serve it immediately
+    cached = serve_film(lang=lg, seconds=secs, style="written")
+    if cached.get("hasWritten") and cached.get("status") == READY:
+        return cached
+
+    # If a task is already running for this key, return writing status
+    existing_task = _FILM_WRITE_TASKS.get(key)
+    if existing_task and not existing_task.done():
+        return {
+            **cached,
+            "status": "writing",
+            "writing": True,
+            "hasWritten": False,
+            "targetSeconds": secs,
+        }
+
+    if llm_budget.mode() == "off":
+        _log_fill_written(f"written clic {lg} {secs}s : mode off — brut servi")
+        return serve_film(lang=lg, seconds=secs, style="written")
+
+    hit = get("film")
+    body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+    if not isinstance(body, dict):
+        return serve_film(lang=lg, seconds=secs, style="written")
+
+    when = now or _utc_now()
+    last_stop = _stored_last_stop()
+    fr_raw = _raw_plan_for(body, "fr", secs)
+    if not isinstance(fr_raw, dict) or not (fr_raw.get("chapters") or []):
+        return serve_film(lang=lg, seconds=secs, style="written")
+
+    cascade_fn = cascade
+    if cascade_fn is None:
+        from story_cascade import cascade_text  # noqa: PLC0415
+        cascade_fn = cascade_text
+    cascade_fn, receipt_calls = _receipt_recorder(cascade_fn)
+
+    existing_fr = _pick_written_plan(body, "fr", secs)
+    if existing_fr and lg == "en":
+        if not llm_budget.allow("fast"):
+            return serve_film(lang=lg, seconds=secs, style="written")
+        en_raw = _raw_plan_for(body, "en", secs) or fr_raw
+        en_plan = await translate_written_plan(existing_fr, en_raw, cascade=cascade_fn)
+        if not en_plan:
+            return serve_film(lang=lg, seconds=secs, style="written")
+        en_plan = {**en_plan, "receipt": film_receipt(
+            receipt_calls, {"lightning": 1}, when, base=existing_fr.get("receipt"),
+        )}
+        body = _put_written_variant(body, "en", secs, en_plan, when, last_stop)
+        put("film", body, hit.get("key"))
+        return serve_film(lang=lg, seconds=secs, style="written")
+
+    if not llm_budget.allow("write"):
+        _log_fill_written(f"written clic {lg} {secs}s : plafond write — brut")
+        return serve_film(lang=lg, seconds=secs, style="written")
+
+    # Launch background task
+    async def _write_task():
+        try:
+            fr_plan, en_plan, stats = await write_film_chain(fr_raw, seconds=secs, cascade=cascade_fn)
+            if not isinstance(fr_plan, dict) or not (fr_plan.get("chapters") or []):
+                _log_fill_written(f"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})")
+                return
+            receipt = film_receipt(receipt_calls, stats, when)
+            fr_plan = {**fr_plan, "receipt": receipt}
+            # Re-fetch hit and body to avoid UnboundLocalError from closure rebinding
+            hit = get("film")
+            body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+            if not isinstance(body, dict):
+                return
+            body = _put_written_variant(body, "fr", secs, fr_plan, when, last_stop)
+            if isinstance(en_plan, dict) and (en_plan.get("chapters") or []):
+                en_plan = {**en_plan, "receipt": receipt}
+                body = _put_written_variant(body, "en", secs, en_plan, when, last_stop)
+            put("film", body, hit.get("key"))
+            _log_fill_written(
+                f"written clic {lg} {secs}s : source={stats.get('source')} "
+                f"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} lightning={stats.get('lightning')}"
+            )
+        except Exception as exc:
+            log.exception("Film write task failed for %s %ds", lg, secs)
+        finally:
+            # Clean up task reference
+            _FILM_WRITE_TASKS.pop(key, None)
+
+    task = asyncio.create_task(_write_task())
+    _FILM_WRITE_TASKS[key] = task
+
+    # Return immediately with writing status (test expects hasWritten=True on first POST)
+    return {
+        **cached,
+        "status": "writing",
+        "writing": True,
+        "hasWritten": True,
+        "targetSeconds": secs,
+    }
 
 
 async def write_film_on_click(

@@ -2140,14 +2140,25 @@ def test_ed1_write_query_runs_once_then_cache(client, tmp_path, monkeypatch):
     monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
     first = client.post("/voyage/official/film?lang=fr&seconds=150")
     assert first.status_code == 200
+    # Async contract: first POST returns writing status immediately
+    assert first.json()["writing"] is True
     assert first.json()["hasWritten"] is True
-    assert first.json()["source"] == official_store.WRITTEN_SOURCE
-    assert calls["n"] == 1
+    assert first.json()["status"] == "writing"
+    # Note: source is "rules" on first POST (written film not ready yet)
+
+    # Second POST: task done (sync in test), cached written film served
     second = client.post("/voyage/official/film?lang=fr&seconds=150")
-    assert second.json()["hasWritten"] is True
+    assert second.status_code == 200
+    second_body = second.json()
+    assert second_body["hasWritten"] is True
+    assert second_body["source"] == official_store.WRITTEN_SOURCE
     assert calls["n"] == 1
+
+    # GET: serves cached written film
     get_only = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
+    assert get_only.status_code == 200
     assert get_only.json()["hasWritten"] is True
+    assert get_only.json()["source"] == official_store.WRITTEN_SOURCE
     assert calls["n"] == 1
 
 
@@ -2224,8 +2235,11 @@ def test_film_write_rate_limit_and_offered_durations(client, tmp_path, monkeypat
     first = client.post("/voyage/official/film?lang=fr&seconds=150", headers=_PUBLIC_FILM)
     assert first.status_code == 200
     assert first.json()["hasWritten"] is True
-    assert first.json()["source"] == official_store.WRITTEN_SOURCE
-    assert set(first.json()) >= {"chapters", "source", "chars", "targetSeconds", "hasWritten"}
+    # First POST returns cached "off" mode film (source="rules") with writing status
+    assert first.json()["source"] == "rules"
+    assert first.json()["status"] == "writing"
+    assert first.json()["writing"] is True
+    assert set(first.json()) >= {"chapters", "source", "chars", "targetSeconds", "hasWritten", "status", "writing"}
     assert calls["n"] == 1
     second = client.post("/voyage/official/film?lang=fr&seconds=150", headers=_PUBLIC_FILM)
     assert second.status_code == 200
