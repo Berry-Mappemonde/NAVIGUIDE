@@ -152,7 +152,8 @@ jobs:
     runs-on: ubuntu-latest
     # 29 oct. : la tranche 1 (fc1, fc2, fl1 ≈ 2 min chacun) prend 10 à 12 min
     # selon le runner ; à 12 min elle était annulée avant fl1 et fm1.
-    timeout-minutes: 16
+    # globalTimeout Playwright : 15 min (playwright.config.js).
+    timeout-minutes: 18
     needs: [changes, simulator-dist]
     if: needs.changes.outputs.simulator == 'true'
     strategy:
