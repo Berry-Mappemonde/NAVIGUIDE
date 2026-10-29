@@ -1465,7 +1465,7 @@ def test_rg1_air_window_not_told_as_navigation():
     assert re.search(r"le catamaran attend à Cayenne", blob), blob
     assert blob.lower().count("catamaran attend à cayenne") == 1
     assert re.search(r"second voilier", blob), blob
-    assert re.search(r"s'envole de Halifax pour Cayenne", blob), blob
+    assert re.search(r"s'envole d'Halifax pour Cayenne", blob), blob
     assert not re.search(r"s'envole de Cayenne pour Saint-Pierre", blob), blob
     assert not re.search(r"Berry-Mappemonde quitte Cayenne.{0,80}pour Saint-Pierre", blob), blob
     names = [(c.get("fromName") or "", c.get("toName") or "") for c in plan["chapters"]]
@@ -1485,7 +1485,7 @@ def test_rg1_air_window_not_told_as_navigation():
     )
     assert "Cayenne" in (next_sail.get("fromName") or "")
     assert "Saint-Pierre" not in (next_sail.get("fromName") or "")
-    assert not re.search(r"s'envole de Halifax", chs[air_out]["text"] or ""), chs[air_out]["text"]
+    assert not re.search(r"s'envole (?:de |d’)Halifax", chs[air_out]["text"] or ""), chs[air_out]["text"]
     assert not re.search(r"s'envole de Cayenne pour Halifax", chs[air_back]["text"] or ""), chs[air_back]["text"]
     assert not re.search(r"s'envole", chs[side_out]["text"] or ""), chs[side_out]["text"]
     assert re.search(r"second voilier", chs[side_out]["text"] or ""), chs[side_out]["text"]
@@ -1517,10 +1517,10 @@ def test_rg1_ensure_air_sentences_stay_on_matching_chapter():
     ]
     out = _ensure_air_sentences(chapters, marks=marks, moments=None, lang="fr")
     assert re.search(r"s'envole de Cayenne pour Halifax", out[0]["text"] or ""), out[0]["text"]
-    assert not re.search(r"s'envole de Halifax", out[0]["text"] or ""), out[0]["text"]
+    assert not re.search(r"s'envole (?:de |d’)Halifax", out[0]["text"] or ""), out[0]["text"]
     assert not re.search(r"s'envole", out[1]["text"] or ""), out[1]["text"]
     assert re.search(r"second voilier", out[1]["text"] or ""), out[1]["text"]
-    assert re.search(r"s'envole de Halifax pour Cayenne", out[3]["text"] or ""), out[3]["text"]
+    assert re.search(r"s'envole d'Halifax pour Cayenne", out[3]["text"] or ""), out[3]["text"]
     assert not re.search(r"s'envole de Cayenne pour Halifax", out[3]["text"] or ""), out[3]["text"]
     assert not re.search(r"s'envole", out[4]["text"] or ""), out[4]["text"]
     assert re.search(r"reprend la mer", out[4]["text"] or ""), out[4]["text"]
