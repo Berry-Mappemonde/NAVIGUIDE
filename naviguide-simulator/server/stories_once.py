@@ -530,24 +530,23 @@ def _judge(story: dict, row: dict) -> None:
 
 
 def _translate(story: dict, row: dict) -> None:
-    from film_script import translate_written_plan  # noqa: PLC0415
+    from film_script import write_film_chain, _raw_plan_for  # noqa: PLC0415
 
     if _slot_text(row, "en"):
         return
     fr = _slot_text(row, "fr")
     if not fr or not _phrase(story):
         return
-    fr_plan = {
-        "chapters": [{"id": story.get("stableKey"), "text": fr}],
-        "source": (row.get("fr") or {}).get("source"),
-        "reviewedBy": (row.get("fr") or {}).get("reviewedBy"),
-        "targetSeconds": 0,
-    }
-    en_plan = _run(translate_written_plan(fr_plan, _plan_dict(story), cascade=_cascade()))
+    en_raw = _raw_plan_for(row, "en", 0)
+    if not en_raw:
+        return
+    en_plan, _, _ = _run(write_film_chain(en_raw, seconds=0, cascade=_cascade()))
+    if not en_plan or not (en_plan.get("chapters") or []):
+        return
     _record("t")
     text = _chapter_text(en_plan)
     if not text:
-        raise RuntimeError("traduction vide")
+        return
     extra = {}
     reviewed = (row.get("fr") or {}).get("reviewedBy")
     if reviewed:

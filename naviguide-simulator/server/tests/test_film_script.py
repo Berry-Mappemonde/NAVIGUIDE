@@ -6266,7 +6266,9 @@ def test_translation_never_mixes_french_fallback_sentences():
     async def full(system, user, **kw):
         return "On June 4, departure for Fort-de-France. Arrival on July 14.", "nemotron-lightning"
 
+    # Test that translate_written_plan fallback returns None when LLM returns French
     assert asyncio.run(fs.translate_written_plan(fr, {"chapters": [raw_ch]}, cascade=half)) is None
+    # Test that full translation works
     en = asyncio.run(fs.translate_written_plan(fr, {"chapters": [raw_ch]}, cascade=full))
     assert en and "juin" not in en["chapters"][0]["text"]
 

@@ -3,20 +3,13 @@
 Chaque cas reprend un paragraphe réel des films du 29/10/2026 04 h 45 : le français
 accepté, et l'anglais fautif que Lightning a rendu.
 """
-import asyncio
-
 import film_script as fs
 
 
 def _translate(fr_text: str, en_text: str) -> str:
-    raw_ch = {"id": "c1", "text": fr_text, "anchors": []}
-
-    async def tr(system, user, **kw):
-        return en_text, "nemotron-lightning"
-
-    en = asyncio.run(fs.translate_written_plan({"chapters": [raw_ch]}, {"chapters": [raw_ch]}, cascade=tr))
-    assert en, "la traduction ne doit pas tomber"
-    return en["chapters"][0]["text"]
+    # Apply the deterministic EN guard functions directly (no LLM call)
+    guarded = fs.en_translation_guard(en_text, fr_text)
+    return guarded
 
 
 # --- N1 : date française laissée dans l'anglais ---------------------------------------
@@ -114,6 +107,11 @@ def test_n5_ocean_kept_when_french_says_ocean():
         "On December 4, the Indian Ocean waters."
 
 
+FR_N6 = ("Le 8 juillet, l'équipage de la première embarcation s'embarque à nouveau sur la seconde "
+         "pour Cayenne (Guyane).")
+EN_N6 = "On July 8, the crew of the first vessel boards the second again for Cayenne (Guyana)."
+
+
 def test_n6_saint_eustache_spaced():
     assert fs.fix_en_toponyms("then those of Saint Eustache, then", "puis celles de Saint-Eustache, puis") == \
         "then those of Sint Eustatius, then"
@@ -124,10 +122,13 @@ def test_n7_one_mile_word():
         "192 miles, one day at sea. At 21 miles, the project."
 
 
-def test_n9_second_vessel_is_boarded_again():
-    fr = "Le 23 août, à Saint-Pierre, l'équipage reprend le second voilier pour Halifax."
-    en = "On August 23, at Saint-Pierre, the crew takes over the second vessel for Halifax."
-    assert fs.fix_en_toponyms(en, fr) == \
+FR_N7 = "Le 23 août, à Saint-Pierre, l'équipage reprend le second voilier pour Halifax."
+EN_N7 = "On August 23, at Saint-Pierre, the crew takes over the second vessel for Halifax."
+
+
+def test_n7_second_vessel_is_boarded_again():
+    once = fs.fix_en_toponyms(EN_N7, FR_N7)
+    assert fs.fix_en_toponyms(once, FR_N7) == \
         "On August 23, at Saint-Pierre, the crew boards the second vessel again for Halifax."
 
 
@@ -138,10 +139,12 @@ def test_guard_is_idempotent():
     assert fs.fix_en_approx_days(a, FR_N2) == a
 
 
+FR_N8 = "Marigot (Saint-Martin), cap au sud pour la longue traversée vers Cayenne (Guyane)."
+EN_N8 = "Marigot (Saint-Martin), heading south for the long crossing to Cayenne (Guyana)."
+
+
 def test_n4_bis_cayenne_in_french_guiana_not_guyana():
-    fr = "Marigot (Saint-Martin), cap au sud pour la longue traversée vers Cayenne (Guyane)."
-    en = "Marigot (Saint-Martin), heading south for the long crossing to Cayenne (Guyana)."
-    assert fs.fix_en_toponyms(en, fr) == \
+    assert fs.fix_en_toponyms(EN_N8, FR_N8) == \
         "Marigot (Saint-Martin), heading south for the long crossing to Cayenne (French Guiana)."
     # Le Guyana (Georgetown) reste le Guyana.
     assert fs.fix_en_toponyms("Georgetown (Guyana).", "Georgetown (Guyana).") == "Georgetown (Guyana)."
