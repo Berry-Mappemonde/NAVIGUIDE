@@ -529,58 +529,30 @@ def _judge(story: dict, row: dict) -> None:
     )
 
 
-async def _translate(story: dict, row: dict) -> None:
-    """Super VL writes EN directly from facts (parallel with FR), then Ultra edits/judges both.
-    No Lightning translation."""
-    from film_script import write_stored_plan, edit_written_once, judge_written_once, reread_before_store  # noqa: PLC0415
+def _translate(story: dict, row: dict) -> None:
+    from film_script import translate_written_plan  # noqa: PLC0415
 
     if _slot_text(row, "en"):
         return
     fr = _slot_text(row, "fr")
     if not fr or not _phrase(story):
         return
-
-    raw_plan = _plan_dict(story)
-    raw_plan["chapters"] = [{"id": story.get("stableKey"), "text": (fr or "")}]
-    raw_plan["targetSeconds"] = 0
-
-    # Super writes both languages in parallel
-    fr_result, en_result = await asyncio.gather(
-        write_stored_plan(raw_plan, lang="fr", cascade=_cascade(), seconds=0),
-        write_stored_plan(raw_plan, lang="en", cascade=_cascade(), seconds=0),
-    )
-    fr_plan, fr_stats = fr_result
-    en_plan, en_stats = en_result
-
-    if not isinstance(en_plan, dict) or not (en_plan.get("chapters") or []):
-        return
-
-    # Ultra edit + judge EN
-    edited_en = await edit_written_once(en_plan, raw_plan, cascade=_cascade())
-    if edited_en:
-        ok_en_ultra = await judge_written_once(edited_en, cascade=_cascade())
-        if ok_en_ultra:
-            accepted_en = edited_en
-        else:
-            accepted_en = en_plan
-    else:
-        accepted_en = en_plan
-
-    # Reread EN
-    stops = _route_stops_for_reread(raw_plan)
-    ok_en, _review_en = await reread_before_store(accepted_en, stops, cascade=_cascade(), lang="en")
-    if not ok_en:
-        return
-
+    fr_plan = {
+        "chapters": [{"id": story.get("stableKey"), "text": fr}],
+        "source": (row.get("fr") or {}).get("source"),
+        "reviewedBy": (row.get("fr") or {}).get("reviewedBy"),
+        "targetSeconds": 0,
+    }
+    en_plan = _run(translate_written_plan(fr_plan, _plan_dict(story), cascade=_cascade()))
     _record("t")
-    text = _chapter_text(accepted_en)
+    text = _chapter_text(en_plan)
     if not text:
         raise RuntimeError("traduction vide")
     extra = {}
     reviewed = (row.get("fr") or {}).get("reviewedBy")
     if reviewed:
         extra["reviewedBy"] = reviewed
-    _put_slot(row, "en", text, str((accepted_en or {}).get("source") or ""), **extra)
+    _put_slot(row, "en", text, str((en_plan or {}).get("source") or ""), **extra)
 
 
 def execute_call(call: Any) -> dict[str, Any]:
@@ -602,8 +574,7 @@ def execute_call(call: Any) -> dict[str, Any]:
     elif step == "j":
         _judge(story, row)
     else:
-        import asyncio  # noqa: PLC0415
-        asyncio.run(_translate(story, row))
+        _translate(story, row)
     _save(doc)
     return {"id": call.call_id, "cached": False}
 

@@ -4890,7 +4890,6 @@ def test_ed1_judge_closed_serves_super_without_ultra(monkeypatch):
 
 
 def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
-    """Ultra edits and judges both FR and EN (parallel Super write)."""
     monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "80000")
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     monkeypatch.delenv("NAVIGUIDE_LLM_BACKGROUND", raising=False)
@@ -4924,17 +4923,15 @@ def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
         return "", "rules"
 
     fr, _en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=accept))
-    # Both FR and EN go through Ultra edit + judge
-    assert stats["ultra_edit"] == 2
-    assert stats["ultra_judge"] == 2
+    assert stats["ultra_edit"] == 1
+    assert stats["ultra_judge"] == 1
     assert stats["reviewed"] is True
     assert stats["source"] == WRITTEN_SOURCE
     assert fr["source"] == WRITTEN_SOURCE
     assert fr["reviewedBy"] == "nemotron-ultra"
     assert fr["model"]
-    # Two judge calls (FR + EN), two edit calls (FR + EN)
-    assert hops.count("You judge an already") == 2
-    assert hops.count("You edit an already-") == 2
+    assert hops.count("You judge an already") == 1
+    assert hops.count("You edit an already-") == 1
 
     hops.clear()
 
@@ -4953,8 +4950,8 @@ def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
         return "", "rules"
 
     fr2, _en2, stats2 = asyncio.run(write_film_chain(plan, seconds=150, cascade=refuse))
-    assert stats2["ultra_edit"] == 2
-    assert stats2["ultra_judge"] == 2
+    assert stats2["ultra_edit"] == 1
+    assert stats2["ultra_judge"] == 1
     assert stats2["reviewed"] is False
     assert fr2["source"] == WRITTEN_SOURCE
     assert not fr2.get("reviewedBy")
@@ -5013,8 +5010,7 @@ def test_ed2_mixed_nim_chapters_keep_nim_when_last_is_super(monkeypatch):
         return text, src
 
     fr, _en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=mixed))
-    # With parallel FR/EN, we get 6 write calls (3 chapters x 2 languages)
-    assert seen == [1, 2, 3, 4, 5, 6]
+    assert seen == [1, 2, 3]
     assert fr is not None
     assert stats["source"] == "nvidia-gpt-oss-20b"
     assert fr["source"] == "nvidia-gpt-oss-20b"
@@ -5027,8 +5023,7 @@ def test_ed2_mixed_nim_chapters_keep_nim_when_last_is_super(monkeypatch):
 
 
 def test_ed2_ultra_open_nim_edit_is_not_reviewed_by_ultra(monkeypatch):
-    """Ultra ouvert, mais l'édition et le juge viennent de NIM : pas de reviewedBy Ultra.
-    With parallel FR/EN, both languages get edited by NIM (not counted as ultra_edit since source != *-ultra)."""
+    """Ultra ouvert, mais l'édition et le juge viennent de NIM : pas de reviewedBy Ultra."""
     monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "80000")
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     monkeypatch.delenv("NAVIGUIDE_LLM_BACKGROUND", raising=False)
@@ -5063,9 +5058,8 @@ def test_ed2_ultra_open_nim_edit_is_not_reviewed_by_ultra(monkeypatch):
         return "", "rules"
 
     fr, _en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=nim_fallback))
-    # With parallel FR/EN, both languages get edited by NIM (not counted as ultra_edit since source != *-ultra)
-    assert stats["ultra_edit"] == 0
-    assert stats["ultra_judge"] == 0  # NIM source, so judge not counted as ultra_judge
+    assert stats["ultra_edit"] == 1
+    assert stats["ultra_judge"] == 0
     assert stats["reviewed"] is False
     assert fr["source"] == WRITTEN_SOURCE
     assert not fr.get("reviewedBy")
