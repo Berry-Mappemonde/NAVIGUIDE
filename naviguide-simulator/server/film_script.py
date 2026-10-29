@@ -1276,14 +1276,39 @@ def _initial_route_heading(
     return _bearing_deg(verts[start]["lat"], verts[start]["lon"], verts[j]["lat"], verts[j]["lon"])
 
 
+FILM_HEADING_FAR_NM = 400.0
+FILM_HEADING_AGREE_DEG = 45.0
+
+
+def _angle_gap(a: float, b: float) -> float:
+    d = abs((float(a) - float(b)) % 360.0)
+    return min(d, 360.0 - d)
+
+
 def _leg_heading_deg(
     moments: list[dict] | None,
     depart_ms: Optional[int],
     clock: dict | None = None,
+    leg_nm: Any = None,
 ) -> Optional[float]:
-    """Cap d'ouverture : la trace d'abord, sinon l'ancien plus-proche moment."""
+    """Cap d'ouverture : la trace d'abord, sinon l'ancien plus-proche moment.
+
+    Avec `leg_nm`, le cap dit est celui de la première moitié de la jambe
+    (≤ 400 milles), et seulement s'il s'accorde (± 45°) avec les ~30 premiers
+    milles : sinon la trace tourne (sortie de rade, contournement) et un seul
+    cap serait faux — on n'en dit aucun (Fort-de-France → Pointe-à-Pitre « cap à
+    l'ouest », Saint-Gilles → Europa « cap au nord »).
+    """
     deg = _initial_route_heading(clock, depart_ms)
     if deg is not None:
+        if isinstance(leg_nm, (int, float)) and not isinstance(leg_nm, bool) and leg_nm > 0:
+            far_nm = max(float(FILM_INITIAL_HEADING_NM), min(float(leg_nm) / 2.0, FILM_HEADING_FAR_NM))
+            far = _initial_route_heading(clock, depart_ms, nm=far_nm)
+            if far is None:
+                return deg
+            if _angle_gap(deg, far) > FILM_HEADING_AGREE_DEG:
+                return None
+            return far
         return deg
     return _heading_deg_at(moments, depart_ms, clock=clock)
 
@@ -1403,7 +1428,29 @@ def station_spoken_label(change: dict, lang: str = "fr") -> str:
         if not ident:
             return ""
         return f"Argo float {ident}" if _en(lang) else f"le flotteur Argo {ident}"
+    if science_type_key(item) == "campaign":
+        # « Le lendemain, une campagne. » ne dit rien : la campagne se dit par
+        # son nom (« campagne CALICO, 2013 », « research cruise LINKS »), sinon pas.
+        code = _campaign_code(item)
+        if not code:
+            return ""
+        return (f"the area of the {code} research cruise" if _en(lang)
+                else f"la zone de la campagne océanographique {code}")
     return spoken
+
+
+_CAMPAIGN_CODE_RE = re.compile(
+    r"(?:\bcampagne|\bcruise|\bcampaign)\s+([A-Z][A-Z0-9-]{2,}[A-Z0-9])\b",
+)
+
+
+def _campaign_code(item: dict) -> str:
+    """Code de campagne en capitales (CALICO, MAYOBS30, LINKS), lu dans le titre."""
+    for key in ("title", "name", "fact"):
+        found = _CAMPAIGN_CODE_RE.search(str(item.get(key) or ""))
+        if found:
+            return found.group(1)
+    return ""
 
 
 def station_name_speakable(name: str) -> bool:
@@ -1965,8 +2012,12 @@ def apply_chosen_subjects(
         remaining.append(rec)
     slots = _repeat_slots(chapters)
     taken: set[int] = set()
-    used = 0
     spoken: list[dict] = []
+    # Liste explicite des sujets non placés : depuis la règle de date, un sujet
+    # daté sans emplacement dans sa jambe est sauté, donc les placés ne forment
+    # plus un préfixe de ``remaining`` (``remaining[used:]`` redisait un sujet
+    # placé et en perdait un autre en intégral).
+    unplaced: list[dict] = []
     for rec in remaining:
         # Un sujet daté se dit dans le chapitre qui contient sa date, jamais
         # dans une autre jambe (« Le 21 mai, une bouée » au chapitre d'août).
@@ -1984,19 +2035,20 @@ def apply_chosen_subjects(
             pick = k
             break
         if pick is None:
+            unplaced.append(rec)
             continue
         taken.add(pick)
         ch, idx = slots[pick]
         sents = _sentences(ch.get("text") or "")
         if idx < 0 or idx >= len(sents):
+            unplaced.append(rec)
             continue
         sents[idx] = rec["phrase"]
         ch["text"] = " ".join(sents).strip()
-        used += 1
         spoken.append(rec)
     budget = film_char_budget(seconds)
     if budget <= 0:
-        for rec in remaining[used:]:
+        for rec in unplaced:
             ch = _chapter_for_subject(chapters, rec)
             if ch is None:
                 continue
@@ -4092,11 +4144,19 @@ def chapter_metrics(w: dict, review: dict | None = None) -> dict[str, Any]:
     # La trace dit plus long que le plan (attente météo, escale technique) : on dit
     # les jours de la trace et la moyenne qui en découle — jamais « six jours de mer »
     # entre un départ le 30 juillet et une arrivée le 15 août.
+    # Seuil 15 % / 1 jour (et plus 50 %) : Ajaccio → Fort-de-France partait le
+    # 4 juin et arrivait le 14 juillet (40 jours) mais se disait « une trentaine
+    # de jours, à 8 nœuds ». Une moyenne sous 4 nœuds ne se dit pas : c'est la
+    # trace qui s'allonge (détour, calmes), pas la vitesse du bateau.
     span = _clock_sea_days(w)
-    if span is not None and nm and isinstance(days, (int, float)) and span > max(days * 1.5, days + 2):
+    if span is not None and nm and isinstance(days, (int, float)) and span > max(days * 1.15, days + 1):
         days = round(span, 1)
-        kn = max(1.0, round(float(nm) / (span * 24.0)))
+        avg = float(nm) / (span * 24.0)
+        kn = float(round(avg)) if avg >= FILM_MIN_SPOKEN_AVG_KNOTS else None
     return {"legNm": nm, "daysAtSea": days, "plannedKnots": kn}
+
+
+FILM_MIN_SPOKEN_AVG_KNOTS = 4.0
 
 
 def _clock_sea_days(w: dict) -> Optional[float]:
@@ -5791,7 +5851,17 @@ def _resume_after_episode(w: dict, *, lang: str, display_t0: str | None = None) 
         when = day_month(rebase_iso(_iso(int(dep_ms)), OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
     metrics = chapter_metrics(w, w.get("review") if isinstance(w.get("review"), dict) else None)
     nm = _opening_nm_label(metrics.get("legNm"), lang)
-    extra = f". {nm}" if nm else ""
+    # Cayenne → Papeete : milles, jours de mer et moyenne, comme toute étape
+    # (la reprise ne disait que « 6 671 milles »).
+    stats = [nm] if nm else []
+    days = spoken_sea_days(metrics.get("daysAtSea"), lang) if nm and metrics.get("daysAtSea") is not None else ""
+    if days:
+        stats.append(days)
+        kn = metrics.get("plannedKnots")
+        if isinstance(kn, (int, float)) and not isinstance(kn, bool):
+            kn_i = int(round(float(kn)))
+            stats.append(f"at {kn_i} knots on average" if en else f"à {kn_i} nœuds de moyenne")
+    extra = f". {', '.join(stats)}" if stats else ""
     if en:
         body = f"the catamaran puts to sea again, departure for {dest}{extra}"
         return f"On {when}, {body}." if when else f"{body[0].upper()}{body[1:]}."
@@ -5832,10 +5902,20 @@ def _air_sentence(w: dict, *, i: int, lang: str, display_t0: str | None = None) 
     return _air_window_sentence(w, lang=lang, display_t0=display_t0)
 
 
-def _close_position(w: dict, live: dict | None, lang: str) -> str:
-    """Où est le bateau aujourd'hui — horloge / live, jamais une position inventée."""
+def _close_position(w: dict, live: dict | None, lang: str, now_ms: Optional[int] = None) -> str:
+    """Où est le bateau aujourd'hui — horloge / live, jamais une position inventée.
+
+    `now_ms` : instant réel du film. Un film qui va jusqu'au bout du plan alors
+    que l'arrivée finale est encore à venir ne dit pas « Aujourd'hui, le bateau
+    est à La Rochelle » (faux le 29 oct. 2026) ; avec une horloge décalée dont
+    l'arrivée est passée, la phrase reste.
+    """
     en = _en(lang)
     live = live or {}
+    if now_ms is not None and not live.get("atStop") and w.get("arrived"):
+        arr = _ms(((_chapter_dest(w) or {}).get("iso"))) or w.get("tB")
+        if arr is not None and int(now_ms) < int(arr):
+            return ""
     at_quay = short_name(live.get("atStop") or "")
     if at_quay:
         return f"Today, the boat is at {at_quay}." if en else f"Aujourd’hui, le bateau est à {at_quay}."
@@ -5865,10 +5945,11 @@ def _close_sentence(
     review: dict | None = None,
     eta: dict | None = None,
     route_stops: list | None = None,
+    now_ms: Optional[int] = None,
 ) -> str:
     """Fin du film (2–3 phrases) : aujourd'hui, ETA du stock, escales à venir du plan-review."""
     live = live or {}
-    first = _close_position(w, live, lang)
+    first = _close_position(w, live, lang, now_ms=now_ms)
     at_quay = short_name(live.get("atStop") or "")
     dest = short_name(w.get("destName") or w.get("toName") or "")
     next_name = _stop_spoken(at_quay or dest)
@@ -6195,6 +6276,78 @@ def _depart_towards(
     )
 
 
+_SEA_VEHICLES = frozenset({"main", "boat", "side"})
+
+
+def _first_sea_leg_sentence(
+    w: dict,
+    *,
+    clock: dict | None,
+    sea_name: str,
+    lang: str,
+    display_t0: str | None = None,
+    review: dict | None = None,
+    n: int = 0,
+    compact: bool = False,
+) -> Optional[tuple[str, int]]:
+    """Chapitre 0 « par la route » : la part en mer depuis le port de mise à l'eau.
+
+    Le premier sommet d'horloge en mer de la fenêtre donne l'appareillage, ses
+    milles cumulés donnent l'écart jusqu'à l'arrivée (rien d'inventé). Rend
+    (phrase, instant d'appareillage) ou None si l'horloge n'a pas de mer.
+    """
+    sea = short_name(sea_name or "")
+    dest_name = _window_dest_name(w)
+    if not sea or not dest_name or same_stop(sea, dest_name):
+        return None
+    t_a, t_b = w.get("tA"), w.get("tB")
+    leave = None
+    for v in (clock or {}).get("vertices") or []:
+        if not isinstance(v, dict) or v.get("vehicle") not in _SEA_VEHICLES:
+            continue
+        t = _ms(v.get("iso"))
+        if t is None or (t_a is not None and t < t_a) or (t_b is not None and t >= t_b):
+            continue
+        leave = (t, v)
+        break
+    if leave is None:
+        return None
+    t_leave, v = leave
+    a_nm = v.get("sailNm") if isinstance(v.get("sailNm"), (int, float)) else v.get("filmNm")
+    sw = {
+        **w,
+        "fromName": sea,
+        "from": {"name": sea, "lat": v.get("lat"), "lon": v.get("lon"),
+                 "nm": a_nm if isinstance(a_nm, (int, float)) else None},
+        "fromLat": v.get("lat"),
+        "fromLon": v.get("lon"),
+        "mode": "sail",
+        "vehicle": "main",
+        "tA": t_leave,
+        "departMs": t_leave,
+        "clock": clock,
+    }
+    to = dict(w.get("to") or {})
+    if isinstance(w.get("destNm"), (int, float)):
+        to["nm"] = float(w["destNm"])
+    sw["to"] = to
+    head = _opening_sentence(
+        sw, i=1, lang=lang, display_t0=display_t0,
+        heading_deg=_leg_heading_deg([], t_leave, clock=clock, leg_nm=_window_leg_nm(sw)),
+        review=review, n=n, include_date=True, compact=compact,
+    )
+    if not head:
+        return None
+    t0 = w.get("tA")
+    if t0 is not None and _utc_day({"tMs": t0}) == _utc_day({"tMs": t_leave}):
+        rx = _LEAD_DATE_EN_RE if _en(lang) else _LEAD_DATE_FR_RE
+        body = rx.sub("", head, count=1)
+        if body != head and body:
+            lead = "The same day, " if _en(lang) else "Le jour même, "
+            head = lead + body
+    return head, t_leave
+
+
 def _arrival_sentence(
     stop: dict | None,
     lang: str,
@@ -6203,6 +6356,7 @@ def _arrival_sentence(
     harbor: str = "",
     chapter_i: int = 0,
     compact: bool = False,
+    final: bool = False,
 ) -> str:
     if not stop or not stop.get("name") or _ms(stop.get("iso")) is None:
         return ""
@@ -6215,14 +6369,14 @@ def _arrival_sentence(
         if harbor and _harbor_differs_from_city(harbor, dest):
             extra = f", at {harbor}" if en else f", à {harbor}"
         if en:
-            if name and when and chapter_i != 0:
+            if name and when:
                 raw = f"Arrival at {name} on {when}{extra}."
             elif name:
                 raw = f"Arrival at {name}{extra}."
             else:
                 raw = f"Arrival on {when}{extra}." if when else (f"Arrival{extra}." if extra else "")
         else:
-            if name and when and chapter_i != 0:
+            if name and when:
                 raw = f"Arrivée à {name} le {when}{extra}."
             elif name:
                 raw = f"Arrivée à {name}{extra}."
@@ -6243,7 +6397,9 @@ def _arrival_sentence(
     when = day_month(rebase_iso(stop["iso"], OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
     quay = _days(_quay_hours_for_arrival(stop, clock))
     moored = _moored_phrase(harbor, lang)
-    hold = _hold_phrase(quay, chapter_i, lang)
+    # Arrivée finale : le voyage s'achève, pas d'« Escale de trois jours » avant
+    # « Aujourd'hui, le bateau est à La Rochelle ».
+    hold = "" if final else _hold_phrase(quay, chapter_i, lang)
     if en:
         head = f"Arrival at {name} on {when}" if when else f"Arrival at {name}"
         if moored:
@@ -6285,11 +6441,12 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
         clock: dict | None = None,
         harbor: str = "",
         chapter_i: int = 0,
+        final: bool = False,
     ) -> None:
         key = norm_stop((dest or {}).get("name") or "")
         sentence = _arrival_sentence(
             dest, lang, display_t0, clock=clock, harbor=harbor, chapter_i=chapter_i,
-            compact=compact,
+            compact=compact, final=final,
         )
         if not sentence or not key or key in cited:
             return
@@ -6421,7 +6578,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
         if arrived:
             harbor = _arrival_harbor(buckets[i], dest, lang)
             before = len(bits)
-            push_arrival(bits, dest, clock=w.get("clock"), harbor=harbor, chapter_i=i)
+            push_arrival(bits, dest, clock=w.get("clock"), harbor=harbor, chapter_i=i, final=bool(w.get("last")))
             if len(bits) > before:
                 dest_place = short_name((dest or {}).get("name") or "")
                 anchored.append((bits[-1], w["tB"], {"role": "arrive", "place": dest_place, "kind": "escale"}))
@@ -8213,6 +8370,27 @@ def _strip_lead_date(text: str, lang: str) -> str:
     return rx.sub("", text or "", count=1)
 
 
+_NEXT_DAY_LEAD_RE = re.compile(r"^\s*(?:Le lendemain|The next day)\b", re.I)
+
+
+def _heard_date_before(out: list[str], k: int, lang: str) -> Optional[datetime]:
+    """Date que l'auditeur a en tête juste avant la phrase k.
+
+    Une date dite la remet à jour ; « Le lendemain » l'avance d'un jour ;
+    « Puis » la garde. Sans ce suivi, deux « Le lendemain » de suite pour le
+    même jour (Nouméa : 6 nov., lendemain, lendemain, arrivée le 7) faisaient
+    entendre le 8 novembre, après l'arrivée.
+    """
+    heard: Optional[datetime] = None
+    for j in range(max(0, k)):
+        s = out[j] or ""
+        if _sentence_has_date(s, lang):
+            heard = _parse_spoken_date(s, lang) or heard
+        elif heard is not None and _NEXT_DAY_LEAD_RE.match(s):
+            heard = heard + timedelta(days=1)
+    return heard
+
+
 def thin_chapter_dates(sentences: list[str], lang: str = "fr") -> list[str]:
     """Au plus une date calendaire toutes les deux phrases. L'arrivée garde sa date."""
     out = [scrub_spoken(s) for s in sentences]
@@ -8220,11 +8398,17 @@ def thin_chapter_dates(sentences: list[str], lang: str = "fr") -> list[str]:
     i = 1
     while i < len(out):
         if dated[i] and dated[i - 1]:
+            if i - 1 == 0 and _is_arrival_sentence(out[i]):
+                # Ouverture + arrivée : les deux dates restent (la passe de
+                # densité garde déjà l'une et l'autre). Sinon « Puis, le
+                # catamaran reprend la mer » perdait le 29 août dans la 2:30.
+                i += 1
+                continue
             if _is_arrival_sentence(out[i]):
                 # La phrase i-1 perd SA date — « Le lendemain » se mesure
-                # contre la dernière date dite AVANT elle, pas contre l'arrivée.
-                prev_j = next((j for j in range(i - 2, -1, -1) if dated[j]), None)
-                prev_d = _parse_spoken_date(out[prev_j], lang) if prev_j is not None else None
+                # contre la date ENTENDUE avant elle (dates dites et
+                # « lendemain » déjà posés), pas contre l'arrivée.
+                prev_d = _heard_date_before(out, i - 1, lang)
                 cur_d = _parse_spoken_date(out[i - 1], lang)
                 body = _strip_lead_date(out[i - 1], lang)
                 if body == out[i - 1]:
@@ -8235,7 +8419,7 @@ def thin_chapter_dates(sentences: list[str], lang: str = "fr") -> list[str]:
                 out[i - 1] = body[0].upper() + body[1:] if body else out[i - 1]
                 dated[i - 1] = False
             else:
-                prev_d = _parse_spoken_date(out[i - 1], lang)
+                prev_d = _heard_date_before(out, i, lang)
                 cur_d = _parse_spoken_date(out[i], lang)
                 body = _strip_lead_date(out[i], lang)
                 if body != out[i]:
@@ -8541,6 +8725,32 @@ def _finalize_chapter_zero_opens(
     _prepend_film_opens_to_chapter(chapters[0], opens, w0["tA"], w0["tB"], lang)
 
 
+# 3:00 (gabarit RG6 long) : presque tout est au rang 0, donc rien n'est coupable
+# et le film brut restait à ~3 450 car. pour 2 700. On raccourcit des incises
+# de rang 0 sans retirer de phrase ni de fait de jambe (lieu, date, milles) :
+# l'amarrage (« , amarré au port de … »), la vitesse moyenne de gabarit, puis
+# les tournures de forme (« la longue traversée vers », « d'île en île, »).
+_RANK0_TRIMS = (
+    re.compile(r",\s*(?:amarré|amarrée|moored)\s+(?:au|à la|à l['’]|à|aux|at)\s+[^.;!?]*(?=[.;!?])", re.I),
+    re.compile(r",\s*(?:à \d+ nœuds de moyenne|at \d+ knots on average)(?=[.;!?])", re.I),
+    re.compile(r"(?:(?<=milles)|(?<=miles)), (?:jusqu['’]à|through to) [^.;!?]*(?=[.;!?])", re.I),
+    re.compile(r"\b(?:la longue traversée vers|the long crossing to)\s+", re.I),
+    re.compile(r"(?<=, )(?:d['’]île en île|pour la dernière étape|from island to island|for the last stage),\s+", re.I),
+)
+
+
+def _compact_rank0_to_budget(chapters: list[dict], target: int) -> None:
+    """Retire des incises de rang 0, une par une depuis la fin, jusqu'au plafond."""
+    for rx in _RANK0_TRIMS:
+        for ch in reversed(chapters):
+            if script_chars(chapters) <= target:
+                return
+            text = ch.get("text") or ""
+            new = rx.sub("", text)
+            if new != text:
+                ch["text"] = re.sub(r"\s{2,}", " ", new).strip()
+
+
 def _film_apply_char_budget(chapters: list[dict], seconds: Any) -> None:
     """Plafond film_char_budget (15 car./s), pas 110 %. 2:30 : keep_head=1."""
     target = film_char_budget(seconds)
@@ -8550,6 +8760,9 @@ def _film_apply_char_budget(chapters: list[dict], seconds: Any) -> None:
     if _film_compact_template(seconds):
         _keep_one_amp_in_script(chapters)
     _trim_script_to_char_budget(chapters, target, keep_head=keep)
+    if script_chars(chapters) > target and not _film_compact_template(seconds):
+        _compact_rank0_to_budget(chapters, target)
+        _trim_script_to_char_budget(chapters, target, keep_head=keep)
 
 
 def fit_chapter_text(text: str, budget: int, extras: list[str], lang: str) -> str:
@@ -9089,6 +9302,7 @@ def build_raw_from_moments(
             if i == len(windows) - 1:
                 close = _close_sentence(
                     w, live, lang, review=review, eta=eta, route_stops=route_rows,
+                    now_ms=now,
                 )
                 if close and close not in text:
                     text = speak_film_text(f"{text} {close}".strip(), lang)
@@ -9111,12 +9325,26 @@ def build_raw_from_moments(
         if not skip_depart:
             head = _depart_towards(
                 w, i=i, lang=lang, display_t0=display_t0,
-                heading_deg=_leg_heading_deg(sail_moments, depart_ms, clock=w.get("clock") or clock),
+                heading_deg=_leg_heading_deg(
+                    sail_moments, depart_ms, clock=w.get("clock") or clock,
+                    leg_nm=chapter_metrics(w, review).get("legNm"),
+                ),
                 review=review, n=len(windows), include_date=i != 0, compact=compact,
             )
             if head:
                 bits.append(head)
                 anchored.append((head, depart_ms or w["tA"], {"role": "depart"}))
+        elif i == 0:
+            # La route s'arrête à La Rochelle : l'étape en mer La Rochelle →
+            # Ajaccio se dit (départ, cap, milles, jours), sinon « par la
+            # route jusqu'à La Rochelle » enchaînait sur « Arrivée à Ajaccio ».
+            sea_leg = _first_sea_leg_sentence(
+                w, clock=w.get("clock") or clock, sea_name=sea_name, lang=lang,
+                display_t0=display_t0, review=review, n=len(windows), compact=compact,
+            )
+            if sea_leg:
+                bits.append(sea_leg[0])
+                anchored.append((sea_leg[0], sea_leg[1], {"role": "depart"}))
         for change in selected:
             speak_change(change)
         _append_review_sentences(bits, review, w, lang, anchored)
@@ -9126,6 +9354,7 @@ def build_raw_from_moments(
             _arrival_sentence(
                 dest, lang, display_t0, clock=w.get("clock"),
                 harbor=harbor, chapter_i=i, compact=compact,
+                final=bool(w.get("last")),
             ) if arrived else ""
         )
         if arrival and key and key not in cited:
@@ -9165,6 +9394,7 @@ def build_raw_from_moments(
         if i == len(windows) - 1:
             close = _close_sentence(
                 w, live, lang, review=review, eta=eta, route_stops=route_rows,
+                now_ms=now,
             )
             if close and close not in text:
                 text = speak_film_text(f"{text} {close}".strip(), lang)
@@ -9507,6 +9737,40 @@ def apply_written_guard(
             kept.append(raw_s)
             fallen += 1
     return " ".join(kept), rewritten, fallen
+
+
+_ARRIVAL_KEY_RE = re.compile(r"^\s*(?:Arrivée à|Arrival (?:at|in))\s+(.+?)(?:\s+(?:le|on)\s+(.+?))?(?:,|\.|$)", re.I)
+
+
+def _arrival_key(sentence: str) -> Optional[tuple[str, str]]:
+    m = _ARRIVAL_KEY_RE.match(sentence or "")
+    if not m:
+        return None
+    place = re.sub(r"\s*\([^)]*\)", "", m.group(1) or "").strip().casefold()
+    return place, (m.group(2) or "").strip().casefold()
+
+
+def dedupe_arrival_sentences(sents: list[str]) -> list[str]:
+    """Deux arrivées au même lieu dans un chapitre : on garde la plus complète,
+    à la place de la première. Une phrase répétée telle quelle tombe aussi."""
+    out: list[str] = []
+    keys: list[Optional[tuple[str, str]]] = []
+    for s in sents:
+        if out and s == out[-1]:
+            continue
+        k = _arrival_key(s)
+        hit = next(
+            (j for j, kj in enumerate(keys) if k and kj and kj[0] == k[0] and (not k[1] or not kj[1] or k[1] == kj[1])),
+            None,
+        ) if k else None
+        if hit is not None:
+            if len(s) > len(out[hit]):
+                out[hit] = s
+                keys[hit] = k
+            continue
+        out.append(s)
+        keys.append(k)
+    return out
 
 
 def _trim_written_to_budget(raw_text: str, written_text: str, cap: int) -> tuple[str, int]:
@@ -10447,7 +10711,32 @@ def _fault_confirmed(
         if name not in {norm_stop(short_name(s)) for s in stops_here}:
             return False  # escale d'une autre partie : jamais sautée ici
         return name not in body
+    if kind == "off-route":
+        # « off-route: Saint-Denis » alors que le texte dit « le bateau longe
+        # Saint-Denis » / « the boat sails past Saint-Denis » : une côte vue en mer,
+        # posée par le constructeur, pas une escale inventée.
+        name = what.strip().strip("'\"«» .")
+        if name and _passed_at_sea(name, text):
+            return False
     return True
+
+
+_PASSING_LEAD_RE = (
+    r"(?:longe|longeant|passe au large de|sails? (?:past|alongside|along|by)|follows|hugs|skirts|"
+    r"passes|passing|eaux d[eu']s?|eaux de la|waters of(?: the)?)"
+)
+
+
+def _passed_at_sea(name: str, text: str) -> bool:
+    """Le nom n'apparaît, dans la partie, qu'en passage (côte longée, eaux)."""
+    if not name or name.casefold() not in (text or "").casefold():
+        return False
+    hits = [m.start() for m in re.finditer(re.escape(name), text, re.I)]
+    for at in hits:
+        before = text[max(0, at - 40):at]
+        if not re.search(_PASSING_LEAD_RE + r"\s*(?:l['’]|la |le |les |the )?$", before, re.I):
+            return False
+    return bool(hits)
 
 
 def _only_unconfirmed_date_faults(
@@ -11016,13 +11305,37 @@ async def edit_written_once(
         facts = chapter_structured_facts(raw_ch, lang="fr")
         user = f"facts={json.dumps(facts, ensure_ascii=False, default=str)}\ntext={src}"
         max_tok = min(ULTRA_EDIT_MAX_TOKENS, max(600, len(src) + 200))
+        # Pas de filtre brut des nombres dans la cascade : Super a déjà ses chiffres
+        # (« 12 nœuds » pour « douze nœuds » des faits) et le filtre coupait ces
+        # phrases ; le garde-fou ci-dessous refaisait alors l'alignement de travers
+        # (« Arrivée à Ajaccio… » dite deux fois, les alizés perdus). Le garde-fou
+        # vérifie les nombres, épelés compris.
+        from story_cascade import NO_NUMBER_FILTER  # noqa: PLC0415
         text, source = await cascade(
-            EDIT_SYSTEM, user, tier="judge", fallback="", facts=facts, max_tokens=max_tok,
+            EDIT_SYSTEM, user, tier="judge", fallback="", facts=NO_NUMBER_FILTER, max_tokens=max_tok,
         )
         if not str(source).endswith("-ultra") or _looks_cut(src, text):
             out.append(ch)
             continue
-        guarded, rw, _fb = apply_written_guard(raw_ch.get("text") or src, text.strip(), facts, lang="fr")
+        if len(_sentences(text or "")) < len(_sentences(src)):
+            # Une phrase perdue : l'alignement phrase à phrase du garde-fou glisserait.
+            out.append(ch)
+            continue
+        # Le garde-fou aligne phrase à phrase : si la 2:30 a déjà retiré des
+        # phrases du brut (Super condensé), l'aligner sur le brut décalait tout
+        # et recollait l'arrivée du brut après celle d'Ultra (« Arrivée à
+        # Pointe-à-Pitre le 18 juillet. » ×2). On s'aligne alors sur Super.
+        # Ultra ne remet pas les phrases que la condensation a retirées : un
+        # nombre de phrases différent de Super garde le chapitre de Super
+        # (sinon le garde-fou coupait l'arrivée — Saint-Pierre le 21 août).
+        ref = raw_ch.get("text") or src
+        if len(_sentences(ref)) != len(_sentences(src)):
+            if len(_sentences(text or "")) != len(_sentences(src)):
+                out.append(ch)
+                continue
+            ref = src
+        guarded, rw, _fb = apply_written_guard(ref, text.strip(), facts, lang="fr")
+        guarded = " ".join(dedupe_arrival_sentences(_sentences(guarded)))
         if rw <= 0:
             out.append(ch)
             continue
@@ -11035,22 +11348,26 @@ async def edit_written_once(
     )
 
 
-async def judge_written_once(
+async def judge_written_chapters(
     plan: dict,
     *,
     cascade: Callable = cascade_text,
     raw_plan: dict | None = None,
-) -> bool:
-    """Ultra juge chaque chapitre contre SES faits, sans le réécrire.
+    only: set[int] | None = None,
+) -> Optional[list[int]]:
+    """Ultra juge chaque chapitre contre SES faits ; rend les indices refusés.
 
-    Sans les faits, le juge prenait les eaux et projets croisés pour des lieux
-    inventés. Un verdict vide, tronqué ou illisible n'est jamais un accord.
+    None : verdict impossible (réseau, budget, film vide). Un verdict vide,
+    tronqué ou illisible compte comme un refus du chapitre.
     """
     chapters = [c for c in (plan.get("chapters") or []) if isinstance(c, dict)]
     raw_chapters = [c for c in ((raw_plan or {}).get("chapters") or []) if isinstance(c, dict)]
     if not any((c.get("text") or "").strip() for c in chapters):
-        return False
+        return None
+    failed: list[int] = []
     for i, ch in enumerate(chapters):
+        if only is not None and i not in only:
+            continue
         txt = (ch.get("text") or "").strip()
         if not txt:
             continue
@@ -11068,10 +11385,40 @@ async def judge_written_once(
             if source != "rules":
                 break
         if source in {"rules", "budget"}:
-            return False
+            return None
         if _parse_judge_ok(text) is not True:
-            return False
-    return True
+            failed.append(i)
+    return failed
+
+
+async def judge_written_once(
+    plan: dict,
+    *,
+    cascade: Callable = cascade_text,
+    raw_plan: dict | None = None,
+) -> bool:
+    """Ultra juge chaque chapitre contre SES faits, sans le réécrire.
+
+    Sans les faits, le juge prenait les eaux et projets croisés pour des lieux
+    inventés. Un verdict vide, tronqué ou illisible n'est jamais un accord.
+    """
+    failed = await judge_written_chapters(plan, cascade=cascade, raw_plan=raw_plan)
+    return failed == []
+
+
+def _restore_chapters(edited: dict, fallback: dict, failed: list[int]) -> dict:
+    """Chapitres refusés par le juge : on reprend le texte d'avant l'édition (même id)."""
+    by_id = {c.get("id"): c for c in (fallback.get("chapters") or []) if isinstance(c, dict)}
+    fb_list = [c for c in (fallback.get("chapters") or []) if isinstance(c, dict)]
+    chapters = [c for c in (edited.get("chapters") or []) if isinstance(c, dict)]
+    out = []
+    for i, ch in enumerate(chapters):
+        if i in failed:
+            prev = by_id.get(ch.get("id")) or (fb_list[i] if i < len(fb_list) else None)
+            out.append(prev or ch)
+        else:
+            out.append(ch)
+    return {**edited, "chapters": out}
 
 
 _EN_GEO_WORDS = frozenset({
@@ -11095,7 +11442,14 @@ _EN_GEO_WORDS = frozenset({
     "trinidad", "tobago", "kitts", "nevis", "eustatius", "lucia", "vincent", "grenadines",
     "christopher", "virgin", "turks", "caicos", "cayman", "falkland", "helena", "ascension",
     "dutch", "german", "norwegian", "swedish", "danish", "icelandic", "japanese", "chinese",
-})
+    # Ajouts de #136 que le préfixe FR ne retrouve pas (« sri-lankaises » → « Lankan »).
+    "lankan", "omani", "thai", "myanmar", "malaysian", "palauan", "gambian",
+}) | frozenset(
+    # Une seule source : les démonymes anglais de la table des toponymes.
+    w.casefold()
+    for row in toponyms.territories()
+    for w in re.findall(r"[^\W\d_]+", str(row.get("adj_en") or ""))
+)
 
 # « une trentaine de jours » → « about thirty days » : l'approximation dite en anglais.
 _FR_APPROX = {
@@ -11133,7 +11487,11 @@ def _en_translation_names(en_text: str, fr_src: str) -> set[str]:
     return out
 
 
-_APPROX_EN_DAYS = {"huitaine": "about a week", "dizaine": "about ten days", "vingtaine": "about twenty days"}
+_APPROX_EN_DAYS = {
+    "huitaine": "about a week", "dizaine": "about ten days", "vingtaine": "about twenty days",
+    "trentaine": "about thirty days", "quarantaine": "about forty days",
+    "cinquantaine": "about fifty days", "soixantaine": "about sixty days",
+}
 
 
 def _fix_fortnight(text: str, fr_src: str) -> str:
@@ -11142,6 +11500,138 @@ def _fix_fortnight(text: str, fr_src: str) -> str:
     if len(hits) != 1:
         return text
     return re.sub(r"\b(?:a|about a|nearly a)\s+fortnight\b", hits[0], text, flags=re.I)
+
+
+_FR_MONTHS_EN = {
+    "janvier": "january", "février": "february", "mars": "march", "avril": "april",
+    "mai": "may", "juin": "june", "juillet": "july", "août": "august",
+    "septembre": "september", "octobre": "october", "novembre": "november", "décembre": "december",
+}
+_FR_DAY_RE = re.compile(r"\b(1er|\d{1,2})\s+(" + "|".join(_FR_MONTHS_EN) + r")\b", re.I)
+_EN_MONTHS = "|".join(m.capitalize() for m in _FR_MONTHS_EN.values())
+_EN_DAY_RE = re.compile(
+    rf"\b(?:(?P<m1>{_EN_MONTHS})\s+(?P<d1>\d{{1,2}})(?:st|nd|rd|th)?|(?P<d2>\d{{1,2}})(?:st|nd|rd|th)?\s+(?P<m2>{_EN_MONTHS}))\b",
+)
+
+
+def en_month_first(text: str) -> str:
+    """Une seule forme de date en anglais : « On 4 June » / « On June 4 » mêlés
+    d'un chapitre à l'autre → toujours « June 4 » (« May 15, 2026 » avec l'année)."""
+    def _swap(m: re.Match) -> str:
+        day, month, year = m.group(1), m.group(2), m.group(3)
+        return f"{month} {day}, {year}" if year else f"{month} {day}"
+
+    out = re.sub(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({_EN_MONTHS})\b(?:\s+(\d{{4}})\b)?", _swap, text or "")
+    # « July 30th » / « August 15th » : une seule forme, sans ordinal.
+    return re.sub(rf"\b({_EN_MONTHS})\s+(\d{{1,2}})(?:st|nd|rd|th)\b", r"\1 \2", out)
+
+
+def _repair_en_days(src: str, text: str) -> str:
+    """Lightning déplace parfois un jour (« 17 juin » → « June 16 ») : le garde-fou
+    recollait la phrase française et tout l'anglais tombait. Phrase à phrase (même
+    nombre de phrases), le jour du même mois reprend celui du français."""
+    fr_s, en_s = _sentences(src or ""), _sentences(text or "")
+    if not fr_s or len(fr_s) != len(en_s):
+        return text
+    out = []
+    changed = False
+    for fr, en in zip(fr_s, en_s):
+        fr_days = [(1 if d.casefold() == "1er" else int(d), _FR_MONTHS_EN[m.casefold()])
+                   for d, m in _FR_DAY_RE.findall(fr)]
+        en_hits = list(_EN_DAY_RE.finditer(en))
+        if len(fr_days) != len(en_hits) or not fr_days:
+            out.append(en)
+            continue
+        new = en
+        for (day, month), m in reversed(list(zip(fr_days, en_hits))):
+            grp = "d1" if m.group("d1") else "d2"
+            if (m.group("m1") or m.group("m2") or "").casefold() != month:
+                continue
+            if int(m.group(grp)) != day:
+                a, b = m.span(grp)
+                new = new[:a] + str(day) + new[b:]
+        changed = changed or new != en
+        out.append(new)
+    return " ".join(out) if changed else text
+
+
+_TRANSLATE_LEADS = (
+    "French text:\n",
+    "Translate into English only:\n",
+    "Write this French sailing log in English (every sentence, same order):\n",
+)
+
+
+def _sentence_key(x: str) -> str:
+    k = re.sub(r"\s*\([^)]*\)", "", x or "").replace("’", "'").casefold().strip(" .")
+    if re.match(r"^(?:arrivée|arrival)\b", k):
+        k = k.split(",", 1)[0]
+    return re.sub(r"\s+", " ", k)
+
+
+def dedupe_chapter_sentences(text: str) -> str:
+    """Deux phrases voisines qui disent la même chose (« Arrivée à Pointe-à-Pitre le
+    18 juillet. » puis la même avec « (Guadeloupe), à Port de Sainte-Rose ») : on
+    garde la plus complète. Le garde-fou phrase à phrase, face à un texte condensé,
+    recollait parfois la phrase brute voisine."""
+    sents = _sentences(text or "")
+    out: list[str] = []
+    for x in sents:
+        if out and _sentence_key(out[-1]) == _sentence_key(x):
+            if len(x) > len(out[-1]):
+                out[-1] = x
+            continue
+        out.append(x)
+    return " ".join(out) if len(out) != len(sents) else text
+
+
+def _dedupe_plan(plan: Optional[dict], raw_plan: dict, lang: str) -> Optional[dict]:
+    if not plan:
+        return plan
+    raws = {c.get("id"): c for c in (raw_plan.get("chapters") or []) if isinstance(c, dict)}
+    chapters = []
+    changed = False
+    for ch in plan.get("chapters") or []:
+        if not isinstance(ch, dict):
+            continue
+        text = ch.get("text") or ""
+        new = dedupe_chapter_sentences(text)
+        if new == text:
+            chapters.append(ch)
+            continue
+        changed = True
+        chapters.append({**ch, "text": new,
+                         "anchors": reanchor_written_chapter(raws.get(ch.get("id")) or ch, new, lang)})
+    return {**plan, "chapters": chapters} if changed else plan
+
+
+def _translate_keep_names(facts: Any, src: str) -> str:
+    """Noms propres de projets / AMP à garder tels quels dans l'anglais.
+
+    Lightning traduisait « le projet Agence de Recherche pour la Biodiversité » en
+    « French National Research Agency… » : le garde-fou y voyait des noms inventés,
+    recollait le français et tout l'anglais du film tombait (lightning = 0).
+    """
+    if not isinstance(facts, dict):
+        return ""
+    names: list[str] = []
+    for key in ("projects", "amp", "stations"):
+        for n in facts.get(key) or []:
+            n = str(n or "").strip()
+            at = (src or "").casefold().find(n.casefold()) if n else -1
+            if at < 0:
+                continue
+            # Le nom des faits est parfois coupé (« …Areas Networ ») : on le prend
+            # tel que le texte le dit, jusqu'au bout du mot.
+            end = at + len(n)
+            while end < len(src) and (src[end].isalnum() or src[end] in "'’-"):
+                end += 1
+            full = src[at:end].strip()
+            if full and full not in names:
+                names.append(full)
+    if not names:
+        return ""
+    return "\nKeep these names exactly as written, untranslated: " + "; ".join(names)
 
 
 async def translate_written_plan(
@@ -11167,12 +11657,14 @@ async def translate_written_plan(
         src = ch.get("text") or ""
         facts = chapter_structured_facts(raw_ch, lang="fr")
         guarded, rw = "", 0
-        for _attempt in range(2):
-            # Lightning rend parfois le français tel quel : une seconde demande.
+        keep = _translate_keep_names(facts, src)
+        for _attempt in range(3):
+            # Lightning rend parfois le français tel quel : nouvelles demandes, chacune
+            # avec une autre consigne, sinon le cache rend la même réponse. Un seul
+            # chapitre raté faisait tomber tout l'anglais du film intégral.
             text, source = await cascade(
                 TRANSLATE_SYSTEM,
-                # Seconde demande : autre consigne, sinon le cache rend la même réponse.
-                f"French text:\n{src}" if _attempt == 0 else f"Translate into English only:\n{src}",
+                (_TRANSLATE_LEADS[_attempt] + src) + keep,
                 tier="fast",
                 fallback="",
                 # Le garde-fou ci-dessous vérifie les nombres (épelés compris) ; le filtre
@@ -11182,6 +11674,7 @@ async def translate_written_plan(
             )
             if not (text or "").strip() or source in {"rules", "budget"}:
                 return None
+            text = _repair_en_days(src, text or "")
             facts_en = {**facts, "en_names": sorted(n.title() for n in _en_translation_names(text or "", src)),
                         "approx": _fr_approx_numbers(src)} \
                 if isinstance(facts, dict) else facts
@@ -11209,6 +11702,17 @@ async def translate_written_plan(
         any_ok = True
         sents = _sentences(guarded)
         guarded = " ".join(x for i, x in enumerate(sents) if i == 0 or x != sents[i - 1])
+        guarded = dedupe_chapter_sentences(guarded)
+        guarded = en_thousands_commas(guarded)
+        guarded = en_month_first(guarded)
+        guarded = en_argo_float(guarded)
+        # « par la route jusqu'à La Rochelle » rendu « by the route to » : « by road ».
+        guarded = re.sub(r"\bby the (?:route|road) to\b", "by road to", guarded)
+        # « le bateau longe X » rendu « the boat follows X » : on dit la côte longée.
+        guarded = re.sub(
+            r"\b(the boat|the catamaran|the sailboat) (?:follows|hugs|skirts|runs along)\b",
+            r"\1 sails past", guarded,
+        )
         anchors = reanchor_written_chapter(ch, guarded, "en")
         out.append({**ch, "text": guarded, "anchors": anchors})
     if not any_ok:
@@ -11233,9 +11737,38 @@ def _digits_for_speech(text: str) -> str:
         n = m.group(0)
         if len(n) == 4 and 1900 <= int(n) <= 2099:
             return n
+        # Un identifiant (flotteur Argo / WMO 4903331) n'est pas une quantité :
+        # jamais « le flotteur Argo 4 903 331 ».
+        before = out[max(0, m.start() - 24):m.start()]
+        if len(n) >= 7 or _IDENT_BEFORE_RE.search(before):
+            return n
         return f"{int(n):,}".replace(",", " ")
 
     return re.sub(r"(?<![\d.,])\d{4,}(?!\d)", _group, out)
+
+
+_IDENT_BEFORE_RE = re.compile(
+    r"(?:\bArgo|\bWMO|\bflotteur|\bfloat|\bbou[ée]e|\bbuoy|\bstation|\bn°|\bno\.?)\s*$",
+    re.I,
+)
+
+_EN_SPACED_THOUSANDS_RE = re.compile(r"(?<![\d.,])\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?![\d])")
+
+
+def en_thousands_commas(text: str) -> str:
+    """Anglais : « 1 642 miles » → « 1,642 miles » (même longueur, ancres intactes).
+
+    Un identifiant collé (Argo 4903331) n'a pas d'espace et ne bouge pas.
+    """
+    return _EN_SPACED_THOUSANDS_RE.sub(
+        lambda m: re.sub(r"[ \u00a0\u202f]", ",", m.group(0)), text or "",
+    )
+
+
+def en_argo_float(text: str) -> str:
+    """« Then, Argo 7902126. » / « Argo 4903967 float » → « Argo float 7902126 »."""
+    out = re.sub(r"\bArgo (\d{7}) float\b", r"Argo float \1", text or "")
+    return re.sub(r"\bArgo (?!float\b)(\d{7})\b", r"Argo float \1", out)
 
 
 def _plan_digits_for_speech(plan: dict, raw_plan: dict, lang: str = "fr") -> dict:
@@ -11300,9 +11833,30 @@ async def write_film_chain(
         if edited and secs == 150:
             # Ultra relit contre l'intégral : il peut rallonger, on retient le débit mesuré.
             edited = condense_written_plan(edited, 150, lang="fr")
+        edited = _dedupe_plan(edited, ref_raw, "fr")
         if edited:
-            ok = await judge_written_once(edited, cascade=cascade, raw_plan=ref_raw)
+            failed = await judge_written_chapters(edited, cascade=cascade, raw_plan=ref_raw)
             stats["ultra_judge"] = 1
+            if failed:
+                # Un seul chapitre refusé (« Text omits projects… ») laissait tout le
+                # film sans relecture : on reprend Super sur ces chapitres et Ultra
+                # les rejuge ; le film n'est relu que si tout passe.
+                stats["judge_failed"] = list(failed)
+                edited = _restore_chapters(edited, accepted, failed)
+                again = await judge_written_chapters(
+                    edited, cascade=cascade, raw_plan=ref_raw, only=set(failed),
+                )
+                failed = again if again is not None else None
+                if failed and secs != 150:
+                    # Super omettait aussi : le chapitre brut (la référence même du juge).
+                    raw_digits = _plan_digits_for_speech(ref_raw, ref_raw)
+                    edited = _restore_chapters(edited, raw_digits, failed)
+                    again = await judge_written_chapters(
+                        edited, cascade=cascade, raw_plan=ref_raw, only=set(failed),
+                    )
+                    failed = again if again is not None else None
+                stats["judge_failed_after_restore"] = None if failed is None else list(failed)
+            ok = failed == []
             if ok and accepted.get("source") == WRITTEN_SOURCE:
                 accepted = _stamp_written_plan(
                     edited, WRITTEN_SOURCE, seconds,
@@ -11312,6 +11866,7 @@ async def write_film_chain(
                 stats["reviewed"] = True
                 stats["source"] = WRITTEN_SOURCE
 
+    accepted = _dedupe_plan(accepted, ref_raw, "fr")
     stops = _route_stops_for_reread(raw)
     ok_fr, review_fr = await reread_before_store(accepted, stops, cascade=cascade, lang="fr")
     stats["reread"] = "pass" if ok_fr else "fail"

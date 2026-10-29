@@ -363,10 +363,13 @@ def climo_sentence(change: dict, lang: str = "fr") -> str:
         if not word:
             return f"{core}."
         if en:
-            tag = "seasonal" if nature == "season" else "measured"
-            return f"{core}: {word} {tag} knots."
-        tag = "de saison" if nature == "season" else "mesurés"
-        return f"{core} : {word} nœuds {tag}."
+            if nature == "season":
+                return f"{core}: {word} knots, the seasonal average."
+            return f"{core}: {word} measured knots."
+        # « 21 nœuds de saison » se lisait comme un nom de vent ; on dit la moyenne.
+        if nature == "season":
+            return f"{core} : {word} nœuds, la moyenne de saison."
+        return f"{core} : {word} nœuds mesurés."
 
     if named:
         body = named["en" if en else "fr"]
@@ -383,7 +386,7 @@ def climo_sentence(change: dict, lang: str = "fr") -> str:
         core = (
             f"On {when}, {where}the wind shifts to the {dir_name}"
             if en else
-            f"Le {when}, {where}le vent tourne au {dir_name}"
+            f"Le {when}, {where}le vent tourne {_fr_to_dir(dir_name)}"
         )
         return with_knots(core)
     if event == "force":
@@ -547,3 +550,11 @@ def dose_climo_changes(changes: list[dict], span_ms: int) -> list[dict]:
     picked = items[:limit]
     picked.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
     return picked
+
+
+def _fr_to_dir(dir_name: str) -> str:
+    """« tourne au ouest » → « tourne à l'ouest » ; « au nord-est » reste."""
+    d = (dir_name or "").strip()
+    if d[:1].casefold() in "aeiouyéè":
+        return f"à l'{d}"
+    return f"au {d}"

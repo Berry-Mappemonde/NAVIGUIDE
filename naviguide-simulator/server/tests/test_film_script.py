@@ -1943,9 +1943,9 @@ def test_climo_sentence_and_dosage():
     fr = change_sentence(atlas, "fr")
     en = change_sentence(atlas, "en")
     assert "alizés de nord-est" in fr
-    assert "quinze nœuds de saison" in fr
+    assert "quinze nœuds, la moyenne de saison" in fr
     assert "northeasterly trade winds" in en
-    assert "fifteen seasonal knots" in en
+    assert "fifteen knots, the seasonal average" in en
     zone = {
         **atlas, "id": "climo:zone", "source": "zone_fallback", "nature": "zone",
         "windKnots": None, "dirFromDeg": None,
@@ -2697,7 +2697,7 @@ def test_rc22_fit_chapter_text_keeps_amp_project_drops_p3():
     arrival = "Arrivée à Ajaccio le 26 mai."
     p3 = [
         "Le 17 mai, longe la Galice — Camariñas, Muxía.",
-        "Le 18 mai, au sud du Cap-Vert, les alizés de nord-est s'installent : quinze nœuds de saison.",
+        "Le 18 mai, au sud du Cap-Vert, les alizés de nord-est s'installent : quinze nœuds, la moyenne de saison.",
         "Le 19 mai, un flotteur Argo.",
     ]
     extra = [f"Le {20 + i} mai, longe la côte — Port-{i}." for i in range(40)]
@@ -6439,3 +6439,146 @@ def test_fc2_dated_subject_stays_in_its_own_leg():
     assert "une bouée" not in side
     assert "embarque sur un second voilier" in side
     assert "497 milles" in side
+
+
+def _fc2_side_plan_with_slots(leg1_slot: bool = True, leg8_slot: bool = True) -> dict:
+    """Plan fc2 avec une phrase remplaçable (rang 2) dans chaque jambe voulue."""
+    plan = _fc2_side_plan()
+    if leg1_slot:
+        plan["chapters"][0]["text"] += " La côte basque défile au loin."
+    if leg8_slot:
+        plan["chapters"][1]["text"] += " La houle se creuse au large."
+    return plan
+
+
+def test_fc2_dated_subject_goes_to_its_own_leg_slot_not_the_first_slot():
+    """Règle de date (#137) : la bouée de mai prend l'emplacement de leg-1, pas celui d'août.
+
+    Sans la règle, le premier emplacement libre est pris : on place la bouée
+    dans leg-8 si leg-1 n'a pas d'emplacement ; ici on vérifie aussi l'ordre
+    inverse (emplacement d'août en tête de liste) en mettant la bouée seule.
+    """
+    from film_script import _repeat_slots, _trim_sentence_rank  # noqa: PLC0415
+
+    assert _trim_sentence_rank("La côte basque défile au loin.") >= 2
+    assert _trim_sentence_rank("La houle se creuse au large.") >= 2
+    bag = [{
+        "id": "dc:buoy", "kind": "buoy", "phrase": "Le 21 mai, une bouée.",
+        "name": "EMSO", "t": "2026-05-21T14:39:18Z",
+    }]
+    # Emplacement seulement dans leg-8 : sans la règle de date, la bouée de mai
+    # irait remplacer la houle d'août.
+    plan = _fc2_side_plan_with_slots(leg1_slot=False, leg8_slot=True)
+    assert len(_repeat_slots(plan["chapters"])) == 1
+    out = apply_chosen_subjects(plan, ["dc:buoy"], bag, 150)
+    assert "une bouée" not in out["chapters"][1]["text"]
+    assert "La houle se creuse au large." in out["chapters"][1]["text"]
+    # Emplacements dans les deux jambes : la bouée va dans leg-1 uniquement.
+    out = apply_chosen_subjects(_fc2_side_plan_with_slots(), ["dc:buoy"], bag, 150)
+    assert "Le 21 mai, une bouée." in out["chapters"][0]["text"]
+    assert "La côte basque" not in out["chapters"][0]["text"]
+    assert "une bouée" not in out["chapters"][1]["text"]
+    assert "La houle se creuse au large." in out["chapters"][1]["text"]
+
+
+def test_integral_dated_subject_without_slot_is_said_once_and_nothing_repeated():
+    """Intégral (seconds=0) : bouée datée sans emplacement + balise non datée.
+
+    Contre-revue 136-137 P1-1 : ``remaining[used:]`` redisait la balise (placée)
+    et perdait la bouée (sautée). Chaque sujet doit être dit exactement une fois,
+    la bouée dans sa jambe (leg-1, mai).
+    """
+    bag = [
+        {
+            "id": "dc:buoy", "kind": "buoy", "phrase": "Le 21 mai, une bouée.",
+            "name": "EMSO", "t": "2026-05-21T14:39:18Z",
+        },
+        {"id": "dc:aton", "kind": "aton", "phrase": "Une balise EMSO.", "name": "EMSO"},
+    ]
+    # Le seul emplacement est dans leg-8 (août) : la bouée de mai n'en a pas.
+    plan = _fc2_side_plan_with_slots(leg1_slot=False, leg8_slot=True)
+    out = apply_chosen_subjects(plan, ["dc:buoy", "dc:aton"], bag, 0)
+    blob = " ".join(c["text"] for c in out["chapters"])
+    assert blob.count("Une balise EMSO.") == 1, blob
+    assert blob.count("Le 21 mai, une bouée.") == 1, blob
+    assert "Le 21 mai, une bouée." in out["chapters"][0]["text"]
+    assert "une bouée" not in out["chapters"][1]["text"]
+
+
+def _rg6_long_chapters(lang: str = "fr") -> list[dict]:
+    """Chapitres 3:00 bruts (gabarit RG6, tout au rang 0), comme le stock regelé 768f20e."""
+    if lang == "en":
+        one = ("On 4 June, Berry-Mappemonde leaves Ajaccio (Corse), heading northwest for the long "
+               "crossing to Fort-de-France (Martinique). 5,153 miles, about forty days at sea, at 8 knots "
+               "on average. Arrival at Fort-de-France (Martinique) on 14 July, moored at the port of "
+               "Fort-de-France (Martinique).")
+        hop = ("On 17 July, from island to island, Berry-Mappemonde leaves Fort-de-France (Martinique), "
+               "heading west for Pointe-à-Pitre (Guadeloupe). 192 miles, one day at sea, at 8 knots on "
+               "average. Arrival at Pointe-à-Pitre (Guadeloupe) on 18 July, moored at Port de Sainte-Rose.")
+    else:
+        one = ("Le 4 juin, Berry-Mappemonde quitte Ajaccio (Corse), cap au nord-ouest pour la longue "
+               "traversée vers Fort-de-France (Martinique). 5 153 milles, une quarantaine de jours de mer, "
+               "à 8 nœuds de moyenne. Arrivée à Fort-de-France (Martinique) le 14 juillet, amarré au port "
+               "de Fort-de-France (Martinique).")
+        hop = ("Le 17 juillet, d'île en île, Berry-Mappemonde quitte Fort-de-France (Martinique), cap à "
+               "l'ouest pour Pointe-à-Pitre (Guadeloupe). 192 milles, un jour de mer, à 8 nœuds de "
+               "moyenne. Arrivée à Pointe-à-Pitre (Guadeloupe) le 18 juillet, amarré à Port de Sainte-Rose.")
+    return [{"id": f"leg-{i}", "text": one if i % 2 else hop} for i in range(1, 13)]
+
+
+def test_film_180_raw_rank0_template_is_cut_to_char_budget():
+    """3:00 brut : 3 448 car. pour 2 700 (stock regelé). On retire les incises, pas les faits."""
+    import film_script as fs  # noqa: PLC0415
+    from film_script import _film_apply_char_budget, _trim_sentence_rank, script_chars  # noqa: PLC0415
+
+    for lang in ("fr", "en"):
+        chapters = _rg6_long_chapters(lang)
+        assert all(
+            _trim_sentence_rank(s) == 0 for c in chapters for s in fs._sentences(c["text"])
+        ), "jeu de test : tout au rang 0"
+        assert script_chars(chapters) > film_char_budget(180)
+        _film_apply_char_budget(chapters, 180)
+        assert script_chars(chapters) <= film_char_budget(180), lang
+        blob = " ".join(c["text"] for c in chapters)
+        for fact in (("5 153 milles", "5,153 miles"), ("192 milles", "192 miles"),
+                     ("le 14 juillet", "on 14 July"), ("Pointe-à-Pitre", "Pointe-à-Pitre")):
+            assert fact[1 if lang == "en" else 0] in blob, (lang, fact)
+        # Chaque chapitre garde départ, distance et arrivée (aucune phrase retirée).
+        assert all(len(fs._sentences(c["text"])) == 3 for c in chapters), lang
+        assert "  " not in blob and " ." not in blob and ",." not in blob
+
+
+def test_film_150_and_integral_char_budget_unchanged_by_180_compaction():
+    """Le raccourcissement des incises ne touche ni l'intégral ni un 3:00 déjà sous le plafond."""
+    from film_script import _film_apply_char_budget  # noqa: PLC0415
+
+    chapters = _rg6_long_chapters("fr")[:3]
+    before = [c["text"] for c in chapters]
+    _film_apply_char_budget(chapters, 180)
+    assert [c["text"] for c in chapters] == before
+    chapters = _rg6_long_chapters("fr")
+    before = [c["text"] for c in chapters]
+    _film_apply_char_budget(chapters, 0)
+    assert [c["text"] for c in chapters] == before
+
+
+def test_en_guard_tolerates_demonyms_added_by_136():
+    """Contre-revue 136-137 P2-8 : « les eaux sri-lankaises » → « Sri Lankan waters » est toléré."""
+    import film_script as fs  # noqa: PLC0415
+
+    for en, fr, word in (
+        ("the Sri Lankan waters", "les eaux sri-lankaises", "lankan"),
+        ("the Omani waters", "les eaux omanaises", "omani"),
+        ("the Thai waters", "les eaux thaïlandaises", "thai"),
+        ("the Myanmar waters", "les eaux birmanes", "myanmar"),
+        ("the Malaysian waters", "les eaux malaisiennes", "malaysian"),
+        ("the Palauan waters", "les eaux palaosiennes", "palauan"),
+        ("the Gambian waters", "les eaux gambiennes", "gambian"),
+    ):
+        assert word in fs._en_translation_names(en, fr), en
+    # Une seule source : chaque démonyme anglais de la table est connu du garde-fou.
+    import toponyms  # noqa: PLC0415
+
+    for row in toponyms.territories():
+        for w in re.findall(r"[^\W\d_]+", str(row.get("adj_en") or "")):
+            assert w.casefold() in fs._EN_GEO_WORDS, w

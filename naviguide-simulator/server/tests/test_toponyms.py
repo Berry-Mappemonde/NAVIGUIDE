@@ -111,3 +111,13 @@ def test_no_english_demonym_left_on_common_eez_names():
     for n in names:
         fr = waters_label(f"{n} Exclusive Economic Zone", "fr")
         assert fr.startswith("les eaux ") and not _re.search(r"[A-Z]", fr[len("les eaux "):]), (n, fr)
+
+
+def test_gambia_alias_does_not_capture_gambier_islands():
+    """Contre-revue 136-137 P2-6 : « Gambier Islands » (Polynésie) n'est pas la Gambie."""
+    hit = lookup("Gambier Islands")
+    assert hit is None or hit["id"] != "gm"
+    assert "gambiennes" not in waters_label("Gambier Islands", "fr")
+    assert lookup("Gambia")["id"] == "gm"
+    assert lookup("Gambian Exclusive Economic Zone")["id"] == "gm"
+    assert waters_label("Gambian Exclusive Economic Zone", "fr") == "les eaux gambiennes"
