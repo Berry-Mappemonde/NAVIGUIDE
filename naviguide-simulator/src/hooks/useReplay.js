@@ -17,6 +17,7 @@ import { filmShownEstimateSeconds, filmVariantAbsent } from "../engine/playSpeed
 import { exitDocumentFullscreen } from "../utils/cinemaHotkey.js";
 import { restoreFollowView } from "./useFilmCamera.js";
 import { publicFilmWebContext } from "../utils/filmWebSources.js";
+import { publicFilmReceipt } from "../utils/filmReceipt.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
 
@@ -197,6 +198,7 @@ export function resolveServedFilm(data, requestedStyle) {
         model: data?.model || "",
         applyPlan: true,
         webContext,
+        receipt: publicFilmReceipt(data),
       };
     }
     return {
@@ -1141,6 +1143,7 @@ export function useReplay({
   const [filmReviewedBy, setFilmReviewedBy] = useState("");
   const [filmModel, setFilmModel] = useState("");
   const [filmWebContext, setFilmWebContext] = useState(null);
+  const [filmReceipt, setFilmReceipt] = useState(null);
   const [filmWriting, setFilmWriting] = useState(false);
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
@@ -1369,6 +1372,7 @@ export function useReplay({
       setFilmReviewedBy(resolved.reviewedBy || "");
       setFilmModel(resolved.model || "");
       setFilmWebContext(resolved.webContext || null);
+      setFilmReceipt(resolved.receipt || null);
       applyEstimates(data);
       applyStory(data);
     };
@@ -1416,6 +1420,7 @@ export function useReplay({
       setFilmReviewedBy("");
       setFilmModel("");
       setFilmWebContext(null);
+      setFilmReceipt(null);
       setFilmWriting(false);
       setEstimatedSeconds(0);
       setVariantEstimates(null);
@@ -1436,6 +1441,7 @@ export function useReplay({
           setFilmReviewedBy(resolved.reviewedBy || "");
           setFilmModel(resolved.model || "");
           if (resolved.webContext) setFilmWebContext(resolved.webContext);
+          setFilmReceipt(resolved.receipt || null);
         })
         .catch((err) => {
           if (err?.name === "AbortError" || cancelled || ac.signal.aborted) return;
@@ -1622,6 +1628,7 @@ export function useReplay({
     setFilmReviewedBy("");
     setFilmModel("");
     setFilmWebContext(remoteOk ? publicFilmWebContext(remoteToUse) : null);
+    setFilmReceipt(remoteOk ? publicFilmReceipt(remoteToUse) : null);
     const userBudget = Number(targetSeconds) > 0 ? Number(targetSeconds) : 0;
     const playedChars = chapters.reduce((n, c) => n + String(c?.text || "").length, 0);
     if (!filmBudgetCanPlay({ chars: playedChars, budgetSeconds: userBudget })) return false;
@@ -2295,6 +2302,7 @@ export function useReplay({
           setFilmReviewedBy(resolved.reviewedBy || "");
           setFilmModel(resolved.model || "");
           setFilmWebContext(resolved.webContext || null);
+          setFilmReceipt(resolved.receipt || null);
         }
       })
       .catch(() => {})
@@ -2341,6 +2349,7 @@ export function useReplay({
     filmReviewedBy,
     filmModel,
     filmWebContext,
+    filmReceipt,
     filmWriting,
     filmStyle,
     setFilmStyle: chooseFilmStyle,
