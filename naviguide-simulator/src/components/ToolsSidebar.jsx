@@ -96,6 +96,7 @@ function LayersDrawer({ tracerLayout, layersOn, t, maritimeLayers }) {
       }}
       className="px-4 py-3 border-t border-slate-700/60 group"
       data-testid="layers-drawer"
+      data-tour="layers"
     >
       <summary
         className="cursor-pointer select-none list-none flex items-center justify-between gap-2"

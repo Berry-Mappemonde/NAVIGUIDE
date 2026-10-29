@@ -196,6 +196,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     <div
       ref={rootRef}
       data-testid="film-bar"
+      data-tour="film"
       data-drawing={drawing ? "1" : undefined}
       className="absolute bottom-5 z-[2020] pointer-events-auto"
       style={edge}

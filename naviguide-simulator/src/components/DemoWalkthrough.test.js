@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  DEMO_STEP_IDS, TOUR_DEFAULT_MODELS, TOUR_EDITED_WAIT_MS, describeModelRoles, getDemoSteps, modelDisplayName,
+  DEMO_STEP_IDS, DEMO_TOUR_TARGETS, TOUR_DEFAULT_MODELS, TOUR_EDITED_WAIT_MS, describeModelRoles, getDemoSteps, modelDisplayName,
   tourEditedOffer, tourEditedStep, wantsTourFromUrl,
 } from "./demoWalkthrough.js";
 import { readFileSync } from "node:fs";
@@ -178,4 +178,11 @@ describe("visite guidée des juges", () => {
     assert.equal(tourEditedStep(), "idle");
     assert.ok(TOUR_EDITED_WAIT_MS >= 30_000 && TOUR_EDITED_WAIT_MS <= 60_000);
   });
+});
+
+it("driver.js : chaque étape a un élément réel ou aucun (pas de cible inventée)", () => {
+  assert.deepEqual(Object.keys(DEMO_TOUR_TARGETS), DEMO_STEP_IDS);
+  assert.equal(DEMO_TOUR_TARGETS.briefing, '[data-tour="logbook"]');
+  assert.equal(DEMO_TOUR_TARGETS.replay, '[data-tour="film"]');
+  assert.equal(DEMO_TOUR_TARGETS.live, ".leaflet-container");
 });
