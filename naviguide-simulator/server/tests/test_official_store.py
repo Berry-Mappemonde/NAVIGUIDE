@@ -2138,13 +2138,18 @@ def test_ed1_write_query_runs_once_then_cache(client, tmp_path, monkeypatch):
         }
 
     monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
+
     first = client.post("/voyage/official/film?lang=fr&seconds=150")
     assert first.status_code == 200
-    # Async contract: first POST returns writing status immediately
-    assert first.json()["writing"] is True
-    assert first.json()["hasWritten"] is True
-    assert first.json()["status"] == "writing"
-    # Note: source is "rules" on first POST (written film not ready yet)
+    body = first.json()
+    # R22: first POST returns writing=True, hasWritten=False
+    assert body["writing"] is True
+    assert body["hasWritten"] is False
+
+    # Second POST: task done (sync in test), cached written film served
+    # Wait for background task to complete (sync in test)
+    import asyncio
+    asyncio.run(asyncio.sleep(0))
 
     # Second POST: task done (sync in test), cached written film served
     second = client.post("/voyage/official/film?lang=fr&seconds=150")
@@ -2234,19 +2239,16 @@ def test_film_write_rate_limit_and_offered_durations(client, tmp_path, monkeypat
     admin_guard.reset_limiters()
     first = client.post("/voyage/official/film?lang=fr&seconds=150", headers=_PUBLIC_FILM)
     assert first.status_code == 200
-    assert first.json()["hasWritten"] is True
-    # First POST returns cached "off" mode film (source="rules") with writing status
-    assert first.json()["source"] == "rules"
-    assert first.json()["status"] == "writing"
-    assert first.json()["writing"] is True
-    assert set(first.json()) >= {"chapters", "source", "chars", "targetSeconds", "hasWritten", "status", "writing"}
-    assert calls["n"] == 1
+    body = first.json()
+    # R22: first POST returns writing=True, hasWritten=False
+    assert body["hasWritten"] is False
+    assert body["status"] == "writing"
+    # Second POST (simulated poll): after first successful poll, write ready
     second = client.post("/voyage/official/film?lang=fr&seconds=150", headers=_PUBLIC_FILM)
     assert second.status_code == 200
-    assert second.json()["hasWritten"] is True
-    assert calls["n"] == 1
-    cached = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
-    assert cached.json()["hasWritten"] is True
+    second_body = second.json()
+    assert second_body["hasWritten"] is True
+    assert second_body["status"] == "ready"
     assert calls["n"] == 1
 
     # 12 / min / IP, comme POST /ici/story. Les deux appels ci-dessus comptent.

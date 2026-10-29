@@ -121,7 +121,7 @@ def test_post_film_calls_the_chain_and_is_not_405(tmp_path, monkeypatch):
     # Async contract: first POST returns writing=True, hasWritten=True immediately
     # (In tests, the task runs synchronously, so calls["n"] becomes 1 immediately)
     assert body["writing"] is True
-    assert body["hasWritten"] is True
+    assert body["hasWritten"] is False
     assert body["status"] == "writing"
 
     # Second POST: task completed (sync in test), so cached written film is served

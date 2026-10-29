@@ -3094,12 +3094,12 @@ async def start_film_write(
     task = asyncio.create_task(_write_task())
     _FILM_WRITE_TASKS[key] = task
 
-    # Return immediately with writing status (test expects hasWritten=True on first POST)
+    # Return immediately with writing status; hasWritten=False until 1st successful poll (docstring l. 2997)
     return {
         **cached,
         "status": "writing",
         "writing": True,
-        "hasWritten": True,
+        "hasWritten": False,
         "targetSeconds": secs,
     }
 
