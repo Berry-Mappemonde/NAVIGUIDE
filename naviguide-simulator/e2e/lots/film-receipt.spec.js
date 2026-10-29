@@ -85,3 +85,17 @@ test("sans reçu servi, aucun reçu affiché", async ({ page }) => {
   await openWritten(page, "fr", null);
   await expect(page.getByTestId("film-receipt")).toHaveCount(0);
 });
+
+test("affiche les sources Tavily quand webSourceCount > 0", async ({ page }) => {
+  test.setTimeout(90_000);
+  const receiptWithTavily = { ...RECEIPT, webSourceCount: 3 };
+  await openWritten(page, "fr", receiptWithTavily);
+  const receipt = page.getByTestId("film-receipt");
+  await expect(receipt).toBeVisible();
+  await expect(receipt.locator("summary")).toHaveText("Comment ce film a été fait");
+  await receipt.locator("summary").click();
+  // Vérifie que la ligne Tavily s'affiche avec le bon testid
+  const tavilyLine = page.getByTestId("film-receipt-filmReceiptTavily");
+  await expect(tavilyLine).toBeVisible();
+  await expect(tavilyLine).toContainText("Sources web Tavily affichées avec le film : 3");
+});
