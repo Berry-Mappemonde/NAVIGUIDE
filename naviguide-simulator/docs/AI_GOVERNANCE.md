@@ -13,7 +13,7 @@ Défauts de `server/llm_budget.py:116-137`, test `server/tests/test_llm_budget.p
 | Palier | Identifiant | Source UI | Hôte Token Factory dans ce dépôt |
 |---|---|---|---|
 | `fast` | `nvidia/Nemotron-3_5-Lightning` | `nemotron-lightning` | `https://api.tokenfactory.nebius.com/v1` (`server/story_cascade.py:33-36`, `server/story_cascade.py:581-590`) |
-| `write` | `nvidia/nemotron-3-super-120b-a12b` | `nemotron-super` | même hôte que Lightning (`server/story_cascade.py:581-590`) |
+| `write` | `nvidia/Nemotron-3.5-Super-VL` | `nemotron-super-vl` | même hôte que Lightning (`server/story_cascade.py:581-590`) |
 | `deep` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | `https://api.tokenfactory.us-central1.nebius.com/v1` (`server/story_cascade.py:37-41`, `server/story_cascade.py:585-589`) |
 | `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | même hôte que `deep` |
 
@@ -123,7 +123,7 @@ Cascade: SQLite cache, then Token Factory, then a second Super call only after a
 
 Budgets (NB1): daily token caps in `server/llm_budget.py:32-37`. A missing `NAVIGUIDE_LLM_DAILY_USD` does not cut spending. Default mode is `on-demand`.
 
-Tavily has no button in `src/**/*.jsx`. The watch runs on the server only when `NAVIGUIDE_TAVILY_WATCH=1` (default 0), for stops from ten days before arrival to two days after, at most two rounds. Terms of use: **à vérifier**.
+Tavily runs at runtime from the logbook chat: each question sent with **Send** triggers one Tavily search about a port (`server/port_web_context.py`, on by default, `NAVIGUIDE_PORT_WEB=0` turns it off); links are shown under **Web sources (Tavily)**. The separate stop watch runs on the server only when `NAVIGUIDE_TAVILY_WATCH=1` (default 0), for stops from ten days before arrival to two days after, at most two rounds. Terms of use: **à vérifier**.
 
 Prompts cited here carry the typed logbook question plus expedition facts, or a port name and a date. Those builders do not add an account, an email, or a visitor name. A full caller inventory is **à vérifier**.
 

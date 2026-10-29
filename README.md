@@ -44,15 +44,15 @@ Primary inference goes to Nebius Token Factory. The ids below are the defaults i
 
 | Gesture | Tier | Model | File |
 |---|---|---|---|
-| Logbook question, JSON only | `nano` | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `naviguide-simulator/server/logbook_chat.py` |
-| Film moment ids | `nano` | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `naviguide-simulator/server/film_script.py` |
-| Second watch question, one id from a fixed list | `nano` | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `naviguide-simulator/server/escale_watch.py` |
+| Logbook question, JSON only | `nano` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/logbook_chat.py` |
+| Film moment ids | `nano` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/film_script.py` |
+| Second watch question, one id from a fixed list | `nano` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/escale_watch.py` |
 | Short sentences, and French to English | `fast` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/story_cascade.py` |
 | Port-of-call paragraph | `fast` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/escale_api.py` |
 | One-sentence watch summary | `fast` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/escale_watch.py` |
-| “Here” card when a written story is asked | `write` | `nvidia/nemotron-3-super-120b-a12b` | `naviguide-simulator/server/story_cache.py` |
-| Written film chapters | `write` | `nvidia/nemotron-3-super-120b-a12b` | `naviguide-simulator/server/film_script.py` |
-| Plan-review comment | `write` | `nvidia/nemotron-3-super-120b-a12b` | `naviguide-simulator/server/plan_review.py` |
+| “Here” card when a written story is asked | `write` | `nvidia/Nemotron-3.5-Super-VL` | `naviguide-simulator/server/story_cache.py` |
+| Written film chapters | `write` | `nvidia/Nemotron-3.5-Super-VL` | `naviguide-simulator/server/film_script.py` |
+| Plan-review comment | `write` | `nvidia/Nemotron-3.5-Super-VL` | `naviguide-simulator/server/plan_review.py` |
 | Edit, then judge, the written film | `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `naviguide-simulator/server/film_script.py` |
 | Hard logbook question | `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `naviguide-simulator/server/logbook_chat.py` |
 | Stale official-port claim, only if that judge is switched on | `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `naviguide-simulator/server/truth_judge.py` |
@@ -60,11 +60,11 @@ Primary inference goes to Nebius Token Factory. The ids below are the defaults i
 
 The `deep` tier uses the same Ultra id. No module under `naviguide-simulator/server/` calls `tier="deep"` on this commit. The VL call runs only from `naviguide-simulator/scripts/one_shot.py` with `--run`. The image it sends is drawn locally. Map tiles are not sent.
 
-Hosts in `naviguide-simulator/server/story_cascade.py`: Nano on `https://api.tokenfactory.nebius.com/v1` (EU base), Lightning and Super on the same default base, Ultra (`deep` and `judge`) on `https://api.tokenfactory.us-central1.nebius.com/v1`.
+Nemotron 3 Nano 30B and Nemotron 3 Super 120B leave Token Factory on 9 November 2026, so the `nano` tier now serves Lightning and the `write` tier serves Super VL. Both ids are listed by `GET /v1/models` on Token Factory. Hosts in `naviguide-simulator/server/story_cascade.py`: the `nano` tier on `https://api.tokenfactory.nebius.com/v1` (EU base), Lightning and Super VL on the same default base, Ultra (`deep` and `judge`) on `https://api.tokenfactory.us-central1.nebius.com/v1`.
 
 **Cascade.** A 24-hour SQLite cache is read first. If the daily budget or `NAVIGUIDE_LLM_MODE` refuses the call, nothing is sent and the source is `budget`. Otherwise the default order in `DEFAULT_PROVIDERS` is Token Factory, then NIM, then OpenRouter, then Claude. If the caller passed a fallback string and every provider failed, the source is `rules`.
 
-On the `fast` tier only, an empty Token Factory body, an HTTP status of 500 or higher, or a timeout is tried once more on Token Factory with the Super model. A 4xx does not take that second try. On the `nano` tier, a Token Factory failure is tried once more on Token Factory as Lightning, then the cascade continues. NIM is `openai/gpt-oss-20b` at `https://integrate.api.nvidia.com/v1/chat/completions`. OpenRouter defaults to `openai/gpt-4o-mini`. Claude is `claude-haiku-4-5`.
+On the `fast` tier only, an empty Token Factory body, an HTTP status of 500 or higher, or a timeout is tried once more on Token Factory with the Super VL model. A 4xx does not take that second try. On the `nano` tier, a Token Factory failure is tried once more on Token Factory as Lightning, then the cascade continues. NIM is `openai/gpt-oss-20b` at `https://integrate.api.nvidia.com/v1/chat/completions`. OpenRouter defaults to `openai/gpt-4o-mini`. Claude is `claude-haiku-4-5`.
 
 **Numbers.** `filter_numbers` in `naviguide-simulator/server/story_cascade.py` drops every sentence that contains a number not already in the facts. A sentence with no number is kept. The filter does not catch a non-numeric invention.
 
@@ -80,13 +80,15 @@ On the `fast` tier only, an empty Token Factory body, an HTTP status of 500 or h
 
 Hard logbook questions that reach Ultra are also capped at 10 calls per day. There is no dollar cutoff unless `NAVIGUIDE_LLM_DAILY_USD` is set. The commented figures in `naviguide-simulator/server/.env.example` are not these defaults. Default mode is `on-demand` (a user action, not a background job). `off` never pays. `all` is explicit.
 
-**Public proof.** `GET /ici/warm/status` includes `llm`, and `llm.lastSourceByTier` when a tier has already answered. The value is the source that answered (`nemotron-nano`, `nemotron-lightning`, `nemotron-super`, `nemotron-ultra`, or a fallback name), not a sentence from the model.
+**Public proof.** `GET /ici/warm/status` includes `llm`, and `llm.lastSourceByTier` when a tier has already answered. The value is the source that answered (`nemotron-lightning`, `nemotron-super-vl`, `nemotron-ultra`, or a fallback name), not a sentence from the model.
 
 On screen, a Token Factory answer is named in text, for example **Nemotron 3.5 Lightning · Token Factory**. The film bar keeps one short line, **Models**, naming the model that answered. A fallback stays labelled **NVIDIA NIM (fallback)**, **OpenRouter**, **Claude**, or **rules**. There is no third-party logo.
 
 ## Tavily
 
-There is no Tavily button.
+Tavily is called at runtime from the logbook chat. Each question sent with the **Send** button of “Logbook — ask a question” runs one Tavily search (`naviguide-simulator/server/port_web_context.py`) about a port: the port nearest the film boat, or the next official stop when you follow the live boat. It is on by default (`NAVIGUIDE_PORT_WEB=0` turns it off), cached per query and per day, and counted in the 80 daily Tavily credits. The links are listed under **Web sources (Tavily)** below the answer. A hard question sends the extracts to Ultra, which must attribute them (“according to a web source”) and never mix them with the boat’s figures.
+
+The stop watch below is a separate server job.
 
 The watch is a server job. It stays off until `NAVIGUIDE_TAVILY_WATCH=1` (the default is `0`). When it is on, it covers a stop from 10 days before arrival through 2 days after, at most two rounds, once per stop. Lightning writes one sentence from the extracts. If a second round is needed, Nano picks one remaining id from a fixed list. It does not invent a question. Caps, unless overridden: 2 searches per stop, 6 searches per day, 80 Tavily credits per day. The dated card, when a watch is stored and not expired, is titled `{name} · watch of {date}`.
 

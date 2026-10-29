@@ -44,15 +44,15 @@ L’inférence principale va sur Nebius Token Factory. Les identifiants ci-desso
 
 | Geste | Palier | Modèle | Fichier |
 |---|---|---|---|
-| Question du journal, JSON seulement | `nano` | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `naviguide-simulator/server/logbook_chat.py` |
-| Identifiants des moments du film | `nano` | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `naviguide-simulator/server/film_script.py` |
-| Deuxième question de veille, un id d’une liste fixe | `nano` | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `naviguide-simulator/server/escale_watch.py` |
+| Question du journal, JSON seulement | `nano` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/logbook_chat.py` |
+| Identifiants des moments du film | `nano` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/film_script.py` |
+| Deuxième question de veille, un id d’une liste fixe | `nano` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/escale_watch.py` |
 | Phrases courtes, et français vers anglais | `fast` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/story_cascade.py` |
 | Paragraphe de la fiche d’escale | `fast` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/escale_api.py` |
 | Résumé de veille en une phrase | `fast` | `nvidia/Nemotron-3_5-Lightning` | `naviguide-simulator/server/escale_watch.py` |
-| Carte « ici » quand un récit écrit est demandé | `write` | `nvidia/nemotron-3-super-120b-a12b` | `naviguide-simulator/server/story_cache.py` |
-| Chapitres du film écrit | `write` | `nvidia/nemotron-3-super-120b-a12b` | `naviguide-simulator/server/film_script.py` |
-| Commentaire de la revue du plan | `write` | `nvidia/nemotron-3-super-120b-a12b` | `naviguide-simulator/server/plan_review.py` |
+| Carte « ici » quand un récit écrit est demandé | `write` | `nvidia/Nemotron-3.5-Super-VL` | `naviguide-simulator/server/story_cache.py` |
+| Chapitres du film écrit | `write` | `nvidia/Nemotron-3.5-Super-VL` | `naviguide-simulator/server/film_script.py` |
+| Commentaire de la revue du plan | `write` | `nvidia/Nemotron-3.5-Super-VL` | `naviguide-simulator/server/plan_review.py` |
 | Éditer, puis juger, le film écrit | `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `naviguide-simulator/server/film_script.py` |
 | Question difficile du journal | `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `naviguide-simulator/server/logbook_chat.py` |
 | Affirmation périmée sur un port officiel, seulement si ce juge est allumé | `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `naviguide-simulator/server/truth_judge.py` |
@@ -60,11 +60,11 @@ L’inférence principale va sur Nebius Token Factory. Les identifiants ci-desso
 
 Le palier `deep` utilise le même identifiant Ultra. Aucun module de `naviguide-simulator/server/` n’appelle `tier="deep"` sur ce commit. L’appel VL ne part que de `naviguide-simulator/scripts/one_shot.py` avec `--run`. L’image envoyée est dessinée localement. Les tuiles de la carte ne sont pas envoyées.
 
-Hôtes dans `naviguide-simulator/server/story_cascade.py` : Nano sur `https://api.tokenfactory.nebius.com/v1` (base EU), Lightning et Super sur la même base par défaut, Ultra (`deep` et `judge`) sur `https://api.tokenfactory.us-central1.nebius.com/v1`.
+Nemotron 3 Nano 30B et Nemotron 3 Super 120B quittent Token Factory le 9 novembre 2026 : le palier `nano` sert donc Lightning, et le palier `write` sert Super VL. Les deux identifiants figurent dans `GET /v1/models` de Token Factory. Hôtes dans `naviguide-simulator/server/story_cascade.py` : le palier `nano` sur `https://api.tokenfactory.nebius.com/v1` (base EU), Lightning et Super VL sur la même base par défaut, Ultra (`deep` et `judge`) sur `https://api.tokenfactory.us-central1.nebius.com/v1`.
 
 **Cascade.** Un cache SQLite de 24 h est lu d’abord. Si le budget du jour ou `NAVIGUIDE_LLM_MODE` refuse l’appel, rien n’est envoyé et la source est `budget`. Sinon l’ordre par défaut de `DEFAULT_PROVIDERS` est Token Factory, puis NIM, puis OpenRouter, puis Claude. Si l’appelant a fourni un texte de repli et que chaque fournisseur a échoué, la source est `rules`.
 
-Sur le palier `fast` seulement, un corps Token Factory vide, un statut HTTP 500 ou plus, ou un délai dépassé, est retenté une fois sur Token Factory avec le modèle Super. Un 4xx ne prend pas ce second essai. Sur le palier `nano`, un échec Token Factory est retenté une fois sur Token Factory en Lightning, puis la cascade continue. NIM est `openai/gpt-oss-20b` sur `https://integrate.api.nvidia.com/v1/chat/completions`. OpenRouter vaut par défaut `openai/gpt-4o-mini`. Claude est `claude-haiku-4-5`.
+Sur le palier `fast` seulement, un corps Token Factory vide, un statut HTTP 500 ou plus, ou un délai dépassé, est retenté une fois sur Token Factory avec le modèle Super VL. Un 4xx ne prend pas ce second essai. Sur le palier `nano`, un échec Token Factory est retenté une fois sur Token Factory en Lightning, puis la cascade continue. NIM est `openai/gpt-oss-20b` sur `https://integrate.api.nvidia.com/v1/chat/completions`. OpenRouter vaut par défaut `openai/gpt-4o-mini`. Claude est `claude-haiku-4-5`.
 
 **Chiffres.** `filter_numbers` dans `naviguide-simulator/server/story_cascade.py` retire chaque phrase qui contient un nombre absent des faits. Une phrase sans nombre est gardée. Le filtre ne prend pas une invention non numérique.
 
@@ -80,13 +80,15 @@ Sur le palier `fast` seulement, un corps Token Factory vide, un statut HTTP 500 
 
 Les questions difficiles du journal qui atteignent Ultra sont aussi plafonnées à 10 appels par jour. Il n’y a pas de coupure en dollars tant que `NAVIGUIDE_LLM_DAILY_USD` n’est pas posé. Les chiffres commentés dans `naviguide-simulator/server/.env.example` ne sont pas ces défauts. Le mode par défaut est `on-demand` (une action de la personne, pas un travail de fond). `off` ne paie jamais. `all` est explicite.
 
-**Preuve publique.** `GET /ici/warm/status` contient `llm`, et `llm.lastSourceByTier` quand un palier a déjà répondu. La valeur est la source qui a répondu (`nemotron-nano`, `nemotron-lightning`, `nemotron-super`, `nemotron-ultra`, ou le nom d’un repli), pas une phrase du modèle.
+**Preuve publique.** `GET /ici/warm/status` contient `llm`, et `llm.lastSourceByTier` quand un palier a déjà répondu. La valeur est la source qui a répondu (`nemotron-lightning`, `nemotron-super-vl`, `nemotron-ultra`, ou le nom d’un repli), pas une phrase du modèle.
 
 À l’écran, une réponse Token Factory est nommée en texte, par exemple **Nemotron 3.5 Lightning · Token Factory**. La barre du film garde une ligne courte, **Modèles**, qui nomme le modèle qui a répondu. Un repli reste étiqueté **NVIDIA NIM (repli)**, **OpenRouter**, **Claude** ou **règles**. Il n’y a pas de logo tiers.
 
 ## Tavily
 
-Il n’y a aucun bouton Tavily.
+Tavily est appelé à l’exécution depuis le chat du journal. Chaque question envoyée avec le bouton **Envoyer** de « Journal de bord — posez une question » lance une recherche Tavily (`naviguide-simulator/server/port_web_context.py`) sur un port : le port le plus proche du bateau du film, ou la prochaine escale officielle quand on suit le bateau en direct. Elle est active par défaut (`NAVIGUIDE_PORT_WEB=0` la coupe), mise en cache par requête et par jour, et comptée dans les 80 crédits Tavily du jour. Les liens s’affichent sous **Sources web (Tavily)**, sous la réponse. Une question difficile transmet les extraits à Ultra, qui doit les attribuer (« selon une source web ») et ne jamais les mêler aux chiffres du bateau.
+
+La veille d’escale ci-dessous est un travail serveur distinct.
 
 La veille est un travail du serveur. Elle reste éteinte tant que `NAVIGUIDE_TAVILY_WATCH` n’est pas `1` (le défaut est `0`). Allumée, elle couvre une escale de 10 jours avant l’arrivée jusqu’à 2 jours après, au plus deux tours, une fois par escale. Lightning écrit une phrase à partir des extraits. S’il faut un second tour, Nano choisit un id restant dans une liste fixe. Il n’invente pas de question. Plafonds, sauf surcharge : 2 recherches par escale, 6 recherches par jour, 80 crédits Tavily par jour. La carte datée, quand une veille est gardée et pas expirée, s’intitule `{name} · veille du {date}`.
 
