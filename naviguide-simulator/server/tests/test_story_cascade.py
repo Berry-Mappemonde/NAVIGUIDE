@@ -1027,9 +1027,9 @@ def test_ultra_payload_uses_cookbook_host_and_budget():
     assert "extra_body" not in payload
     assert payload["max_tokens"] == llm_budget.max_tokens_for("deep")
     assert payload["max_tokens"] == 2048
-    assert "us-central1" in story_cascade._tf_url("deep")
-    assert "us-central1" not in story_cascade._tf_url("fast")
-    assert "us-central1" not in story_cascade._tf_url("write")
+    assert _url_host_is(story_cascade._tf_url("deep"), "api.tokenfactory.us-central1.nebius.com")
+    assert not _url_host_is(story_cascade._tf_url("fast"), "api.tokenfactory.us-central1.nebius.com")
+    assert not _url_host_is(story_cascade._tf_url("write"), "api.tokenfactory.us-central1.nebius.com")
 
 
 def test_tokenfactory_http_error_includes_body():
@@ -1750,9 +1750,9 @@ def test_write_story_calls_super_and_stop_calls_ultra(monkeypatch):
     assert stopped["model"] == "nvidia/Nemotron-3-Ultra-550b-a55b"
     assert len(seen) == 2
     assert seen[0][1] == "nvidia/Nemotron-3.5-Super-VL"
-    assert "us-central1" not in seen[0][0]
+    assert not _url_host_is(seen[0][0], "api.tokenfactory.us-central1.nebius.com")
     assert seen[1][1] == "nvidia/Nemotron-3-Ultra-550b-a55b"
-    assert "us-central1" in seen[1][0]
+    assert _url_host_is(seen[1][0], "api.tokenfactory.us-central1.nebius.com")
 
 
 NANO_ID = "nvidia/Nemotron-3_5-Lightning"
@@ -1767,9 +1767,9 @@ def test_nano_call_stays_on_eu_host(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_TF_BASE_EU", "https://api.tokenfactory.nebius.com/v1")
     url = story_cascade._tf_url("nano")
     assert _url_host_is(url, "api.tokenfactory.nebius.com")
-    assert "us-central1" not in url
+    assert not _url_host_is(url, "api.tokenfactory.us-central1.nebius.com")
     assert url.endswith("/chat/completions")
-    assert "us-central1" in story_cascade._tf_url("deep")
+    assert _url_host_is(story_cascade._tf_url("deep"), "api.tokenfactory.us-central1.nebius.com")
 
     seen = []
 
