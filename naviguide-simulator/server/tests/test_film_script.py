@@ -6290,3 +6290,22 @@ def test_translation_keeps_an_english_exonym_sentence():
 
     en = asyncio.run(fs.translate_written_plan({"chapters": [raw_ch]}, {"chapters": [raw_ch]}, cascade=tr))
     assert en and en["chapters"][0]["text"] == "Arrival at Ajaccio (Corsica)."
+
+
+def test_translation_retry_asks_differently_and_skips_raw_number_filter():
+    import asyncio
+    import story_cascade as sc
+    import film_script as fs
+    raw_ch = {"id": "c1", "text": "Trois jours d'escale.", "anchors": []}
+    seen = []
+
+    async def tr(system, user, **kw):
+        seen.append((user, kw.get("facts")))
+        if len(seen) == 1:
+            return "Trois jours d'escale.", "nemotron-lightning"
+        return "3 days of stopover.", "nemotron-lightning"
+
+    en = asyncio.run(fs.translate_written_plan({"chapters": [raw_ch]}, {"chapters": [raw_ch]}, cascade=tr))
+    assert seen[0][0] != seen[1][0]
+    assert all(f is sc.NO_NUMBER_FILTER for _, f in seen)
+    assert en and en["chapters"][0]["text"] == "3 days of stopover."

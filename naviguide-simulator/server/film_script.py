@@ -11039,7 +11039,7 @@ async def translate_written_plan(
     cascade: Callable = cascade_text,
 ) -> Optional[dict]:
     """Lightning : français accepté → anglais, puis filter_numbers."""
-    from story_cascade import TRANSLATE_SYSTEM  # noqa: PLC0415
+    from story_cascade import NO_NUMBER_FILTER, TRANSLATE_SYSTEM  # noqa: PLC0415
 
     raw_chapters = [c for c in (raw_plan.get("chapters") or []) if isinstance(c, dict)]
     raw_by_id = {c.get("id"): c for c in raw_chapters if c.get("id") is not None}
@@ -11059,10 +11059,13 @@ async def translate_written_plan(
             # Lightning rend parfois le français tel quel : une seconde demande.
             text, source = await cascade(
                 TRANSLATE_SYSTEM,
-                f"French text:\n{src}",
+                # Seconde demande : autre consigne, sinon le cache rend la même réponse.
+                f"French text:\n{src}" if _attempt == 0 else f"Translate into English only:\n{src}",
                 tier="fast",
                 fallback="",
-                facts=facts,
+                # Le garde-fou ci-dessous vérifie les nombres (épelés compris) ; le filtre
+                # brut de la cascade couperait « 3 days » face à « Trois jours ».
+                facts=NO_NUMBER_FILTER,
                 max_tokens=min(1200, max(256, (len(src) // 2) + 80)),
             )
             if not (text or "").strip() or source in {"rules", "budget"}:
@@ -11070,6 +11073,10 @@ async def translate_written_plan(
             facts_en = {**facts, "en_names": sorted(n.title() for n in _en_translation_names(text or "", src))} \
                 if isinstance(facts, dict) else facts
             guarded, rw, fb = apply_written_guard(src, text, facts_en, lang="en")
+            src_w = set(re.findall(r"[^\W\d_]{3,}", src.casefold()))
+            out_w = set(re.findall(r"[^\W\d_]{3,}", (text or "").casefold()))
+            if src_w and len(src_w & out_w) / len(src_w) > 0.6:
+                fb = max(fb, 1)  # Lightning a rendu le français
             if len(_sentences(speak_film_text(text, "en"))) < len(_sentences(src)):
                 fb = max(fb, 1)  # phrase manquante : le garde-fou recollerait le français
             if rw > 0 and fb == 0:

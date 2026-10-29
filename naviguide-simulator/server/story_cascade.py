@@ -315,7 +315,7 @@ def spelled_numbers_to_digits(text: str) -> str:
     return "".join(out)
 
 
-_GROUPED_NUM_RE = re.compile(r"\b\d{1,3}(?:[ \u202f\u00a0]\d{3})+\b")
+_GROUPED_NUM_RE = re.compile(r"\b\d{1,3}(?:[ ,\u202f\u00a0]\d{3})+\b")
 
 
 def _numbers_spoken(text: str) -> set[str]:

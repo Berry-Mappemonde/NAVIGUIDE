@@ -71,7 +71,7 @@ def _fake(calls: list):
             return blob, "nemotron-ultra"
         if kw.get("tier") == "fast":
             src = (user or "").split("French text:\n", 1)[-1]
-            return src, "nemotron-lightning"
+            return src.replace("Devant", "The boat is off"), "nemotron-lightning"
         sents = _sents(user)
         if sents:
             return " ".join(sents), "nemotron-super"
