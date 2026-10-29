@@ -1448,7 +1448,7 @@ export function useReplay({
           setFilmSource(resolved.source);
           setFilmReviewedBy(resolved.reviewedBy || "");
           setFilmModel(resolved.model || "");
-          if (resolved.webContext) setFilmWebContext(resolved.webContext);
+          setFilmWebContext(resolved.webContext || null);
           setFilmReceipt(resolved.receipt || null);
         })
         .catch((err) => {

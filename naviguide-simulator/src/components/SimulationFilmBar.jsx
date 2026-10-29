@@ -13,6 +13,7 @@ import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
 import { filmDurationClass, filmDurationPill } from "../engine/playSpeeds.js";
 import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle, writtenPillEnabled } from "../hooks/useReplay.js";
+import { normalizeFilmWebSourceUrl } from "../utils/filmWebSources.js";
 
 function filmPill(replay, sec) {
   return filmDurationPill({ seconds: sec, active: replay?.active, estimates: replay?.variantEstimates });
@@ -437,14 +438,17 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     className="min-w-0 max-w-full whitespace-normal break-words [&_span]:text-xs [&_span]:text-white/90"
                   />
                 )}
-                {replay.webContext?.sources?.length && !replay.writing ? (
+                {replay.webContext?.sources?.length
+                && !replay.writing
+                && (replay.style || "raw") === "written"
+                && replay.hasWritten ? (
                   <div
                     data-testid="film-web-sources"
                     className="min-w-0 max-w-full whitespace-normal break-words text-[10px] leading-snug text-violet-200/90"
                   >
                     <span>{t("filmWebSourcesTitle", { port: replay.webContext.port })}</span>{" "}
                     {replay.webContext.sources.map((s, i) => (
-                      <span key={s.url}>
+                      <span key={normalizeFilmWebSourceUrl(s.url) || s.url}>
                         {i ? " · " : ""}
                         <a
                           href={s.url}

@@ -27,18 +27,42 @@ def _domain(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def _normalize_url_key(url: str) -> str:
+    """Clé de dédoublonnage : schéma/hôte en minuscules, sans www., sans / final ni fragment."""
+    p = urlparse(url)
+    host = (p.netloc or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    path = p.path or ""
+    if len(path) > 1 and path.endswith("/"):
+        path = path[:-1]
+    scheme = (p.scheme or "http").lower()
+    return f"{scheme}://{host}{path}"
+
+
+def _url_has_host(url: str) -> bool:
+    return bool((urlparse(url).netloc or "").strip())
+
+
 def compact(pw: Any) -> Optional[dict[str, Any]]:
     """Réponse `fetch_port_web` → provenance publique du film, ou None."""
     if not isinstance(pw, dict) or pw.get("status") != "ready":
         return None
     port = str(pw.get("port") or "").strip()
     sources: list[dict[str, str]] = []
+    seen: set[str] = set()
     for row in pw.get("sources") or []:
         if not isinstance(row, dict):
             continue
         url = str(row.get("url") or "").strip()
         if not (url.startswith("https://") or url.startswith("http://")):
             continue
+        if not _url_has_host(url):
+            continue
+        key = _normalize_url_key(url)
+        if not key or key in seen:
+            continue
+        seen.add(key)
         domain = _domain(url)
         title = str(row.get("title") or "").strip() or domain
         sources.append({"title": title[:160], "url": url, "domain": domain})
