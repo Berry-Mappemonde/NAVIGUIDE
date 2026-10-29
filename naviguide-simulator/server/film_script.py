@@ -11015,18 +11015,44 @@ _EN_GEO_WORDS = frozenset({
     "saint", "st", "and", "of", "the", "a", "on", "at", "by", "for", "to", "with", "then",
     "today", "after", "before", "next", "day", "days", "high", "seas", "float", "station",
     "project", "protected", "area", "marine", "crew", "boat", "catamaran", "expedition",
+    # adjectifs de nationalité : « eaux espagnoles » → « Spanish waters »
+    "spanish", "moroccan", "portuguese", "italian", "brazilian", "mauritanian", "senegalese",
+    "verdean", "barbadian", "venezuelan", "guyanese", "surinamese", "samoan", "tongan",
+    "fijian", "mozambican", "comorian", "seychellois", "mauritian", "australian", "namibian",
+    "angolan", "canadian", "american", "british", "irish", "bermudian", "bahamian",
+    "dominican", "haitian", "cuban", "jamaican", "colombian", "panamanian", "ecuadorian",
+    "chilean", "peruvian", "polynesian", "indonesian", "madeira", "azores", "balearic",
+    "sicilian", "sardinian", "greek", "tunisian", "algerian", "maltese", "kiwi", "zealand",
 })
+
+# « une trentaine de jours » → « about thirty days » : l'approximation dite en anglais.
+_FR_APPROX = {
+    "huitaine": (8, 7, 1), "dizaine": (10,), "douzaine": (12,), "quinzaine": (15, 2, 14),
+    "vingtaine": (20,), "trentaine": (30,), "quarantaine": (40,), "cinquantaine": (50,),
+    "soixantaine": (60,), "centaine": (100,),
+}
+
+
+def _fr_approx_numbers(fr_src: str) -> list[str]:
+    low = (fr_src or "").casefold()
+    return [str(n) for w, ns in _FR_APPROX.items() if w in low for n in ns]
 
 
 def _en_translation_names(en_text: str, fr_src: str) -> set[str]:
     """Noms anglais tolérés : exonyme ou adjectif d'un mot déjà dans le français (« Samoan » ← « samoanes »)."""
-    fr_words = {w.casefold() for w in re.findall(r"[^\W\d_]+", fr_src or "")}
+    import unicodedata  # noqa: PLC0415
+
+    def _fold(x: str) -> str:
+        return "".join(c for c in unicodedata.normalize("NFKD", x) if not unicodedata.combining(c))
+
+    fr_words = {_fold(w.casefold()) for w in re.findall(r"[^\W\d_]+", fr_src or "")}
     out: set[str] = set()
     for tok in _name_tokens(en_text):
-        parts = [p for p in tok.split("-") if p] or [tok]
+        parts = [_fold(p.replace("’", "'").split("'")[-1]) for p in tok.split("-") if p] or [tok]
         if all(
-            p in _EN_GEO_WORDS or any(len(p) >= 4 and w.startswith(p[:4]) for w in fr_words)
-            for p in parts
+            p in _EN_GEO_WORDS or p in fr_words
+            or any(len(p) >= 4 and w.startswith(p[:4]) for w in fr_words)
+            for p in parts if p
         ):
             out.add(tok)
     return out
@@ -11070,7 +11096,8 @@ async def translate_written_plan(
             )
             if not (text or "").strip() or source in {"rules", "budget"}:
                 return None
-            facts_en = {**facts, "en_names": sorted(n.title() for n in _en_translation_names(text or "", src))} \
+            facts_en = {**facts, "en_names": sorted(n.title() for n in _en_translation_names(text or "", src)),
+                        "approx": _fr_approx_numbers(src)} \
                 if isinstance(facts, dict) else facts
             guarded, rw, fb = apply_written_guard(src, text, facts_en, lang="en")
             src_w = set(re.findall(r"[^\W\d_]{3,}", src.casefold()))

@@ -6309,3 +6309,13 @@ def test_translation_retry_asks_differently_and_skips_raw_number_filter():
     assert seen[0][0] != seen[1][0]
     assert all(f is sc.NO_NUMBER_FILTER for _, f in seen)
     assert en and en["chapters"][0]["text"] == "3 days of stopover."
+
+
+def test_english_translation_keeps_approximations_and_nationalities():
+    import film_script as fs
+    src = "Le 4 juin : 5 153 milles, une trentaine de jours de mer. Puis, les eaux espagnoles. Puis, L'ile Rousse."
+    en = "On June 4: 5 153 miles, about thirty days at sea. Then, Spanish waters. Then, L'Île-Rousse."
+    facts = {"raw": src, "en_names": sorted(n.title() for n in fs._en_translation_names(en, src)),
+             "approx": fs._fr_approx_numbers(src)}
+    _, rw, fb = fs.apply_written_guard(src, en, facts, lang="en")
+    assert fb == 0 and rw == 3
