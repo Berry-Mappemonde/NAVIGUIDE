@@ -181,6 +181,20 @@ describe("visite guidée des juges", () => {
   });
 });
 
+it("C3 : invariants front visite + journal (sans 97f061c0)", () => {
+  const tour = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
+  const chat = readFileSync(new URL("./LogbookChat.jsx", import.meta.url), "utf8");
+  assert.match(tour, /naviguide-tour-pulse/);
+  assert.match(tour, /data-arrow/);
+  assert.match(tour, /step\?\.id !== "models"/);
+  assert.match(tour, /fetchStatus\(\)/);
+  assert.match(tour, /md:top-10/);
+  assert.match(chat, /LOGBOOK_EXAMPLES/);
+  assert.match(chat, /logbook-chat-web-sources/);
+  assert.match(chat, /data-tour="logbook"/);
+  assert.match(chat, /logbook-chat-send/);
+});
+
 it("R13 : piège Tab documenté dans le panneau visite", () => {
   const src = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
   assert.match(src, /R13 : Tab[\s\S]*e\.key !== "Tab"/);

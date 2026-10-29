@@ -325,7 +325,7 @@ export function DemoWalkthrough({
         type="button"
         data-testid="demo-walkthrough-launch"
         onClick={start}
-        className={`naviguide-demo-launch fixed right-3 top-14 z-[2300] inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold shadow-xl backdrop-blur-sm ${light ? "border-cyan-700/30 bg-white/95 text-slate-900 hover:bg-slate-100" : "border-cyan-200/35 bg-slate-950/95 text-white hover:bg-slate-900"}`}
+        className={`naviguide-demo-launch fixed right-3 top-14 z-[2300] md:top-10 inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold shadow-xl backdrop-blur-sm ${light ? "border-cyan-700/30 bg-white/95 text-slate-900 hover:bg-slate-100" : "border-cyan-200/35 bg-slate-950/95 text-white hover:bg-slate-900"}`}
         title={t("demoLaunchTitle")}
       >
         <Compass size={15} aria-hidden="true" />
@@ -342,7 +342,7 @@ export function DemoWalkthrough({
         data-testid="demo-walkthrough-chip"
         onClick={() => setExpanded(true)}
         title={t("demoChipTitle")}
-        className={`naviguide-demo-launch fixed right-3 top-14 z-[2300] inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold shadow-xl ${surface}`}
+        className={`naviguide-demo-launch fixed right-3 top-14 z-[2300] md:top-10 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold shadow-xl ${surface}`}
       >
         <Compass size={13} aria-hidden="true" />
         {t("demoChip", { n: index + 1, total })}

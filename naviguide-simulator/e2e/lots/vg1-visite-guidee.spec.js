@@ -286,6 +286,16 @@ test("VG1 — pas d'overlay driver.js aux étapes 1, 2, 8 (welcome, models, retu
   await expect(page.locator(".driver-active-element")).toHaveCount(0);
 });
 
+test("VG1 — étape 1 → 2 (welcome → models) < 2 s", async ({ page }) => {
+  await open(page);
+  const start = Date.now();
+  await startTour(page);
+  await expect(panel(page)).toHaveAttribute("data-step", "welcome");
+  await next(page, "models");
+  await expect(panel(page)).toHaveAttribute("data-step", "models");
+  expect(Date.now() - start).toBeLessThan(2000);
+});
+
 test("VG1 — étape 5 (layers) : cible = summary [data-tour=layers] (pas le details entier)", async ({ page }) => {
   await open(page);
   await startTour(page);
