@@ -12,6 +12,7 @@ import { SatelliteMetPanel } from "./components/SatelliteMetPanel.jsx";
 import { useLang } from "./i18n/LangContext.jsx";
 import { ITINERARY_POINTS } from "./constants/itineraryPoints";
 import { SimulationFilmBar } from "./components/SimulationFilmBar.jsx";
+import { DemoWalkthrough } from "./components/DemoWalkthrough.jsx";
 import { RecomputeDialog } from "./components/RecomputeDialog.jsx";
 import { useRouteWindProfile } from "./hooks/useRouteWindProfile.js";
 import { useExpeditionSpeed } from "./hooks/useExpeditionSpeed.js";
@@ -179,6 +180,7 @@ export default function App() {
   const [cinemaMode, setCinemaMode] = useState(true);
   const [filmFullscreen, setFilmFullscreen] = useState(false);
   const filmLayerSnapRef = useRef(null);
+  const demoReplayStartedRef = useRef(false);
   const [hideFilmBar, setHideFilmBar] = useState(false);
   const [filmBarNode, setFilmBarNode] = useState(null);
   const [filmBarMeasuredPx, setFilmBarMeasuredPx] = useState(null);
@@ -1189,6 +1191,14 @@ export default function App() {
     leaveCinema();
   }, [cinemaMode, cameraFollow, sidebarOpen, toolsOpen, recaptureBoat, leaveCinema]);
 
+  // Met le dessin en cours de côté (sans Annuler, le brouillon reste).
+  const parkDrawing = useCallback(() => {
+    if (!drawingModeRef.current) return;
+    setDrawingMode(false);
+    closeSatellite();
+    sceneApiRef.current?.endDrawingWorld?.();
+  }, [closeSatellite]);
+
   const selectView = useCallback((next) => {
     if (shouldCloseEscaleSheet({ nextView: next, replayActive: replay.active })) {
       closeEscaleSheet();
@@ -1197,11 +1207,7 @@ export default function App() {
     if (next === VIEW_SUIVRE && replay.active) replay.stop();
     if (next === VIEW_SUIVRE && view === VIEW_TRACER) tracerNmRef.current = playheadNmRef.current;
     // Quitter Tracer pendant un dessin met le brouillon de côté, sans Annuler.
-    if (drawingModeRef.current && next !== VIEW_TRACER) {
-      setDrawingMode(false);
-      closeSatellite();
-      sceneApiRef.current?.endDrawingWorld?.();
-    }
+    if (next !== VIEW_TRACER) parkDrawing();
     setView(next);
     if (next === VIEW_SUIVRE) {
       // Suivre × ma route garde le départ du tracé (même voyage serveur
@@ -1237,6 +1243,7 @@ export default function App() {
     closeEscaleSheet,
     closeSatellite,
     leaveCinema,
+    parkDrawing,
     recaptureBoat,
     replay.active,
     replay.stop,
@@ -1246,6 +1253,7 @@ export default function App() {
     view,
     voyage.setStartAt,
   ]);
+
 
   useEffect(() => {
     if (isSuivre) voyage.setStartAt(routeSource === "custom" ? "saint-maur" : DEFAULT_START_AT);
@@ -1330,11 +1338,7 @@ export default function App() {
 
   const handleRouteSwitchToBerry = useCallback(() => {
     // La pilule Berry affiche la vitrine, sans Annuler et sans jeter le brouillon.
-    if (drawingModeRef.current) {
-      setDrawingMode(false);
-      closeSatellite();
-      sceneApiRef.current?.endDrawingWorld?.();
-    }
+    parkDrawing();
     customFetchIdRef.current += 1;
     routeKindRef.current = "berry";
     setCustomRoute(null);
@@ -1344,7 +1348,97 @@ export default function App() {
     setUserPreview(false);
     sceneApiRef.current?.playback.pause();
     applyBerryBriefing();
-  }, [applyBerryBriefing, closeSatellite]);
+  }, [applyBerryBriefing, parkDrawing]);
+
+  // The guided demo changes only visible app state. It does not inject sample data
+  // or reset a user-created route.
+  const stopDemoOwnedReplay = useCallback(() => {
+    if (!demoReplayStartedRef.current) return;
+    demoReplayStartedRef.current = false;
+    if (typeof replayControls?.onStop === "function") {
+      replayControls.onStop();
+      return;
+    }
+    setFilmFullscreen(false);
+    setCameraFollow(true);
+    restoreShowLayers(maritimeLayers, filmLayerSnapRef.current);
+    filmLayerSnapRef.current = null;
+    replay.stop();
+  }, [maritimeLayers, replay.stop, replayControls]);
+
+  // Film de la visite arrêté depuis la barre (ou fini) : il n'appartient plus à la visite,
+  // un film lancé ensuite par l'utilisateur ne sera pas coupé par Précédent / Quitter.
+  useEffect(() => {
+    if (!replay.active) demoReplayStartedRef.current = false;
+  }, [replay.active]);
+
+  const applyDemoAction = useCallback((action) => {
+    if (action !== "replay") stopDemoOwnedReplay();
+    const showFollow = (leftOpen, rightOpen) => {
+      // selectView ne parque le dessin que s'il change de vue : un brouillon lancé
+      // depuis la carte Berry en Suivre resterait armé (les clics ajouteraient des points).
+      parkDrawing();
+      if (view !== VIEW_SUIVRE) selectView(VIEW_SUIVRE);
+      recaptureBoat();
+      setCinemaMode(false);
+      setFilmFullscreen(false);
+      setHideFilmBar(false);
+      setSidebarOpen(leftOpen);
+      setToolsOpen(rightOpen);
+    };
+
+    switch (action) {
+      case "welcome":
+      case "live":
+        showFollow(false, false);
+        break;
+      case "briefing":
+        showFollow(true, false);
+        break;
+      case "layers":
+        showFollow(false, true);
+        break;
+      case "replay":
+        showFollow(true, false);
+        break;
+      case "trace":
+        if (view !== VIEW_TRACER) selectView(VIEW_TRACER);
+        // Drawing mode needs a free map; don't keep the camera locked to the boat.
+        setCameraFollow(false);
+        setCinemaMode(false);
+        setFilmFullscreen(false);
+        setHideFilmBar(false);
+        setSidebarOpen(true);
+        setToolsOpen(true);
+        break;
+      case "return":
+        // Retour à Suivre sur la source actuelle. Pas de bascule vers Berry : avec une route
+        // terminée, la carte Berry (pilule locale de Sidebar) et la carte ne seraient plus d'accord.
+        // Un simple brouillon est mis de côté par parkDrawing (dans showFollow), jamais effacé.
+        showFollow(true, false);
+        break;
+      default:
+        break;
+    }
+  }, [parkDrawing, recaptureBoat, selectView, stopDemoOwnedReplay, view]);
+
+  const startDemoReplay = useCallback(() => {
+    if (replay.active || !replayControls?.canStart || typeof replayControls.onStart !== "function") return;
+    demoReplayStartedRef.current = true;
+    replayControls.onStart();
+  }, [replay.active, replayControls]);
+
+  const closeDemo = useCallback(() => {
+    stopDemoOwnedReplay();
+    parkDrawing();
+    if (view !== VIEW_SUIVRE) selectView(VIEW_SUIVRE);
+    recaptureBoat();
+    setCinemaMode(false);
+    setFilmFullscreen(false);
+    setHideFilmBar(false);
+    setSidebarOpen(true);
+    setToolsOpen(false);
+  }, [parkDrawing, recaptureBoat, selectView, stopDemoOwnedReplay, view]);
 
   const fetchCustomPlan = useCallback((geojson) => {
     const applyFallback = () => setExpeditionPlan(buildLocalCustomBriefing(geojson, lang));
@@ -2228,6 +2322,17 @@ export default function App() {
         onFocus={handleBriefingFocus}
       />
       <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
+
+      <DemoWalkthrough
+        replayReady={Boolean(replayControls?.canStart)}
+        replayActive={Boolean(replay.active)}
+        customRoute={routeSource === "custom"}
+        hidden={filmFullscreen || notForNavOpen}
+        isLightMode={isLightMode}
+        onStepChange={applyDemoAction}
+        onPlayReplay={startDemoReplay}
+        onClose={closeDemo}
+      />
 
       {selectedSatellite && (
         <div data-testid="satellite-popup" className="naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2100] w-[360px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl bottom-52">

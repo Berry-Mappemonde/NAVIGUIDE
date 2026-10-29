@@ -1,0 +1,189 @@
+// VG1 — visite guidée des juges (revue de la PR #121, @lazizbekravshanov).
+// Sur le stock figé : lanceur fr / en, 7 étapes (vue et panneaux), brouillon conservé
+// (bienvenue → tracé → retour → Fermer, et Échap au tracé), route terminée à l'étape 7
+// (pilules et carte d'accord, aucun « film officiel »), film lancé / arrêté, passe 390 px.
+import { expect, test } from "@playwright/test";
+import { dismissNotForNav, panelClosed, probeOfficial } from "../helpers.js";
+
+const PILL_ON = /bg-blue-600\/30/;
+const START = { lat: 46.1, lon: -1.5 };
+const END = { lat: 15.3, lon: -61.0 };
+// [étape, vue attendue, panneau gauche ouvert, panneau droit ouvert]
+const STEPS = [
+  ["welcome", "suivre", false, false],
+  ["live", "suivre", false, false],
+  ["briefing", "suivre", true, false],
+  ["layers", "suivre", false, true],
+  ["replay", "suivre", true, false],
+  ["trace", "tracer", true, true],
+  ["return", "suivre", true, false],
+];
+
+async function stubRoute(page) {
+  await page.route("**/route?*", async (route) => {
+    const u = new URL(route.request().url());
+    const n = (k) => Number(u.searchParams.get(k));
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: [[n("start_lon"), n("start_lat")], [n("end_lon"), n("end_lat")]] },
+        properties: {},
+      }),
+    });
+  });
+}
+
+async function open(page) {
+  await stubRoute(page);
+  await page.goto("/");
+  await dismissNotForNav(page);
+  await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
+}
+
+const panel = (page) => page.getByTestId("demo-walkthrough-panel");
+const drawnCount = (page) => page.evaluate(() => window.__naviguideDrawn?.points?.length || 0);
+
+async function startTour(page) {
+  await page.getByTestId("demo-walkthrough-launch").click();
+  await expect(panel(page)).toHaveAttribute("data-step", "welcome");
+}
+async function next(page, id) {
+  await page.getByTestId("demo-walkthrough-next").click();
+  await expect(panel(page)).toHaveAttribute("data-step", id);
+}
+
+async function drawTwoPoints(page) {
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("route-switch-draw").click();
+  await page.waitForFunction(() => typeof window.__naviguideAddDrawnPoint === "function", { timeout: 10_000 });
+  await page.evaluate(({ lat, lon }) => window.__naviguideAddDrawnPoint(lat, lon), START);
+  await page.evaluate(({ lat, lon }) => window.__naviguideAddDrawnPoint(lat, lon), END);
+  await expect.poll(() => drawnCount(page), { timeout: 10_000 }).toBe(2);
+}
+
+test("VG1 fr : lanceur, 7 étapes (vue + panneaux), focus, Fermer la visite", async ({ page }) => {
+  test.setTimeout(90_000);
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await open(page);
+  await expect(page.getByTestId("demo-walkthrough-launch")).toHaveText(/Visite guidée/);
+  await startTour(page);
+  await expect(page.getByTestId("demo-walkthrough-title")).toBeFocused();
+  await expect(panel(page).getByRole("progressbar")).toHaveAttribute("aria-valuetext", "Étape 1 sur 7");
+  await expect(page.getByTestId("demo-walkthrough-body")).not.toContainText("données réelles");
+  for (let i = 0; i < STEPS.length; i += 1) {
+    const [id, view, left, right] = STEPS[i];
+    if (i > 0) await next(page, id);
+    await expect(page.getByTestId(`view-${view}`)).toHaveAttribute("aria-checked", "true");
+    await expect.poll(() => panelClosed(page, "left")).toBe(!left);
+    await expect.poll(() => panelClosed(page, "right")).toBe(!right);
+    await expect(page.getByTestId("demo-walkthrough-live")).toContainText(`Étape ${i + 1} sur 7`);
+  }
+  // Placement : à l'opposé du panneau Outils quand l'étape l'ouvre.
+  await page.getByTestId("demo-walkthrough-prev").click();
+  await expect(panel(page)).toHaveAttribute("data-side", "left");
+  await next(page, "return");
+  const end = page.getByTestId("demo-walkthrough-end");
+  await expect(end).toHaveText("Fermer la visite");
+  await expect(page.getByRole("button", { name: /terminer|finish/i })).toHaveCount(0);
+  await end.click();
+  await expect(panel(page)).toHaveCount(0);
+  await expect(page.getByTestId("demo-walkthrough-launch")).toBeFocused();
+  expect(errors, errors.join("\n")).toEqual([]);
+});
+
+test("VG1 en : launcher and step copy in English, End tour", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("naviguide_lang_v4", "en"));
+  await open(page);
+  await expect(page.getByTestId("demo-walkthrough-launch")).toHaveText(/Guided tour/);
+  await startTour(page);
+  await expect(page.getByTestId("demo-walkthrough-title")).toHaveText("NAVIGUIDE guided tour");
+  await expect(panel(page).getByRole("progressbar")).toHaveAttribute("aria-valuetext", "Step 1 of 7");
+  for (const [id] of STEPS.slice(1)) await next(page, id);
+  await expect(page.getByTestId("demo-walkthrough-end")).toHaveText("End tour");
+  await expect(panel(page)).not.toContainText(/walkthrough|guided demo/i);
+});
+
+test("VG1 : un brouillon de 2 points survit à la visite, et Échap au tracé ne l'efface pas", async ({ page }) => {
+  test.setTimeout(90_000);
+  await open(page);
+  await drawTwoPoints(page);
+  await startTour(page);
+  for (const id of ["live", "briefing", "layers", "replay", "trace"]) await next(page, id);
+  expect(await drawnCount(page)).toBe(2);
+  // Échap à l'étape Tracer : ferme la visite (capture) sans annuler le tracé.
+  await page.keyboard.press("Escape");
+  await expect(panel(page)).toHaveCount(0);
+  expect(await drawnCount(page)).toBe(2);
+  await expect(page.getByTestId("demo-walkthrough-launch")).toBeFocused();
+  // Deuxième passage jusqu'au bout.
+  await startTour(page);
+  for (const id of ["live", "briefing", "layers", "replay", "trace", "return"]) await next(page, id);
+  await page.getByTestId("demo-walkthrough-end").click();
+  expect(await drawnCount(page)).toBe(2);
+  // En Suivre, le dessin est parqué : un clic carte n'ajoute pas de point.
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
+  await page.mouse.click(640, 420);
+  expect(await drawnCount(page)).toBe(2);
+});
+
+test("VG1 : route terminée → étape 7, pilules et carte d'accord, pas de « film officiel »", async ({ page }) => {
+  test.setTimeout(120_000);
+  await open(page);
+  await drawTwoPoints(page);
+  const finish = page.getByRole("button", { name: /terminer|finish/i });
+  await expect(finish).toBeEnabled({ timeout: 20_000 });
+  await finish.click();
+  await startTour(page);
+  await next(page, "live");
+  await expect(page.getByTestId("demo-walkthrough-body")).toContainText("votre route terminée");
+  for (const id of ["briefing", "layers", "replay"]) await next(page, id);
+  await expect(panel(page)).not.toContainText(/film officiel|stock officiel/i);
+  for (const id of ["trace", "return"]) await next(page, id);
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("route-switch-custom")).toHaveClass(PILL_ON);
+  await expect(page.getByTestId("route-switch-berry")).not.toHaveClass(PILL_ON);
+  await page.getByTestId("demo-walkthrough-end").click();
+  await expect(page.getByTestId("route-switch-custom")).toHaveClass(PILL_ON);
+});
+
+test("VG1 : le bouton film de la visite lance et arrête le film ; plein écran masque la visite", async ({ page }) => {
+  test.setTimeout(120_000);
+  await open(page);
+  const apiUp = Boolean(await probeOfficial(page));
+  test.skip(!apiUp, "API du stock figé absente (PW_WITH_API=1)");
+  await startTour(page);
+  for (const id of ["live", "briefing", "layers", "replay"]) await next(page, id);
+  const play = page.getByTestId("demo-walkthrough-play");
+  await expect(play).toBeEnabled({ timeout: 45_000 });
+  await expect(play).toHaveText(/Revoir l’expédition/);
+  await play.click();
+  await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 10_000 });
+  // Film en lecture : la visite se réduit à une pastille.
+  await expect(panel(page)).toHaveCount(0);
+  await expect(page.getByTestId("demo-walkthrough-chip")).toBeVisible();
+  await page.getByTestId("film-fullscreen").click();
+  await expect(page.getByTestId("demo-walkthrough-chip")).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("demo-walkthrough-chip")).toBeVisible();
+  await page.getByTestId("demo-walkthrough-chip").click();
+  await expect(panel(page)).toHaveAttribute("data-step", "replay");
+  await next(page, "trace");
+  await expect(page.getByTestId("replay-stop")).toHaveCount(0, { timeout: 10_000 });
+});
+
+test("VG1 390 px : panneau en bas, ne couvre pas le haut de l'écran", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page);
+  await startTour(page);
+  for (const id of ["live", "briefing"]) await next(page, id);
+  const box = await panel(page).boundingBox();
+  expect(box).not.toBeNull();
+  expect(box.y).toBeGreaterThan(844 * 0.5);
+  expect(box.y + box.height).toBeLessThanOrEqual(844);
+  for (const id of ["layers", "replay", "trace", "return"]) await next(page, id);
+  await page.getByTestId("demo-walkthrough-end").click();
+  await expect(panel(page)).toHaveCount(0);
+});
