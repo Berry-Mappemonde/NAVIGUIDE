@@ -124,11 +124,11 @@ def test_sentence_fr_en_atlas():
     assert fr.startswith("Le 14 juin")
     assert "au sud du Cap-Vert" in fr
     assert "alizés de nord-est" in fr
-    assert "quinze nœuds de saison" in fr
+    assert "quinze nœuds, la moyenne de saison" in fr
     assert en.startswith("On 14 June")
     assert "south of Cape Verde" in en
     assert "northeasterly trade winds" in en
-    assert "fifteen seasonal knots" in en
+    assert "fifteen knots, the seasonal average" in en
     assert spoken_knots(15, "fr") == "quinze"
 
 

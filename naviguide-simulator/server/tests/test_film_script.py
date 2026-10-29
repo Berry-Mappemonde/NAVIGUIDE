@@ -1943,9 +1943,9 @@ def test_climo_sentence_and_dosage():
     fr = change_sentence(atlas, "fr")
     en = change_sentence(atlas, "en")
     assert "alizés de nord-est" in fr
-    assert "quinze nœuds de saison" in fr
+    assert "quinze nœuds, la moyenne de saison" in fr
     assert "northeasterly trade winds" in en
-    assert "fifteen seasonal knots" in en
+    assert "fifteen knots, the seasonal average" in en
     zone = {
         **atlas, "id": "climo:zone", "source": "zone_fallback", "nature": "zone",
         "windKnots": None, "dirFromDeg": None,
@@ -2697,7 +2697,7 @@ def test_rc22_fit_chapter_text_keeps_amp_project_drops_p3():
     arrival = "Arrivée à Ajaccio le 26 mai."
     p3 = [
         "Le 17 mai, longe la Galice — Camariñas, Muxía.",
-        "Le 18 mai, au sud du Cap-Vert, les alizés de nord-est s'installent : quinze nœuds de saison.",
+        "Le 18 mai, au sud du Cap-Vert, les alizés de nord-est s'installent : quinze nœuds, la moyenne de saison.",
         "Le 19 mai, un flotteur Argo.",
     ]
     extra = [f"Le {20 + i} mai, longe la côte — Port-{i}." for i in range(40)]
