@@ -115,9 +115,13 @@ test("Récit dense et réparti, le bateau avance pendant qu'on parle", async ({ 
   }
   expect(blob, "jargon absent").not.toMatch(/zone économique exclusive/i);
   if (/Montserrat/.test(blob)) {
+    // Les eaux françaises des Antilles peuvent être nommées par territoire
+    // (« les eaux de la Martinique, puis celles de la Guadeloupe ») : la
+    // grammaire tient tant que Montserrat arrive en « puis celles de ».
     expect(blob, "grammaire des eaux aux Antilles").toMatch(
-      /les eaux françaises, puis celles de Montserrat/,
+      /les eaux (?:françaises|de la [A-ZÀ-Ý][\wÀ-ÿ'-]+)(?:, puis celles de (?:la |l'|les )?[A-ZÀ-Ý][\wÀ-ÿ' -]+)*, puis celles de Montserrat/,
     );
+    expect(blob, "jamais d'adjectif orphelin").not.toMatch(/celles de françaises?|de montserrat/);
   }
 
   await expect(start).toBeEnabled({ timeout: 30_000 });
