@@ -4,8 +4,8 @@ Liste pré-écrite (avis, travaux, fermeture), nom du port et date
 substitués. Au plus deux tours par escale : Lightning lit le 1er, et s'il
 manque une réponse il choisit une question de la même liste — il n'en
 invente pas. Une phrase, une URL, `filter_numbers`. Prochaines escales
-seulement (fenêtre J-10 → J+2). Éteint tant que `NAVIGUIDE_TAVILY_WATCH`
-n'est pas ouvert. Jamais d'appel depuis le navigateur.
+seulement (fenêtre J-10 → J+2). Active par défaut (`NAVIGUIDE_TAVILY_WATCH=1`) ;
+`NAVIGUIDE_TAVILY_WATCH=0` la coupe. Jamais d'appel depuis le navigateur.
 """
 from __future__ import annotations
 

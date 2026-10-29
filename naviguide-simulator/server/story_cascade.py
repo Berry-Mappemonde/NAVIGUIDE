@@ -57,7 +57,7 @@ TIMEOUT = httpx.Timeout(25.0, connect=8.0)
 DEFAULT_PROVIDERS = ("tokenfactory", "nim", "openrouter", "claude")
 # Maillons hors Nemotron : après un timeout Token Factory, on ne les appelle
 # que si NAVIGUIDE_LLM_TIMEOUT_FALLBACK=1 (P1-2, règle « Nemotron obligatoire »).
-NON_NEMOTRON_PROVIDERS = frozenset({"nim", "openrouter", "claude"})
+NON_NEMOTRON_PROVIDERS = frozenset({"openrouter", "claude"})
 CACHE_NS = "llm-cache"
 CACHE_TTL_S = 24 * 3600.0
 TF_PARALLEL_DEFAULT = 4
