@@ -4271,16 +4271,16 @@ def spoken_sea_days(days: Any, lang: str = "fr") -> str:
         d = float(days)
     except (TypeError, ValueError):
         return ""
+    if not math.isfinite(d) or d < 0:
+        return ""
     en = _en(lang)
     if d < 0.75:
         return "less than a day at sea" if en else "moins d'un jour de mer"
     if d < 1.5:
         return "one day at sea" if en else "un jour de mer"
     if d < 8:
-        n = int(round(d))
-        if en:
-            return f"{_spoken_int(n, lang)} day{'' if n == 1 else 's'} at sea"
-        return f"{_spoken_int(n, lang)} jour{'' if n == 1 else 's'} de mer"
+        n = int(d + 0.5)
+        return f"{_spoken_int(n, lang)} day{'' if n == 1 else 's'} at sea" if en else f"{_spoken_int(n, lang)} jour{'' if n == 1 else 's'} de mer"
     if d < 12.5:
         return "about ten days at sea" if en else "une dizaine de jours de mer"
     if d < 17.5:
@@ -7383,7 +7383,7 @@ def _would_speak(change: dict) -> bool:
     place = change_place_name(change) or short_name(str(change.get("title") or ""))
     geo = change.get("geo") if isinstance(change.get("geo"), dict) else None
     if geo and (geo.get("fr") or geo.get("en")):
-        place = geo.get("fr") or geo.get("en") or place
+        place = geo.get("en" if _en(lang) else "fr") or geo.get("fr" if _en(lang) else "en") or place
     if looks_english_title(place) and kind in {
         "port", "approche", "culture", "project", "amp", "marina",
         "poe", "anchorage", "aton",
@@ -9524,7 +9524,7 @@ def build_raw_from_moments(
             place = change_place_name(change) or title
             geo = change.get("geo") if isinstance(change.get("geo"), dict) else None
             if geo and (geo.get("fr") or geo.get("en")):
-                place = geo.get("fr") or geo.get("en") or place
+                place = geo.get("en" if en else "fr") or geo.get("fr" if en else "en") or place
             if looks_english_title(place) and change.get("kind") in {
                 "port", "approche", "culture", "project", "amp", "marina",
                 "poe", "anchorage", "aton",
