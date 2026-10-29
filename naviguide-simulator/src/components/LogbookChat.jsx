@@ -5,6 +5,11 @@ import { hasAdminSecret } from "../utils/adminSecret.js";
 import { formatTimeUtc } from "../engine/journalFormat.js";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 
+/**
+ * Le chatbot du journal de bord, dans le panneau gauche : une
+ * question sur toutes les données de l'application, une réponse citant les
+ * faits du serveur, l'échange consigné au journal quand la clé admin est là.
+ */
 const AI_CHAT_NOTICE_KEY = "naviguide-ai-act-chat-notice-v1";
 
 /**
@@ -124,18 +129,17 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
           {error ? <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p> : null}
         </div>
       </div>
-      {/* AI Act notice banner above input, discreet, dismissible, non-blocking */}
       {showAiNotice ? (
         <div
           data-testid="logbook-chat-ai-notice"
           className="mt-1.5 rounded-md border border-violet-300/45 bg-violet-950 px-2 py-1.5 text-xs leading-snug text-violet-50"
-          role="status"
-          aria-live="polite"
+          role="note"
         >
           <p>{t("aiActChatNotice")}</p>
           <button
             type="button"
             data-testid="logbook-chat-ai-notice-dismiss"
+            onClick={dismissAiNotice}
             className="mt-1 text-xs font-semibold text-white underline underline-offset-2 hover:text-violet-100"
           >
             {t("aiActChatNoticeDismiss")}
@@ -144,18 +148,17 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
       ) : null}
       <div
         data-testid="logbook-chat-examples"
-        className="mt-1 flex flex-nowrap items-center gap-0.5 flex-nowrap items-center min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
+        className="mt-1 flex flex-nowrap items-center gap-0.5 flex-shrink-0 min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
       >
-        <Sparkles size={11} className="text-violet-200/80" aria-label={t("logbookExamplesTitle")} role="role" />
+        <Sparkles size={11} className="text-violet-200/80" aria-label={t("logbookExamplesTitle")} role="img" />
         {LOGBOOK_EXAMPLES.map((ex) => (
           <button
             key={ex.id}
             type="button"
             disabled={pending}
-            id={ex.id}
+            onClick={() => askExample(ex.q)}
             data-testid={`logbook-chat-example-${ex.id}`}
             title={`${t(ex.q)} — ${t(ex.hint)}`}
-            onClick={() => askExample(ex.q)}
             className="h-5 whitespace-nowrap rounded-full border border-violet-300/35 bg-violet-900/40 px-[5px] text-[10px] flex-shrink-0 text-violet-50 hover:bg-violet-800/60 disabled:opacity-40"
           >
             {t(ex.label)}
@@ -176,6 +179,8 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
         <button
           type="submit"
           disabled={pending || !draft.trim()}
+          title={t("logbookChatSend")}
+          data-testid="logbook-chat-send"
           className="h-7 w-7 rounded-md bg-violet-600 hover:bg-violet-500 disabled:opacity-40 flex items-center justify-center text-white"
         >
           <Send size={12} />

@@ -47,14 +47,6 @@ export default function FilmReceipt({ receipt, webSourceCount = 0, t, lang = "fr
             <li key={l.key} data-testid={`film-receipt-${l.key}`}>{t(l.key, l.vars)}</li>
           ))}
         </ul>
-        {webSourceCount > 0 ? (
-          <p
-            data-testid="film-receipt-filmReceiptTavily"
-            className="mt-2 text-[10px] font-semibold text-white/70"
-          >
-            {t("filmReceiptTavily", { count: webSourceCount })}
-          </p>
-        ) : null}
         {at ? <div className="text-white/60">{t("filmReceiptAt", { at })}</div> : null}
       </div>
     </details>
