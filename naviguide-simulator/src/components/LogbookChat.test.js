@@ -51,7 +51,6 @@ describe("LogbookChat contract", () => {
     assert.match(hook, /webSources/);
     assert.match(src, /logbook-chat-web-sources/);
     assert.match(src, /logbookWebSourcesTitle/);
-    assert.match(src, /logbook-chat-web-unavailable/);
   });
 
   it("cadre de réponse sous la question", () => {

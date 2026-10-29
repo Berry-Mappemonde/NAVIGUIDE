@@ -100,11 +100,6 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
                   ))}
                 </ul>
               ) : null}
-              {m.role === "logbook" && m.portWebStatus === "unavailable" && !(m.webSources?.length) ? (
-                <p data-testid="logbook-chat-web-unavailable" className="mt-0.5 text-[9px] text-slate-500">
-                  {t("logbookWebUnavailable")}
-                </p>
-              ) : null}
             </div>
           ))}
           {pending ? <p className="text-[10px] text-slate-400 leading-snug">{t("logbookChatPending")}</p> : null}
