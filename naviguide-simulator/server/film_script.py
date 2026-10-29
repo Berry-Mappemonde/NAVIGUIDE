@@ -8120,11 +8120,31 @@ def _place_idx_in_sentence(sentence: str, origin: int, place: str = "") -> int:
     return origin + max(0, len(sent) // 2)
 
 
+def _prefix_hit_is_same_sentence(text: str, idx: int, spoken: str) -> bool:
+    """Le repli sur 12 caractères ne vaut que pour la même phrase.
+
+    « Puis, les eaux … » commence plusieurs phrases : une phrase coupée par le
+    budget (« Puis, les eaux capverdiennes. ») ne doit pas voler l'ancre d'une
+    phrase restée (« Puis, les eaux françaises. ») — sinon la barre prend la
+    date de la phrase coupée (relecture « date », 150 s au now réel).
+    """
+    found = text[idx:]
+    end = re.search(r"[.!?;](\s|$)", found)
+    sent = found[: end.end()] if end else found
+    if spoken[:20] and sent.startswith(spoken[:20]):
+        return True
+    tail = spoken.rstrip(" .!?;:\u2026")[-10:]
+    return bool(tail) and tail in sent
+
+
 def _locate_spoken(text: str, spoken: str, start: int = 0) -> int:
     needle = spoken[:28] if len(spoken) > 28 else spoken
     idx = text.find(needle, start) if needle else -1
     if idx < 0 and len(needle) > 12:
-        idx = text.find(needle[:12], start)
+        hit = text.find(needle[:12], start)
+        while hit >= 0 and not _prefix_hit_is_same_sentence(text, hit, spoken):
+            hit = text.find(needle[:12], hit + 1)
+        idx = hit
     if idx < 0 and len(spoken) > 24:
         idx = text.find(spoken[-24:], start)
     return idx
