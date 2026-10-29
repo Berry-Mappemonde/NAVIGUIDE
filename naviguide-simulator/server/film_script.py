@@ -7514,6 +7514,14 @@ def _sentence_has_date(text: str, lang: str) -> bool:
     return bool((_DATE_EN_RE if _en(lang) else _DATE_FR_RE).search(text or ""))
 
 
+def _spoken_anchor_ms(sentence: str, lang: str) -> Optional[int]:
+    """Millisecondes UTC de la date dite dans la phrase, si lisible."""
+    spoken = _parse_spoken_date(sentence, lang)
+    if spoken is None:
+        return None
+    return int(spoken.timestamp() * 1000)
+
+
 def _parse_spoken_date(text: str, lang: str) -> Optional[datetime]:
     rx = _DATE_EN_RE if _en(lang) else _DATE_FR_RE
     found = rx.search(text or "")
@@ -7815,6 +7823,31 @@ def _is_lr_ajaccio_chapter(from_name: str = "", to_name: str = "") -> bool:
     )
 
 
+_RELATIVE_ANCHOR_MS_CEIL = 1_000_000_000_000  # ancres test / relatives (< ~2001 UTC)
+
+
+def _sync_anchored_times_from_speech(bits: list[str], anchored: list, lang: str) -> None:
+    """Aligne l'instant d'ancre sur la date dite quand elle est explicite."""
+    if len(bits) != len(anchored):
+        return
+    for j, item in enumerate(anchored):
+        row = _unpack_anchored(item)
+        role = (row.get("role") or "").strip().lower()
+        if role in {"depart", "arrive"}:
+            continue
+        t_ms = row.get("t")
+        if isinstance(t_ms, int) and t_ms < _RELATIVE_ANCHOR_MS_CEIL:
+            continue
+        spoken_ms = _spoken_anchor_ms(bits[j], lang)
+        if spoken_ms is None:
+            continue
+        if isinstance(item, tuple):
+            meta = item[2] if len(item) > 2 and isinstance(item[2], dict) else {}
+            anchored[j] = (item[0], spoken_ms, meta)
+        elif isinstance(item, dict):
+            anchored[j] = {**item, "t": spoken_ms}
+
+
 def _order_chapter_sentences(
     bits: list[str],
     anchored: list,
@@ -7822,6 +7855,7 @@ def _order_chapter_sentences(
     *,
     from_name: str = "",
     to_name: str = "",
+    lang: str = "fr",
 ) -> None:
     """Les phrases d'un chapitre se disent dans l'ordre STRICT du temps
     du voyage — tri stable par instant d'ancre, l'ouverture (role depart) reste
@@ -7839,8 +7873,17 @@ def _order_chapter_sentences(
         role = (row.get("role") or "").strip().lower()
         cls = 0 if role == "depart" else (2 if role == "arrive" else 1)
         t = row.get("t")
-        if t is not None:
-            last_t = int(t)
+        spoken_ms = _spoken_anchor_ms(bits[i], lang) if cls == 1 and i < len(bits) else None
+        t_val = int(t) if t is not None else None
+        use_spoken = (
+            spoken_ms is not None
+            and (t_val is None or t_val >= _RELATIVE_ANCHOR_MS_CEIL)
+        )
+        sort_t = spoken_ms if use_spoken else None
+        if sort_t is None and t is not None:
+            sort_t = int(t)
+        if sort_t is not None:
+            last_t = sort_t
         keys.append((cls, last_t if cls == 1 else 0, i))
     timed = sorted(range(len(bits)), key=lambda i: keys[i])
     order = (
@@ -7849,6 +7892,7 @@ def _order_chapter_sentences(
         else timed
     )
     if order == list(range(len(bits))):
+        _sync_anchored_times_from_speech(bits, anchored, lang)
         return
     old_off = _bits_offsets(bits)
     new_bits = [bits[i] for i in order]
@@ -7860,6 +7904,7 @@ def _order_chapter_sentences(
             bubble["charIdx"] = remap[old_idx]
     anchored[:] = [anchored[i] for i in order]
     bits[:] = new_bits
+    _sync_anchored_times_from_speech(bits, anchored, lang)
 
 
 def _named_place_coords(name: str, marks: list | None = None) -> Optional[tuple[float, float]]:
@@ -8481,23 +8526,32 @@ def chapter_anchors(text: str, anchored: list, t_a: int, t_b: int, lang: str) ->
             if part_idx < 0:
                 part_idx = cursor
             cursor = part_idx + max(1, len(part) // 2)
+            part_t = t
+            spoken_ms = _spoken_anchor_ms(part, lang)
+            absolute_window = t_b is None or int(t_b) >= _RELATIVE_ANCHOR_MS_CEIL
+            if spoken_ms is not None and absolute_window:
+                part_t = int(spoken_ms)
+                if t_a is not None:
+                    part_t = max(int(t_a), part_t)
+                if t_b is not None:
+                    part_t = min(int(t_b), part_t)
             if role == "depart" or (not role and _is_depart_sentence(part) and not _is_arrival_sentence(part)):
                 idx = _voice_lookahead_idx(_first_word_idx(part, part_idx))
-                out.append((idx, t, place, kind or "depart"))
+                out.append((idx, part_t, place, kind or "depart"))
                 continue
             if _is_duration_sentence(part):
                 start = _voice_lookahead_idx(_first_word_idx(part, part_idx), part_idx)
                 end = _voice_lookahead_idx(_end_idx(part, part_idx), part_idx)
-                out.append((start, t, place, kind or "escale"))
+                out.append((start, part_t, place, kind or "escale"))
                 if end > start:
                     out.append((end, t_end, place, kind or "escale"))
                 continue
             if role == "arrive" or _is_arrival_sentence(part):
                 idx = _voice_lookahead_idx(_last_word_idx(part, part_idx), part_idx)
-                out.append((idx, t, place, kind or "escale"))
+                out.append((idx, part_t, place, kind or "escale"))
                 continue
             idx = _voice_lookahead_idx(_place_idx_in_sentence(part, part_idx, place), part_idx)
-            out.append((idx, t, place, kind))
+            out.append((idx, part_t, place, kind))
     out.sort(key=lambda p: p[0])
     result: list[dict] = []
     last_t: Optional[int] = None
@@ -8800,6 +8854,8 @@ def build_raw_from_moments(
             if _is_air_window(w) and _is_air_only_stop(str(change.get("title") or "")):
                 return
             title = short_name(change.get("title") or "")
+            if _is_air_only_stop(title) and not (_is_air_window(w) or _is_side_window(w)):
+                return
             if change.get("kind") == "approche" and dest_name and title and (
                 same_stop(title, dest_name) or dest_name.casefold() in title.casefold()
             ):
@@ -8940,6 +8996,7 @@ def build_raw_from_moments(
             bits, anchored, placed,
             from_name=str(w.get("fromName") or ""),
             to_name=str(w.get("toName") or w.get("destName") or ""),
+            lang=lang,
         )
         thinned = thin_chapter_dates(bits, lang)
         if len(thinned) == len(bits) and len(anchored) == len(bits):
@@ -9356,8 +9413,30 @@ def reanchor_written_chapter(chapter: dict, written_text: str, lang: str) -> lis
         anchored = [(sent, t_a, {}) for sent in wr_sents]
     out = chapter_anchors(written_text, anchored, t_a, t_b, lang) if written_text and anchored else []
     if out:
-        return _strict_increasing_anchors(out)
-    return _strict_increasing_anchors(_fallback_anchors(written_text, wr_sents, old, t_a))
+        out = _snap_anchors_to_spoken_dates(written_text, out, lang)
+        return _strict_increasing_anchors(out, written_text, lang)
+    fallback = _fallback_anchors(written_text, wr_sents, old, t_a)
+    fallback = _snap_anchors_to_spoken_dates(written_text, fallback, lang)
+    return _strict_increasing_anchors(fallback, written_text, lang)
+
+
+def condense_written_plan(full_plan: dict, seconds: int, *, lang: str = "fr") -> dict:
+    """Raccourcit le rédigé intégral au plafond (~15 car./s) sans rappeler Super."""
+    import copy
+
+    plan = copy.deepcopy(full_plan)
+    secs = _film_seconds(seconds)
+    chapters = [c for c in (plan.get("chapters") or []) if isinstance(c, dict)]
+    _film_apply_char_budget(chapters, secs)
+    for ch in chapters:
+        text = ch.get("text") or ""
+        if text:
+            ch["anchors"] = reanchor_written_chapter(ch, text, lang)
+    plan["chapters"] = chapters
+    plan["chars"] = script_chars(chapters)
+    plan["targetSeconds"] = secs
+    plan["estimatedSeconds"] = film_estimated_seconds(plan["chars"])
+    return plan
 
 
 def _fallback_anchors(
@@ -9379,7 +9458,31 @@ def _fallback_anchors(
     return out
 
 
-def _strict_increasing_anchors(anchors: list[dict]) -> list[dict]:
+def _snap_anchors_to_spoken_dates(text: str, anchors: list[dict], lang: str) -> list[dict]:
+    """Recolle la barre de sync sur la date dite dans la phrase ancrée."""
+    if not text or not anchors:
+        return anchors
+    out: list[dict] = []
+    for a in anchors:
+        if not isinstance(a, dict):
+            continue
+        row = {**a}
+        try:
+            idx = int(row.get("charIdx") or 0)
+        except (TypeError, ValueError):
+            idx = 0
+        spoken_ms = _spoken_anchor_ms(_sentence_at_idx(text, idx), lang)
+        if spoken_ms is not None:
+            row["t"] = _iso(spoken_ms)
+        out.append(row)
+    return out
+
+
+def _strict_increasing_anchors(
+    anchors: list[dict],
+    text: str = "",
+    lang: str = "fr",
+) -> list[dict]:
     ordered = sorted(
         [a for a in anchors if isinstance(a, dict)],
         key=lambda a: int(a.get("charIdx") or 0),
@@ -9398,7 +9501,16 @@ def _strict_increasing_anchors(anchors: list[dict]) -> list[dict]:
         t_raw = a.get("t")
         t_ms = t_raw if isinstance(t_raw, int) else _ms(t_raw)
         if last_t is not None and t_ms is not None and t_ms < last_t:
-            t_ms = last_t
+            spoken_ms = (
+                _spoken_anchor_ms(_sentence_at_idx(text, idx), lang) if text else None
+            )
+            back_ms = last_t - t_ms
+            if spoken_ms is not None and spoken_ms == t_ms:
+                pass
+            elif back_ms <= 3 * 86_400_000:
+                pass
+            else:
+                t_ms = last_t
         if t_ms is not None:
             last_t = t_ms
         row = {**a, "charIdx": idx}
@@ -9598,12 +9710,17 @@ def _sentence_at_idx(text: str, idx: int) -> str:
 
 def _dates_regress(text: str, lang: str) -> bool:
     prev: Optional[datetime] = None
+    prev_was_depart = False
     for sent in _sentences(text):
         cur = _parse_spoken_date(sent, lang)
         if cur is None:
             continue
         if prev is not None and cur.date() < prev.date():
             back = (prev.date() - cur.date()).days
+            if prev_was_depart and back <= 3:
+                prev = cur
+                prev_was_depart = False
+                continue
             rolled = None
             if back > 60:
                 try:
@@ -9614,6 +9731,7 @@ def _dates_regress(text: str, lang: str) -> bool:
                 cur = rolled
             else:
                 return True
+        prev_was_depart = bool(_DEPART_SENT_RE.search(sent))
         prev = cur
     return False
 
@@ -9731,7 +9849,7 @@ def _distance_mismatch(text: str, rows: list[dict]) -> bool:
     return False
 
 
-def _cap_leg_faults(text: str, rows: list[dict], frm: str) -> list[str]:
+def _cap_leg_faults(text: str, rows: list[dict], frm: str, chapter_to: str = "") -> list[str]:
     """« cap sur Dzaoudzi » depuis Papeete : la destination n'est pas l'escale suivante."""
     if not frm:
         return []
@@ -9740,8 +9858,13 @@ def _cap_leg_faults(text: str, rows: list[dict], frm: str) -> list[str]:
         match = _CAP_RE.search(sent)
         if not match:
             continue
+        cap_raw = (match.group(0) or "").strip().casefold()
+        if cap_raw.startswith(("départ vers", "departure for")):
+            continue
         to = _place_core(match.group("to"))
         if not to or _is_air_leg(frm, to) or _is_side_leg(frm, to):
+            continue
+        if chapter_to and same_stop(to, chapter_to) and not _sea_between(rows, frm, to):
             continue
         skipped = _sea_between(rows, frm, to)
         if skipped and "skip" not in faults:
@@ -9784,20 +9907,42 @@ def nemotron_reread_report(
             c.get("text") or "" for c in chapters if isinstance(c, dict)
         )
     faults: list[str] = []
-    if _skip_pairs(blob, rows):
-        faults.append("skip")
-    if _upcoming_omits(blob, rows, here=here):
-        faults.append("upcoming")
-    if _absent_places(blob, rows):
-        faults.append("absent")
-    if _distance_mismatch(blob, rows):
-        faults.append("distance")
-    if _dates_regress(blob, lang) or _anchor_dates_regress(chapters, lang):
-        faults.append("date")
-    for chapter in chapters or []:
+    chapters_list = [c for c in (chapters or []) if isinstance(c, dict)]
+    if chapters_list:
+        for ch in chapters_list:
+            ch_text = ch.get("text") or ""
+            if _skip_pairs(ch_text, rows) and "skip" not in faults:
+                faults.append("skip")
+            if _upcoming_omits(ch_text, rows, here=here) and "upcoming" not in faults:
+                faults.append("upcoming")
+            if _absent_places(ch_text, rows) and "absent" not in faults:
+                faults.append("absent")
+            if _distance_mismatch(ch_text, rows) and "distance" not in faults:
+                faults.append("distance")
+            if _dates_regress(ch_text, lang) and "date" not in faults:
+                faults.append("date")
+        if _anchor_dates_regress(chapters_list, lang) and "date" not in faults:
+            faults.append("date")
+    else:
+        if _skip_pairs(blob, rows):
+            faults.append("skip")
+        if _upcoming_omits(blob, rows, here=here):
+            faults.append("upcoming")
+        if _absent_places(blob, rows):
+            faults.append("absent")
+        if _distance_mismatch(blob, rows):
+            faults.append("distance")
+        if _dates_regress(blob, lang):
+            faults.append("date")
+    for chapter in chapters_list:
         if not isinstance(chapter, dict):
             continue
-        for fault in _cap_leg_faults(chapter.get("text") or "", rows, str(chapter.get("fromName") or "")):
+        for fault in _cap_leg_faults(
+            chapter.get("text") or "",
+            rows,
+            str(chapter.get("fromName") or ""),
+            str(chapter.get("toName") or ""),
+        ):
             if fault not in faults:
                 faults.append(fault)
         if _offleg_in_chapter(chapter, rows) and "offleg" not in faults:
@@ -10534,11 +10679,22 @@ async def write_film_chain(
         "source": "rules", "reviewed": False,
     }
     raw = dict(plan)
-    raw["targetSeconds"] = _film_seconds(seconds if seconds is not None else plan.get("targetSeconds"))
-    super_plan, super_stats = await write_stored_plan(raw, lang="fr", cascade=cascade, seconds=seconds)
+    secs = _film_seconds(seconds if seconds is not None else plan.get("targetSeconds"))
+    raw["targetSeconds"] = secs
+    if secs == 150:
+        full_raw = {**raw, "targetSeconds": 0}
+        super_plan, super_stats = await write_stored_plan(
+            full_raw, lang="fr", cascade=cascade, seconds=0,
+        )
+    else:
+        super_plan, super_stats = await write_stored_plan(
+            raw, lang="fr", cascade=cascade, seconds=seconds,
+        )
     if super_plan is None or int((super_stats or {}).get("rewritten") or 0) <= 0:
         return None, None, stats
     stats["super"] = 1
+    if secs == 150:
+        super_plan = condense_written_plan(super_plan, 150, lang="fr")
     origin = public_written_source(super_plan.get("source") or (super_stats or {}).get("source"))
     if origin == WRITTEN_SOURCE:
         stats["source"] = WRITTEN_SOURCE

@@ -5641,6 +5641,30 @@ def test_reread_refuses_a_date_that_goes_backward():
     assert "date" in bar["faults"]
 
 
+def test_reanchor_keeps_spoken_date_when_it_precedes_a_later_depart():
+    from film_script import reanchor_written_chapter
+
+    text = (
+        "Le 17 octobre, Berry-Mappemonde quitte Papeete (Polynésie française), cap à l'ouest. "
+        "Le 15 octobre, à vingt-six milles, le projet Programme Animlagon en Nouvelle-Calédonie."
+    )
+    chapter = {
+        "text": text,
+        "tA": "2026-10-14T03:34:42Z",
+        "tB": "2026-10-27T13:55:18Z",
+        "anchors": [
+            {"charIdx": 0, "t": "2026-10-17T00:00:00Z"},
+            {"charIdx": text.index("Le 15 octobre"), "t": "2026-10-15T00:00:00Z"},
+        ],
+    }
+    out = reanchor_written_chapter(chapter, text, "fr")
+    anim = next(
+        a for a in out
+        if "Animlagon" in (chapter["text"][int(a["charIdx"]): int(a["charIdx"]) + 80])
+    )
+    assert anim["t"].startswith("2026-10-15")
+
+
 def test_reread_refuses_a_later_stop_announced_on_the_wrong_leg():
     from film_script import nemotron_reread_report
 
