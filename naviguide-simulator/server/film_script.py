@@ -4969,6 +4969,7 @@ def event_sentence(ev: dict, lang: str = "fr", display_t0: str | None = None) ->
                     packed.setdefault(key, e[key])
         return _amp_film_sentence(spoken, packed, lang, when)
     if ev.get("kind") == "project":
+        name = project_spoken_title(name)
         nm = _fact_num(e, "nm")
         dist = spoken_distance(nm, lang) if nm is not None else ""
         if dist:
@@ -7702,6 +7703,7 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
         name = change_place_name(change)
         if not name or looks_english_title(name):
             return ""
+        name = project_spoken_title(name)
         nm = change_distance_nm(change)
         dist = spoken_distance(nm, lang) if nm is not None else ""
         if dist:
@@ -7771,6 +7773,35 @@ def _bubble_from_change(change: dict, chapter: dict, lang: str, char_idx: int) -
 
 def _sentences(text: str) -> list[str]:
     return [p.strip() for p in re.split(r"(?<=[.!?…])\s+", text or "") if p.strip()]
+
+
+_PROJECT_YEAR_SUFFIX_RE = re.compile(
+    r"\s*[-–—:,]?\s*\(?\b(Année|Annee|Year|Phase|An)\s+(\d{1,2})\)?\s*$",
+    re.I,
+)
+
+
+_PROJECT_YEAR_IN_TEXT_RE = re.compile(
+    r"(?<=[a-zà-ÿ]) (Année|Year) (\d{1,2})(?!\d)([.,;]|$)",
+)
+
+
+def project_spoken_title(name: str) -> str:
+    """« Restaurer les coraux … poissons-demoiselles Année 1 » collait l'année du
+    projet au titre (N10) : le suffixe d'année ou de phase passe entre parenthèses,
+    « … poissons-demoiselles (Année 1) ». Le reste du titre ne bouge pas."""
+    text = str(name or "").strip()
+    m = _PROJECT_YEAR_SUFFIX_RE.search(text)
+    if not m or m.start() == 0:
+        return text
+    head = text[: m.start()].rstrip(" -–—:,")
+    if not head:
+        return text
+    word = m.group(1)
+    word = word[0].upper() + word[1:].lower()
+    if word == "Annee":
+        word = "Année"
+    return f"{head} ({word} {m.group(2)})"
 
 
 def _sentence_has_date(text: str, lang: str) -> bool:
@@ -8463,6 +8494,43 @@ def drop_turn_before_same_belt(sentences: list[str]) -> list[str]:
     return out
 
 
+_COMMON_LEAD_WORD_RE = re.compile(
+    r"^(?:Le|La|Les|L['’]|À|Au|Aux|Un|Une|Des|Du|De|D['’]|Haute|The|A|An|At|High)\b",
+)
+
+
+def drop_repeated_heard_dates(sentences: list[str], lang: str = "fr") -> list[str]:
+    """« Le 17 juillet, … quitte Fort-de-France. … Le 17 juillet, à 21 milles, le projet … »
+    redisait le jour que l'auditeur a déjà en tête (N11, six étapes du film intégral).
+    Une date en tête de phrase égale à la date ENTENDUE (date dite ou « le lendemain »
+    déjà compté) devient « Puis, ». Ni la première phrase ni l'arrivée ne bougent.
+    """
+    out = list(sentences)
+    lead_rx = _LEAD_DATE_EN_RE if _en(lang) else _LEAD_DATE_FR_RE
+    for k in range(1, len(out)):
+        s = out[k] or ""
+        if not s or _is_arrival_sentence(s):
+            continue
+        probe = s if _en(lang) else _digit_fr_dates(s)
+        m = lead_rx.match(probe)
+        if not m or re.search(r"\d{4}$", m.group(1)):
+            continue
+        heard = _heard_date_before(out, k, lang)
+        cur = _parse_spoken_date(probe[: m.end()], lang)
+        if heard is None or cur is None:
+            continue
+        if (heard.month, heard.day) != (cur.month, cur.day):
+            continue
+        body = probe[m.end():]
+        if not body:
+            continue
+        lead = "Then, " if _en(lang) else "Puis, "
+        if _COMMON_LEAD_WORD_RE.match(body):
+            body = body[0].lower() + body[1:]
+        out[k] = lead + body
+    return out
+
+
 def thin_chapter_dates(sentences: list[str], lang: str = "fr") -> list[str]:
     """Au plus une date calendaire toutes les deux phrases. L'arrivée garde sa date."""
     out = drop_turn_before_same_belt([scrub_spoken(s) for s in sentences])
@@ -8520,10 +8588,74 @@ def thin_chapter_dates(sentences: list[str], lang: str = "fr") -> list[str]:
             break
         lead = "Puis, " if not _en(lang) else "Then, "
         out[drop] = lead + (body[0].lower() + body[1:] if body else "")
+    # Après l'alternance : seules les dates qui redisent le jour entendu tombent (N11).
+    out = drop_repeated_heard_dates(out, lang)
     kept = [s for s in out if s]
     if _en(lang):
         return [fix_en_waters_casing(s) for s in kept]
     return kept
+
+
+def _year_insertions(texts: list[str], lang: str = "fr") -> list[list[tuple[int, str]]]:
+    """Positions où dire l'année : la première date après le passage du 31 décembre.
+
+    « Le 3 janvier, Berry-Mappemonde quitte Dzaoudzi » suivait « le 31 décembre » sans
+    année : un juge croyait tout le film en 2026 (N14). Seule une date écrite (« le 15 mai
+    2026 ») fixe l'année de départ ; sans elle, rien n'est ajouté. Le passage se lit à un
+    mois qui recule d'au moins six (décembre → janvier), jamais à un petit retour en arrière.
+    """
+    rx = _DATE_EN_RE if _en(lang) else _DATE_FR_RE
+    months = [m.casefold() for m in MONTHS["en" if _en(lang) else "fr"]]
+    year: Optional[int] = None
+    prev: Optional[tuple[int, int]] = None
+    out: list[list[tuple[int, str]]] = []
+    for text in texts:
+        ins: list[tuple[int, str]] = []
+        for m in rx.finditer(text or ""):
+            key = str(m.group(2)).casefold()
+            if key not in months:
+                continue
+            mo = months.index(key) + 1
+            day_s = str(m.group(1))
+            try:
+                day = 1 if day_s.lower() == "1er" else int(day_s)
+            except ValueError:
+                continue
+            y_m = re.search(r"(\d{4})$", m.group(0))
+            if y_m:
+                year = int(y_m.group(1))
+            elif year is not None and prev is not None and prev[0] - mo >= 6:
+                year += 1
+                ins.append((m.end(), f" {year}"))
+            prev = (mo, day)
+        out.append(ins)
+    return out
+
+
+def _apply_insertions(text: str, ins: list[tuple[int, str]]) -> str:
+    for pos, add in sorted(ins, reverse=True):
+        text = text[:pos] + add + text[pos:]
+    return text
+
+
+def mark_year_changes(chapters: list[dict], lang: str = "fr") -> list[dict]:
+    """Ajoute l'année au passage du nouvel an, ancres et événements décalés d'autant."""
+    rows = [c for c in chapters if isinstance(c, dict)]
+    plan = _year_insertions([str(c.get("text") or "") for c in rows], lang)
+    for ch, ins in zip(rows, plan):
+        if not ins:
+            continue
+        ch["text"] = _apply_insertions(str(ch.get("text") or ""), ins)
+        for key in ("anchors", "events"):
+            for item in ch.get(key) or []:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    idx = int(item.get("charIdx"))
+                except (TypeError, ValueError):
+                    continue
+                item["charIdx"] = idx + sum(len(add) for pos, add in ins if pos <= idx)
+    return chapters
 
 
 def date_density_ok(text: str, lang: str = "fr") -> bool:
@@ -9507,6 +9639,7 @@ def build_raw_from_moments(
     if has_budget and target > 0:
         _film_apply_char_budget(chapters, seconds)
     chapters[:] = _drop_degenerate_chapters(chapters)
+    mark_year_changes(chapters, lang)
     chars = script_chars(chapters)
     return _with_dc_subjects({
         "chapters": chapters,
@@ -12315,11 +12448,18 @@ def _polish_written_plan(plan: dict | None, raw_plan: dict, lang: str = "fr") ->
         str(c.get("text") or "") for c in (plan.get("chapters") or []) if isinstance(c, dict)
     ))
     chapters = []
-    for ch in plan.get("chapters") or []:
-        if not isinstance(ch, dict):
-            continue
+    rows = [ch for ch in (plan.get("chapters") or []) if isinstance(ch, dict)]
+    # Graphie du rédigé : jour redit (N11), « Année 1 » collé (N10), année au nouvel an (N14).
+    fixed = [
+        " ".join(drop_repeated_heard_dates(_sentences(str(ch.get("text") or "")), lang))
+        if ch.get("text") else ""
+        for ch in rows
+    ]
+    fixed = [_PROJECT_YEAR_IN_TEXT_RE.sub(r" (\1 \2)\3", t) for t in fixed]
+    fixed = [_apply_insertions(t, ins) for t, ins in zip(fixed, _year_insertions(fixed, lang))]
+    for ch, pre in zip(rows, fixed):
         old = ch.get("text") or ""
-        text = unit_numbers_to_digits(old)
+        text = unit_numbers_to_digits(pre or old)
         text = en_le_month(text) if _en(lang) else fr_unify_apostrophes(fr_elide_de(text, style), style)
         if text == old:
             chapters.append(ch)
