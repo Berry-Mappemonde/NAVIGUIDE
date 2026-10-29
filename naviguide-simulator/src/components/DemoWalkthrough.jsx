@@ -4,6 +4,7 @@ import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
 import { useLang } from "../i18n/LangContext.jsx";
 import { describeModelRoles, getDemoSteps, tourEditedOffer } from "./demoWalkthrough.js";
+import { describeTfLatency } from "../utils/tfLatency.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
 
@@ -303,6 +304,17 @@ export function DemoWalkthrough({
                   ))}
                 </ul>
                 {roles.today ? <p data-testid="demo-models-today" className={`mt-2 ${muted}`}>{roles.today}</p> : null}
+                {(() => {
+                  const tf = describeTfLatency(status.llm, t);
+                  return (
+                    <>
+                      {tf.latency ? <p data-testid="demo-models-latency" className={`mt-1 ${muted}`}>{tf.latency}</p> : null}
+                      {tf.missing.map((m) => (
+                        <p key={m.tier} data-testid={`demo-models-missing-${m.tier}`} className="mt-1 font-medium">{m.text}</p>
+                      ))}
+                    </>
+                  );
+                })()}
                 {!roles.live ? <p data-testid="demo-models-default" className={`mt-2 ${muted}`}>{t("demoModelsDefault")}</p> : null}
               </>
             ) : (
