@@ -1,5 +1,5 @@
 import { reviewLeg } from "../engine/planReview.js";
-import { momentNearest } from "../hooks/useMomentJournal.js";
+import { entryNmFrom, momentNearest } from "../hooks/useMomentJournal.js";
 import frDict from "../i18n/fr.js";
 import enDict from "../i18n/en.js";
 import { displayStopName } from "../utils/stopLabels.js";
@@ -267,6 +267,48 @@ export function displayIciFrame(moment, journalEntries, mode) {
     here: moment?.here?.sentences?.length ? moment.here : (timeline?.here || moment?.here),
     around: moment?.around?.length ? moment.around : (timeline?.around || []),
     sources: moment?.sources?.length ? moment.sources : (timeline?.sources || []),
+  };
+}
+
+/**
+ * Pendant le film, « Autour du bateau » et les alertes suivent le bateau du
+ * film, pas le direct (gelé pendant la lecture : Fineveke restait affiché à
+ * La Rochelle comme à Papeete). Source : le moment du journal le plus proche
+ * de la position du film, par la position seule (le stock peut être daté sur
+ * un autre planning). Au-delà de REPLAY_AROUND_MAX_NM : rien plutôt qu'un lieu
+ * faux.
+ */
+export const REPLAY_AROUND_MAX_NM = 30;
+
+function momentContentSize(m) {
+  return (Array.isArray(m?.around) ? m.around.length : 0) + (Array.isArray(m?.alerts) ? m.alerts.length : 0);
+}
+
+export function replayMomentAt(journalEntries, at, maxNm = REPLAY_AROUND_MAX_NM) {
+  if (!at || !Number.isFinite(Number(at.lat)) || !Number.isFinite(Number(at.lon))) return null;
+  let best = null;
+  let bestNm = Infinity;
+  for (const row of Array.isArray(journalEntries) ? journalEntries : []) {
+    const nm = entryNmFrom(row, at);
+    if (!(nm <= maxNm)) continue;
+    const m = row?.moment || row;
+    // Même escale à moins d'un demi-mille : garder le moment qui a quelque chose à dire.
+    if (nm < bestNm - 0.5 || (Math.abs(nm - bestNm) <= 0.5 && momentContentSize(m) > momentContentSize(best))) {
+      best = m;
+      bestNm = Math.min(nm, bestNm);
+    }
+  }
+  return best;
+}
+
+export function replayIciFrame(moment, journalEntries, at, maxNm = REPLAY_AROUND_MAX_NM) {
+  const hit = replayMomentAt(journalEntries, at, maxNm);
+  return {
+    shown: moment,
+    alerts: Array.isArray(hit?.alerts) ? hit.alerts : [],
+    here: moment?.here,
+    around: Array.isArray(hit?.around) ? hit.around : [],
+    sources: moment?.sources?.length ? moment.sources : (hit?.sources || []),
   };
 }
 

@@ -19,6 +19,7 @@ import {
   seekJournalEntry,
   visibleAlerts,
   displayIciFrame,
+  replayIciFrame,
   withNowLeg,
   localizeStoredTitle,
   localizeStoredFact,
@@ -208,7 +209,10 @@ export function IciMaintenant({
     if (typeof onViewChange === "function") onViewChange(id);
     else setLocalView(id);
   };
-  const frame = displayIciFrame(moment, journalEntries, mode);
+  // Film en lecture : alertes et « Autour du bateau » à la position du film.
+  const frame = replayFrame?.at
+    ? replayIciFrame(moment, journalEntries, replayFrame.at)
+    : displayIciFrame(moment, journalEntries, mode);
   // Maintenant never repeats the card shown as Suivant, nor what it says.
   const momentNow = momentNowProp && !sameShownMoment(momentNowProp, momentFree) ? momentNowProp : null;
   const around = aroundWithoutShown(frame.around, momentFree);

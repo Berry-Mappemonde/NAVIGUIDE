@@ -1910,7 +1910,7 @@ export function useReplay({
       const ingest = (next) => {
         if (next == null) return;
         const from = lastTRef.current ?? next;
-        const fresh = cardsBetween(timelineRef.current, from, next, lang);
+        const fresh = cardsBetween(timelineRef.current, from, next, lang, clockRef.current);
         if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);
         lastTRef.current = next;
         tMsRef.current = next;
