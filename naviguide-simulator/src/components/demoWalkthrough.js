@@ -119,3 +119,31 @@ export function wantsTourFromUrl(search) {
     return false;
   }
 }
+
+// Étape film : bouton « Lire le film Rédigé » en un clic (idée C2-b, IDEATION-CRITERES-1005).
+// Le bouton n'est proposé que si le serveur a un rédigé pour cette durée (`hasWritten`) ;
+// sinon le repli Brut est annoncé AVANT le clic (aucun appel Nemotron lancé par la visite).
+
+/** "edited" : le rédigé existe, la visite propose le bouton Rédigé ; "fallback" : seul le Brut joue. */
+export function tourEditedOffer({ hasWritten = false } = {}) {
+  return hasWritten ? "edited" : "fallback";
+}
+
+/** Délai au-delà duquel une demande de rédigé non servie retombe sur le Brut, annoncé. */
+export const TOUR_EDITED_WAIT_MS = 45_000;
+
+/**
+ * Que faire d'une demande « Lire le film Rédigé » en attente ?
+ * `loadedStyle` = style du plan chargé quand le serveur a servi le style demandé
+ * ("written" ou "raw"), "mismatch" quand il a servi le Brut à une demande Rédigé, "" sinon.
+ * @returns {"idle" | "wait" | "edited" | "raw"}
+ */
+export function tourEditedStep({
+  pending = false, active = false, filmStyle = "raw", loadedStyle = "", remoteStatus = "pending", canStart = false,
+} = {}) {
+  if (!pending || active) return "idle";
+  if (remoteStatus !== "ready" || !canStart) return "wait";
+  if (filmStyle === "written" && loadedStyle === "written") return "edited";
+  if (filmStyle !== "written" && loadedStyle === "raw") return "raw";
+  return "wait";
+}

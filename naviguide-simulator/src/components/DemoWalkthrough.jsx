@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Compass, Play, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Compass, Loader2, Play, X } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
-import { describeModelRoles, getDemoSteps } from "./demoWalkthrough.js";
+import { describeModelRoles, getDemoSteps, tourEditedOffer } from "./demoWalkthrough.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
 
@@ -29,6 +29,11 @@ export function DemoWalkthrough({
   fetchStatus = defaultFetchStatus,
   onStepChange,
   onPlayReplay,
+  editedReady = false,
+  editedSource = "",
+  editedPending = false,
+  editedFellBack = false,
+  onPlayEdited,
   onClose,
 }) {
   const { t } = useLang();
@@ -236,23 +241,62 @@ export function DemoWalkthrough({
             ) : (
               <p className={muted}>{t("demoModelsLoading")}</p>
             )}
+            <p data-testid="demo-models-thesis" className={`mt-2 font-semibold ${light ? "text-cyan-900" : "text-cyan-100"}`}>{t("demoModelsThesis")}</p>
           </div>
         );
       })() : null}
 
-      {step.id === "replay" ? (
-        <div className={`mt-4 rounded-xl border p-3 ${light ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5"}`}>
-          {replayActive ? null : (
-            <button type="button" data-testid="demo-walkthrough-play" onClick={onPlayReplay} disabled={!replayReady} className={primaryButton}>
-              <Play size={14} aria-hidden="true" />
-              {t("replayStart")}
-            </button>
-          )}
-          {!replayReady && !replayActive ? (
-            <p className={`mt-2 text-xs leading-relaxed ${muted}`}>{t("demoNoFake")}</p>
-          ) : null}
-        </div>
-      ) : null}
+      {step.id === "replay" ? (() => {
+        const offer = tourEditedOffer({ hasWritten: editedReady });
+        const showEdited = offer === "edited" && replayReady && !replayActive;
+        return (
+          <div data-testid="demo-replay-box" data-edited={offer} className={`mt-4 rounded-xl border p-3 ${light ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5"}`}>
+            {showEdited ? (
+              <>
+                <button
+                  type="button"
+                  data-testid="demo-walkthrough-play-edited"
+                  onClick={onPlayEdited}
+                  disabled={editedPending}
+                  aria-busy={editedPending}
+                  className={primaryButton}
+                >
+                  {editedPending ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}
+                  {editedPending ? t("demoEditedLoading") : t("demoPlayEdited")}
+                </button>
+                <p data-testid="demo-edited-source" className={`mt-2 text-xs leading-relaxed ${bodyText}`}>
+                  {t("demoEditedBy", { source: editedSource || t("storySourceSuper") })}
+                </p>
+              </>
+            ) : null}
+            {replayActive ? null : (
+              <button
+                type="button"
+                data-testid="demo-walkthrough-play"
+                onClick={onPlayReplay}
+                disabled={!replayReady || editedPending}
+                className={`${showEdited ? secondaryButton : primaryButton}${showEdited ? " mt-2" : ""}`}
+              >
+                <Play size={14} aria-hidden="true" />
+                {t("replayStart")}
+              </button>
+            )}
+            {offer === "fallback" && replayReady && !replayActive ? (
+              <p data-testid="demo-edited-fallback" className={`mt-2 text-xs leading-relaxed ${bodyText}`}>
+                {t(customRoute ? "demoEditedFallbackCustom" : "demoEditedFallback")}
+              </p>
+            ) : null}
+            {editedFellBack ? (
+              <p data-testid="demo-edited-fell-back" role="status" className={`mt-2 text-xs leading-relaxed ${bodyText}`}>
+                {t("demoEditedFellBack")}
+              </p>
+            ) : null}
+            {!replayReady && !replayActive ? (
+              <p className={`mt-2 text-xs leading-relaxed ${muted}`}>{t("demoNoFake")}</p>
+            ) : null}
+          </div>
+        );
+      })() : null}
 
       <div className={`mt-5 flex items-center justify-between gap-2 border-t pt-3 ${light ? "border-slate-200" : "border-white/10"}`}>
         <button type="button" data-testid="demo-walkthrough-prev" onClick={() => goTo(index - 1)} disabled={index === 0} className={secondaryButton}>
