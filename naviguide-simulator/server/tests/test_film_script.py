@@ -5641,8 +5641,9 @@ def test_reread_refuses_a_date_that_goes_backward():
     assert "date" in bar["faults"]
 
 
-def test_reanchor_keeps_spoken_date_when_it_precedes_a_later_depart():
-    from film_script import reanchor_written_chapter
+def test_reanchor_never_moves_the_bar_back_before_a_later_depart():
+    """« Le 15 octobre » dit après un départ le 17 : défaut du texte, la barre ne recule pas."""
+    from film_script import _dates_regress, reanchor_written_chapter
 
     text = (
         "Le 17 octobre, Berry-Mappemonde quitte Papeete (Polynésie française), cap à l'ouest. "
@@ -5658,11 +5659,37 @@ def test_reanchor_keeps_spoken_date_when_it_precedes_a_later_depart():
         ],
     }
     out = reanchor_written_chapter(chapter, text, "fr")
-    anim = next(
-        a for a in out
-        if "Animlagon" in (chapter["text"][int(a["charIdx"]): int(a["charIdx"]) + 80])
+    ts = [a["t"] for a in out]
+    assert ts == sorted(ts)
+    assert _dates_regress(text, "fr")
+
+
+def test_reanchor_keeps_the_year_of_the_chapter_for_spoken_dates():
+    """« Le 9 février » d'un chapitre de 2027 reste en 2027 (pas 2026 par défaut)."""
+    from film_script import reanchor_written_chapter
+
+    text = (
+        "Le 30 janvier, Berry-Mappemonde quitte Saint-Gilles (La Réunion), cap à l'ouest pour Europa (TAAF). "
+        "Puis, les eaux malgaches. "
+        "Le 9 février, à dix-neuf milles, le projet ISEO. "
+        "Arrivée à Europa (TAAF) le 21 février."
     )
-    assert anim["t"].startswith("2026-10-15")
+    chapter = {
+        "text": text,
+        "tA": "2027-01-27T07:32:22Z",
+        "tB": "2027-02-21T14:02:26Z",
+        "anchors": [
+            {"charIdx": 0, "t": "2027-01-30T07:32:22Z"},
+            {"charIdx": text.index("Puis"), "t": "2027-01-30T07:32:22Z"},
+            {"charIdx": text.index("Le 9 février"), "t": "2027-02-05T00:00:00Z"},
+            {"charIdx": text.index("Arrivée"), "t": "2027-02-21T14:02:26Z"},
+        ],
+    }
+    out = reanchor_written_chapter(chapter, text, "fr")
+    ts = [a["t"] for a in out]
+    assert all(t.startswith("2027") for t in ts), ts
+    assert ts == sorted(ts)
+    assert any(t.startswith("2027-02-09") for t in ts), ts
 
 
 def test_reread_refuses_a_later_stop_announced_on_the_wrong_leg():
@@ -6029,3 +6056,16 @@ def test_halifax_saint_pierre_hop_not_voyage():
     assert _opening_nm_label(leg_nm, "en") in repaired_text
     assert spoken_sea_days(leg_days, "en") in repaired_text
     assert "Arrival on 15 August." in repaired_text
+
+
+def test_reread_reads_spelled_out_french_dates():
+    """Nemotron écrit « le quinze octobre » : la relecture doit voir le recul de date."""
+    from film_script import _dates_regress, _parse_spoken_date
+
+    assert _parse_spoken_date("Le quinze octobre, une campagne.", "fr").day == 15
+    assert _parse_spoken_date("Le trente et un décembre, arrivée.", "fr").day == 31
+    text = (
+        "Le 17 octobre, Berry-Mappemonde quitte Papeete (Polynésie française). "
+        "Le quinze octobre, à vingt-six milles, le projet Animlagon."
+    )
+    assert _dates_regress(text, "fr")

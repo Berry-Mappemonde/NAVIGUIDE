@@ -98,6 +98,29 @@ _DATE_EN_RE = re.compile(
     r"October|November|December)(?: \d{4})?",
     re.I,
 )
+
+_FR_DAY_WORDS = {
+    "premier": "1er", "un": "1", "deux": "2", "trois": "3", "quatre": "4", "cinq": "5",
+    "six": "6", "sept": "7", "huit": "8", "neuf": "9", "dix": "10", "onze": "11",
+    "douze": "12", "treize": "13", "quatorze": "14", "quinze": "15", "seize": "16",
+    "dix-sept": "17", "dix-huit": "18", "dix-neuf": "19", "vingt": "20",
+    "vingt et un": "21", "vingt-et-un": "21", "vingt-deux": "22", "vingt-trois": "23",
+    "vingt-quatre": "24", "vingt-cinq": "25", "vingt-six": "26", "vingt-sept": "27",
+    "vingt-huit": "28", "vingt-neuf": "29", "trente": "30", "trente et un": "31",
+    "trente-et-un": "31",
+}
+_FR_SPELLED_DATE_RE = re.compile(
+    r"\b(" + "|".join(sorted((re.escape(k) for k in _FR_DAY_WORDS), key=len, reverse=True)) + r")"
+    r"(?= (?:janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\b)",
+    re.I,
+)
+
+
+def _digit_fr_dates(text: str) -> str:
+    """« le quinze octobre » → « le 15 octobre » : Nemotron épelle parfois les dates,
+    et les contrôles de date (relecture, ancres) ne lisent que les chiffres."""
+    return _FR_SPELLED_DATE_RE.sub(lambda m: _FR_DAY_WORDS[m.group(1).casefold()], text or "")
+
 _LEAD_DATE_FR_RE = re.compile(
     r"^(?:Le |À partir du )?((?:1er|\d{1,2}) (?:janvier|février|mars|avril|mai|juin|"
     r"juillet|août|septembre|octobre|novembre|décembre)(?: \d{4})?), ",
@@ -7511,20 +7534,45 @@ def _sentences(text: str) -> list[str]:
 
 
 def _sentence_has_date(text: str, lang: str) -> bool:
-    return bool((_DATE_EN_RE if _en(lang) else _DATE_FR_RE).search(text or ""))
+    if _en(lang):
+        return bool(_DATE_EN_RE.search(text or ""))
+    return bool(_DATE_FR_RE.search(_digit_fr_dates(text)))
 
 
-def _spoken_anchor_ms(sentence: str, lang: str) -> Optional[int]:
-    """Millisecondes UTC de la date dite dans la phrase, si lisible."""
+_RELATIVE_ANCHOR_MS_CEIL = 1_000_000_000_000  # ancres test / relatives (< ~2001 UTC)
+
+
+def _spoken_anchor_ms(sentence: str, lang: str, ref_ms: Optional[int] = None) -> Optional[int]:
+    """Millisecondes UTC de la date dite dans la phrase, si lisible.
+
+    Sans année écrite, `_parse_spoken_date` suppose 2026 : « le 9 février » d'un
+    chapitre de 2027 tomberait un an trop tôt. Avec `ref_ms` (instant du trajet),
+    on prend l'année (ref − 1, ref, ref + 1) la plus proche de la référence.
+    """
     spoken = _parse_spoken_date(sentence, lang)
     if spoken is None:
         return None
+    rx = _DATE_EN_RE if _en(lang) else _DATE_FR_RE
+    found = rx.search(sentence if _en(lang) else _digit_fr_dates(sentence))
+    has_year = bool(found and re.search(r"\d{4}$", found.group(0)))
+    if ref_ms is not None and ref_ms >= _RELATIVE_ANCHOR_MS_CEIL and not has_year:
+        ref_year = datetime.fromtimestamp(ref_ms / 1000, tz=timezone.utc).year
+        best: Optional[int] = None
+        for year in (ref_year - 1, ref_year, ref_year + 1):
+            try:
+                cand = int(spoken.replace(year=year).timestamp() * 1000)
+            except ValueError:
+                continue
+            if best is None or abs(cand - ref_ms) < abs(best - ref_ms):
+                best = cand
+        if best is not None:
+            return best
     return int(spoken.timestamp() * 1000)
 
 
 def _parse_spoken_date(text: str, lang: str) -> Optional[datetime]:
     rx = _DATE_EN_RE if _en(lang) else _DATE_FR_RE
-    found = rx.search(text or "")
+    found = rx.search(text if _en(lang) else _digit_fr_dates(text))
     if not found:
         return None
     day_s, month_s = found.group(1), found.group(2)
@@ -7823,9 +7871,6 @@ def _is_lr_ajaccio_chapter(from_name: str = "", to_name: str = "") -> bool:
     )
 
 
-_RELATIVE_ANCHOR_MS_CEIL = 1_000_000_000_000  # ancres test / relatives (< ~2001 UTC)
-
-
 def _sync_anchored_times_from_speech(bits: list[str], anchored: list, lang: str) -> None:
     """Aligne l'instant d'ancre sur la date dite quand elle est explicite."""
     if len(bits) != len(anchored):
@@ -7838,7 +7883,7 @@ def _sync_anchored_times_from_speech(bits: list[str], anchored: list, lang: str)
         t_ms = row.get("t")
         if isinstance(t_ms, int) and t_ms < _RELATIVE_ANCHOR_MS_CEIL:
             continue
-        spoken_ms = _spoken_anchor_ms(bits[j], lang)
+        spoken_ms = _spoken_anchor_ms(bits[j], lang, t_ms if isinstance(t_ms, int) else None)
         if spoken_ms is None:
             continue
         if isinstance(item, tuple):
@@ -7873,8 +7918,11 @@ def _order_chapter_sentences(
         role = (row.get("role") or "").strip().lower()
         cls = 0 if role == "depart" else (2 if role == "arrive" else 1)
         t = row.get("t")
-        spoken_ms = _spoken_anchor_ms(bits[i], lang) if cls == 1 and i < len(bits) else None
         t_val = int(t) if t is not None else None
+        spoken_ms = (
+            _spoken_anchor_ms(bits[i], lang, t_val if t_val is not None else last_t)
+            if cls == 1 and i < len(bits) else None
+        )
         use_spoken = (
             spoken_ms is not None
             and (t_val is None or t_val >= _RELATIVE_ANCHOR_MS_CEIL)
@@ -8527,7 +8575,7 @@ def chapter_anchors(text: str, anchored: list, t_a: int, t_b: int, lang: str) ->
                 part_idx = cursor
             cursor = part_idx + max(1, len(part) // 2)
             part_t = t
-            spoken_ms = _spoken_anchor_ms(part, lang)
+            spoken_ms = _spoken_anchor_ms(part, lang, t)
             absolute_window = t_b is None or int(t_b) >= _RELATIVE_ANCHOR_MS_CEIL
             if spoken_ms is not None and absolute_window:
                 part_t = int(spoken_ms)
@@ -9413,10 +9461,10 @@ def reanchor_written_chapter(chapter: dict, written_text: str, lang: str) -> lis
         anchored = [(sent, t_a, {}) for sent in wr_sents]
     out = chapter_anchors(written_text, anchored, t_a, t_b, lang) if written_text and anchored else []
     if out:
-        out = _snap_anchors_to_spoken_dates(written_text, out, lang)
+        out = _snap_anchors_to_spoken_dates(written_text, out, lang, t_a=t_a, t_b=t_b)
         return _strict_increasing_anchors(out, written_text, lang)
     fallback = _fallback_anchors(written_text, wr_sents, old, t_a)
-    fallback = _snap_anchors_to_spoken_dates(written_text, fallback, lang)
+    fallback = _snap_anchors_to_spoken_dates(written_text, fallback, lang, t_a=t_a, t_b=t_b)
     return _strict_increasing_anchors(fallback, written_text, lang)
 
 
@@ -9458,8 +9506,21 @@ def _fallback_anchors(
     return out
 
 
-def _snap_anchors_to_spoken_dates(text: str, anchors: list[dict], lang: str) -> list[dict]:
-    """Recolle la barre de sync sur la date dite dans la phrase ancrée."""
+def _snap_anchors_to_spoken_dates(
+    text: str,
+    anchors: list[dict],
+    lang: str,
+    *,
+    t_a: Any = None,
+    t_b: Any = None,
+) -> list[dict]:
+    """Recolle la barre de sync sur la date dite dans la phrase ancrée.
+
+    L'année vient de l'instant de l'ancre (pas 2026 par défaut) et l'instant
+    reste dans la fenêtre du chapitre [tA, tB].
+    """
+    lo = t_a if isinstance(t_a, int) else _ms(t_a) if t_a else None
+    hi = t_b if isinstance(t_b, int) else _ms(t_b) if t_b else None
     if not text or not anchors:
         return anchors
     out: list[dict] = []
@@ -9471,8 +9532,14 @@ def _snap_anchors_to_spoken_dates(text: str, anchors: list[dict], lang: str) -> 
             idx = int(row.get("charIdx") or 0)
         except (TypeError, ValueError):
             idx = 0
-        spoken_ms = _spoken_anchor_ms(_sentence_at_idx(text, idx), lang)
+        t_raw = row.get("t")
+        ref = t_raw if isinstance(t_raw, int) else _ms(t_raw) if t_raw else lo
+        spoken_ms = _spoken_anchor_ms(_sentence_at_idx(text, idx), lang, ref)
         if spoken_ms is not None:
+            if lo is not None:
+                spoken_ms = max(int(lo), spoken_ms)
+            if hi is not None:
+                spoken_ms = min(int(hi), spoken_ms)
             row["t"] = _iso(spoken_ms)
         out.append(row)
     return out
@@ -9501,16 +9568,10 @@ def _strict_increasing_anchors(
         t_raw = a.get("t")
         t_ms = t_raw if isinstance(t_raw, int) else _ms(t_raw)
         if last_t is not None and t_ms is not None and t_ms < last_t:
-            spoken_ms = (
-                _spoken_anchor_ms(_sentence_at_idx(text, idx), lang) if text else None
-            )
-            back_ms = last_t - t_ms
-            if spoken_ms is not None and spoken_ms == t_ms:
-                pass
-            elif back_ms <= 3 * 86_400_000:
-                pass
-            else:
-                t_ms = last_t
+            # La barre de sync ne recule jamais : une date dite plus tôt que la
+            # précédente est un défaut du texte (relecture « date »), pas une
+            # raison de faire reculer le bateau.
+            t_ms = last_t
         if t_ms is not None:
             last_t = t_ms
         row = {**a, "charIdx": idx}
@@ -9710,17 +9771,12 @@ def _sentence_at_idx(text: str, idx: int) -> str:
 
 def _dates_regress(text: str, lang: str) -> bool:
     prev: Optional[datetime] = None
-    prev_was_depart = False
     for sent in _sentences(text):
         cur = _parse_spoken_date(sent, lang)
         if cur is None:
             continue
         if prev is not None and cur.date() < prev.date():
             back = (prev.date() - cur.date()).days
-            if prev_was_depart and back <= 3:
-                prev = cur
-                prev_was_depart = False
-                continue
             rolled = None
             if back > 60:
                 try:
@@ -9731,7 +9787,6 @@ def _dates_regress(text: str, lang: str) -> bool:
                 cur = rolled
             else:
                 return True
-        prev_was_depart = bool(_DEPART_SENT_RE.search(sent))
         prev = cur
     return False
 
@@ -9921,6 +9976,8 @@ def nemotron_reread_report(
                 faults.append("distance")
             if _dates_regress(ch_text, lang) and "date" not in faults:
                 faults.append("date")
+        if _dates_regress(blob, lang) and "date" not in faults:
+            faults.append("date")
         if _anchor_dates_regress(chapters_list, lang) and "date" not in faults:
             faults.append("date")
     else:
