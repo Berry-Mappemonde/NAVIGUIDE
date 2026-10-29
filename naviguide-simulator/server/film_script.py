@@ -10789,10 +10789,6 @@ async def write_film_chain(
         stats["faults"] = review_en.get("faults") or []
         return None, None, stats
 
-    # Add rewritten and fallen at top level for receipt
-    stats["rewritten"] = int((fr_stats or {}).get("rewritten") or 0) + int((en_stats or {}).get("rewritten") or 0)
-    stats["fallen"] = int((fr_stats or {}).get("fallen") or 0) + int((en_stats or {}).get("fallen") or 0)
-
     return accepted_fr, accepted_en, stats
 
 

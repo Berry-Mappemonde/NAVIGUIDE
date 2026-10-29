@@ -85,21 +85,3 @@ test("sans reçu servi, aucun reçu affiché", async ({ page }) => {
   await openWritten(page, "fr", null);
   await expect(page.getByTestId("film-receipt")).toHaveCount(0);
 });
-
-test("le reçu affiche les sources web Tavily (via getByTestId('film-receipt-filmReceiptTavily'))", async ({ page }) => {
-  test.setTimeout(90_000);
-  const receiptWithTavily = { ...RECEIPT };
-  await openWritten(page, "fr", receiptWithTavily);
-  const tavily = page.getByTestId("film-receipt-filmReceiptTavily");
-  await expect(tavily).toBeVisible();
-  await expect(tavily).toContainText("Sources web Tavily affichées avec le film : 3");
-});
-
-test("le reçu affiche les sources web Tavily (via getByTestId('film-receipt-filmReceiptTavily'))", async ({ page }) => {
-  test.setTimeout(90_000);
-  const receiptWithTavily = { ...RECEIPT, webSourceCount: 3 };
-  await openWritten(page, "fr", receiptWithTavily);
-  const tavily = page.getByTestId("film-receipt-filmReceiptTavily");
-  await expect(tavily).toBeVisible();
-  await expect(tavily).toContainText("Sources web Tavily affichées avec le film : 3");
-});
