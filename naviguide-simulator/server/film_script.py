@@ -2007,6 +2007,7 @@ def apply_chosen_subjects(
     ids: list[str] | None,
     bag: list[dict] | None,
     seconds: Any,
+    lang: str = "fr",
 ) -> dict:
     """Remplace des redites par les ids choisis. N'empile pas. Puis film_char_budget."""
     chapters = [{**c, "text": c.get("text") or ""} for c in (plan.get("chapters") or [])]
@@ -2092,6 +2093,8 @@ def apply_chosen_subjects(
                 spoken.append(rec)
     if budget > 0:
         _film_apply_char_budget(chapters, seconds)
+    for ch in chapters:
+        _reanchor_edited_chapter(ch, lang)
     blob_after = " ".join(ch.get("text") or "" for ch in chapters)
     watch_spoken = any(
         str(r.get("kind") or "") == TV1_WATCH_KIND
@@ -6581,6 +6584,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 "tB": _iso(w["tB"]),
                 "text": text,
                 "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "_anchorText": text,
                 "events": placed,
                 "fromName": w.get("fromName") or "",
                 "toName": w.get("toName") or "",
@@ -9166,6 +9170,63 @@ def chapter_anchors(text: str, anchored: list, t_a: int, t_b: int, lang: str) ->
     return result
 
 
+def _reanchor_edited_chapter(ch: dict, lang: str) -> None:
+    """Move existing sentence anchors onto the final edited chapter text."""
+    original = str(ch.get("_anchorText") or "")
+    final = str(ch.get("text") or "")
+    anchors = ch.get("anchors") or []
+    if not original or not anchors:
+        # Without the source text, there is no safe way to validate offsets.
+        ch["anchors"] = []
+        ch["_anchorText"] = final
+        return
+    sentences = _sentences(original)
+    spans: list[tuple[int, int, str]] = []
+    cursor = 0
+    for sentence in sentences:
+        start = original.find(sentence, cursor)
+        if start < 0:
+            continue
+        end = start + len(sentence)
+        spans.append((start, end, sentence))
+        cursor = end
+    anchored: list[tuple[str, Any]] = []
+    final_sentences = _sentences(final)
+    for anchor in anchors:
+        if not isinstance(anchor, dict) or anchor.get("t") is None:
+            continue
+        try:
+            idx = int(anchor.get("charIdx") or 0)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        # chapter_anchors stores a voice-lookahead position (12 characters
+        # before the spoken place), so resolve the anchor to its sentence at
+        # the corresponding spoken position.
+        sentence_idx = min(len(original) - 1, idx + FILM_VOICE_LOOKAHEAD_CHARS)
+        sentence_span = next(((a, b, s) for a, b, s in spans if a <= sentence_idx < b), None)
+        sentence = sentence_span[2] if sentence_span else None
+        # If the lookahead crosses a sentence boundary, the original anchor
+        # cannot be attributed safely. Also drop duplicate sentences when the
+        # final text has a different occurrence count: the surviving copy
+        # cannot be distinguished from the removed one by text alone.
+        if sentence_span and not (sentence_span[0] <= idx < sentence_span[1]):
+            sentence = None
+        if sentence:
+            normalized = speak_film_text(sentence, lang)
+            original_count = sum(speak_film_text(s, lang) == normalized for _, _, s in spans)
+            final_count = sum(speak_film_text(s, lang) == normalized for s in final_sentences)
+            # A sentence can be attributed to its anchor by text alone only
+            # when it has one unambiguous occurrence on both sides. Equal
+            # duplicate counts are not enough: edits may have reordered them.
+            if original_count != 1 or final_count != 1:
+                sentence = None
+        anchor_t = _ms(anchor["t"])
+        if sentence and anchor_t is not None and _locate_spoken(final, speak_film_text(sentence, lang), 0) >= 0:
+            anchored.append((sentence, anchor_t))
+    ch["anchors"] = chapter_anchors(final, anchored, _ms(ch.get("tA")), _ms(ch.get("tB")), lang)
+    ch["_anchorText"] = final
+
+
 def _trim_free_script(chapters: list[dict], max_words: int = FILM_FREE_MAX_WORDS) -> list[dict]:
     guard = 0
     while script_words(chapters) > max_words and guard < 200:
@@ -9609,6 +9670,7 @@ def build_raw_from_moments(
                 "tB": _iso(w["tB"]),
                 "text": text,
                 "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "_anchorText": text,
                 "events": placed,
                 "fromName": w.get("fromName") or "",
                 "toName": w.get("toName") or "",
@@ -9701,6 +9763,7 @@ def build_raw_from_moments(
             "tB": _iso(w["tB"]),
             "text": text,
             "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+            "_anchorText": text,
             "events": placed,
             "fromName": w.get("fromName") or "",
             "toName": w.get("toName") or "",
@@ -9730,6 +9793,8 @@ def build_raw_from_moments(
         _film_apply_char_budget(chapters, seconds)
     chapters[:] = _drop_degenerate_chapters(chapters)
     mark_year_changes(chapters, lang)
+    for ch in chapters:
+        _reanchor_edited_chapter(ch, lang)
     chars = script_chars(chapters)
     return _with_dc_subjects({
         "chapters": chapters,
@@ -12855,7 +12920,7 @@ async def build_film_response(
             bag = film_choice_bag(raw_full.get("dcSubjects") or [])
             tour = tour_snapshot(packed)
             ids, _src = await choose_film_ids(bag, tour, seconds, cascade=cascade)
-            raw_full = apply_chosen_subjects(raw_full, ids, bag, seconds)
+            raw_full = apply_chosen_subjects(raw_full, ids, bag, seconds, lang=lang)
         except Exception:
             pass
     raw = _public_plan(raw_full, "rules")
