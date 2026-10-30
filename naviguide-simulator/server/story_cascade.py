@@ -15,6 +15,10 @@ import math
 import os
 import re
 import time
+import random
+import weakref
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
@@ -52,6 +56,77 @@ NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 NIM_MODEL = "openai/gpt-oss-20b"
+
+# NIM free-tier controls: concurrency (default 2, 1..16), max attempts
+# (default 3, 1..5), plus optional fast tiers/model overrides.
+_nim_loop_semaphores: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = weakref.WeakKeyDictionary()
+_nim_sleep = asyncio.sleep
+
+
+def _nim_int_env(name: str, default: int, low: int, high: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return min(high, max(low, value))
+
+
+def _nim_semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    semaphore = _nim_loop_semaphores.get(loop)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(_nim_int_env("NAVIGUIDE_NIM_CONCURRENCY", 2, 1, 16))
+        _nim_loop_semaphores[loop] = semaphore
+    return semaphore
+
+
+def _nim_float_env(name: str, default: float, low: float, high: float) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(value):
+        return default
+    return min(high, max(low, value))
+
+
+def _nim_retry_delay(response: httpx.Response, attempt: int) -> float:
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        try:
+            seconds = float(retry_after)
+            if math.isfinite(seconds) and seconds >= 0:
+                return min(20.0, seconds)
+        except ValueError:
+            pass
+        try:
+            when = parsedate_to_datetime(retry_after)
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            return min(20.0, max(0.0, (when - datetime.now(timezone.utc)).total_seconds()))
+        except (TypeError, ValueError, OverflowError):
+            pass
+    delay = min(8.0, 1.0 * (2 ** (attempt - 1)))
+    return random.uniform(0.0, delay)
+
+
+def nim_model(tier: str = "") -> str:
+    """Modèle NIM (build.nvidia.com, gratuit) : dev / tests sans Token Factory.
+
+    NAVIGUIDE_NIM_MODEL_<PALIER> (NANO, FAST, WRITE, DEEP, JUDGE), sinon
+    NAVIGUIDE_NIM_FAST_TIERS + NAVIGUIDE_NIM_FAST_MODEL, sinon
+    NAVIGUIDE_NIM_MODEL, sinon le défaut historique NIM_MODEL.
+    """
+    t = (tier or "").strip().upper()
+    if t:
+        per_tier = (os.environ.get(f"NAVIGUIDE_NIM_MODEL_{t}") or "").strip()
+        if per_tier:
+            return per_tier
+        fast_tiers = {x.strip().upper() for x in os.environ.get("NAVIGUIDE_NIM_FAST_TIERS", "").split(",") if x.strip()}
+        fast_model = (os.environ.get("NAVIGUIDE_NIM_FAST_MODEL") or "").strip()
+        if t in fast_tiers and fast_model:
+            return fast_model
+    return (os.environ.get("NAVIGUIDE_NIM_MODEL") or "").strip() or NIM_MODEL
 OR_MODEL = os.environ.get("OPENROUTER_MODEL") or "openai/gpt-4o-mini"
 CLAUDE_MODEL = "claude-haiku-4-5"
 MAX_TOKENS = 400
@@ -103,7 +178,6 @@ _INFLIGHT: dict[str, asyncio.Future] = {}
 _INFLIGHT_GUARD: asyncio.Lock | None = None
 _TF_SEMA: asyncio.Semaphore | None = None
 
-_FENCE_RE = re.compile(r"^```(?:json|text)?\s*|\s*```$", re.M)
 _THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
 _THINK_OPEN_RE = re.compile(r"<think\b[^>]*>.*\Z", re.IGNORECASE | re.DOTALL)
 _PROMPT_LEAK_RE = re.compile(
@@ -375,7 +449,7 @@ def filter_numbers(answer: str, facts: Any, *, spelled: bool = False) -> tuple[s
     blob = facts if isinstance(facts, str) else json.dumps(facts, ensure_ascii=False, default=str)
     allowed = _numbers_spoken(blob) if spelled else _numbers(blob)
     kept, dropped = [], 0
-    for s in _SENT_SPLIT_RE.split(answer or ""):
+    for s in _split_sentences(answer or ""):
         s = s.strip()
         if not s:
             continue
@@ -399,7 +473,7 @@ def expand_spoken_units(text: str, lang: str = "fr") -> str:
 
 def split_short_sentences(text: str, max_len: int = 160) -> str:
     """Phrases courtes et complètes — jamais de coupure au milieu."""
-    parts = [p.strip() for p in _SENT_SPLIT_RE.split(text or "") if p.strip()]
+    parts = [p.strip() for p in _split_sentences(text or "") if p.strip()]
     out: list[str] = []
     for part in parts:
         chunk = part if part.endswith((".", "!", "?", "…")) else f"{part}."
@@ -552,7 +626,7 @@ def _strip_preamble(txt: str) -> str:
 
 def _clean_text(txt: str | None) -> str:
     s = _strip_think(txt or "")
-    s = _FENCE_RE.sub("", s.strip()).strip()
+    s = _strip_fences(s.strip()).strip()
     s = _strip_preamble(s)
     if _PROMPT_LEAK_RE.search(s):
         return ""
@@ -570,7 +644,58 @@ _META_RE = re.compile(
     r"analyze user input|thinking off|wait, let me|translate a sailing-log)",
     re.IGNORECASE,
 )
-_SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
+def _split_sentences(text: str) -> list[str]:
+    """Split after sentence punctuation and whitespace in one linear pass."""
+    parts: list[str] = []
+    start = 0
+    i = 0
+    while i < len(text):
+        if text[i] in ".!?…":
+            whitespace_end = i + 1
+            while whitespace_end < len(text) and text[whitespace_end].isspace():
+                whitespace_end += 1
+            if whitespace_end > i + 1 and whitespace_end < len(text):
+                parts.append(text[start:i + 1])
+                start = whitespace_end
+                i = whitespace_end
+                continue
+            i = whitespace_end
+        else:
+            i += 1
+    parts.append(text[start:])
+    return parts
+
+
+def _strip_fences(text: str) -> str:
+    """Remove line-start opening and line-end closing fences without regex backtracking."""
+    chars = list(text)
+    i = 0
+    while i < len(text):
+        line_start = i == 0 or text[i - 1] == "\n"
+        if text.startswith("```", i):
+            end = i + 3
+            if end == len(text) or text[end] == "\n":
+                before = i
+                while before > 0 and text[before - 1].isspace():
+                    before -= 1
+                for j in range(before, end):
+                    chars[j] = ""
+                i = end
+                continue
+        if line_start and text.startswith("```", i):
+            after = i + 3
+            if text.startswith("json", after):
+                after += 4
+            elif text.startswith("text", after):
+                after += 4
+            while after < len(text) and text[after].isspace():
+                after += 1
+            for j in range(i, after):
+                chars[j] = ""
+            i = after
+            continue
+        i += 1
+    return "".join(chars)
 _WORD_RE = re.compile(r"[0-9A-Za-zÀ-ÿ]+")
 # Marqueurs de raisonnement. Une phrase douteuse ne devient pas le texte visiteur.
 _REASON_MARK_RE = re.compile(
@@ -712,7 +837,7 @@ def tidy_story(
     raw = re.sub(r"\s{2,}", " ", raw).strip()
     if not raw:
         return (fallback or "").strip()
-    kept = [s.strip() for s in _SENT_SPLIT_RE.split(raw) if s.strip() and not _META_RE.search(s)]
+    kept = [s.strip() for s in _split_sentences(raw) if s.strip() and not _META_RE.search(s)]
     out = " ".join(kept[:max_sentences]).strip()
     if len(out) > max_chars:
         cut = out[:max_chars]
@@ -910,10 +1035,10 @@ def _recover_reasoning_text(raw: Any, *, prompt: str = "", lang: str = "fr") -> 
     else:
         parts = _message_parts(raw)
         blob = _parts_text(parts, reasoning=True) or _parts_text(parts, reasoning=False)
-    stripped = _strip_preamble(_strip_think(_FENCE_RE.sub("", blob or "")))
+    stripped = _strip_preamble(_strip_think(_strip_fences(blob or "")))
     want_en = _is_en(lang)
     kept: list[str] = []
-    for sentence in _SENT_SPLIT_RE.split(stripped):
+    for sentence in _split_sentences(stripped):
         sentence = sentence.strip()
         if not sentence:
             continue
@@ -1168,8 +1293,10 @@ async def _call_nim(
     key = nvidia_key()
     if not key:
         raise RuntimeError("NVIDIA_API_KEY missing")
+    nim = nim_model(tier)
+    log.info("cascade nim: modèle %s (palier %s)", nim, tier or "-")
     payload = {
-        "model": NIM_MODEL,
+        "model": nim,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -1181,19 +1308,49 @@ async def _call_nim(
         "reasoning_effort": "low",
         "chat_template_kwargs": {"thinking": False},
     }
-    r = await client.post(
-        NVIDIA_URL,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json=payload,
-    )
+    attempts = _nim_int_env("NAVIGUIDE_NIM_MAX_ATTEMPTS", 3, 1, 5)
+    deadline = _nim_float_env("NAVIGUIDE_NIM_DEADLINE_S", 30.0, 1.0, 300.0)
+
+    async def call_with_retries() -> httpx.Response:
+        for attempt in range(1, attempts + 1):
+            try:
+                async with _nim_semaphore():
+                    response = await client.post(
+                        NVIDIA_URL,
+                        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                        json=payload,
+                    )
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                if attempt >= attempts:
+                    raise
+                delay = min(8.0, 1.0 * (2 ** (attempt - 1)))
+                delay = random.uniform(0.0, delay)
+                log.info("cascade nim transport retry: attempt %d/%d in %.3fs", attempt + 1, attempts, delay)
+                await _nim_sleep(delay)
+                continue
+            except httpx.TransportError:
+                raise
+            if response.status_code not in (429, 503):
+                return response
+            if attempt >= attempts:
+                raise _http_error("nvidia", response)
+            delay = _nim_retry_delay(response, attempt)
+            log.info("cascade nim retry: attempt %d/%d in %.3fs", attempt + 1, attempts, delay)
+            await _nim_sleep(delay)
+        raise RuntimeError("nvidia attempts exhausted")
+
+    try:
+        r = await asyncio.wait_for(call_with_retries(), timeout=deadline)
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError(f"nvidia deadline exceeded after {deadline:g} s") from exc
     if r.status_code >= 400:
         raise _http_error("nvidia", r)
     data = r.json()
     text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
     if not text:
         raise RuntimeError("nvidia empty")
-    source = f"nvidia-{NIM_MODEL}"
-    model = _exact_model(source, str((data or {}).get("model") or ""), NIM_MODEL)
+    source = f"nvidia-{nim.split('/')[-1]}"
+    model = _exact_model(source, str((data or {}).get("model") or ""), nim)
     return _as_result(text, source, model=model, tier=tier)
 
 
@@ -1434,8 +1591,6 @@ async def _cascade_once(
                     llm_budget.remember_cascade_errors(failures, tier=norm_tier)
                 if name in llm_budget.FALLBACK_PROVIDERS:
                     llm_budget.record_fallback(name, norm_tier)
-                    # Status tracks the provider; the returned source retains
-                    # the precise NIM model label for honest fallback labelling.
                     llm_budget.remember_source(name, norm_tier)
                 public = source if source in KNOWN_SOURCES else (
                     "openrouter" if source.startswith("openrouter") else source

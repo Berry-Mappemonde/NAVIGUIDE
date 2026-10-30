@@ -36,6 +36,7 @@ Shortcut: [https://naviguide.fr/?tour=1](https://naviguide.fr/?tour=1) opens the
 3. When the film controls are up, **Raw** and **Edited** sit side by side. Click **Edited** to request the written narration. While the film plays, the pill is locked and its tooltip says **Stop the film to switch Raw/Edited**. If all providers fail, the page says **The edited film is temporarily unavailable.** For accessibility, the speaker button in the film bar (labelled **Listen**) reads the film aloud: during a replay, the browser’s own speech synthesis (`speechSynthesis`, `naviguide-simulator/src/utils/speak.js`) reads each paragraph as the film plays, in English or French, with no Nemotron call and no NAVIGUIDE server call.
 4. When the boat is at a stop, the panel is titled **Port of call sheet**. If that stop is inside the watch window and a watch was stored, a card is titled with the port name, the words **watch of**, and a date, plus one sentence. If no watch was stored, that card is absent. The sheet still lists the places it has.
 5. In the side panel, **Logbook — ask a question**. The field reads **Wind at the boat? Next stop?** Press the button whose tooltip is **Send**. Under **Try a question:**, three chips send a ready question in one click: **Why? · Ultra** (a why question, answered by Nemotron 3 Ultra), **Port news · Tavily** (how the web describes the port of the next stop: Ultra with Tavily web sources) and **Wind · Lightning** (Lightning reads the question, the facts answer).
+6. Click **Draw your own route** to plan a route yourself.
 
 A plain logbook question is answered from the facts already collected. A why, a how, or a long question is the one sent to Nemotron 3 Ultra when the budget allows. The chat then shows: **You are interacting with artificial intelligence. Replies are generated automatically and may contain errors.**
 
@@ -66,9 +67,30 @@ Nemotron 3 Nano 30B and Nemotron 3 Super 120B leave Token Factory on 9 November 
 
 **Cascade.** A 24-hour SQLite cache is read first. If the daily budget or `NAVIGUIDE_LLM_MODE` refuses the call, nothing is sent and the source is `budget`. The default order is Token Factory, NIM, OpenRouter, then Claude. After a Token Factory timeout, the cascade continues to NIM, OpenRouter and Claude by default so a model remains available; set `NAVIGUIDE_LLM_TIMEOUT_FALLBACK=0` to disable these fallbacks. NIM currently serves `openai/gpt-oss-20b`, a non-Nemotron model, and is labelled `nvidia-openai/gpt-oss-20b`. If the caller passed a fallback string and every permitted provider failed, the source is `rules`.
 
+### The LLM cascade
+
+The default provider order is `DEFAULT_PROVIDERS` in `naviguide-simulator/server/story_cascade.py`. HTTP errors such as 402, 429, and 5xx, and timeouts, move to the next provider; timeout fallback is on unless `NAVIGUIDE_LLM_TIMEOUT_FALLBACK` is set to `0`, `false`, `no`, or `off`. The last resort is the deterministic `rules` text built from raw facts.
+
+```mermaid
+flowchart TD
+    A["Nebius Token Factory · Nemotron<br/>tier defaults: Lightning / Super-VL / Ultra<br/>NAVIGUIDE_TF_TIMEOUT_S: 25 s<br/>NAVIGUIDE_TF_TIMEOUT_ULTRA_S: 45 s"]
+    B["NVIDIA NIM · openai/gpt-oss-20b<br/>NVIDIA_URL · TIMEOUT: 25 s, connect: 8 s"]
+    C["OpenRouter · openai/gpt-4o-mini<br/>OPENROUTER_URL · TIMEOUT: 25 s, connect: 8 s"]
+    D["Claude · claude-haiku-4-5<br/>ANTHROPIC_URL · TIMEOUT: 25 s, connect: 8 s"]
+    E["Deterministic rules text<br/>raw facts"]
+    A -->|"timeout / HTTP 402, 429, 5xx"| B
+    B -->|"timeout / HTTP error"| C
+    C -->|"timeout / HTTP error"| D
+    D -->|"timeout / HTTP error"| E
+```
+
+The Token Factory tier model defaults are `nvidia/Nemotron-3_5-Lightning` (`nano`, `fast`), `nvidia/Nemotron-3.5-Super-VL` (`write`), and `nvidia/Nemotron-3-Ultra-550b-a55b` (`deep`, `judge`), from `llm_budget.DEFAULT_MODELS`; `NAVIGUIDE_TF_MODEL_*` variables can override them. Provider credentials are read from `NEBIUS_API_KEY`, `NVIDIA_API_KEY`, `OPENROUTER_API_KEY`, and `ANTHROPIC_API_KEY`.
+
 On the `fast` tier only, an empty Token Factory body, an HTTP status of 500 or higher, or a timeout is tried once more on Token Factory with the Super VL model. A 4xx does not take that second try. On the `nano` tier, a Token Factory failure is tried once more on Token Factory as Lightning, then the cascade continues. NIM is `openai/gpt-oss-20b` at `https://integrate.api.nvidia.com/v1/chat/completions`. OpenRouter defaults to `openai/gpt-4o-mini`. Claude is `claude-haiku-4-5`.
 
 **Numbers.** `filter_numbers` in `naviguide-simulator/server/story_cascade.py` drops every sentence that contains a number not already in the facts. A sentence with no number is kept. The filter does not catch a non-numeric invention.
+
+**NIM model settings.** Set `NAVIGUIDE_NIM_MODEL` to override the default model for every tier; `NAVIGUIDE_NIM_MODEL_NANO`, `_FAST`, `_WRITE`, `_DEEP`, or `_JUDGE` overrides it for that tier. With neither set, the model remains `openai/gpt-oss-20b`. `NAVIGUIDE_NIM_DEADLINE_S` limits the complete NIM attempt, including semaphore wait and retries: default `30` seconds, clamped to 1–300 seconds.
 
 **Budgets** when the matching variable is unset (`naviguide-simulator/server/llm_budget.py`):
 
@@ -80,7 +102,7 @@ On the `fast` tier only, an empty Token Factory body, an HTTP status of 500 or h
 | `deep` | 150,000 |
 | `judge` | 250,000 |
 
-The written film’s edit and re-read go to Ultra by default, inside that `judge` budget (`film_ultra_open` in `naviguide-simulator/server/film_script.py`). Setting `NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE` to `0`, a negative or a non-numeric value switches Ultra off for the film, which then falls back to Super VL. Hard logbook questions are bounded by the same `judge` budget. A separate 10-per-day Ultra chat counter (`allow_chat_ultra` in `naviguide-simulator/server/llm_budget.py`) is reported in the budget status but is not checked before a logbook answer on this commit. There is no dollar cutoff unless `NAVIGUIDE_LLM_DAILY_USD` is set. The commented figures in `naviguide-simulator/server/.env.example` are not these defaults. Default mode is `on-demand` (a user action, not a background job). `off` never pays. `all` is explicit.
+The written film’s edit and re-read go to Ultra by default, inside that `judge` budget (`film_ultra_open` in `naviguide-simulator/server/film_script.py`). Setting `NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE` to `0`, a negative or a non-numeric value switches Ultra off for the film, which then falls back to Super VL. Hard logbook questions are bounded by the same `judge` budget. The separate 10-per-day Ultra chat counter (`record_chat_ultra` in `naviguide-simulator/server/llm_budget.py`) reports successful logbook answers actually served by Token Factory Nemotron Ultra in the budget status; it does not limit chat answers. There is no dollar cutoff unless `NAVIGUIDE_LLM_DAILY_USD` is set. The commented figures in `naviguide-simulator/server/.env.example` are not these defaults. Default mode is `on-demand` (a user action, not a background job). `off` never pays. `all` is explicit.
 
 **Public proof.** `GET /ici/warm/status` includes `llm`, and `llm.lastSourceByTier` when a tier has already answered. The value is the source that answered (`nemotron-lightning`, `nemotron-super-vl`, `nemotron-ultra`, or a fallback name), not a sentence from the model.
 
@@ -130,6 +152,36 @@ Licences are stated here only when this repository names them. The sheet with UR
 Model governance: [naviguide-simulator/docs/AI_GOVERNANCE.md](naviguide-simulator/docs/AI_GOVERNANCE.md).
 
 ## Run locally
+
+### Run it locally
+
+From the repository root, use Node.js 24 and Python 3.12. In terminal 1:
+
+```bash
+cd naviguide-simulator
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r server/requirements.txt
+export NVIDIA_API_KEY=your_nim_key
+env -u NEBIUS_API_KEY npm run server
+```
+
+`NVIDIA_API_KEY` enables NVIDIA NIM in development. It serves `openai/gpt-oss-20b` as a fallback at `https://integrate.api.nvidia.com/v1`; that model is not Nemotron. Token Factory (`NEBIUS_API_KEY`) is optional in production. Its tiers use Lightning for `nano` and `fast`, Super VL for `write`, and Ultra for `deep` and `judge`. `TAVILY_API_KEY` is optional; without it, web sources are absent.
+
+For a frozen-stock run with no model or web keys, omit the `export` line and start the API this way instead:
+
+```bash
+env -u NEBIUS_API_KEY NAVIGUIDE_OFFLINE=1 NAVIGUIDE_LLM_MODE=off npm run server
+```
+
+This blocks outgoing HTTP and uses the local stock. In terminal 2, from the repository root:
+
+```bash
+cd naviguide-simulator
+npm run dev
+```
+
+Open [http://localhost:5174](http://localhost:5174), choose **Follow expedition**, then click **Replay the expedition**. The film replays from the official stock; **Edited** requests its written version when available.
 
 | Tool | Version |
 |---|---|
@@ -184,7 +236,7 @@ A merge to `main` deploys [https://naviguide.fr](https://naviguide.fr) on Contab
 
 Measured from git on code files only. The sentence is copied from that measurement. It is not an estimate.
 
-In numbers (from git, code files only): on August 26, 2026 the repository held 0 code files and 0 lines — the NAVIGUIDE simulator did not exist. Today it holds 708 code files and 174,566 lines, and 100% of those lines (174,566) were written or rewritten since August 26, 2026 — 1094 commits, 811 files touched. The simulator (171,071 lines) is entirely post-August 26, 2026.
+In numbers (measured at commit e481787d, from git, code files only): on August 26, 2026 the repository held 0 code files and 0 lines — the NAVIGUIDE simulator did not exist. Today it holds 934 code files and 223,567 lines, and 100% of those lines (223,567) were written or rewritten since August 26, 2026 — 1,361 commits since 2026-08-26T16:00:00Z.
 
 ## Known limitations
 
@@ -208,7 +260,7 @@ Policy: [SECURITY.md](SECURITY.md). Data sheet: [naviguide-simulator/DATA_SOURCE
 [![CodeQL](https://github.com/Berry-Mappemonde/NAVIGUIDE/actions/workflows/codeql.yml/badge.svg)](https://github.com/Berry-Mappemonde/NAVIGUIDE/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Berry-Mappemonde/NAVIGUIDE/badge)](https://scorecard.dev/viewer/?uri=github.com/Berry-Mappemonde/NAVIGUIDE)
 
-The badges point at [.github/workflows/codeql.yml](.github/workflows/codeql.yml) and [.github/workflows/scorecard.yml](.github/workflows/scorecard.yml). CodeQL is not a required check. [SECURITY.md](SECURITY.md) records that, as of 18 October 2026, this repository had no published CodeQL result yet.
+The badges point at [.github/workflows/codeql.yml](.github/workflows/codeql.yml) and [.github/workflows/scorecard.yml](.github/workflows/scorecard.yml). CodeQL analyzes pull requests; its findings are tracked in GitHub's Security tab. CodeQL is not a required check.
 
 ## License
 

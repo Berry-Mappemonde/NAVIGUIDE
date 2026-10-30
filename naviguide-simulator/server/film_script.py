@@ -4157,8 +4157,12 @@ def _window_leg_nm(w: dict) -> Optional[float]:
     a_nm, b_nm = num(frm, "nm"), num(dest, "nm")
     if a_nm is not None and b_nm is not None and (b_nm - a_nm) > 1:
         return b_nm - a_nm
-    a = num(frm, "nm", "filmNm")
-    b = num(dest, "nm", "filmNm")
+    # Keep both endpoints on the same odometer when the window mixes scales.
+    a_film, b_film = num(frm, "filmNm"), num(dest, "filmNm")
+    if a_film is not None and b_film is not None and (b_film - a_film) > 1:
+        return b_film - a_film
+    a = a_film if b_film is not None else a_nm
+    b = b_film if b_film is not None else b_nm
     if b is None and isinstance(w.get("destNm"), (int, float)):
         b = float(w["destNm"])
     if a is None or b is None:
@@ -11773,7 +11777,7 @@ async def write_stored_plan(
 ) -> tuple[Optional[dict], dict[str, Any]]:
     """Réécrit un plan public (stock) phrase par phrase. Aucun appel si la cascade rend rules/budget."""
     raw_chapters = [c for c in (plan.get("chapters") or []) if isinstance(c, dict)]
-    stats = {"rewritten": 0, "fallen": 0, "source": "rules"}
+    stats = {"rewritten": 0, "fallen": 0, "source": "rules", "model": None}
     if not raw_chapters:
         return None, stats
     secs = seconds if seconds is not None else plan.get("targetSeconds")
@@ -11796,9 +11800,11 @@ async def write_stored_plan(
             f"sentences={json.dumps(raw_sents, ensure_ascii=False)}"
         )
         max_tok = min(WRITE_MAX_TOKENS, max(400, 80 * len(raw_sents)))
-        text, source = await cascade(
+        result = await cascade(
             WRITE_SYSTEM, user, tier="write", fallback="", facts=facts, max_tokens=max_tok,
         )
+        text, source = result
+        stats["model"] = getattr(result, "model", None) or stats["model"]
         if not (text or "").strip() or source in {"rules", "budget"}:
             chapters_out.append(ch)
             stats["fallen"] += len(raw_sents)
@@ -12799,9 +12805,10 @@ async def write_film_chain(
         accepted = _stamp_written_plan(super_plan, WRITTEN_SOURCE, seconds, model=_write_model())
     else:
         stats["source"] = origin or "rules"
-        from story_cascade import NIM_MODEL  # noqa: PLC0415
-        nim_source = f"nvidia-{NIM_MODEL.split('/')[-1]}"
-        model = NIM_MODEL if (origin or "") == nim_source else (origin or None)
+        from story_cascade import nim_model  # noqa: PLC0415
+        nim_name = (super_stats or {}).get("model") or nim_model("write")
+        nim_source = f"nvidia-{nim_name.split('/')[-1]}"
+        model = nim_name if (origin or "") == nim_source else (origin or None)
         accepted = _stamp_written_plan(super_plan, origin or "rules", seconds, model=model)
 
     ref_raw = full_raw if secs == 150 else raw

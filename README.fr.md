@@ -36,6 +36,7 @@ Raccourci : [https://naviguide.fr/?tour=1](https://naviguide.fr/?tour=1) ouvre l
 3. Quand les commandes du film sont là, **Brut** et **Rédigé** sont côte à côte. Cliquez sur **Rédigé** pour demander la narration écrite. Pendant la lecture, la pastille est verrouillée et son info-bulle dit **Arrêtez le film pour passer Brut/Rédigé**. Si tous les fournisseurs échouent, la page affiche **Le film rédigé est momentanément indisponible.** Pour l’accessibilité, le bouton haut-parleur de la barre du film (libellé **Écouter**) lit le film à voix haute : pendant un replay, la synthèse vocale du navigateur (`speechSynthesis`, `naviguide-simulator/src/utils/speak.js`) lit chaque paragraphe au fil du film, en anglais ou en français, sans appel à Nemotron ni au serveur NAVIGUIDE.
 4. Quand le bateau est à une escale, le panneau s’intitule **Fiche d’escale**. Si cette escale est dans la fenêtre de veille et qu’une veille a été gardée, une carte porte le nom du port, les mots **veille du**, et une date, plus une phrase. Sans veille gardée, cette carte est absente. La fiche liste quand même les lieux qu’elle a.
 5. Dans le panneau latéral, **Journal de bord — posez une question**. Le champ dit **Quel vent au bateau ? Prochaine escale ?** Le bouton a pour info-bulle **Envoyer**. Sous **Essayez une question :**, trois puces envoient une question prête en un clic : **Pourquoi ? · Ultra** (une question « pourquoi », répondue par Nemotron 3 Ultra), **Actu du port · Tavily** (ce que le web dit du port de la prochaine escale : Ultra avec les sources web Tavily) et **Vent · Lightning** (Lightning lit la question, les faits répondent).
+6. Cliquez sur **Tracer votre propre route** pour planifier votre itinéraire.
 
 Une question simple du journal est répondue à partir des faits déjà collectés. Un pourquoi, un comment, ou une question longue est celle envoyée à Nemotron 3 Ultra quand le budget le permet. Le journal affiche alors : **Vous échangez avec une intelligence artificielle. Les réponses sont générées automatiquement et peuvent contenir des erreurs.**
 
@@ -66,9 +67,30 @@ Nemotron 3 Nano 30B et Nemotron 3 Super 120B quittent Token Factory le 9 novembr
 
 **Cascade.** Un cache SQLite de 24 h est lu d’abord. Si le budget du jour ou `NAVIGUIDE_LLM_MODE` refuse l’appel, rien n’est envoyé et la source est `budget`. Sinon l’ordre par défaut de `DEFAULT_PROVIDERS` est Token Factory, puis NIM, puis OpenRouter, puis Claude. Si l’appelant a fourni un texte de repli et que chaque fournisseur a échoué, la source est `rules`.
 
+### Si un fournisseur ne répond pas
+
+`DEFAULT_PROVIDERS`, dans `naviguide-simulator/server/story_cascade.py`, fixe l’ordre illustré ci-dessous. Une expiration ou une réponse HTTP 402, 429 ou 5xx fait essayer le fournisseur suivant. Le repli après expiration est actif par défaut ; seule une valeur `0`, `false`, `no` ou `off` dans `NAVIGUIDE_LLM_TIMEOUT_FALLBACK` le désactive. Si les modèles ne répondent pas, NAVIGUIDE conserve un texte déterministe tiré des faits bruts.
+
+```mermaid
+flowchart TD
+    A["Nebius Token Factory · Nemotron<br/>défauts : Lightning / Super-VL / Ultra<br/>NAVIGUIDE_TF_TIMEOUT_S : 25 s<br/>NAVIGUIDE_TF_TIMEOUT_ULTRA_S : 45 s"]
+    B["NVIDIA NIM · openai/gpt-oss-20b<br/>NVIDIA_URL · TIMEOUT : 25 s, connexion : 8 s"]
+    C["OpenRouter · openai/gpt-4o-mini<br/>OPENROUTER_URL · TIMEOUT : 25 s, connexion : 8 s"]
+    D["Claude · claude-haiku-4-5<br/>ANTHROPIC_URL · TIMEOUT : 25 s, connexion : 8 s"]
+    E["Texte déterministe des règles<br/>faits bruts"]
+    A -->|"expiration / HTTP 402, 429, 5xx"| B
+    B -->|"expiration / erreur HTTP"| C
+    C -->|"expiration / erreur HTTP"| D
+    D -->|"expiration / erreur HTTP"| E
+```
+
+Dans `llm_budget.DEFAULT_MODELS`, Token Factory associe Lightning (`nvidia/Nemotron-3_5-Lightning`) à `nano` et `fast`, Super-VL (`nvidia/Nemotron-3.5-Super-VL`) à `write`, Ultra (`nvidia/Nemotron-3-Ultra-550b-a55b`) à `deep` et `judge`. Les variables `NAVIGUIDE_TF_MODEL_*` permettent de remplacer ces défauts. Les noms de variables d’accès sont `NEBIUS_API_KEY`, `NVIDIA_API_KEY`, `OPENROUTER_API_KEY` et `ANTHROPIC_API_KEY`.
+
 Sur le palier `fast` seulement, un corps Token Factory vide, un statut HTTP 500 ou plus, ou un délai dépassé, est retenté une fois sur Token Factory avec le modèle Super VL. Un 4xx ne prend pas ce second essai. Sur le palier `nano`, un échec Token Factory est retenté une fois sur Token Factory en Lightning, puis la cascade continue. NIM sert `openai/gpt-oss-20b` à `https://integrate.api.nvidia.com/v1/chat/completions` ; ce modèle n'est pas un Nemotron et sa source reste étiquetée `nvidia-openai/gpt-oss-20b`. Après un timeout Token Factory, la cascade continue par défaut vers NIM, OpenRouter puis Claude, pour qu'un modèle reste toujours disponible ; `NAVIGUIDE_LLM_TIMEOUT_FALLBACK=0` arrête ces replis (texte de règles étiqueté). OpenRouter vaut par défaut `openai/gpt-4o-mini`. Claude est `claude-haiku-4-5`.
 
 **Chiffres.** `filter_numbers` dans `naviguide-simulator/server/story_cascade.py` retire chaque phrase qui contient un nombre absent des faits. Une phrase sans nombre est gardée. Le filtre ne prend pas une invention non numérique.
+
+**Configuration du modèle NIM.** Définir `NAVIGUIDE_NIM_MODEL` remplace le modèle par défaut pour tous les paliers ; `NAVIGUIDE_NIM_MODEL_NANO`, `_FAST`, `_WRITE`, `_DEEP` ou `_JUDGE` le remplace pour le palier correspondant. Si aucun n’est défini, le modèle reste `openai/gpt-oss-20b`. `NAVIGUIDE_NIM_DEADLINE_S` limite toute la tentative NIM, y compris l’attente du sémaphore et les réessais : défaut `30` secondes, borné entre 1 et 300 secondes.
 
 **Budgets** quand la variable correspondante est absente (`naviguide-simulator/server/llm_budget.py`) :
 
@@ -80,7 +102,7 @@ Sur le palier `fast` seulement, un corps Token Factory vide, un statut HTTP 500 
 | `deep` | 150 000 |
 | `judge` | 250 000 |
 
-L’édition et la relecture du film rédigé passent par Ultra par défaut, dans ce budget `judge` (`film_ultra_open` dans `naviguide-simulator/server/film_script.py`). Mettre `NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE` à `0`, à une valeur négative ou non numérique coupe Ultra pour le film, qui se replie alors sur Super VL. Les questions difficiles du journal sont bornées par le même budget `judge`. Un compteur séparé de 10 appels Ultra du chat par jour (`allow_chat_ultra` dans `naviguide-simulator/server/llm_budget.py`) figure dans l’état du budget, mais n’est pas vérifié avant une réponse du journal sur ce commit. Il n’y a pas de coupure en dollars tant que `NAVIGUIDE_LLM_DAILY_USD` n’est pas posé. Les chiffres commentés dans `naviguide-simulator/server/.env.example` ne sont pas ces défauts. Le mode par défaut est `on-demand` (une action de la personne, pas un travail de fond). `off` ne paie jamais. `all` est explicite.
+L’édition et la relecture du film rédigé passent par Ultra par défaut, dans ce budget `judge` (`film_ultra_open` dans `naviguide-simulator/server/film_script.py`). Mettre `NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE` à `0`, à une valeur négative ou non numérique coupe Ultra pour le film, qui se replie alors sur Super VL. Les questions difficiles du journal sont bornées par le même budget `judge`. Le compteur séparé de 10 appels Ultra du chat par jour (`record_chat_ultra` dans `naviguide-simulator/server/llm_budget.py`) indique dans l’état du budget les réponses du journal réellement servies par Nemotron Ultra sur Token Factory ; il ne limite pas les réponses du chat. Il n’y a pas de coupure en dollars tant que `NAVIGUIDE_LLM_DAILY_USD` n’est pas posé. Les chiffres commentés dans `naviguide-simulator/server/.env.example` ne sont pas ces défauts. Le mode par défaut est `on-demand` (une action de la personne, pas un travail de fond). `off` ne paie jamais. `all` est explicite.
 
 **Preuve publique.** `GET /ici/warm/status` contient `llm`, et `llm.lastSourceByTier` quand un palier a déjà répondu. La valeur est la source qui a répondu (`nemotron-lightning`, `nemotron-super-vl`, `nemotron-ultra`, ou le nom d’un repli), pas une phrase du modèle.
 
@@ -122,6 +144,36 @@ Une licence n’est écrite ici que si ce dépôt la nomme. La fiche (URL, créd
 Gouvernance des modèles : [naviguide-simulator/docs/AI_GOVERNANCE.md](naviguide-simulator/docs/AI_GOVERNANCE.md).
 
 ## Lancer en local
+
+### Lancer en local
+
+Depuis la racine du dépôt, utilisez Node.js 24 et Python 3.12. Dans un premier terminal :
+
+```bash
+cd naviguide-simulator
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r server/requirements.txt
+export NVIDIA_API_KEY=votre_cle_nim
+env -u NEBIUS_API_KEY npm run server
+```
+
+`NVIDIA_API_KEY` active NVIDIA NIM en développement. Il sert `openai/gpt-oss-20b` comme repli à `https://integrate.api.nvidia.com/v1` ; ce modèle n’est pas Nemotron. Token Factory (`NEBIUS_API_KEY`) est facultatif en production. Ses paliers utilisent Lightning pour `nano` et `fast`, Super VL pour `write`, et Ultra pour `deep` et `judge`. `TAVILY_API_KEY` est facultative ; sans elle, les sources web sont absentes.
+
+Pour lancer le stock figé sans clé de modèle ni clé web, omettez la ligne `export` et démarrez plutôt l’API ainsi :
+
+```bash
+env -u NEBIUS_API_KEY NAVIGUIDE_OFFLINE=1 NAVIGUIDE_LLM_MODE=off npm run server
+```
+
+Ce mode bloque les requêtes HTTP sortantes et utilise le stock local. Dans un deuxième terminal, depuis la racine du dépôt :
+
+```bash
+cd naviguide-simulator
+npm run dev
+```
+
+Ouvrez [http://localhost:5174](http://localhost:5174), cliquez sur **Suivre l’expédition**, puis sur **Revoir l’expédition**. Le film est rejoué depuis le stock officiel ; **Rédigé** demande sa version écrite lorsqu’elle est disponible.
 
 | Outil | Version |
 |---|---|
@@ -176,9 +228,8 @@ Un merge sur `main` déploie [https://naviguide.fr](https://naviguide.fr) sur Co
 
 Mesuré depuis git, fichiers de code seulement. Les lignes sont copiées de cette mesure. Ce n’est pas une estimation.
 
-Au 2026-08-26 (commit dfca7b1, 2026-08-20) : 0 fichiers de code, 0 lignes — pas de naviguide-simulator/.
-Depuis le 2026-08-26 : 174 566 de ces lignes ont été écrites ou réécrites → **100.0 %** du code actuel.
-Brassage : +220 468 / −25 851 lignes, 811 fichiers touchés, 1094 commits (141.1 % du code actuel en ajouts + suppressions).
+Au 2026-08-26 : 0 fichiers de code, 0 ligne — le simulateur NAVIGUIDE n’existait pas.
+Mesure depuis git à la tête e481787d, fichiers de code seulement : 934 fichiers et 223 567 lignes aujourd’hui ; 100 % de ces lignes ont été écrites ou réécrites depuis le 2026-08-26 — 1 361 commits depuis le 2026-08-26T16:00:00Z.
 
 ## IA responsable et sécurité
 
