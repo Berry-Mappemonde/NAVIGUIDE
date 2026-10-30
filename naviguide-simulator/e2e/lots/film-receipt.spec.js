@@ -41,7 +41,9 @@ async function openWritten(page, lang, receipt, webSources = []) {
     const key = `${url.searchParams.get("lang") || lang}:${seconds}`;
     if (req.method() === "POST") cached.add(key);
     const written = req.method() === "POST" || (style === "written" && cached.has(key));
-    const webContext = webSources.length ? { sources: webSources } : undefined;
+    const webContext = webSources.length
+      ? { basis: "tavily", port: "La Rochelle", fetchedAt: "2026-10-29T13:40:00Z", sources: webSources }
+      : undefined;
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify(filmPayload({ written, seconds, lang, receipt, webContext })),

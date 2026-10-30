@@ -250,6 +250,7 @@ export default {
   logbookWebSourcesTitle: "Web sources (Tavily)",
   logbookWebUnavailable: "Web watch unavailable (missing Tavily key or error).",
   logbookChatPlaceholder: "Wind at the boat? Next stop?",
+  logbookChatInputLabel: "Ask the logbook",
   logbookChatSend: "Send",
   logbookExamplesTitle: "Try a question:",
   logbookExampleDeepQ: "Why is the boat heading for its next stop, and what is the main risk?",

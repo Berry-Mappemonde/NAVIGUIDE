@@ -250,6 +250,7 @@ export default {
   logbookWebSourcesTitle: "Sources web (Tavily)",
   logbookWebUnavailable: "Veille web indisponible (clé Tavily absente ou erreur).",
   logbookChatPlaceholder: "Quel vent au bateau ? Prochaine escale ?",
+  logbookChatInputLabel: "Votre question au carnet de bord",
   logbookChatSend: "Envoyer",
   logbookExamplesTitle: "Essayez une question :",
   logbookExampleDeepQ: "Pourquoi le bateau vise-t-il sa prochaine escale, et quel est le principal risque ?",

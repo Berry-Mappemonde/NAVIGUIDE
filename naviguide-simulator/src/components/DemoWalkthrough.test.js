@@ -237,3 +237,12 @@ describe("placement logic (exported from demoWalkthrough.js)", () => {
     assert.equal(getStagePadding("replay"), 6);
   });
 });
+
+describe("R44 : pulse Tracer", () => {
+  const jsx = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
+  it("réessaie avec un vrai compteur, l'id rAF ne sert qu'à l'annulation", () => {
+    assert.match(jsx, /export const PULSE_MAX_ATTEMPTS = 30;/);
+    assert.match(jsx, /\+\+attempts < PULSE_MAX_ATTEMPTS/);
+    assert.doesNotMatch(jsx, /checkRaf < 30/);
+  });
+});

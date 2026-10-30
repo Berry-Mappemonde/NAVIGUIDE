@@ -352,7 +352,7 @@ test("VG1 — étape 7 (trace) : bouton Tracer visible, pulse, classe retirée �
   await expect(panel(page)).toHaveAttribute("data-step", "trace");
   // Quitter la visite : la classe pulse doit être retirée
   await page.keyboard.press("Escape");
-  await expect(traceBtn).not.toHaveClass("naviguide-tour-pulse");
+  await expect(traceBtn).not.toHaveClass(/naviguide-tour-pulse/);
 });
 
 test("VG1 — flèche bulle → élément : data-arrow up/down/left/right + ::before", async ({ page }) => {
@@ -380,4 +380,26 @@ test("VG1 — flèche bulle → élément : data-arrow up/down/left/right + ::be
   // return : target = null → pas de flèche
   await next(page, "return");
   await expect(panel(page)).not.toHaveAttribute("data-arrow");
+});
+
+// R44 : le bouton Tracer « monté tard » (cible absente à l'ouverture de l'étape 7) reçoit
+// quand même le pulse. Avant le correctif, le réessai comparait l'id rAF (> 30 à ce stade).
+test("R44 — étape 7 : pulse appliqué quand le bouton Tracer apparaît après l'ouverture", async ({ page }) => {
+  await open(page);
+  await startTour(page);
+  for (const id of ["models", "live", "briefing", "layers", "replay"]) await next(page, id);
+  const rafId = await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)).then(() => requestAnimationFrame(() => {})));
+  expect(rafId, "les ids rAF dépassent 30 avant l'étape 7").toBeGreaterThan(30);
+  // Retire la cible du sélecteur, puis la rend 150 ms après l'ouverture de l'étape.
+  await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="view-tracer"]');
+    el.setAttribute("data-testid", "view-tracer-later");
+    window.__r44Restore = () => el.setAttribute("data-testid", "view-tracer");
+  });
+  await page.getByTestId("demo-walkthrough-next").click();
+  await expect(panel(page)).toHaveAttribute("data-step", "trace");
+  await page.waitForTimeout(150);
+  await page.evaluate(() => window.__r44Restore());
+  const traceBtn = page.getByTestId("view-tracer").first();
+  await expect(traceBtn).toHaveClass(/naviguide-tour-pulse/, { timeout: 5000 });
 });

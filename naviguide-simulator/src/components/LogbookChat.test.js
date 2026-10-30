@@ -125,3 +125,22 @@ describe("LogbookChat example questions (one click, three real paths)", () => {
     }
   });
 });
+
+describe("R44 : accessibilité du chat et de la notice AI Act", () => {
+  it("la notice est une région live (role=status, aria-live=polite) autour du texte seul", () => {
+    assert.match(src, /<p role="status" aria-live="polite" data-testid="logbook-chat-ai-notice-text">\{t\("aiActChatNotice"\)\}<\/p>/);
+    assert.doesNotMatch(src, /role="note"/);
+  });
+  it("champ et bouton Envoyer ont un nom accessible i18n ; le focus revient au champ", () => {
+    assert.match(src, /aria-label=\{t\("logbookChatInputLabel"\)\}/);
+    assert.match(src, /aria-label=\{t\("logbookChatSend"\)\}/);
+    assert.match(src, /ref=\{inputRef\}/);
+    assert.match(src, /dismissAiNotice = useCallback\(\(\) => \{[\s\S]{0,200}inputRef\.current\?\.focus\(\)/);
+  });
+  it("libellés FR et EN présents et distincts", async () => {
+    const fr = (await import("../i18n/fr.js")).default;
+    const en = (await import("../i18n/en.js")).default;
+    assert.ok(fr.logbookChatInputLabel && en.logbookChatInputLabel);
+    assert.notEqual(fr.logbookChatInputLabel, en.logbookChatInputLabel);
+  });
+});

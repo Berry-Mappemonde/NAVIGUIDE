@@ -22,6 +22,9 @@ export { getDemoSteps } from "./demoWalkthrough.js";
  * pendant la lecture du film ; panneau du côté opposé à celui que l'étape ouvre,
  * et en bas de l'écran sous 768 px.
  */
+/** Nombre d'images (rAF) pendant lesquelles on attend le bouton Tracer monté tard. */
+export const PULSE_MAX_ATTEMPTS = 30;
+
 export function DemoWalkthrough({
   replayReady = false,
   replayActive = false,
@@ -201,13 +204,15 @@ export function DemoWalkthrough({
   // Pulse animation on "trace" step target — unique useEffect, réessaye si le bouton n'existe pas encore
   useEffect(() => {
     if (step.id !== "trace" || !target) return;
-    let el = document.querySelector(target);
+    let el = null;
+    // checkRaf ne sert qu'à l'annulation : un id rAF n'est pas un nombre d'essais.
     let checkRaf = 0;
+    let attempts = 0;
     const tryAdd = () => {
       el = document.querySelector(target);
       if (el) {
         el.classList.add("naviguide-tour-pulse");
-      } else if (checkRaf < 30) {
+      } else if (++attempts < PULSE_MAX_ATTEMPTS) {
         checkRaf = window.requestAnimationFrame(tryAdd);
       }
     };

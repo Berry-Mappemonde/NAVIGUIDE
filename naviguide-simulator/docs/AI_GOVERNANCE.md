@@ -17,7 +17,7 @@ Défauts de `server/llm_budget.py:116-137`, test `server/tests/test_llm_budget.p
 | `deep` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | `https://api.tokenfactory.nebius.com/v1` (`server/story_cascade.py:37-41`, `server/story_cascade.py:585-589`) |
 | `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | même hôte que `deep` (base EU) |
 
-Le test `server/tests/test_story_cascade.py:1020-1032` exige `us-central1` pour `deep`, et l’interdit pour `fast` et pour `write`.
+Le test `test_ultra_payload_uses_cookbook_host_and_budget` (`server/tests/test_story_cascade.py`) exige l’hôte UE `api.tokenfactory.nebius.com` pour `deep`, `fast` et `write`.
 
 `eu-north1` n’apparaît pas dans le dépôt. `devpost/nebius_futur.md` n’y est pas. Placer Lightning en `eu-north1`, ou Super en `us-central1`, contredit ou dépasse ce checkout : **à vérifier**.
 
@@ -117,7 +117,7 @@ Lien REDTEAM : aucun `evals/redteam/` ni `docs/security/REDTEAM_2026-10.md` sur 
 
 ## English
 
-The tables above are the evidence. The running Token Factory hosts are `api.tokenfactory.nebius.com` for Lightning and Super, and `api.tokenfactory.us-central1.nebius.com` for Ultra (`deep` and `judge`). `eu-north1` and `devpost/nebius_futur.md` are **à vérifier**.
+The tables above are the evidence. The running Token Factory hosts are `api.tokenfactory.nebius.com` (EU) for every tier by default: Lightning (`fast`, overridden by `NAVIGUIDE_TF_BASE`), `nano` and Super VL (`write`, overridden by `NAVIGUIDE_TF_BASE_EU`), Ultra (`deep` and `judge`, overridden by `NAVIGUIDE_TF_BASE_ULTRA`). `eu-north1` and `devpost/nebius_futur.md` are **à vérifier**.
 
 Cascade: SQLite cache, then Token Factory, then a second Super call only after an empty body, HTTP ≥ 500, or a timeout on the `fast` tier, then NIM, OpenRouter, Claude, then `rules` if a fallback string was given. `filter_numbers` runs on each of those texts.
 
