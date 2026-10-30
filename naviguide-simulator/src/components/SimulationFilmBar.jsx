@@ -12,7 +12,7 @@ import FilmReceipt from "./FilmReceipt.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
 import { filmDurationClass, filmDurationPill } from "../engine/playSpeeds.js";
-import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle } from "../hooks/useReplay.js";
+import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle, writtenPillEnabled } from "../hooks/useReplay.js";
 
 function filmPill(replay, sec) {
   return filmDurationPill({ seconds: sec, active: replay?.active, estimates: replay?.variantEstimates });
@@ -350,6 +350,15 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             ) : filmSubtitle}
           </div>
         ) : null}
+        {replay?.chapterProvenance?.model && replay?.chapterProvenance?.source ? (
+          <LlmSourceBadge
+            source={replay.chapterProvenance.source}
+            label={`${filmSourceLabel(replay.chapterProvenance.source, "", t, replay.chapterProvenance.model)} · ${replay.chapterProvenance.model} · ${replay.chapterProvenance.tier}`}
+            testId="film-chapter-served-model"
+            textOnly
+            className="mt-0.5 [&_span]:text-[9px] [&_span]:text-white/65"
+          />
+        ) : null}
         {storiesPending > 0 ? (
           <div data-testid="stories-pending" className="text-[10px] text-white/55 leading-tight mt-0.5">
             {t("storiesPending", { n: storiesPending })}
@@ -477,9 +486,11 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 ) : null}
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
                   {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => {
-                    const locked = Boolean(replay.active);
+                    const locked = Boolean(replay.active) || (id === "written" && !writtenPillEnabled({ customFilm: replay.customFilm }));
                     const lockTitle = replay.active
                       ? t("filmStoryLockedPlaying")
+                      : id === "written" && !writtenPillEnabled({ customFilm: replay.customFilm })
+                        ? t("filmStoryWrittenCustomUnavailable")
                       : id === "written" && replay.writtenUnavailable
                         ? t("filmStoryWrittenUnavailable") : undefined;
                     return (
@@ -489,6 +500,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                       data-testid={`film-style-${id}`}
                       aria-pressed={(replay.style || "raw") === id}
                       aria-disabled={locked}
+                      disabled={id === "written" && !writtenPillEnabled({ customFilm: replay.customFilm })}
                       title={lockTitle}
                       onClick={() => {
                         if (locked) return;

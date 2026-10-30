@@ -225,7 +225,15 @@ export function resolveServedFilm(data, requestedStyle) {
 }
 
 export function writtenPillEnabled(hasWritten, opts) {
+  const flags = hasWritten && typeof hasWritten === "object"
+    ? hasWritten
+    : opts;
+  if (flags?.customFilm) return false;
   return true;
+}
+
+export function filmResponseShouldRetry(status) {
+  return Number(status) !== 405;
 }
 
 export function isOfficialFilmVoyage(voyageId) {
@@ -1436,7 +1444,7 @@ export function useReplay({
     };
 
     const probeWritten = () => {
-      if (style !== "raw") return;
+      if (style !== "raw" || !official) return;
       const pq = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=written&t0=${encodeURIComponent(t0)}`;
       fetch(`${API}${path}?${pq}`, { signal: ac.signal })
         .then((r) => (r.ok ? r.json() : null))
@@ -1465,13 +1473,17 @@ export function useReplay({
       }
       fetch(`${API}${path}?${q}`, { signal: ac.signal })
         .then((r) => {
-          if (!r.ok) return { fail: true };
+          if (!r.ok) return { fail: true, status: r.status };
           return r.json().then((data) => ({ data })).catch(() => ({ fail: true }));
         })
         .then((pack) => {
           clearTimeout(requestTimer);
           if (cancelled || ac.signal.aborted) return;
           if (!pack || pack.fail) {
+            if (!filmResponseShouldRetry(pack?.status)) {
+              markAbsent();
+              return;
+            }
             markAbsent();
             return;
           }
@@ -2314,6 +2326,11 @@ export function useReplay({
       setFilmStyle("raw");
       return;
     }
+    // Les films personnalisés n'ont pas de variante Rédigé.
+    if (!isOfficialFilmVoyage(voyageId)) {
+      setFilmStyle("raw");
+      return;
+    }
     if (filmWritingRef.current) return;
     if (active && !hasWritten) return;
     if (active) stop();
@@ -2397,6 +2414,13 @@ export function useReplay({
     onSentenceEnd,
     isVoiceHeld,
     filmSource,
+    chapterProvenance: planRef.current?.chapters?.[chapterIdx]
+      ? {
+          model: planRef.current.chapters[chapterIdx].served_model || "",
+          source: planRef.current.chapters[chapterIdx].served_source || "",
+          tier: planRef.current.chapters[chapterIdx].served_tier || "",
+        }
+      : null,
     filmReviewedBy,
     filmModel,
     filmWebContext,
