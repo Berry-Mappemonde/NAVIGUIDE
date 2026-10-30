@@ -176,7 +176,7 @@ def test_budget_mode_off_never_reads_catalog(monkeypatch):
 def test_parse_catalog_shapes():
     assert tf_catalog.parse_catalog(_catalog(["a/b"])) == ["a/b"]
     assert tf_catalog.parse_catalog({"choices": []}) is None
-    assert tf_catalog.parse_catalog({"data": []}) is None
+    assert tf_catalog.parse_catalog({"data": []}) == []
     assert tf_catalog.parse_catalog(None) is None
 
 
@@ -209,13 +209,14 @@ def test_latency_median_and_window():
     for ms in (900, 100, 500):
         llm_budget.record_latency("fast", ms)
     st = llm_budget.latency_status()["fast"]
-    assert st == {"lastMs": 500, "medianMs": 500, "calls": 3}
+    assert st == {"lastMs": 500, "medianMs": 500, "calls": 3, "samples": 3}
     llm_budget.record_latency("fast", 300)
     assert llm_budget.latency_status()["fast"]["medianMs"] == 400
     for _ in range(llm_budget.LATENCY_SAMPLES + 10):
         llm_budget.record_latency("judge", 7)
     st = llm_budget.latency_status()["judge"]
     assert st["calls"] == llm_budget.LATENCY_SAMPLES + 10
+    assert st["samples"] == llm_budget.LATENCY_SAMPLES
     assert len(llm_budget._latency_raw()["judge"]["samples"]) == llm_budget.LATENCY_SAMPLES
 
 
@@ -251,6 +252,41 @@ def test_tf_timeout_defaults_and_env(monkeypatch):
     assert story_cascade.tf_timeout("fast").read == 25.0
     monkeypatch.setenv("NAVIGUIDE_TF_TIMEOUT_S", "abc")
     assert story_cascade.tf_timeout("fast").read == 25.0
+    monkeypatch.setenv("NAVIGUIDE_TF_TIMEOUT_S", "inf")
+    assert story_cascade.tf_timeout("fast").read == 25.0
+
+
+def test_catalog_empty_is_valid_and_has_no_models():
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(200, json={"data": []}))) as client:
+            return await tf_catalog.refresh(EU, "key", client)
+    entry = asyncio.run(go())
+    assert entry["ok"] is True and entry["ids"] == []
+    assert tf_catalog.has_model(EU, "x") is False
+
+
+def test_ensure_fresh_handles_cache_read_failure(monkeypatch):
+    monkeypatch.setattr(tf_catalog, "_get", lambda _base: (_ for _ in ()).throw(RuntimeError("store down")))
+    async def go():
+        async with httpx.AsyncClient() as client:
+            return await tf_catalog.ensure_fresh(EU, "key", client)
+    assert asyncio.run(go()) is None
+
+
+def test_model_missing_preserves_prior_substitute():
+    llm_budget.record_model_missing("write", "model-a", "fast", "model-b")
+    row = llm_budget.record_model_missing("write", "model-a")
+    assert row["substitute"] == "model-b" and row["substituteTier"] == "fast"
+
+
+def test_explicit_model_not_found_invalidates_catalog():
+    tf_catalog._put(EU, {"ok": True, "ids": ["stale/model"], "ts": time.time()})
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _req: httpx.Response(404, json={"error": "model not found"}))) as client:
+            with pytest.raises(RuntimeError, match="HTTP 404"):
+                await story_cascade._call_tokenfactory("sys", "user", "write", client)
+    asyncio.run(go())
+    assert tf_catalog.has_model(EU, "stale/model") is None
 
 
 def test_tf_call_never_without_timeout(monkeypatch):

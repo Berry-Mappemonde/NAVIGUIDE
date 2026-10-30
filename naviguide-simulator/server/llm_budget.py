@@ -800,7 +800,7 @@ def latency_status(day: str | None = None) -> dict[str, dict[str, int]]:
         timeouts = int(row.get("timeouts", 0))
         if not samples and timeouts == 0:
             continue
-        entry: dict[str, int] = {"calls": calls}
+        entry: dict[str, int] = {"calls": calls, "samples": len(samples)}
         if samples:
             entry["lastMs"] = samples[-1]
             entry["medianMs"] = _median(samples) or 0
@@ -853,8 +853,8 @@ def record_model_missing(
         row = cur.get(t) or {"count": 0}
         row.update({
             "model": (model or "").strip(),
-            "substitute": (substitute or "").strip() or None,
-            "substituteTier": normalize_tier(substitute_tier) if substitute_tier else None,
+            "substitute": ((substitute or "").strip() or row.get("substitute")),
+            "substituteTier": normalize_tier(substitute_tier) if substitute_tier else row.get("substituteTier"),
             "count": int(row.get("count") or 0) + 1,
         })
         cur[t] = row

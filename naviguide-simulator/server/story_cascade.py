@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -89,7 +90,7 @@ def tf_timeout(tier: str) -> httpx.Timeout:
         val = float(raw) if raw else default
     except (TypeError, ValueError):
         val = default
-    if val <= 0:
+    if not math.isfinite(val) or val <= 0:
         val = default
     connect = min(8.0, val)
     return httpx.Timeout(val, connect=connect)
@@ -1057,8 +1058,9 @@ async def _call_tokenfactory(
     payload = _tf_payload(system, user, t, max_tokens)
     timeout = tf_timeout(t)
     sema = _tf_limiter()
+    queue_timeout = min(1.0, timeout.read)
     try:
-        await asyncio.wait_for(sema.acquire(), timeout=timeout.read)
+        await asyncio.wait_for(sema.acquire(), timeout=queue_timeout)
     except asyncio.TimeoutError as exc:
         # File d'attente du limiteur pleine trop longtemps : repli étiqueté.
         llm_budget.record_latency_timeout(t)
@@ -1067,15 +1069,13 @@ async def _call_tokenfactory(
     try:
         # Échéance totale (P2-1) : httpx.Timeout borne chaque lecture, pas la
         # requête entière ; une réponse au compte-gouttes pouvait la dépasser.
-        r = await asyncio.wait_for(
-            client.post(
+        async with asyncio.timeout(timeout.read):
+            r = await client.post(
                 _tf_url(t),
                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
                 json=payload,
                 timeout=timeout,
-            ),
-            timeout=timeout.read,
-        )
+            )
         elapsed_ms = (time.monotonic() - started) * 1000.0
     except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
         llm_budget.record_latency_timeout(t)
@@ -1087,6 +1087,8 @@ async def _call_tokenfactory(
     finally:
         sema.release()
     if r.status_code >= 400:
+        if r.status_code in (400, 404) and re.search(r"model.{0,40}not found|not found.{0,40}model", r.text, re.I):
+            tf_catalog.invalidate(tf_base(t))
         raise _http_error("tokenfactory", r)
     # Latence par palier du modèle appelé (C1-a) : aller-retour HTTP réussi.
     llm_budget.record_latency(t, elapsed_ms)
@@ -1291,14 +1293,13 @@ async def _cascade_once(
     asked_lang = "en" if _is_en(lang) else "fr"
 
     async def _tokenfactory_hop() -> tuple[str, str]:
-        call_tier = await _guarded_tier(norm_tier, http)
-        if call_tier != norm_tier:
-            # Remplaçant étiqueté : source et modèle du palier qui répond.
-            return await _call_tokenfactory(
-                system, user, call_tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
-                lang=asked_lang,
-            )
         try:
+            call_tier = await _guarded_tier(norm_tier, http)
+            if call_tier != norm_tier:
+                return await _call_tokenfactory(
+                    system, user, call_tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
+                    lang=asked_lang,
+                )
             return await _call_tokenfactory(
                 system, user, tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
                 lang=asked_lang,
