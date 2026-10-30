@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { dismissNotForNav, leaveCinema, probeOfficial } from "../helpers.js";
 
 const RECEIPT = {
-  llmCalls: 7, cacheHits: 0, ruleFallbacks: 0,
+  llmCalls: 7, cacheHits: 0, ruleFallbacks: 0, webSourceCount: 0,
   models: [
     { model: "nvidia/Nemotron-3.5-Super-VL", source: "nemotron-super", tier: "write", calls: 4, cached: 0 },
     { model: "nvidia/Nemotron-3-Ultra", source: "nemotron-ultra", tier: "deep", calls: 2, cached: 0 },
@@ -14,7 +14,19 @@ const RECEIPT = {
   reread: "pass", reread_en: "pass", lightning: 1, at: "2026-10-29T13:40:00Z",
 };
 
-function filmPayload({ written, seconds = 150, lang = "fr", receipt }) {
+const WEB_CONTEXT = {
+  basis: "tavily",
+  port: "La Rochelle",
+  fetchedAt: "2026-10-29T13:40:00Z",
+  sources: [
+    { title: "Source one", domain: "one.example", url: "https://one.example/story" },
+    { title: "Duplicate source", domain: "one.example", url: "https://one.example/story" },
+    { title: "Source two", domain: "two.example", url: "https://two.example/story" },
+    { title: "Source three", domain: "three.example", url: "https://three.example/story" },
+  ],
+};
+
+function filmPayload({ written, seconds = 150, lang = "fr", receipt, webContext }) {
   return {
     status: "ready",
     lang,
@@ -25,11 +37,12 @@ function filmPayload({ written, seconds = 150, lang = "fr", receipt }) {
     writtenAt: written ? "2026-10-29T13:40:00Z" : undefined,
     targetSeconds: seconds,
     chapters: [{ text: "Le 15 mai, Berry-Mappemonde quitte La Rochelle.", anchors: [{ t: 0, i: 0 }] }],
+    ...(webContext ? { webContext } : {}),
     ...(written && receipt ? { receipt } : {}),
   };
 }
 
-async function openWritten(page, lang, receipt) {
+async function openWritten(page, lang, receipt, webContext) {
   await page.addInitScript((l) => localStorage.setItem("naviguide_lang_v4", l), lang);
   const cached = new Set();
   await page.route("**/voyage/**/film**", async (route) => {
@@ -42,7 +55,7 @@ async function openWritten(page, lang, receipt) {
     const written = req.method() === "POST" || (style === "written" && cached.has(key));
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify(filmPayload({ written, seconds, lang, receipt })),
+      body: JSON.stringify(filmPayload({ written, seconds, lang, receipt, webContext })),
     });
   });
   const official = await probeOfficial(page);
@@ -86,16 +99,28 @@ test("sans reçu servi, aucun reçu affiché", async ({ page }) => {
   await expect(page.getByTestId("film-receipt")).toHaveCount(0);
 });
 
-test("affiche les sources Tavily quand webSourceCount > 0", async ({ page }) => {
+for (const [lang, expected] of [
+  ["fr", "Sources web Tavily affichées avec le film : 3"],
+  ["en", "Web sources from Tavily shown with the film: 3"],
+]) {
+  test(`${lang} : le reçu compte les sources Tavily affichées et dédupliquées`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await openWritten(page, lang, RECEIPT, WEB_CONTEXT);
+    const receipt = page.getByTestId("film-receipt");
+    await expect(receipt).toBeVisible();
+    await receipt.locator("summary").click();
+    const tavilyLine = receipt.getByTestId("film-receipt-tavily");
+    await expect(tavilyLine).toBeVisible();
+    await expect(tavilyLine).toContainText(expected);
+    await expect(page.getByTestId("film-web-sources").getByRole("link")).toHaveCount(3);
+  });
+}
+
+test("sans sources web, le reçu ne montre pas la ligne Tavily", async ({ page }) => {
   test.setTimeout(90_000);
-  const receiptWithTavily = { ...RECEIPT, webSourceCount: 3 };
-  await openWritten(page, "fr", receiptWithTavily);
+  await openWritten(page, "fr", RECEIPT, null);
   const receipt = page.getByTestId("film-receipt");
   await expect(receipt).toBeVisible();
-  await expect(receipt.locator("summary")).toHaveText("Comment ce film a été fait");
   await receipt.locator("summary").click();
-  // Vérifie que la ligne Tavily s'affiche avec le bon testid
-  const tavilyLine = page.getByTestId("film-receipt-filmReceiptTavily");
-  await expect(tavilyLine).toBeVisible();
-  await expect(tavilyLine).toContainText("Sources web Tavily affichées avec le film : 3");
+  await expect(receipt.getByTestId("film-receipt-tavily")).toHaveCount(0);
 });

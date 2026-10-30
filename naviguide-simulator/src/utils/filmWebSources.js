@@ -20,11 +20,13 @@ export function publicFilmWebContext(data) {
   if (!ctx || typeof ctx !== "object" || ctx.basis !== "tavily") return null;
   const port = String(ctx.port || "").trim();
   const sources = [];
+  const seenUrls = new Set();
   for (const row of Array.isArray(ctx.sources) ? ctx.sources : []) {
     const url = String(row?.url || "").trim();
-    if (!/^https?:\/\//i.test(url)) continue;
+    if (!/^https?:\/\//i.test(url) || seenUrls.has(url)) continue;
     const domain = String(row?.domain || "").trim() || domainOf(url);
     if (!domain) continue;
+    seenUrls.add(url);
     sources.push({ url, domain, title: String(row?.title || "").trim() || domain });
     if (sources.length >= MAX_SOURCES) break;
   }
