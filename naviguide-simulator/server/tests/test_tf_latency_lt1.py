@@ -120,6 +120,85 @@ def test_R2c_non_timeout_failure_keeps_default_cascade(monkeypatch):
     assert res[1].startswith("nvidia-")
 
 
+def test_queue_timeout_covers_ten_concurrent_tokenfactory_calls(monkeypatch):
+    """A judge-sized burst waits for TF capacity instead of silently using NIM."""
+    monkeypatch.delenv("NAVIGUIDE_LLM_PROVIDERS", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_TIMEOUT_FALLBACK", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_TF_PARALLEL", "4")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nv-test")
+    assert story_cascade.TF_QUEUE_TIMEOUT_S == 10.0
+    seen = []
+
+    class SlowMockTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            seen.append(str(request.url))
+            await asyncio.sleep(0.04)
+            body = json.loads(request.content.decode())
+            return httpx.Response(200, json=_ok(body["model"]), request=request)
+
+    async def go():
+        async with httpx.AsyncClient(transport=SlowMockTransport()) as client:
+            results = await asyncio.gather(*(
+                cascade_text("sys", f"Judge request {i}.", client,
+                             fallback="Phrase locale.", facts={})
+                for i in range(10)
+            ))
+            # Exercise the actual queue expiry: a held slot times out at the
+            # configured queue budget, without sending a Token Factory POST.
+            sema = story_cascade._tf_limiter()
+            for _ in range(4):
+                await sema.acquire()
+            deadline_token = story_cascade._TF_DEADLINE.set(time.monotonic() + 20)
+            try:
+                with pytest.raises(story_cascade.TokenFactoryTimeout) as exc:
+                    await story_cascade._call_tokenfactory("sys", "queued", "write", client)
+                assert exc.value.queue
+            finally:
+                story_cascade._TF_DEADLINE.reset(deadline_token)
+                for _ in range(4):
+                    sema.release()
+            return results
+
+    results = asyncio.run(go())
+    assert all(source.startswith("nemotron-") for _, source in results), results
+    assert len(seen) == 10 and all("tokenfactory" in url for url in seen), seen
+
+
+def test_expired_queue_still_walks_mocked_provider_cascade(monkeypatch):
+    """A queue timeout enters NIM, then OpenRouter, then Claude in order."""
+    monkeypatch.delenv("NAVIGUIDE_LLM_PROVIDERS", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_TIMEOUT_FALLBACK", raising=False)
+    monkeypatch.setenv("NVIDIA_API_KEY", "nv-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "cl-test")
+    monkeypatch.setattr(story_cascade, "TF_QUEUE_TIMEOUT_S", 0.02)
+    seen = []
+
+    async def tokenfactory(*args, **kwargs):
+        seen.append("tokenfactory")
+        raise story_cascade.TokenFactoryTimeout("mock queue timeout", queue=True)
+
+    async def nim(*args, **kwargs):
+        seen.append("nim")
+        raise RuntimeError("mock unavailable")
+
+    async def openrouter(*args, **kwargs):
+        seen.append("openrouter")
+        raise RuntimeError("mock unavailable")
+
+    async def claude(*args, **kwargs):
+        seen.append("claude")
+        return "Récit court de la ZEE.", "claude"
+
+    monkeypatch.setattr(story_cascade, "_call_tokenfactory", tokenfactory)
+    monkeypatch.setattr(story_cascade, "_call_nim", nim)
+    monkeypatch.setattr(story_cascade, "_call_openrouter", openrouter)
+    monkeypatch.setattr(story_cascade, "_call_claude", claude)
+    result = _run(lambda request: httpx.Response(500, request=request))
+    assert result[1] == "claude", result
+    assert seen == ["tokenfactory", "nim", "openrouter", "claude"], seen
+
+
 def test_P2_402_pauses_tokenfactory_and_resumes(monkeypatch):
     """Quota 402 serves via NIM; TF is skipped briefly and retried after expiry."""
     import offline
