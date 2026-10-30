@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -2303,6 +2303,26 @@ def test_film_async_interrupted_owner_becomes_terminal_failure(tmp_path, monkeyp
     assert official_store.serve_film("fr", 180, "written")["status"] == "failed"
     official_store._FILM_WRITE_TASKS.clear()
     assert official_store.serve_film("en", 180, "written")["status"] == "failed"
+
+
+def test_film_async_writing_state_expires_only_after_age_limit(tmp_path, monkeypatch):
+    import sqlite3
+
+    store = OfficialStore(DiskBackend(tmp_path / "film-state-age"), now=lambda: NOW)
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    stale_at = NOW - official_store.FILM_WRITE_STALE_AFTER - timedelta(seconds=1)
+    fresh_at = NOW - official_store.FILM_WRITE_STALE_AFTER + timedelta(seconds=1)
+    for seconds, timestamp in ((150, stale_at), (180, fresh_at)):
+        official_store._set_film_write_state(seconds, "writing")
+        with sqlite3.connect(official_store._film_write_db()) as db:
+            db.execute(
+                "UPDATE film_write_tasks SET owner_pid=?, updated_at=? WHERE seconds=?",
+                (os.getpid(), official_store._iso(timestamp), seconds),
+            )
+
+    assert official_store._film_write_state(150, now=NOW) == "failed"
+    assert official_store._film_write_state(180, now=NOW) == "writing"
 
 
 def test_film_async_tavily_runs_in_background_task(client, tmp_path, monkeypatch):
