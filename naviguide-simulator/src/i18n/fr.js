@@ -2,6 +2,11 @@
  * NAVIGUIDE — French translations
  */
 export default {
+  chatErrTimeout: "Le chat n'a pas répondu à temps. Réessayez.",
+  chatErrNetwork: "Impossible de joindre le chat. Vérifiez votre connexion et réessayez.",
+  chatErrEmpty: "Veuillez saisir une question.",
+  chatErrTooLong: "Votre question est trop longue. Raccourcissez-la puis réessayez.",
+  chatErrServer: "Le chat a rencontré une erreur. Réessayez plus tard.",
   // ── Drawing mode ────────────────────────────────────────────────────────────
   drawStart:      "Choisissez votre point de départ",
   drawFirstStop:  "Choisissez votre première escale",

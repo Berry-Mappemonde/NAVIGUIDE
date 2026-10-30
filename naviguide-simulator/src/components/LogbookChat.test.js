@@ -28,7 +28,8 @@ describe("LogbookChat contract", () => {
   });
 
   it("the hook posts one question at a time to /logbook/chat with the admin header and the client facts", () => {
-    assert.match(hook, /fetch\(`\$\{API_URL\}\/logbook\/chat`/);
+    assert.match(hook, /postLogbookChat\(\{/);
+    assert.match(hook, /url:\s*`\$\{API_URL\}\/logbook\/chat`/);
     assert.match(hook, /\.\.\.adminHeaders\(\)/);
     assert.match(hook, /inFlight\.current/);
     assert.match(hook, /contextFn\(\)/);
@@ -36,6 +37,12 @@ describe("LogbookChat contract", () => {
     assert.match(hook, /reason/);
     assert.doesNotMatch(hook, /Nemotron|Tavily|Nebius/i);
     assert.doesNotMatch(hook, /useEffect/);
+  });
+
+  it("keeps the translator callable when recording the question timestamp", () => {
+    assert.match(hook, /const \{ t: tr \} = useLang\(\)/);
+    assert.match(hook, /setError\(tr\(chatErrorKey\(err\?\.code\)\)\)/);
+    assert.doesNotMatch(hook, /const t\s*=/);
   });
 
   it("shows the cascade source under the answer and does not fetch on render", () => {

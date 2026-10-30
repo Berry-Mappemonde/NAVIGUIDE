@@ -1,0 +1,55 @@
+export const LOGBOOK_CHAT_TIMEOUT_MS = 45000;
+
+const detailText = (detail) => {
+  if (typeof detail === "string") return detail;
+  if (detail == null) return "";
+  try { return JSON.stringify(detail); } catch { return String(detail); }
+};
+
+function errorCode(status, detail) {
+  const text = detailText(detail).toLowerCase();
+  if (status === 413 || ((status === 400 || status === 422) && /trop long|too long|volumineux/.test(text))) return "tooLong";
+  if ((status === 400 && /empty|vide/.test(text)) || (status === 422 && /empty|vide/.test(text))) return "empty";
+  return "server";
+}
+
+export async function postLogbookChat({ url, body, fetchImpl = fetch, timeoutMs = LOGBOOK_CHAT_TIMEOUT_MS, signal }) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const abortFromExternalSignal = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abortFromExternalSignal();
+  else signal?.addEventListener("abort", abortFromExternalSignal, { once: true });
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    let response;
+    try {
+      response = await fetchImpl(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
+    } catch (err) {
+      if (timedOut) throw Object.assign(new Error("Request timed out"), { code: "timeout", detail: null, status: null });
+      if (err instanceof TypeError || err?.name === "TypeError") throw Object.assign(new Error("Network request failed"), { code: "network", detail: err.message, status: null });
+      throw err;
+    }
+    if (response.ok) return await response.json();
+    const payload = await response.json().catch(() => ({}));
+    const detail = payload?.detail ?? null;
+    const code = errorCode(response.status, detail);
+    throw Object.assign(new Error(detailText(detail) || `HTTP ${response.status}`), { code, detail, status: response.status });
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abortFromExternalSignal);
+  }
+}
+
+export function chatErrorKey(code) {
+  return ({
+    timeout: "chatErrTimeout",
+    network: "chatErrNetwork",
+    empty: "chatErrEmpty",
+    tooLong: "chatErrTooLong",
+    server: "chatErrServer",
+  })[code] || "chatErrServer";
+}

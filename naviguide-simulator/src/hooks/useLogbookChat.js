@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { adminHeaders } from "../utils/adminSecret.js";
+import { chatErrorKey, postLogbookChat } from "../utils/logbookChatRequest.js";
+import { useLang } from "../i18n/LangContext.jsx";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const HISTORY_MAX = 30;
@@ -12,6 +14,7 @@ const HISTORY_MAX = 30;
  * Play; one question in flight at a time.
  */
 export function useLogbookChat({ lang = "fr", contextFn = null } = {}) {
+  const { t: tr } = useLang();
   const [messages, setMessages] = useState([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
@@ -23,8 +26,8 @@ export function useLogbookChat({ lang = "fr", contextFn = null } = {}) {
     inFlight.current = true;
     setPending(true);
     setError(null);
-    const t = new Date().toISOString();
-    setMessages((prev) => [...prev, { role: "skipper", text: q, t }].slice(-HISTORY_MAX));
+    const timestamp = new Date().toISOString();
+    setMessages((prev) => [...prev, { role: "skipper", text: q, t: timestamp }].slice(-HISTORY_MAX));
     let context = null;
     try {
       context = typeof contextFn === "function" ? contextFn() : null;
@@ -32,13 +35,11 @@ export function useLogbookChat({ lang = "fr", contextFn = null } = {}) {
       context = null;
     }
     try {
-      const r = await fetch(`${API_URL}/logbook/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...adminHeaders() },
-        body: JSON.stringify({ question: q, lang, context }),
+      const body = await postLogbookChat({
+        url: `${API_URL}/logbook/chat`,
+        fetchImpl: (url, options) => fetch(url, { ...options, headers: { ...options.headers, ...adminHeaders() } }),
+        body: { question: q, lang, context },
       });
-      const body = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(body?.detail || `HTTP ${r.status}`);
       const reply = {
         role: "logbook",
         text: body.answer || "",
@@ -54,13 +55,14 @@ export function useLogbookChat({ lang = "fr", contextFn = null } = {}) {
       setMessages((prev) => [...prev, reply].slice(-HISTORY_MAX));
       return reply;
     } catch (err) {
-      setError(err?.message || "error");
+      console.warn("Logbook chat request failed:", err?.detail ?? err?.message);
+      setError(tr(chatErrorKey(err?.code)));
       return null;
     } finally {
       inFlight.current = false;
       setPending(false);
     }
-  }, [lang, contextFn]);
+  }, [lang, contextFn, tr]);
 
   const clear = useCallback(() => setMessages([]), []);
 
