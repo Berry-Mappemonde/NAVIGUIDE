@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
+import { unmountRootLater } from "../utils/unmountRootLater.js";
 import { LangProvider } from "../i18n/LangContext.jsx";
 import { followPopupToMarker } from "./eventBubble.js";
 import { EscaleSheet } from "./EscaleSheet.jsx";
@@ -189,7 +190,9 @@ export function attachEscalePopup(scene, L) {
       host.removeEventListener?.("click", onHostClick);
       win?.removeEventListener("keydown", onEsc, true);
       hide();
-      try { root?.unmount(); } catch { /* tests */ }
+      // Différé : dispose() part souvent d'un nettoyage d'effet React ; un
+      // unmount synchrone pendant le rendu déclenche l'erreur « synchronously unmount ».
+      unmountRootLater(root);
     },
   };
   scene.escalePopup = api;
