@@ -38,16 +38,87 @@ export function isNowAlertOrDecision(card) {
   return card.judge === "now";
 }
 
-export function bubbleTitle(card, max = EVENT_BUBBLE_TITLE_MAX, lang = "fr") {
-  const raw = localizeStoredTitle(String(card?.title || card?.kind || "").trim(), lang);
+function isEnLang(lang) {
+  return String(lang || "").toLowerCase().startsWith("en");
+}
+
+/** Titres de données gardés tels quels en EN (noms propres : escale, projet, campagne). */
+const EN_KEEP_TITLE_KINDS = new Set(["stop", "project", "sci", "port", "poe", "news", "chat"]);
+
+const EN_KIND_TITLE = Object.freeze({
+  zee: "Maritime zone",
+  amp: "Marine protected area",
+  wx: "Sea conditions",
+  climo: "Seasonal winds",
+  coast: "Along the coast",
+  geo: "Seabed",
+  position: "Position",
+  grib: "Weather",
+  note: "Logbook",
+});
+
+const FR_WORD_RE = /(?:^|[\s,(])(?:du|des|les|une|entre|est|sont|aux|avec|dans|sur|pour|par|vers|et|limite|désaccord|navires?|flotte|aménagement|économique)(?=[\s,.;:)]|$)/gi;
+const EN_WORD_RE = /(?:^|[\s,(])(?:the|of|on|and|at|in|boat|miles?|away|waters|near|from|to|between|arrival|project)(?=[\s,.;:)]|$)/gi;
+const FR_STRONG_RE = /^(?:du|des|le|la|les|l['’]|au|aux|une?|zone économique|haute mer|aire marine)\s/i;
+const FR_TITLE_RE = /^(?:l['’]|les?\s|la\s|du\s|des\s|aux?\s)|\b(?:alizés?|limite|plateau|zone|aire|haute mer|vents?|côte)\b/i;
+
+/**
+ * Un texte de données français ne doit pas apparaître dans l'interface EN.
+ * Début français (« Du 11 Jun, … », « les Baléares ») ou plus de mots outils
+ * français qu'anglais. Les noms propres (accents, « Côte À Côte ») ne comptent pas.
+ */
+export function looksFrench(text) {
+  const s = String(text || "").trim();
+  if (!s) return false;
+  if (FR_STRONG_RE.test(s)) return true;
+  const fr = (s.match(FR_WORD_RE) || []).length;
+  const en = (s.match(EN_WORD_RE) || []).length;
+  return fr >= 2 && fr > en;
+}
+
+function clip(raw, max) {
   if (raw.length <= max) return raw;
   return `${raw.slice(0, Math.max(1, max - 1)).trimEnd()}…`;
 }
 
+/** « On 24 June, Spanish waters. » → « Spanish waters ». */
+export function enTitleFromFacts(text) {
+  let s = String(text || "").trim();
+  if (!s) return "";
+  s = s.split(/(?<=[.!?])\s+/)[0] || s;
+  s = s
+    .replace(/^(?:on \d{1,2} \w+(?: \d{4})?|the next day|then|later|that day|the same day)\s*,\s*/i, "")
+    .replace(/^(?:\w+ (?:miles|nm) away|at \w+ miles)\s*,\s*/i, "")
+    .replace(/[.!?…]+$/, "")
+    .trim();
+  const cut = s.search(/[:;]/);
+  if (cut > 8) s = s.slice(0, cut).trim();
+  if (!s) return "";
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+export function bubbleTitle(card, max = EVENT_BUBBLE_TITLE_MAX, lang = "fr") {
+  const stored = String(card?.title || card?.kind || "").trim();
+  if (!isEnLang(lang)) return clip(stored, max);
+  const raw = localizeStoredTitle(stored, lang);
+  if (raw !== stored) return clip(raw, max);
+  const kind = String(card?.kind || "");
+  // Nom propre (port, projet, jeu de données) : jamais traduit.
+  if (EN_KEEP_TITLE_KINDS.has(kind)) {
+    if (!looksFrench(raw) || kind === "stop" || kind === "project" || kind === "sci") return clip(raw, max);
+  }
+  const text = String(card?.text || "").trim();
+  const derived = text && !looksFrench(text) ? enTitleFromFacts(text) : "";
+  if (derived && !looksFrench(derived)) return clip(derived, max);
+  if (!looksFrench(raw) && !FR_TITLE_RE.test(raw) && raw !== kind) return clip(raw, max);
+  return clip(EN_KIND_TITLE[kind] || "Along the route", max);
+}
+
 export function bubbleFacts(card, lang = "fr") {
   const text = String(card?.text || "").trim();
-  if (String(lang).toLowerCase().startsWith("en") && /\b(?:du|des|les|une|avec|pour|dans|sur|navires|désaccord|aménagement)\b/i.test(text)) return "";
   if (!text) return "";
+  // Contenu de données seulement en français : masqué en EN (jamais traduit ici).
+  if (isEnLang(lang) && looksFrench(text)) return "";
   const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
   return sentences.slice(0, 2).join(" ");
 }
@@ -101,9 +172,7 @@ export function filmEventCard(ev, lang = "fr") {
   const card = ev.card && typeof ev.card === "object" ? ev.card : {};
   const title = localizeStoredTitle(card.title || ev.title || ev.kind || "", lang);
   const candidate = card.text || ev.fact || "";
-  const text = String(lang).toLowerCase().startsWith("en") && /\b(?:du|des|les|une|avec|pour|dans|sur|navires|désaccord|aménagement)\b/i.test(candidate)
-    ? ""
-    : candidate;
+  const text = isEnLang(lang) && looksFrench(candidate) ? "" : candidate;
   return {
     ...card,
     id: card.id || ev.id,
