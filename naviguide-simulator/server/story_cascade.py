@@ -47,10 +47,10 @@ TOKENFACTORY_EU_BASE = (
     os.environ.get("NAVIGUIDE_TF_BASE_EU")
     or "https://api.tokenfactory.nebius.com/v1"
 ).rstrip("/")
-# Cookbook Ultra: https://api.tokenfactory.us-central1.nebius.com/v1/
+# Ultra default host is EU Token Factory: https://api.tokenfactory.nebius.com/v1/
 TOKENFACTORY_ULTRA_BASE = (
     os.environ.get("NAVIGUIDE_TF_BASE_ULTRA")
-    or "https://api.tokenfactory.us-central1.nebius.com/v1"
+    or "https://api.tokenfactory.nebius.com/v1"
 ).rstrip("/")
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -138,6 +138,7 @@ NON_NEMOTRON_PROVIDERS = frozenset({"nim", "openrouter", "claude"})
 CACHE_NS = "llm-cache"
 CACHE_TTL_S = 24 * 3600.0
 TF_PARALLEL_DEFAULT = 4
+TF_QUEUE_TIMEOUT_S = 10.0
 KNOWN_SOURCES = frozenset({
     "nemotron-nano", "nemotron-lightning", "nemotron-super", "nemotron-super-vl",
     "nemotron-ultra",
@@ -846,16 +847,17 @@ def tidy_story(
 
 
 def _tf_url(tier: str) -> str:
-    """Nano is pinned to the EU host. Lightning / Super stay on the default
-    TF host. Ultra uses us-central1 (Nebius cookbook) unless
-    NAVIGUIDE_TF_BASE_ULTRA is set."""
+    """Nano and write (Super-VL) are pinned to the EU host. Lightning stays on
+    the default TF host. Ultra uses EU host (Nebius Token Factory) unless
+    NAVIGUIDE_TF_BASE_ULTRA is set. NAVIGUIDE_TF_BASE_EU pins nano/write to
+    their host. NAVIGUIDE_PORT_WEB is a 0/1 flag for Tavily web context."""
     t = llm_budget.normalize_tier(tier)
     if t in {"deep", "judge"}:
         base = (
             _env("NAVIGUIDE_TF_BASE_ULTRA") or TOKENFACTORY_ULTRA_BASE
         ).rstrip("/")
         return f"{base}/chat/completions"
-    if t == "nano":
+    if t in {"nano", "write"}:
         base = (_env("NAVIGUIDE_TF_BASE_EU") or TOKENFACTORY_EU_BASE).rstrip("/")
         return f"{base}/chat/completions"
     return TOKENFACTORY_URL
@@ -1199,7 +1201,10 @@ async def _call_tokenfactory(
     if remaining <= 0:
         llm_budget.record_latency_timeout(t)
         raise TokenFactoryTimeout("tokenfactory cascade deadline exhausted")
-    queue_timeout = min(1.0, timeout.read, max(0.001, remaining - 0.005))
+    # Allow realistic judge bursts (8–10 calls): with four TF slots and
+    # configured 25 s per-call / total tier deadlines, a 10 s queue budget
+    # covers a second short generation wave while staying inside that deadline.
+    queue_timeout = min(TF_QUEUE_TIMEOUT_S, timeout.read, max(0.001, remaining - 0.005))
     started = time.monotonic()
     try:
         await asyncio.wait_for(sema.acquire(), timeout=queue_timeout)
@@ -1559,6 +1564,11 @@ async def _cascade_once(
     failures: list[dict[str, str]] = []
     tf_timed_out = False
     for name, step in hops:
+        # A local replay without Token Factory credentials must not even enter
+        # the TF hop. This also keeps the default provider list usable offline.
+        if name == "tokenfactory" and not nebius_key():
+            failures.append({"provider": name, "reason": "skipped: API key unavailable"})
+            continue
         if name == "tokenfactory" and llm_budget.tokenfactory_quota_paused():
             failures.append({"provider": name, "reason": "skipped: quota exhausted"})
             continue

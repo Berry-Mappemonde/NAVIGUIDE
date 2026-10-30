@@ -12,6 +12,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 const FORBIDDEN = /Ports\s*\/\s*Sécurité|AgentPanel|\/agents\/|Cruisers|Nemotron|Tavily/i;
 
 describe("narrateIci", () => {
+  it("describes outside_us_enc as missing NOAA ENC coverage in both languages", () => {
+    const dossier = { aton: { reason: "outside_us_enc" } };
+    assert.match(narrateIci(dossier, "en"), /Outside NOAA ENC \(US charts\) coverage/);
+    assert.match(narrateIci(dossier, "fr"), /Hors couverture des cartes NOAA \(ENC US\)/);
+  });
+
   it("tells the bag at La Rochelle, not the whole map", () => {
     const text = narrateIci({
       zee: {
