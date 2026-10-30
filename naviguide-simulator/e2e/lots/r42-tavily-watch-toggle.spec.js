@@ -5,6 +5,9 @@ import { dismissNotForNav, showRightPanel } from "../helpers.js";
 
 const API = `http://127.0.0.1:${process.env.PW_API_PORT || 8010}`;
 
+// Les deux langues modifient le même réglage persistant côté serveur.
+test.describe.configure({ mode: "serial" });
+
 for (const [lang, label] of [["fr", "Veille Tavily"], ["en", "Tavily watch"]]) {
   test(`R42 ${lang} : l'interrupteur change la veille sur le serveur et reste après rechargement`, async ({ page, request }) => {
     test.setTimeout(90_000);
@@ -23,7 +26,12 @@ for (const [lang, label] of [["fr", "Veille Tavily"], ["en", "Tavily watch"]]) {
       await sw.scrollIntoViewIfNeeded();
       await expect(sw).toHaveAttribute("data-testid", "tavily-watch-toggle");
       await expect(sw).toHaveAttribute("aria-checked", String(before));
+      const saved = page.waitForResponse((response) =>
+        response.request().method() === "POST" && response.url().includes("/escale/watch/settings"),
+      );
       await sw.click();
+      const saveResponse = await saved;
+      expect(saveResponse.ok()).toBeTruthy();
       await expect(sw).toHaveAttribute("aria-checked", String(!before));
       const after = await (await request.get(`${API}/escale/watch/settings`)).json();
       expect(after).toMatchObject({ enabled: !before, source: "setting" });
