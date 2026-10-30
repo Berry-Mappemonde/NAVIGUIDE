@@ -2287,6 +2287,12 @@ export function useReplay({
 
   const chooseFilmStyle = useCallback((next) => {
     if (next !== "written") {
+      // Switching back to Raw must stop an in-flight write poll even when
+      // filmStyle is already "raw" and the style effect cannot observe a change.
+      filmWritePollGenRef.current += 1;
+      filmWritePollAbortRef.current?.abort();
+      filmWritePollAbortRef.current = null;
+      filmWriteStartingRef.current = false;
       setFilmWriting(false);
       setFilmStyle("raw");
       return;
@@ -2325,7 +2331,12 @@ export function useReplay({
           setFilmWebContext(resolved.webContext || null);
           setFilmReceipt(resolved.receipt || null);
           setFilmWriting(false);
+          return;
         }
+        // A successful HTTP response can still mean that writing did not
+        // start (LLM disabled, budget exhausted, or no valid raw plan).
+        setFilmWriteError(true);
+        setFilmWriting(false);
       })
       .catch(() => {
         setFilmWriteError(true);
