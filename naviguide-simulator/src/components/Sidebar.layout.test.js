@@ -130,7 +130,7 @@ describe("Sidebar — : Tracer 2 onglets, Suivre 4", () => {
     assert.match(sidebar, /ici-tab-now|JournalPanel|ici-tab-journal|<JournalPanel /);
     assert.match(sidebar, /<JournalPanel /);
     assert.match(sidebar, /data-testid="expedition-story"/);
-    assert.match(sidebar, /story=\{\(Array\.isArray\(story\)/);
+    assert.match(sidebar, /story=\{routeSource !== "custom" && \(Array\.isArray\(story\)/);
     assert.doesNotMatch(sidebar, /story=\{isSuivre && !isDrawing &&/);
   });
 });
