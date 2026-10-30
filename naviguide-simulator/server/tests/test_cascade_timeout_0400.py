@@ -14,6 +14,10 @@ def _clean_cascade_env(monkeypatch):
     monkeypatch.delenv("NAVIGUIDE_LLM_TIMEOUT_FALLBACK", raising=False)
     monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
     monkeypatch.setenv("NAVIGUIDE_TF_MODEL_GUARD", "0")
+    # The cascade skips the Token Factory hop when no key is configured (RL185).
+    # These tests mock _call_tokenfactory, so pretend a key exists to exercise
+    # the TF failure -> fallback path offline; no real call is ever made.
+    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "offline-test")
     story_cascade.reset_runtime()
     yield
     story_cascade.reset_runtime()
