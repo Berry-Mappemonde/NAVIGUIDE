@@ -1385,8 +1385,9 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
   it("signale l’indisponibilité seulement après l’échec de toute la cascade", () => {
     assert.match(hook, /data\?\.reason === "all-providers-failed"/);
     assert.match(hook, /setWrittenUnavailable\("unavailable"\)/);
-    assert.match(hook, /\.catch\(\(\) => \{\s*if \(generation === filmWriteGenerationRef\.current\) setWrittenUnavailable\("unavailable"\);/);
-    assert.match(hook, /if \(!data\) \{\s*setWrittenUnavailable\("unavailable"\)/);
+    assert.match(hook, /\.catch\(\(\) => \{\s*if \(generation === filmWriteGenerationRef\.current\) setWrittenUnavailable\(null\);/);
+    assert.match(hook, /if \(!data\) \{\s*setWrittenUnavailable\(null\)/);
+    assert.match(hook, /else if \(data\?\.reason === "all-providers-failed"\) setWrittenUnavailable\("unavailable"\)/);
     assert.match(hook, /writtenUnavailable,/);
     assert.match(app, /writtenUnavailable: replay\.writtenUnavailable/);
     assert.match(bar, /filmStoryWrittenUnavailable/);

@@ -2331,7 +2331,7 @@ export function useReplay({
       .then((data) => {
         if (generation !== filmWriteGenerationRef.current) return;
         if (!data) {
-          setWrittenUnavailable("unavailable");
+          setWrittenUnavailable(null);
           return;
         }
         const resolved = resolveServedFilm(data, "written");
@@ -2348,7 +2348,7 @@ export function useReplay({
         else setWrittenUnavailable(null);
       })
       .catch(() => {
-        if (generation === filmWriteGenerationRef.current) setWrittenUnavailable("unavailable");
+        if (generation === filmWriteGenerationRef.current) setWrittenUnavailable(null);
       })
       .finally(() => {
         clearTimeout(timeout);
