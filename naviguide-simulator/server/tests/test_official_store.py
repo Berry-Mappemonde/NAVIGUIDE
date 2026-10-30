@@ -2235,6 +2235,76 @@ def test_film_async_write_failed_then_retry(client, tmp_path, monkeypatch):
     assert calls["n"] == 2
 
 
+def test_film_async_fr_en_posts_share_atomic_bilingual_reservation(tmp_path, monkeypatch):
+    import asyncio
+    import film_script
+    from film_front import post_official_film
+
+    store = OfficialStore(DiskBackend(tmp_path / "film-bilingual-atomic"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    official_store.reset_store()
+    official_store._FILM_WRITE_TASKS.clear()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")
+    store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
+    calls = {"n": 0}
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def fake_chain(plan, *, seconds=150, cascade=None, **kwargs):
+        calls["n"] += 1
+        started.set()
+        await release.wait()
+        written = {"chapters": list(plan.get("chapters") or []), "source": official_store.WRITTEN_SOURCE,
+                   "hasWritten": True, "chars": 40, "targetSeconds": seconds}
+        en = {**written, "chapters": list((kwargs.get("en_raw") or {}).get("chapters") or [])}
+        return written, en, {"super": 1, "ultra_edit": 0, "ultra_judge": 0, "lightning": 0,
+                             "source": official_store.WRITTEN_SOURCE, "reviewed": False}
+
+    async def noop_attach(**_kw):
+        return None
+
+    monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
+    monkeypatch.setattr(official_store, "attach_film_web_context", noop_attach)
+
+    async def scenario():
+        fr, en = await asyncio.gather(post_official_film(lang="fr", seconds=150),
+                                      post_official_film(lang="en", seconds=150))
+        assert fr["status"] == en["status"] == "writing"
+        await started.wait()
+        # A separate worker has its own task registry but reads the shared DB.
+        official_store._FILM_WRITE_TASKS.clear()
+        other_worker = OfficialStore(DiskBackend(tmp_path / "film-bilingual-atomic"), now=lambda: NOW)
+        monkeypatch.setattr(official_store, "_INSTANCE", other_worker)
+        assert official_store.serve_film("en", 150, "written")["status"] == "writing"
+        assert calls["n"] == 1
+        monkeypatch.setattr(official_store, "_INSTANCE", store)
+        release.set()
+        for _ in range(20):
+            await asyncio.sleep(0)
+            if not official_store.film_write_running("fr", 150):
+                break
+        assert official_store.serve_film("en", 150, "written")["status"] == "ready"
+        assert calls["n"] == 1
+
+    asyncio.run(scenario())
+
+
+def test_film_async_interrupted_owner_becomes_terminal_failure(tmp_path, monkeypatch):
+    import sqlite3
+
+    store = OfficialStore(DiskBackend(tmp_path / "film-state-restart"), now=lambda: NOW)
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    official_store._set_film_write_state(180, "writing")
+    with sqlite3.connect(official_store._film_write_db()) as db:
+        db.execute("UPDATE film_write_tasks SET owner_pid=? WHERE seconds=180", (999999999,))
+    assert official_store.serve_film("fr", 180, "written")["status"] == "failed"
+    official_store._FILM_WRITE_TASKS.clear()
+    assert official_store.serve_film("en", 180, "written")["status"] == "failed"
+
+
 def test_film_async_tavily_runs_in_background_task(client, tmp_path, monkeypatch):
     import asyncio
     import film_script
