@@ -99,6 +99,7 @@ def status() -> dict[str, Any]:
         **_state,
         "store": info,
         "llm": llm_budget.status(),
+        "tfQuota": llm_budget.tokenfactory_quota_status(),
         "moments": info.get("moments", 0),
     }
     out.setdefault("stories", {"skipped": "on-demand"})

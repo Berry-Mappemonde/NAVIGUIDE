@@ -89,7 +89,7 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
         data-testid="logbook-chat-reply"
         className="flex-1 min-h-0 rounded-md border border-violet-300/30 bg-slate-950/55 px-1.5 py-1"
       >
-        <div ref={listRef} className="h-full overflow-y-auto sidebar-scroll space-y-1 min-w-0" data-testid="logbook-chat-list">
+        <div ref={listRef} className="h-full overflow-y-auto sidebar-scroll space-y-1 min-w-0" data-testid="logbook-chat-list" role="log" aria-live="polite">
           {messages.map((m, i) => (
             <div key={`${m.t}-${i}`} className={`text-[11px] leading-snug break-words [overflow-wrap:anywhere] ${m.role === "skipper" ? "text-slate-100" : "text-violet-100"}`}>
               <span className="text-[9px] text-slate-500 mr-1">{formatTimeUtc(m.t)}</span>
@@ -126,7 +126,7 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
             </div>
           ))}
           {pending ? <p className="text-[10px] text-slate-400 leading-snug">{t("logbookChatPending")}</p> : null}
-          {error ? <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p> : null}
+          {error ? <p className="text-[10px] text-amber-300/90 leading-snug" role="alert" data-testid="logbook-chat-error">{error}</p> : null}
         </div>
       </div>
       {showAiNotice ? (
@@ -168,6 +168,7 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
       <form onSubmit={submit} className="mt-1.5 flex items-center gap-1 flex-shrink-0">
         <input
           type="text"
+          aria-label={t("logbookChatInputLabel")}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onFocus={onChatFocus}
@@ -180,6 +181,7 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
           type="submit"
           disabled={pending || !draft.trim()}
           title={t("logbookChatSend")}
+          aria-label={t("logbookChatSend")}
           data-testid="logbook-chat-send"
           className="h-7 w-7 rounded-md bg-violet-600 hover:bg-violet-500 disabled:opacity-40 flex items-center justify-center text-white"
         >
