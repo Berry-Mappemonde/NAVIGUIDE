@@ -1,0 +1,44 @@
+// RC1 — aucune erreur console React au chargement ni pendant la visite ?tour=1.
+// Régression visée : « Attempted to synchronously unmount a root while React was
+// already rendering » (racines des popups démontées dans un nettoyage d'effet).
+// Le double effet de StrictMode n'existe qu'en dev : `PW_DEV_ORIGIN=http://127.0.0.1:5174`
+// pointe le test vers `vite` (dev-mac.sh) ; sinon il tourne sur le build servi.
+import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
+
+const ORIGIN = process.env.PW_DEV_ORIGIN || "";
+const STEPS = ["welcome", "models", "live", "briefing", "layers", "replay", "trace", "return"];
+const REACT_ERR = /synchronously unmount|while React was already rendering|Warning: |React (?:has )?detected|Minified React error/i;
+
+function watch(page) {
+  const bad = [];
+  page.on("console", (m) => {
+    if (m.type() === "error" && REACT_ERR.test(m.text())) bad.push(m.text().slice(0, 300));
+  });
+  page.on("pageerror", (e) => bad.push(`pageerror: ${e.message}`));
+  return bad;
+}
+
+test("RC1 chargement : console sans erreur React", async ({ page }) => {
+  const bad = watch(page);
+  await page.goto(`${ORIGIN}/`);
+  await dismissNotForNav(page);
+  await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
+  await page.waitForTimeout(1500);
+  expect(bad, bad.join("\n")).toEqual([]);
+});
+
+test("RC1 ?tour=1 : visite complète sans erreur React", async ({ page }) => {
+  test.setTimeout(90_000);
+  const bad = watch(page);
+  await page.goto(`${ORIGIN}/?tour=1`);
+  await dismissNotForNav(page);
+  const panel = page.getByTestId("demo-walkthrough-panel");
+  await expect(panel).toHaveAttribute("data-step", "welcome", { timeout: 30_000 });
+  for (const id of STEPS.slice(1)) {
+    await page.getByTestId("demo-walkthrough-next").click();
+    await expect(panel).toHaveAttribute("data-step", id);
+  }
+  await page.waitForTimeout(1000);
+  expect(bad, bad.join("\n")).toEqual([]);
+});
