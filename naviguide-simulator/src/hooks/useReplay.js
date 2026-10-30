@@ -247,9 +247,8 @@ export function isReadyRemoteFilm(data, { official = true } = {}) {
   return String(data.status || "").toLowerCase() === "ready" && Boolean(data.chapters?.length);
 }
 
-/** preparing : relire toutes les 10 s, au plus 2 min, puis arrêt poli. */
+/** Tant que le serveur répond preparing, relire toutes les 10 s. */
 export const FILM_PREPARE_POLL_MS = 10_000;
-export const FILM_PREPARE_MAX_MS = 120_000;
 
 /**
  * Revoir en Suivre : horloge officielle + /film RE7 de ce checkout.
@@ -1343,7 +1342,6 @@ export function useReplay({
     const path = filmRequestPath(voyageId);
     const style = filmRequestStyle(filmStyle);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=${style}&t0=${encodeURIComponent(t0)}`;
-    let prepareStarted = 0;
 
     const applyEstimates = (data) => {
       const chapters = data?.chapters || [];
@@ -1480,11 +1478,7 @@ export function useReplay({
           const applied = applyData(pack.data);
           if (applied === "over-budget") return;
           if (applied === "preparing") {
-            const now = Date.now();
-            if (!prepareStarted) prepareStarted = now;
-            if (now - prepareStarted < FILM_PREPARE_MAX_MS) {
-              retryTimer = setTimeout(load, FILM_PREPARE_POLL_MS);
-            } else setFilmStatus("timeout");
+            retryTimer = setTimeout(load, FILM_PREPARE_POLL_MS);
             return;
           }
           if (applied) {

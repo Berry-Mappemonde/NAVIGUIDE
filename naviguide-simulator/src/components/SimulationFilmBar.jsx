@@ -412,11 +412,16 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             {replay && !replay.unavailable ? (
               <>
                 {replay.remoteStatus && replay.remoteStatus !== "ready" ? (
-                  <div data-testid="film-load-status" role="status" aria-live="polite" className="basis-full flex items-center gap-1 text-[10px] text-white/65">
+                  <div
+                    data-testid="film-load-status"
+                    role={replay.writtenUnavailable ? undefined : "status"}
+                    aria-live="polite"
+                    className="flex min-w-0 max-w-full items-center gap-1 text-[10px] text-white/65"
+                  >
                     {replay.remoteStatus === "pending" || replay.remoteStatus === "preparing" ? (
                       <LoaderCircle size={11} className="animate-spin shrink-0" aria-hidden="true" />
                     ) : null}
-                    <span>{t({ pending: "filmLoadPending", preparing: "filmLoadPreparing", empty: "filmLoadEmpty", absent: "filmLoadError", timeout: "filmLoadTimeout", stale: "filmLoadStale" }[replay.remoteStatus] || "filmLoadPending")}</span>
+                    <span className="min-w-0 truncate">{t({ pending: "filmLoadPending", preparing: "filmLoadPreparing", empty: "filmLoadEmpty", absent: "filmLoadError", timeout: "filmLoadTimeout", stale: "filmLoadStale" }[replay.remoteStatus] || "filmLoadPending")}</span>
                     {["empty", "absent", "timeout", "stale"].includes(replay.remoteStatus) && replay.onRetryLoad ? (
                       <button type="button" data-testid="film-load-retry" className="underline" onClick={replay.onRetryLoad}>{t("filmLoadRetry")}</button>
                     ) : null}

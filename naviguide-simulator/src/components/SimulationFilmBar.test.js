@@ -34,7 +34,9 @@ function t(key, vars = {}) {
 
 describe("barre film — vitesse cyclique", () => {
   it("annonce l’état du chargement du film et propose une reprise", () => {
-    assert.match(bar, /data-testid="film-load-status" role="status" aria-live="polite"/);
+    assert.match(bar, /data-testid="film-load-status"[\s\S]*?role=\{replay\.writtenUnavailable \? undefined : "status"\}/);
+    assert.match(bar, /className="flex min-w-0 max-w-full items-center gap-1/);
+    assert.match(bar, /className="min-w-0 truncate"/);
     assert.match(bar, /data-testid="film-load-retry"/);
     assert.match(bar, /\["empty", "absent", "timeout", "stale"\]/);
     assert.match(bar, /animate-spin/);
