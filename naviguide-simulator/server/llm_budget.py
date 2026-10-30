@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -23,6 +24,35 @@ LAST_ERROR_KEY = "last-error"
 LAST_ERRORS_BY_TIER_KEY = "last-errors-by-tier"
 LAST_ERROR_AT_KEY = "last-error-at"
 FALLBACK_PROVIDERS = ("nim", "openrouter", "claude")
+
+_tf_quota_until = 0.0
+_tf_quota_lock = threading.Lock()
+
+
+def pause_tokenfactory_for_quota() -> None:
+    """Pause Token Factory after an exhausted-credit response (default: 10 min)."""
+    global _tf_quota_until
+    try:
+        pause_s = max(0.0, float(os.environ.get("NAVIGUIDE_TF_QUOTA_PAUSE_S", "600")))
+    except (TypeError, ValueError):
+        pause_s = 600.0
+    if pause_s <= 0:
+        return
+    with _tf_quota_lock:
+        _tf_quota_until = time.time() + pause_s
+
+
+def tokenfactory_quota_paused() -> bool:
+    with _tf_quota_lock:
+        return time.time() < _tf_quota_until
+
+
+def tokenfactory_quota_status() -> dict[str, Any]:
+    with _tf_quota_lock:
+        until = _tf_quota_until
+    if time.time() >= until:
+        return {"state": "ok", "until": None}
+    return {"state": "exhausted", "until": datetime.fromtimestamp(until, timezone.utc).isoformat()}
 
 TIERS = ("nano", "fast", "write", "deep", "judge")
 
@@ -952,6 +982,7 @@ def status() -> dict[str, Any]:
         out["lastSourceByTier"] = by_tier
     out["fallback"] = fallback_usage()
     out["retrySuper"] = int(retry_super_usage()["count"])
+    out["tfQuota"] = tokenfactory_quota_status()
     out["configuredModels"] = configured_models()
     lat = latency_status()
     if lat:

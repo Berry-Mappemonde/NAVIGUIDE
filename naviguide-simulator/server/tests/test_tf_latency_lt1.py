@@ -120,6 +120,49 @@ def test_R2c_non_timeout_failure_keeps_default_cascade(monkeypatch):
     assert res[1].startswith("nvidia-")
 
 
+def test_P2_402_pauses_tokenfactory_and_resumes(monkeypatch):
+    """Quota 402 serves via NIM; TF is skipped briefly and retried after expiry."""
+    import offline
+    monkeypatch.setattr(offline, "enabled", lambda: False)
+    monkeypatch.setattr(llm_budget, "llm_allowed_here", lambda _tier=None: True)
+    monkeypatch.setattr(llm_budget, "allow", lambda _tier: True)
+    monkeypatch.setenv("NAVIGUIDE_LLM_PROVIDERS", "tokenfactory,nim,openrouter,claude")
+    monkeypatch.setenv("NAVIGUIDE_TF_QUOTA_PAUSE_S", "0.15")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nv-test")
+    monkeypatch.setattr(llm_budget, "_tf_quota_until", 0.0)
+    calls = {"tf": 0, "nim": 0}
+
+    def handler(req):
+        if "tokenfactory" in str(req.url):
+            calls["tf"] += 1
+            if calls["tf"] == 1:
+                return httpx.Response(402, json={"error": {"type": "insufficient_quota", "message": "quota"}})
+            body = json.loads(req.read().decode())
+            return httpx.Response(200, json=_ok(body["model"]))
+        if "nvidia" in str(req.url):
+            calls["nim"] += 1
+            body = json.loads(req.read().decode())
+            return httpx.Response(200, json=_ok(body["model"]))
+        return httpx.Response(503, json={"error": "unexpected"})
+
+    first = _run(handler, user="quota first", tier="write")
+    assert first[1].startswith("nvidia-")
+    assert calls == {"tf": 1, "nim": 1}
+    assert llm_budget.status()["tfQuota"]["state"] == "exhausted"
+    import ici_warm
+    assert ici_warm.status()["tfQuota"]["state"] == "exhausted"
+
+    second = _run(handler, user="quota paused", tier="write")
+    assert second[1].startswith("nvidia-")
+    assert calls == {"tf": 1, "nim": 2}
+
+    time.sleep(0.2)
+    third = _run(handler, user="quota resumed", tier="write")
+    assert third[1] == "nemotron-super-vl"
+    assert calls == {"tf": 2, "nim": 2}
+    assert llm_budget.status()["tfQuota"] == {"state": "ok", "until": None}
+
+
 def test_I5_catalogue_deadline_still_reaches_nim(monkeypatch):
     monkeypatch.delenv("NAVIGUIDE_LLM_PROVIDERS", raising=False)
     monkeypatch.setenv("NAVIGUIDE_LLM_TIMEOUT_FALLBACK", "1")

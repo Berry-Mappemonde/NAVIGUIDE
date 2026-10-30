@@ -1112,16 +1112,32 @@ async def _call_tokenfactory(
     if r.status_code >= 400:
         body = r.text
         rejected = False
+        quota_exhausted = r.status_code == 402
         try:
             payload = r.json()
             errors = payload.get("error") if isinstance(payload, dict) else None
             if isinstance(errors, dict):
                 code = str(errors.get("code") or "").lower()
+                error_type = str(errors.get("type") or "").lower()
+                quota_exhausted = quota_exhausted or code == "insufficient_quota" or error_type == "insufficient_quota" or code.startswith("credit_balance_") or error_type.startswith("credit_balance_")
                 param = str(errors.get("param") or "").lower()
                 rejected = code in {"model_not_found", "model_not_supported", "invalid_model"} and (not param or param == "model")
                 body = " ".join((str(errors.get("message") or ""), code, param))
         except ValueError:
             pass
+        if not quota_exhausted:
+            try:
+                raw_error = r.json()
+                if isinstance(raw_error, dict):
+                    quota_exhausted = any(
+                        str(raw_error.get(key) or "").lower() == "insufficient_quota"
+                        or str(raw_error.get(key) or "").lower().startswith("credit_balance_")
+                        for key in ("type", "code")
+                    )
+            except ValueError:
+                pass
+        if quota_exhausted:
+            llm_budget.pause_tokenfactory_for_quota()
         explicit = re.search(r"(?:model|model_id|model id).{0,50}(?:not found|does not exist|unknown|unsupported|invalid)|(?:not found|does not exist|unknown|unsupported|invalid).{0,50}(?:model|model_id|model id)", body, re.I)
         if rejected or (r.status_code in (400, 404) and explicit):
             tf_catalog.invalidate(tf_base(t))
@@ -1345,6 +1361,8 @@ async def _cascade_once(
         except Exception as exc:
             if isinstance(exc, TokenFactoryModelMissing):
                 raise
+            if llm_budget.tokenfactory_quota_paused():
+                raise
             if norm_tier == "nano":
                 # File pleine (P2-2) : Lightning ré-attendrait la même file.
                 if isinstance(exc, TokenFactoryTimeout) and exc.queue:
@@ -1389,6 +1407,9 @@ async def _cascade_once(
     failures: list[dict[str, str]] = []
     tf_timed_out = False
     for name, step in hops:
+        if name == "tokenfactory" and llm_budget.tokenfactory_quota_paused():
+            failures.append({"provider": name, "reason": "skipped: quota exhausted"})
+            continue
         if tf_timed_out and name in NON_NEMOTRON_PROVIDERS and not timeout_fallback_allowed():
             # P1-2 : pas de repli silencieux hors Nemotron après un timeout TF
             # (défaut des providers). Texte de règles étiqueté à la place.
