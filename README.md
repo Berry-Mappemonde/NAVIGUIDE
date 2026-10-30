@@ -71,6 +71,8 @@ On the `fast` tier only, an empty Token Factory body, an HTTP status of 500 or h
 
 **Numbers.** `filter_numbers` in `naviguide-simulator/server/story_cascade.py` drops every sentence that contains a number not already in the facts. A sentence with no number is kept. The filter does not catch a non-numeric invention.
 
+**NIM model settings.** Set `NAVIGUIDE_NIM_MODEL` to override the default model for every tier; `NAVIGUIDE_NIM_MODEL_NANO`, `_FAST`, `_WRITE`, `_DEEP`, or `_JUDGE` overrides it for that tier. With neither set, the model remains `openai/gpt-oss-20b`. `NAVIGUIDE_NIM_DEADLINE_S` limits the complete NIM attempt, including semaphore wait and retries: default `30` seconds, clamped to 1–300 seconds.
+
 **Budgets** when the matching variable is unset (`naviguide-simulator/server/llm_budget.py`):
 
 | Tier | Tokens per day |

@@ -71,6 +71,8 @@ Sur le palier `fast` seulement, un corps Token Factory vide, un statut HTTP 500 
 
 **Chiffres.** `filter_numbers` dans `naviguide-simulator/server/story_cascade.py` retire chaque phrase qui contient un nombre absent des faits. Une phrase sans nombre est gardée. Le filtre ne prend pas une invention non numérique.
 
+**Configuration du modèle NIM.** Définir `NAVIGUIDE_NIM_MODEL` remplace le modèle par défaut pour tous les paliers ; `NAVIGUIDE_NIM_MODEL_NANO`, `_FAST`, `_WRITE`, `_DEEP` ou `_JUDGE` le remplace pour le palier correspondant. Si aucun n’est défini, le modèle reste `openai/gpt-oss-20b`. `NAVIGUIDE_NIM_DEADLINE_S` limite toute la tentative NIM, y compris l’attente du sémaphore et les réessais : défaut `30` secondes, borné entre 1 et 300 secondes.
+
 **Budgets** quand la variable correspondante est absente (`naviguide-simulator/server/llm_budget.py`) :
 
 | Palier | Jetons par jour |
