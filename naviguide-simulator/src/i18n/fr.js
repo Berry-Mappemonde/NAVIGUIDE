@@ -185,7 +185,6 @@ export default {
   iciLegRemaining:    "reste {nm} nm",
   iciReasonUnavailable: "indisponible",
   iciReasonNoData:    "pas de donnée",
-  iciReasonOverpassUnavailable: "Overpass n'a pas répondu",
   eventBubbleChipWind: "Vent",
   eventBubbleChipHs:   "Hs",
   eventBubbleChipQuay: "{n} j à quai",
@@ -628,9 +627,7 @@ export default {
   // AI transparency
   aiActGeneratedLabel: "Contenu généré par IA (modèle : {model})",
   aiActChatNotice: "Vous interagissez avec une intelligence artificielle. Les réponses sont générées automatiquement et peuvent contenir des erreurs.",
-  aiChatNotice: "Vous échangez avec une IA. Les réponses sont générées automatiquement et peuvent contenir des erreurs.",
-    aiActChatNoticeDismiss: "Compris",
-  aiChatNoticeDismiss: "Compris",
+  aiActChatNoticeDismiss: "Compris",
   // Moment cards: fallback title and the stored entry alert
   momentFallbackTitle: "Position du bateau",
   momentKindGrib: "Prévision météo (GRIB)",

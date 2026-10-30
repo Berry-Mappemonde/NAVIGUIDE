@@ -719,7 +719,7 @@ def _tf_url(tier: str) -> str:
     """Nano and write (Super-VL) are pinned to the EU host. Lightning stays on
     the default TF host. Ultra uses EU host (Nebius Token Factory) unless
     NAVIGUIDE_TF_BASE_ULTRA is set. NAVIGUIDE_TF_BASE_EU pins nano/write to
-    their host. NAVIGUIDE_PORT_WEB is the webhook URL (logged, not called)."""
+    their host. NAVIGUIDE_PORT_WEB is a 0/1 flag for Tavily web context."""
     t = llm_budget.normalize_tier(tier)
     if t in {"deep", "judge"}:
         base = (
