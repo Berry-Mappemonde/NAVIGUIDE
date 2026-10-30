@@ -28,7 +28,7 @@ const shotRc47 = (page, name) => page.screenshot({
 
 const FAILED = /n.a pas pu répondre|aucun modèle n.a répondu|could not answer|no model replied/i;
 const MISSING = /n.a pas cette information dans ses données|does not hold that information/i;
-const RULES = /règles|rules/i;
+const RULES_LABEL = "Formulé par les données brutes";
 const ULTRA = /nemotron.*ultra|ultra/i;
 const SUPER = /nemotron 3(?:\.5)? super|nemotron-super/i;
 
@@ -107,7 +107,8 @@ test("Chat trois paliers : faits par les règles, Ultra si juge ouvert", async (
   expect(hasWind || MISSING.test(windText), "phrase vent (kn) ou pas cette information").toBeTruthy();
   const src0 = page.getByTestId("chat-source").last();
   if (await src0.count()) {
-    await expect(src0).toContainText(RULES);
+    await expect(src0).toHaveAttribute("data-llm-source", "rules");
+    await expect(src0).toContainText(RULES_LABEL);
   }
 
   await askChat(page, "Quelle vitesse polaire par 15 nœuds ?");
@@ -168,7 +169,7 @@ test("Chat trois paliers : faits par les règles, Ultra si juge ouvert", async (
       type: "poste",
       description: "Nemotron Ultra injoignable ou juge à 0 — source règles / budget ; badge Ultra non exigé",
     });
-    expect(hardLabel, "sans Ultra le repli est règles, budget ou vide").toMatch(/règles|rules|budget|^$/i);
+    expect(hardLabel, "sans Ultra le repli est règles ou budget").toMatch(/Formulé par les données brutes|budget/i);
   } else if (factsOk) {
     const blob = JSON.stringify(factsBody.facts);
     const stripped = lastText.replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, "");

@@ -21,6 +21,10 @@ function firstIndex(src, pattern) {
 }
 
 describe("Sidebar layout", () => {
+  it("nomme les commandes iconiques de la sidebar", () => {
+    assert.match(sidebar, /aria-label=\{open \? t\("hideSidebar"\) : t\("showExpeditionPanel"\)\}/);
+  });
+
   it("place carte Berry → chat → IciMaintenant, sans les anciens blocs", () => {
     const berryAt = firstIndex(sidebar, /<BerryCard/);
     const chatAt = firstIndex(sidebar, /<LogbookChat messages=\{chat\.messages\}/);
