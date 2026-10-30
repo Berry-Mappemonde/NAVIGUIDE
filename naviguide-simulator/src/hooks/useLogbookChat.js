@@ -20,8 +20,15 @@ export function useLogbookChat({ lang = "fr", contextFn = null } = {}) {
   const [error, setError] = useState(null);
   const inFlight = useRef(false);
   const requestController = useRef(null);
+  const mounted = useRef(false);
 
-  useEffect(() => () => requestController.current?.abort(), []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      requestController.current?.abort();
+    };
+  }, []);
 
   const ask = useCallback(async (question, opts = {}) => {
     const q = String(question || "").trim();
@@ -58,17 +65,17 @@ export function useLogbookChat({ lang = "fr", contextFn = null } = {}) {
         portWebStatus: body.portWebStatus || null,
         t: body.t || new Date().toISOString(),
       };
-      setMessages((prev) => [...prev, reply].slice(-HISTORY_MAX));
+      if (mounted.current) setMessages((prev) => [...prev, reply].slice(-HISTORY_MAX));
       return reply;
     } catch (err) {
       if (err?.code === "aborted" || err?.name === "AbortError") return null;
       console.warn("Logbook chat request failed:", err?.detail ?? err?.message);
-      setError(tr(chatErrorKey(err?.code)));
+      if (mounted.current) setError(tr(chatErrorKey(err?.code)));
       return null;
     } finally {
       if (requestController.current === controller) requestController.current = null;
       inFlight.current = false;
-      setPending(false);
+      if (mounted.current) setPending(false);
     }
   }, [lang, contextFn, tr]);
 

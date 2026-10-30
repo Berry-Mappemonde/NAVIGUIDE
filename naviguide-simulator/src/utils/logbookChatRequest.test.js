@@ -35,6 +35,18 @@ describe("postLogbookChat", () => {
     await assert.rejects(postLogbookChat({ url: "/chat", body: {}, timeoutMs: 5, fetchImpl: (_url, { signal }) => Promise.resolve({ ok: true, json: () => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")))) }) }), { code: "timeout" });
   });
 
+  it("enforces the timeout when an injected fetch ignores abort", async () => {
+    await assert.rejects(postLogbookChat({ url: "/chat", body: {}, timeoutMs: 5, fetchImpl: () => new Promise(() => {}) }), { code: "timeout" });
+  });
+
+  it("does not return a successful body after caller cancellation", async () => {
+    const controller = new AbortController();
+    await assert.rejects(postLogbookChat({
+      url: "/chat", body: {}, signal: controller.signal,
+      fetchImpl: async () => ({ ok: true, json: async () => { controller.abort(); return { answer: "late" }; } }),
+    }), { code: "aborted" });
+  });
+
   it("classifies caller cancellation", async () => {
     const controller = new AbortController();
     const request = postLogbookChat({ url: "/chat", body: {}, signal: controller.signal, fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")))) });
