@@ -226,7 +226,6 @@ function BerryCard({
           <button
             type="button"
             onClick={handleDelete}
-            aria-label={t("deleteCustomRoute")}
             title={t("deleteCustomRoute")}
             className="flex items-center justify-center px-2 py-1 rounded-lg text-[10px]
               border border-red-500/40 text-red-300 hover:bg-red-600/20"
