@@ -244,6 +244,9 @@ test("Now tab EN: deduplicated cards, translated entry alert, no hash", async ({
 
   await page.goto("/");
   await dismissNotForNav(page);
+  // The moments feed belongs to Suivre; Tracer intentionally hides the Now tab.
+  await page.getByTestId("view-suivre").click();
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
   await showLeftPanel(page);
 
   const nowCard = page.getByTestId("moment-now");
