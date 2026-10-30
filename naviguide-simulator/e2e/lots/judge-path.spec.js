@@ -696,12 +696,14 @@ test("non-régression tracé : jambes, terre, distance, suite, 60 points, GeoJSO
 
   await test.step("NAV-G-13 soixante points au plus", async () => {
     await page.waitForFunction(() => typeof window.__naviguideAddDrawnPoint === "function");
+    const initialCount = await page.evaluate(() => window.__naviguideDrawn?.points?.length || 0);
     for (let i = 0; i < 61; i += 1) {
       await page.evaluate(() => window.__naviguideAddDrawnPoint(46.157, -1.151));
       await expect.poll(() => page.evaluate(() => window.__naviguideDrawn?.points?.length || 0), {
         timeout: 60_000,
-      }).toBe(Math.min(i + 1, 60));
+      }).toBe(Math.min(initialCount + i + 1, 60));
     }
+    await expect.poll(() => page.evaluate(() => window.__naviguideDrawn?.points?.length || 0)).toBe(60);
     await expect(page.getByTestId("draw-point-limit")).toContainText("60 points maximum");
   });
 
