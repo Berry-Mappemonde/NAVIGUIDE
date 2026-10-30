@@ -57,11 +57,22 @@ test("RC1 bulles : EventBubble et EscalePopup ouvertes puis détruites sans erre
   await expect(page.getByTestId("event-bubble")).toBeVisible({ timeout: 10_000 });
   // Fiche d'escale (racine React n° 2) : un drapeau cliqué en Tracer (il faut l'API).
   await page.getByTestId("view-tracer").click();
-  await page.evaluate(() => {
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
+  // Le changement de vue déclenche le chargement asynchrone des marqueurs.
+  // Ne pas laisser l'évaluation ci-dessous réussir à vide avant Ajaccio.
+  await page.waitForFunction(() => {
     for (const m of window.__naviguideScene?.waypointMarkers?.values() || []) {
-      if (/Ajaccio/i.test(m._naviguideWaypoint?.name || "")) { m.fire("click"); return; }
+      if (/Ajaccio/i.test(m._naviguideWaypoint?.name || "")) return true;
     }
+    return false;
+  }, null, { timeout: 15_000 });
+  const clickedAjaccio = await page.evaluate(() => {
+    for (const m of window.__naviguideScene?.waypointMarkers?.values() || []) {
+      if (/Ajaccio/i.test(m._naviguideWaypoint?.name || "")) { m.fire("click"); return true; }
+    }
+    return false;
   });
+  expect(clickedAjaccio, "marqueur Ajaccio trouvé au moment du clic").toBe(true);
   const escale = page.getByTestId("escale-popup");
   const escaleOpen = await escale.waitFor({ state: "attached", timeout: 10_000 }).then(() => true).catch(() => false);
   if (!escaleOpen) {

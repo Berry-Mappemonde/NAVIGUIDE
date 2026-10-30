@@ -158,15 +158,16 @@ describe("App — : chauffage pendant le tracé", () => {
 });
 
 describe("contrat pop-up hors film", () => {
-  it("ne rend plus les cartes flottantes ni la popup d'escale sur la carte", () => {
+  it("ne rend plus les cartes flottantes et garde la fiche d'escale fonctionnelle", () => {
     assert.doesNotMatch(app, /<MomentNowCard/);
     assert.doesNotMatch(app, /<FreeMomentBlock/);
     assert.match(app, /<EscalePopupHost/);
     assert.match(app, /stop=\{replay\.active \? null : escaleStop\}/);
     assert.match(app, /useMoment\(/);
     assert.match(app, /mode: drawingMode && drawnPoints\.length \? "drawn"/);
-    assert.match(scene, /escalePopup\.setSheet = \(\) => \{\}/);
-    assert.match(scene, /escalePopup\.sync = \(\) => \{\}/);
+    assert.doesNotMatch(scene, /escalePopup\.setSheet = \(\) => \{\}/);
+    assert.doesNotMatch(scene, /escalePopup\.sync = \(\) => \{\}/);
+    assert.match(scene, /this\.escalePopup\?\.sync\(\)/);
     assert.doesNotMatch(ici, /ListenButton/);
     assert.doesNotMatch(ici, /moment-free-listen/);
     assert.match(ici, /testId="moment-now"/);
