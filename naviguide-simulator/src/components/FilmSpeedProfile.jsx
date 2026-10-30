@@ -65,6 +65,7 @@ export function FilmSpeedProfile({
         type="button"
         onClick={onClick}
         className={`relative w-full h-8 rounded-md bg-white/5 border border-white/10 block overflow-hidden ${speed.grey ? "opacity-30 cursor-not-allowed" : ""}`}
+        aria-label={t("filmSpeedProfile")}
         title={speedTitle}
       >
         <svg viewBox={`0 0 ${VB_W} ${VB_H}`} className="absolute inset-0 w-full h-full" preserveAspectRatio="none">
