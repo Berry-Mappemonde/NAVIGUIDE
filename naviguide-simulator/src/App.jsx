@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Redo2, Undo2, X } from "lucide-react";
 import { PanelBoundary, ReplayErrorBoundary } from "./components/RootErrorBoundary.jsx";
+import { Sidebar } from "./components/Sidebar.jsx";
 import { CarnetDeBord, mapPageHref, useCarnetPage } from "./components/CarnetDeBord.jsx";
 import { LayerFichePopup } from "./components/LayerFichePopup.jsx";
 import { EscalePopupHost } from "./components/EscalePopup.jsx";
@@ -102,7 +103,6 @@ import { viewExportMode } from "./utils/routeExport.js";
 import { attachClockIso, legendNowAndLive, officialNowMs, usePlanReview } from "./hooks/usePlanReview.js";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
-const Sidebar = lazy(() => import("./components/Sidebar.jsx").then((module) => ({ default: module.Sidebar })));
 const ToolsSidebar = lazy(() => import("./components/ToolsSidebar.jsx").then((module) => ({ default: module.ToolsSidebar })));
 const SimulationFilmBar = lazy(() => import("./components/SimulationFilmBar.jsx").then((module) => ({ default: module.SimulationFilmBar })));
 const MapScene = lazy(() => import("./map/MapScene.jsx").then((module) => ({ default: module.MapScene })));
@@ -2062,7 +2062,7 @@ export default function App() {
       />
       <PanelBoundary>
       <PanelCrashProbe panel="sidebar" />
-      <Suspense fallback={null}><Sidebar
+      <Sidebar
         plan={expeditionPlan}
         open={sidebarOpen}
         onToggle={toggleSidebar}
@@ -2133,7 +2133,7 @@ export default function App() {
         escaleLoading={Boolean(escaleSheet?.loading)}
         escaleError={escaleSheet?.error}
         onEscaleClose={closeEscaleSheet}
-      /></Suspense>
+      />
       </PanelBoundary>
 
       <PanelBoundary>
