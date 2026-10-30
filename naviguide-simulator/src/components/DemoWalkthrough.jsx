@@ -288,6 +288,11 @@ export function DemoWalkthrough({
     : undefined;
 
   return (
+    <div
+      data-arrow={arrowDir || undefined}
+      style={panelStyle}
+      className={`naviguide-demo-panel fixed z-[2300] inset-x-2 bottom-2 md:inset-x-auto md:bottom-auto md:top-14 md:w-[min(23rem,calc(100vw-1.5rem))] ${side}`}
+    >
     <aside
       role="region"
       aria-label={t("demoRegion")}
@@ -296,9 +301,7 @@ export function DemoWalkthrough({
       data-side={step.side}
       data-target={step.target || ""}
       data-spot={anchor ? "on" : "off"}
-      {...(arrowDir ? { "data-arrow": arrowDir } : {})}
-      style={panelStyle}
-      className={`naviguide-demo-panel fixed z-[2300] flex flex-col overflow-y-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-md inset-x-2 bottom-2 max-h-[45dvh] md:inset-x-auto md:bottom-auto md:top-14 md:w-[min(23rem,calc(100vw-1.5rem))] md:max-h-[calc(100dvh-5rem)] ${side} ${surface}`}
+      className={`flex max-h-[45dvh] flex-col overflow-y-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-md md:max-h-[calc(100dvh-5rem)] ${surface}`}
     >
       <p className="sr-only" aria-live="polite" data-testid="demo-walkthrough-live">
         {t("demoStepLive", { n: index + 1, total, title: step.title })}
@@ -447,5 +450,6 @@ export function DemoWalkthrough({
         {t("demoExit")}
       </button>
     </aside>
+    </div>
   );
 }

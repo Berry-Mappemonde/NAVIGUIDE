@@ -246,3 +246,11 @@ describe("R44 : pulse Tracer", () => {
     assert.doesNotMatch(jsx, /checkRaf < 30/);
   });
 });
+
+describe("R44 : défilement du panneau", () => {
+  it("garde la flèche sur le conteneur externe et le défilement sur la région", () => {
+    const jsx = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
+    assert.match(jsx, /<div\s+data-arrow=\{arrowDir \|\| undefined\}[\s\S]*?className=\{`naviguide-demo-panel fixed/);
+    assert.match(jsx, /role="region"[\s\S]*?max-h-\[45dvh\] flex-col overflow-y-auto[\s\S]*?md:max-h-\[calc\(100dvh-5rem\)\]/);
+  });
+});
