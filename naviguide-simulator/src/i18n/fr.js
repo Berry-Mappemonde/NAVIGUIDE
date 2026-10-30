@@ -510,6 +510,7 @@ export default {
   showFilmBar:      "Afficher la barre",
   filmArrived:      "Arrivée à {name}",
   filmScrub:        "Avancer ou reculer sur la route",
+  filmScrubValue:   "{at} sur {total} milles",
   filmPhaseAir:     "Transfert aérien — le bateau reste à quai",
   filmPhaseAirReturn: "Retour aérien — le bateau reprend ensuite la route",
   filmPhaseSide:    "Voile Halifax — Saint-Pierre-et-Miquelon",

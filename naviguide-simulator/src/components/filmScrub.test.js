@@ -39,6 +39,7 @@ describe("film scrub keyboard controls", () => {
     assert.match(bar, /aria-valuemax=\{Math\.round\(barTotal \|\| 0\)\}/);
     assert.match(bar, /aria-valuenow=\{Math\.round\(barNm \|\| 0\)\}/);
     assert.match(bar, /aria-valuetext=\{scrubValueText\}/);
+    assert.match(bar, /t\("filmScrubValue", \{\s*at: Math\.round\(barNm \|\| 0\)\.toLocaleString\(nmLocale\),\s*total: Math\.round\(barTotal \|\| 0\)\.toLocaleString\(nmLocale\),\s*\}\)/);
     assert.match(bar, /onKeyDown=\{onBarKeyDown\}/);
     assert.match(bar, /if \(isKeyboardClick\(e\)\) return;/);
     const app = readFileSync(join(here, "..", "App.jsx"), "utf8");

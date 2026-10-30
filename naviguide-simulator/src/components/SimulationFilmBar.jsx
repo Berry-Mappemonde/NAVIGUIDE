@@ -174,7 +174,10 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     onSeekNm(target);
   };
   const nmLocale = lang === "en" ? "en-US" : "fr-FR";
-  const scrubValueText = `${Math.round(barNm || 0).toLocaleString(nmLocale)} nm / ${Math.round(barTotal || 0).toLocaleString(nmLocale)} nm`;
+  const scrubValueText = t("filmScrubValue", {
+    at: Math.round(barNm || 0).toLocaleString(nmLocale),
+    total: Math.round(barTotal || 0).toLocaleString(nmLocale),
+  });
   const filmSubtitle = visibleFilmSubtitle(replay?.subtitle || "", {
     fromName: replay?.fromName || fromName,
     toName: replay?.toName || toName,
