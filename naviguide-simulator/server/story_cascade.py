@@ -93,15 +93,18 @@ def _nim_retry_delay(response: httpx.Response, attempt: int) -> float:
     retry_after = response.headers.get("Retry-After")
     if retry_after:
         try:
-            return min(20.0, max(0.0, float(retry_after)))
+            seconds = float(retry_after)
+            if math.isfinite(seconds) and seconds >= 0:
+                return min(20.0, seconds)
         except ValueError:
-            try:
-                when = parsedate_to_datetime(retry_after)
-                if when.tzinfo is None:
-                    when = when.replace(tzinfo=timezone.utc)
-                return min(20.0, max(0.0, (when - datetime.now(timezone.utc)).total_seconds()))
-            except (TypeError, ValueError, OverflowError):
-                pass
+            pass
+        try:
+            when = parsedate_to_datetime(retry_after)
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            return min(20.0, max(0.0, (when - datetime.now(timezone.utc)).total_seconds()))
+        except (TypeError, ValueError, OverflowError):
+            pass
     delay = min(8.0, 1.0 * (2 ** (attempt - 1)))
     return random.uniform(0.0, delay)
 
@@ -1210,7 +1213,6 @@ async def _call_nim(
     deadline = _nim_float_env("NAVIGUIDE_NIM_DEADLINE_S", 30.0, 1.0, 300.0)
 
     async def call_with_retries() -> httpx.Response:
-        last_transport_error: httpx.TransportError | None = None
         for attempt in range(1, attempts + 1):
             try:
                 async with _nim_semaphore():
@@ -1219,8 +1221,7 @@ async def _call_nim(
                         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
                         json=payload,
                     )
-            except httpx.TransportError as exc:
-                last_transport_error = exc
+            except (httpx.ConnectError, httpx.ConnectTimeout):
                 if attempt >= attempts:
                     raise
                 delay = min(8.0, 1.0 * (2 ** (attempt - 1)))
@@ -1228,6 +1229,8 @@ async def _call_nim(
                 log.info("cascade nim transport retry: attempt %d/%d in %.3fs", attempt + 1, attempts, delay)
                 await _nim_sleep(delay)
                 continue
+            except httpx.TransportError:
+                raise
             if response.status_code not in (429, 503):
                 return response
             if attempt >= attempts:
@@ -1235,8 +1238,6 @@ async def _call_nim(
             delay = _nim_retry_delay(response, attempt)
             log.info("cascade nim retry: attempt %d/%d in %.3fs", attempt + 1, attempts, delay)
             await _nim_sleep(delay)
-        if last_transport_error is not None:
-            raise last_transport_error
         raise RuntimeError("nvidia attempts exhausted")
 
     try:
