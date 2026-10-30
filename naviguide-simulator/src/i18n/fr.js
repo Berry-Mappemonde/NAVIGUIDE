@@ -226,7 +226,7 @@ export default {
   logbookChatTitle: "Journal de bord — posez une question",
   filmWebSourcesTitle: "Sources web (Tavily) · {port} :",
   tfLatencyLine: "Temps de réponse Token Factory aujourd’hui sur ce serveur (médiane) : {list}.",
-  tfLatencyItem: "{model} {s} s",
+  tfLatencyItem: "{model} {s} s (n={n})",
   tfLatencyDecimal: ",",
   tfModelMissingLine: "Absent du catalogue Token Factory aujourd’hui : {model}, remplacé par {substitute} ; ses textes portent son propre nom.",
   tfModelMissingNone: "Absent du catalogue Token Factory aujourd’hui : {model} ; ses textes passent au repli suivant, étiqueté.",

@@ -226,7 +226,7 @@ export default {
   logbookChatTitle: "Logbook — ask a question",
   filmWebSourcesTitle: "Web sources (Tavily) · {port}:",
   tfLatencyLine: "Token Factory response time today on this server (median): {list}.",
-  tfLatencyItem: "{model} {s} s",
+  tfLatencyItem: "{model} {s} s (n={n})",
   tfLatencyDecimal: ".",
   tfModelMissingLine: "Not in the Token Factory catalog today: {model}. {substitute} answers instead, and its texts carry its own name.",
   tfModelMissingNone: "Not in the Token Factory catalog today: {model}. Its texts use the next labelled fallback.",

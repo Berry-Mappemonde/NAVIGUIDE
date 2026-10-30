@@ -19,17 +19,17 @@ describe("describeTfLatency", () => {
   it("donne la médiane par modèle, palier le plus appelé du groupe", () => {
     const llm = {
       latency: {
-        nano: { lastMs: 400, medianMs: 450, calls: 2 },
-        fast: { lastMs: 900, medianMs: 870, calls: 5 },
-        write: { lastMs: 2100, medianMs: 2140, calls: 3 },
-        judge: { lastMs: 6400, medianMs: 6380, calls: 1 },
+        nano: { lastMs: 400, medianMs: 450, calls: 2, samples: 2 },
+        fast: { lastMs: 900, medianMs: 870, calls: 55, samples: 51 },
+        write: { lastMs: 2100, medianMs: 2140, calls: 3, samples: 3 },
+        judge: { lastMs: 6400, medianMs: 6380, calls: 1, samples: 1 },
       },
     };
     const en1 = describeTfLatency(llm, tr(en));
     assert.match(en1.latency, /Nemotron 3\.5 Lightning 0\.9 s/);
     assert.match(en1.latency, /Nemotron 3\.5 Super VL 2\.1 s/);
     assert.match(en1.latency, /Nemotron 3 Ultra 6\.4 s/);
-    assert.doesNotMatch(en1.latency, /0\.5 s/);
+    assert.match(en1.latency, /0\.9 s \(n=51\)/);
     const fr1 = describeTfLatency(llm, tr(fr));
     assert.match(fr1.latency, /Nemotron 3\.5 Lightning 0,9 s/);
   });
@@ -52,7 +52,7 @@ describe("describeTfLatency", () => {
   });
 
   it("ignore les lignes mal formées", () => {
-    const res = describeTfLatency({ latency: { fast: { medianMs: "x", calls: 1 }, write: { medianMs: 10, calls: 0 } }, modelGuard: { missing: { write: {} } } }, tr(en));
+    const res = describeTfLatency({ latency: { fast: { medianMs: "x", calls: 1, samples: 1 }, write: { medianMs: 10, calls: 0, samples: 0 } }, modelGuard: { missing: { write: {} } } }, tr(en));
     assert.deepEqual(res, { latency: null, missing: [] });
   });
 });
