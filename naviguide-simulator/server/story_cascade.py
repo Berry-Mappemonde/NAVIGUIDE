@@ -100,7 +100,6 @@ _INFLIGHT: dict[str, asyncio.Future] = {}
 _INFLIGHT_GUARD: asyncio.Lock | None = None
 _TF_SEMA: asyncio.Semaphore | None = None
 
-_FENCE_RE = re.compile(r"^```(?:json|text)?\s*|\s*```$", re.M)
 _THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
 _THINK_OPEN_RE = re.compile(r"<think\b[^>]*>.*\Z", re.IGNORECASE | re.DOTALL)
 _PROMPT_LEAK_RE = re.compile(
@@ -372,7 +371,7 @@ def filter_numbers(answer: str, facts: Any, *, spelled: bool = False) -> tuple[s
     blob = facts if isinstance(facts, str) else json.dumps(facts, ensure_ascii=False, default=str)
     allowed = _numbers_spoken(blob) if spelled else _numbers(blob)
     kept, dropped = [], 0
-    for s in _SENT_SPLIT_RE.split(answer or ""):
+    for s in _split_sentences(answer or ""):
         s = s.strip()
         if not s:
             continue
@@ -396,7 +395,7 @@ def expand_spoken_units(text: str, lang: str = "fr") -> str:
 
 def split_short_sentences(text: str, max_len: int = 160) -> str:
     """Phrases courtes et complètes — jamais de coupure au milieu."""
-    parts = [p.strip() for p in _SENT_SPLIT_RE.split(text or "") if p.strip()]
+    parts = [p.strip() for p in _split_sentences(text or "") if p.strip()]
     out: list[str] = []
     for part in parts:
         chunk = part if part.endswith((".", "!", "?", "…")) else f"{part}."
@@ -549,7 +548,7 @@ def _strip_preamble(txt: str) -> str:
 
 def _clean_text(txt: str | None) -> str:
     s = _strip_think(txt or "")
-    s = _FENCE_RE.sub("", s.strip()).strip()
+    s = _strip_fences(s.strip()).strip()
     s = _strip_preamble(s)
     if _PROMPT_LEAK_RE.search(s):
         return ""
@@ -567,7 +566,58 @@ _META_RE = re.compile(
     r"analyze user input|thinking off|wait, let me|translate a sailing-log)",
     re.IGNORECASE,
 )
-_SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
+def _split_sentences(text: str) -> list[str]:
+    """Split after sentence punctuation and whitespace in one linear pass."""
+    parts: list[str] = []
+    start = 0
+    i = 0
+    while i < len(text):
+        if text[i] in ".!?…":
+            whitespace_end = i + 1
+            while whitespace_end < len(text) and text[whitespace_end].isspace():
+                whitespace_end += 1
+            if whitespace_end > i + 1 and whitespace_end < len(text):
+                parts.append(text[start:i + 1])
+                start = whitespace_end
+                i = whitespace_end
+                continue
+            i = whitespace_end
+        else:
+            i += 1
+    parts.append(text[start:])
+    return parts
+
+
+def _strip_fences(text: str) -> str:
+    """Remove line-start opening and line-end closing fences without regex backtracking."""
+    chars = list(text)
+    i = 0
+    while i < len(text):
+        line_start = i == 0 or text[i - 1] == "\n"
+        if text.startswith("```", i):
+            end = i + 3
+            if end == len(text) or text[end] == "\n":
+                before = i
+                while before > 0 and text[before - 1].isspace():
+                    before -= 1
+                for j in range(before, end):
+                    chars[j] = ""
+                i = end
+                continue
+        if line_start and text.startswith("```", i):
+            after = i + 3
+            if text.startswith("json", after):
+                after += 4
+            elif text.startswith("text", after):
+                after += 4
+            while after < len(text) and text[after].isspace():
+                after += 1
+            for j in range(i, after):
+                chars[j] = ""
+            i = after
+            continue
+        i += 1
+    return "".join(chars)
 _WORD_RE = re.compile(r"[0-9A-Za-zÀ-ÿ]+")
 # Marqueurs de raisonnement. Une phrase douteuse ne devient pas le texte visiteur.
 _REASON_MARK_RE = re.compile(
@@ -709,7 +759,7 @@ def tidy_story(
     raw = re.sub(r"\s{2,}", " ", raw).strip()
     if not raw:
         return (fallback or "").strip()
-    kept = [s.strip() for s in _SENT_SPLIT_RE.split(raw) if s.strip() and not _META_RE.search(s)]
+    kept = [s.strip() for s in _split_sentences(raw) if s.strip() and not _META_RE.search(s)]
     out = " ".join(kept[:max_sentences]).strip()
     if len(out) > max_chars:
         cut = out[:max_chars]
@@ -902,10 +952,10 @@ def _recover_reasoning_text(raw: Any, *, prompt: str = "", lang: str = "fr") -> 
     else:
         parts = _message_parts(raw)
         blob = _parts_text(parts, reasoning=True) or _parts_text(parts, reasoning=False)
-    stripped = _strip_preamble(_strip_think(_FENCE_RE.sub("", blob or "")))
+    stripped = _strip_preamble(_strip_think(_strip_fences(blob or "")))
     want_en = _is_en(lang)
     kept: list[str] = []
-    for sentence in _SENT_SPLIT_RE.split(stripped):
+    for sentence in _split_sentences(stripped):
         sentence = sentence.strip()
         if not sentence:
             continue
