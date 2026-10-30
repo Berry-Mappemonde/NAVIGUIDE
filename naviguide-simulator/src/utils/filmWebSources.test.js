@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { normalizeSourceUrl, publicFilmWebContext } from "./filmWebSources.js";
 import { resolveServedFilm } from "../hooks/useReplay.js";
@@ -70,4 +71,32 @@ test("R45 : publicFilmWebContext dédoublonne par URL normalisée (www, casse, /
 test("R45 : normalizeSourceUrl garde la requête, ignore le fragment", () => {
   assert.equal(normalizeSourceUrl("https://www.A.com/x/?q=1#f"), "https://a.com/x?q=1");
   assert.notEqual(normalizeSourceUrl("https://a.com/x?q=1"), normalizeSourceUrl("https://a.com/x?q=2"));
+});
+
+test("transition film A (Tavily) → film B (sans webContext) : le contexte web est effacé", () => {
+  const a = resolveServedFilm({
+    status: "ready", style: "written", hasWritten: true, source: "nemotron-super",
+    chapters: [{ text: "A" }],
+    webContext: { basis: "tavily", port: "Papeete", sources: [{ url: "https://tahiti.example/news", title: "News" }] },
+  }, "written");
+  assert.equal(a.webContext?.port, "Papeete");
+  const b = resolveServedFilm({
+    status: "ready", style: "written", hasWritten: true, source: "nemotron-super", chapters: [{ text: "B" }],
+  }, "written");
+  assert.equal(b.webContext ?? null, null);
+  // Le hook remplace l'état à chaque film servi, même sans webContext (pas de `if`).
+  const hook = readFileSync(new URL("../hooks/useReplay.js", import.meta.url), "utf8");
+  assert.match(hook, /setFilmWebContext\(resolved\.webContext \|\| null\)/);
+  assert.doesNotMatch(hook, /if \(resolved\.webContext\) setFilmWebContext/);
+});
+
+test("normalizeSourceUrl : « / » racine n'est qu'une clé de dédoublonnage, le lien affiché reste intact", () => {
+  assert.equal(normalizeSourceUrl("https://www.Example.com/"), "https://example.com");
+  assert.equal(normalizeSourceUrl("https://example.com/"), normalizeSourceUrl("https://example.com"));
+  const ctx = publicFilmWebContext({
+    webContext: { basis: "tavily", port: "Nouméa", sources: [
+      { url: "https://example.com/" }, { url: "https://example.com" }, { url: "https://example.com/a/" },
+    ] },
+  });
+  assert.deepEqual(ctx.sources.map((s) => s.url), ["https://example.com/", "https://example.com/a/"]);
 });
