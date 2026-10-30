@@ -134,6 +134,36 @@ Model governance: [naviguide-simulator/docs/AI_GOVERNANCE.md](naviguide-simulato
 
 ## Run locally
 
+### Run it locally
+
+From the repository root, use Node.js 24 and Python 3.12. In terminal 1:
+
+```bash
+cd naviguide-simulator
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r server/requirements.txt
+export NVIDIA_API_KEY=your_nim_key
+env -u NEBIUS_API_KEY npm run server
+```
+
+`NVIDIA_API_KEY` enables NVIDIA NIM in development. It serves `openai/gpt-oss-20b` as a fallback at `https://integrate.api.nvidia.com/v1`; that model is not Nemotron. Token Factory (`NEBIUS_API_KEY`) is optional in production. Its tiers use Lightning for `nano` and `fast`, Super VL for `write`, and Ultra for `deep` and `judge`. `TAVILY_API_KEY` is optional; without it, web sources are absent.
+
+For a frozen-stock run with no model or web keys, omit the `export` line and start the API this way instead:
+
+```bash
+env -u NEBIUS_API_KEY NAVIGUIDE_OFFLINE=1 NAVIGUIDE_LLM_MODE=off npm run server
+```
+
+This blocks outgoing HTTP and uses the local stock. In terminal 2, from the repository root:
+
+```bash
+cd naviguide-simulator
+npm run dev
+```
+
+Open [http://localhost:5174](http://localhost:5174), choose **Follow expedition**, then click **Replay the expedition**. The film replays from the official stock; **Edited** requests its written version when available.
+
 | Tool | Version |
 |---|---|
 | Node.js | 24 ([.nvmrc](.nvmrc)) |
