@@ -6688,3 +6688,38 @@ def test_reanchor_edited_chapter_ignores_malformed_anchor_indices():
     }
     fs._reanchor_edited_chapter(chapter, "en")
     assert chapter["anchors"] == []
+
+
+def test_reanchor_edited_chapter_drops_anchors_without_source_text():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "A rewritten chapter.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [{"charIdx": 3, "t": "2026-05-15T09:00:00Z"}],
+    }
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == []
+    assert chapter["_anchorText"] == chapter["text"]
+
+
+def test_reanchor_edited_chapter_drops_ambiguous_boundary_and_duplicate_anchors():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "Bay. Approach to harbor.",
+        "_anchorText": "Bay. Approach to harbor. Approach to harbor.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [
+            {"charIdx": 0, "t": "2026-05-15T09:00:00Z"},
+            {"charIdx": 15, "t": "2026-05-15T10:00:00Z"},
+            {"charIdx": 34, "t": "2026-05-15T11:00:00Z"},
+        ],
+    }
+    fs._reanchor_edited_chapter(chapter, "en")
+    times = {anchor["t"] for anchor in chapter["anchors"]}
+    assert "2026-05-15T09:00:00Z" not in times  # +12 would cross into the next sentence.
+    assert "2026-05-15T10:00:00Z" not in times
+    assert "2026-05-15T11:00:00Z" not in times  # Duplicate occurrence was removed ambiguously.

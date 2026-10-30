@@ -9156,7 +9156,8 @@ def _reanchor_edited_chapter(ch: dict, lang: str) -> None:
     final = str(ch.get("text") or "")
     anchors = ch.get("anchors") or []
     if not original or not anchors:
-        ch["anchors"] = [] if not final else anchors
+        # Without the source text, there is no safe way to validate offsets.
+        ch["anchors"] = []
         ch["_anchorText"] = final
         return
     sentences = _sentences(original)
@@ -9170,6 +9171,7 @@ def _reanchor_edited_chapter(ch: dict, lang: str) -> None:
         spans.append((start, end, sentence))
         cursor = end
     anchored: list[tuple[str, Any]] = []
+    final_sentences = _sentences(final)
     for anchor in anchors:
         if not isinstance(anchor, dict) or anchor.get("t") is None:
             continue
@@ -9181,7 +9183,20 @@ def _reanchor_edited_chapter(ch: dict, lang: str) -> None:
         # before the spoken place), so resolve the anchor to its sentence at
         # the corresponding spoken position.
         sentence_idx = min(len(original) - 1, idx + FILM_VOICE_LOOKAHEAD_CHARS)
-        sentence = next((s for a, b, s in spans if a <= sentence_idx < b), None)
+        sentence_span = next(((a, b, s) for a, b, s in spans if a <= sentence_idx < b), None)
+        sentence = sentence_span[2] if sentence_span else None
+        # If the lookahead crosses a sentence boundary, the original anchor
+        # cannot be attributed safely. Also drop duplicate sentences when the
+        # final text has a different occurrence count: the surviving copy
+        # cannot be distinguished from the removed one by text alone.
+        if sentence_span and not (sentence_span[0] <= idx < sentence_span[1]):
+            sentence = None
+        if sentence:
+            normalized = speak_film_text(sentence, lang)
+            original_count = sum(speak_film_text(s, lang) == normalized for _, _, s in spans)
+            final_count = sum(speak_film_text(s, lang) == normalized for s in final_sentences)
+            if original_count > 1 and original_count != final_count:
+                sentence = None
         anchor_t = _ms(anchor["t"])
         if sentence and anchor_t is not None and _locate_spoken(final, speak_film_text(sentence, lang), 0) >= 0:
             anchored.append((sentence, anchor_t))
