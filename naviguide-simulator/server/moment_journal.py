@@ -32,6 +32,7 @@ APPROACH_NM_FLOOR = 80.0
 APPROACH_FRAC = 0.10
 _GENERIC_TITLES = frozenset({
     "station croisée", "station", "stations", "croisée", "croisee",
+    "station passed", "passed",
     "marina croisée", "marina", "marinas",
     "aire marine protégée", "amp", "mpa",
     "formalités d'entrée", "ports d'entrée", "port d'entrée",
