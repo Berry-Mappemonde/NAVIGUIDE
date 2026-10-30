@@ -86,6 +86,8 @@ test("RC1 bulles : EventBubble et EscalePopup ouvertes puis détruites sans erre
   // Détruit la scène (même chemin que le nettoyage d'effet de MapScene).
   await page.evaluate(() => window.__naviguideScene.dispose());
   await expect(page.getByTestId("event-bubble")).toHaveCount(0);
-  if (escaleOpen) await expect(escale).toHaveCount(0);
+  await expect(page.locator(".leaflet-popup.escale-popup")).toHaveCount(0);
+  // La fiche reste visible : elle appartient au panneau latéral, hors de la scène détruite.
+  if (escaleOpen) await expect(escale).toBeVisible();
   expect(bad, bad.join("\n")).toEqual([]);
 });
