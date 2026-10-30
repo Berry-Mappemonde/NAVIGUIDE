@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Redo2, Undo2, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar.jsx";
+import { PanelBoundary } from "./components/RootErrorBoundary.jsx";
 import { CarnetDeBord, mapPageHref, useCarnetPage } from "./components/CarnetDeBord.jsx";
 import { ToolsSidebar } from "./components/ToolsSidebar.jsx";
 import { LayerFichePopup } from "./components/LayerFichePopup.jsx";
@@ -128,6 +129,13 @@ const EMPTY_MARITIME_LAYERS = Object.freeze({
   showClimoWind: false, setShowClimoWind: NOOP, showClimoWave: false, setShowClimoWave: NOOP,
   showClimoCurrent: false, setShowClimoCurrent: NOOP, showClimoCyclones: false, setShowClimoCyclones: NOOP,
 });
+
+function PanelCrashProbe({ panel }) {
+  if ((import.meta.env.DEV || import.meta.env.VITE_NAVIGUIDE_CRASHTEST === "1") && new URLSearchParams(window.location.search).get("crashtest") === "panel" && panel === "sidebar") {
+    throw new Error("NAVIGUIDE panel crash test");
+  }
+  return null;
+}
 
 function planCacheKey(lang) { return `naviguide_sim_plan_v1_${lang}`; }
 function getCachedPlan(lang) {
@@ -2050,6 +2058,8 @@ export default function App() {
           pendingLayerRef.current = null;
         }}
       />
+      <PanelBoundary>
+      <PanelCrashProbe panel="sidebar" />
       <Sidebar
         plan={expeditionPlan}
         open={sidebarOpen}
@@ -2122,7 +2132,9 @@ export default function App() {
         escaleError={escaleSheet?.error}
         onEscaleClose={closeEscaleSheet}
       />
+      </PanelBoundary>
 
+      <PanelBoundary>
       <ToolsSidebar
         segments={statsSegs}
         points={statsPoints}
@@ -2170,6 +2182,7 @@ export default function App() {
         tracerLayout={!isSuivre}
         ampNearby={iciPack.dossier?.amp || []}
       />
+      </PanelBoundary>
 
       {!sceneReady && !drawingMode && (
         <div data-testid="scene-load-mask" className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-[1500] pointer-events-none">
@@ -2266,6 +2279,7 @@ export default function App() {
         </div>
       )}
 
+      <PanelBoundary>
       <SimulationFilmBar
         ref={filmBarRef}
         barRef={filmBarRef}
@@ -2360,6 +2374,7 @@ export default function App() {
         } : null}
         disclaimer={t("creditsLine")}
       />
+      </PanelBoundary>
 
       <RecomputeDialog
         draft={vessel.draft}
