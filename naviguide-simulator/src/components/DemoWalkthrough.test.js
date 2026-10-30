@@ -182,7 +182,7 @@ describe("visite guidée des juges", () => {
 
   it("R41b/c/f : retries use an attempt count, resize restarts tracking, and panel controls are keyboard operable", () => {
     const jsx = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
-    assert.match(jsx, /let attempts = 0;[\s\S]*?\+\+attempts < 30/);
+    assert.match(jsx, /let attempts = 0;[\s\S]*?\+\+attempts < (?:30|PULSE_MAX_ATTEMPTS)/);
     assert.match(jsx, /const onResize = \(\) => \{[\s\S]*?tries = 0;[\s\S]*?requestAnimationFrame\(track\)/);
     assert.match(jsx, /allowKeyboardControl: false/);
     assert.match(jsx, /headingRef\.current\?\.focus/);
@@ -248,5 +248,79 @@ describe("placement logic (exported from demoWalkthrough.js)", () => {
     assert.equal(getStagePadding("models"), 6);
     assert.equal(getStagePadding("live"), 6);
     assert.equal(getStagePadding("replay"), 6);
+  });
+});
+
+it("driver.js : chaque étape a un élément réel ou aucun (pas de cible inventée)", () => {
+  assert.deepEqual(Object.keys(DEMO_TOUR_TARGETS), DEMO_STEP_IDS);
+  assert.equal(DEMO_TOUR_TARGETS.briefing, '[data-tour="logbook"]');
+  assert.equal(DEMO_TOUR_TARGETS.replay, '[data-tour="film"]');
+  assert.equal(DEMO_TOUR_TARGETS.live, ".leaflet-container");
+});
+
+describe("placement logic (exported from demoWalkthrough.js)", () => {
+  const anchorTop = { top: 100, bottom: 150, height: 50 };
+  const anchorBottom = { top: 600, bottom: 650, height: 50 };
+
+  it("computePanelPosition returns undefined for null anchor or mobile width", () => {
+    assert.equal(computePanelPosition(null, "replay", 1024, 768), undefined);
+    assert.equal(computePanelPosition(anchorTop, "replay", 500, 768), undefined);
+  });
+
+  it("computePanelPosition for replay step with anchor in bottom half returns bottom position", () => {
+    const pos = computePanelPosition(anchorBottom, "replay", 1024, 768);
+    assert.ok(pos && pos.bottom && pos.top === "auto");
+    const bottom = Number(pos.bottom.replace("px", ""));
+    assert.ok(bottom > 768 - 600);
+  });
+
+  it("computePanelPosition for replay step with anchor in top half returns top position", () => {
+    const pos = computePanelPosition(anchorTop, "replay", 1024, 768);
+    assert.ok(pos && pos.top && !pos.bottom);
+  });
+
+  it("computePanelPosition for other steps returns clamped top position", () => {
+    const pos = computePanelPosition(anchorTop, "welcome", 1024, 768);
+    assert.ok(pos && pos.top);
+    const top = Number(pos.top.replace("px", ""));
+    assert.ok(top >= 56 && top <= 768 - 420);
+  });
+
+  it("computeArrowDirection returns undefined for null anchor or mobile width", () => {
+    assert.equal(computeArrowDirection(null, "replay", 1024, 768), undefined);
+    assert.equal(computeArrowDirection(anchorTop, "replay", 500, 768), undefined);
+  });
+
+  it("computeArrowDirection for replay step with anchor in bottom half returns 'down'", () => {
+    assert.equal(computeArrowDirection(anchorBottom, "replay", 1024, 768), "down");
+  });
+
+  it("computeArrowDirection for replay step with anchor in top half returns 'down'", () => {
+    assert.equal(computeArrowDirection(anchorTop, "replay", 1024, 768), "down");
+  });
+
+  it("getStagePadding returns 14 for trace step, 6 for others", () => {
+    assert.equal(getStagePadding("trace"), 14);
+    assert.equal(getStagePadding("welcome"), 6);
+    assert.equal(getStagePadding("models"), 6);
+    assert.equal(getStagePadding("live"), 6);
+    assert.equal(getStagePadding("replay"), 6);
+  });
+});
+
+describe("R44 : pulse Tracer", () => {
+  const jsx = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
+  it("réessaie avec un vrai compteur, l'id rAF ne sert qu'à l'annulation", () => {
+    assert.match(jsx, /export const PULSE_MAX_ATTEMPTS = 30;/);
+    assert.match(jsx, /\+\+attempts < PULSE_MAX_ATTEMPTS/);
+    assert.doesNotMatch(jsx, /checkRaf < 30/);
+  });
+});
+
+describe("R44 : défilement du panneau", () => {
+  it("garde la flèche sur le conteneur externe et le défilement sur la région", () => {
+    const jsx = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
+    assert.match(jsx, /<div\s+data-arrow=\{arrowDir \|\| undefined\}[\s\S]*?className=\{`naviguide-demo-panel fixed/);
+    assert.match(jsx, /role="region"[\s\S]*?max-h-\[45dvh\] flex-col overflow-y-auto[\s\S]*?md:max-h-\[calc\(100dvh-5rem\)\]/);
   });
 });
