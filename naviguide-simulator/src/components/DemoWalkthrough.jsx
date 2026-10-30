@@ -309,6 +309,7 @@ export function DemoWalkthrough({
       role="region"
       aria-label={t("demoRegion")}
       data-testid="demo-walkthrough-panel"
+      data-arrow={arrowDir || undefined}
       data-step={step.id}
       data-side={step.side}
       data-target={step.target || ""}
