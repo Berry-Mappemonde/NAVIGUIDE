@@ -1,92 +1,131 @@
 import { expect, test } from "@playwright/test";
-import { dismissNotForNav, leaveCinema } from "../helpers.js";
+import { dismissNotForNav } from "../helpers.js";
 
 // À valider hors sandbox : Playwright requires the local preview/API servers.
 const TECHNICAL = /overpass_unavailable|Traceback|\bundefined\b|\bNaN\b|\[object Object\]/i;
 
 for (const lang of ["fr", "en"]) {
-  test(`${lang} : replay expedition hors ligne jusqu'à la fin`, async ({ page }) => {
-    test.setTimeout(90_000);
-    const consoleErrors = [];
-    const pageErrors = [];
-    page.on("console", (message) => {
-      if (message.type() === "error") consoleErrors.push(message.text());
-    });
-    page.on("pageerror", (error) => pageErrors.push(error.message));
-    await page.clock.install();
-    await page.addInitScript((locale) => {
-      localStorage.setItem("naviguide_lang_v4", locale);
-      // Keep chapter transitions deterministic and independent of browser voices.
-      const synth = window.speechSynthesis;
-      if (synth) {
-        synth.speak = (utterance) => queueMicrotask(() => utterance.onend?.());
-        synth.cancel = () => {};
-        Object.defineProperty(synth, "speaking", { configurable: true, get: () => false });
-      }
-    }, lang);
-
-    await page.route("**/voyage/official/film**", async (route) => {
-      const url = new URL(route.request().url());
-      const requestedLang = url.searchParams.get("lang") || lang;
-      const written = url.searchParams.get("style") === "written";
-      const chapters = [0, 1, 2].map((i) => ({
-        id: `offline-${i}`,
-        text: requestedLang === "fr" ? `Chapitre ${i + 1} de l'expédition.` : `Expedition chapter ${i + 1}.`,
-        tA: i * 1_000,
-        tB: (i + 1) * 1_000,
-        anchors: [{ t: i * 1_000, i: 0 }, { t: (i + 1) * 1_000, i: 30 }],
-      }));
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          status: "ready", lang: requestedLang, style: written ? "written" : "raw",
-          source: written ? "offline-fixture" : "rules", hasWritten: true,
-          targetSeconds: 0, chapters,
-        }),
+  for (const viaTour of [false, true]) {
+    test(`${lang} : replay réel ${viaTour ? "depuis ?tour=1" : "sans visite guidée"}`, async ({ page }) => {
+      test.setTimeout(120_000);
+      const consoleErrors = [];
+      const pageErrors = [];
+      page.on("console", (message) => {
+        if (message.type() === "error") consoleErrors.push(message.text());
       });
+      page.on("pageerror", (error) => pageErrors.push(error.message));
+      await page.clock.install();
+      await page.addInitScript((locale) => {
+        localStorage.setItem("naviguide_lang_v4", locale);
+        const synth = window.speechSynthesis;
+        if (synth) {
+          synth.speak = (utterance) => queueMicrotask(() => utterance.onend?.());
+          synth.cancel = () => {};
+          Object.defineProperty(synth, "speaking", { configurable: true, get: () => false });
+        }
+      }, lang);
+
+      await page.goto(viaTour ? "/?tour=1" : `/?lang=${lang}`);
+      await dismissNotForNav(page);
+      await expect(page.getByTestId("film-bar")).toBeVisible();
+
+      if (viaTour) {
+        const tour = page.getByTestId("demo-walkthrough-panel");
+        await expect(tour).toHaveAttribute("data-step", "welcome");
+        for (const step of ["models", "live", "briefing", "layers", "replay"]) {
+          await page.getByTestId("demo-walkthrough-next").click();
+          await expect(tour).toHaveAttribute("data-step", step);
+        }
+      }
+
+      const raw = page.getByTestId("film-style-raw");
+      const edited = page.getByTestId("film-style-written");
+      let selectedStyle;
+      await expect(raw).toHaveText(lang === "fr" ? "Brut" : "Raw");
+      await expect(edited).toHaveText(lang === "fr" ? "Rédigé" : "Edited");
+      let start;
+      if (viaTour) {
+        const editedPlay = page.getByTestId("demo-walkthrough-play-edited");
+        const rawPlay = page.getByTestId("demo-walkthrough-play");
+        const editedFallback = page.getByTestId("demo-edited-fallback");
+        if (await editedPlay.count()) {
+          start = editedPlay;
+          selectedStyle = edited;
+          await expect(start).toHaveText(lang === "fr" ? "Lire le film Rédigé" : "Play the Edited film");
+        } else {
+          // Le panneau ne propose le rédigé que si le service en a réellement fourni un.
+          await expect(editedFallback).toBeVisible();
+          await expect(rawPlay).toBeEnabled();
+          start = rawPlay;
+          selectedStyle = raw;
+        }
+      } else {
+        await edited.click();
+        const unavailable = page.locator('[data-testid="film-bar"] [role="status"]');
+        await expect.poll(async () => (
+          await edited.getAttribute("aria-pressed") === "true" || await unavailable.isVisible()
+        ), { timeout: 45_000 }).toBe(true);
+        if (await edited.getAttribute("aria-pressed") === "true") {
+          start = page.getByTestId("replay-start");
+          selectedStyle = edited;
+        } else {
+          await expect(unavailable).toContainText(/momentanément indisponible|temporarily unavailable/i);
+          await raw.click();
+          await expect(raw).toHaveAttribute("aria-pressed", "true");
+          start = page.getByTestId("replay-start");
+          selectedStyle = raw;
+        }
+      }
+      await expect(start).toBeEnabled({ timeout: 45_000 });
+      await start.click();
+      await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 15_000 });
+      await expect(selectedStyle).toHaveAttribute("aria-pressed", "true");
+      await expect.poll(() => page.evaluate(() => Number.isFinite(window.__naviguideFilm?.startedAt)), {
+        timeout: 15_000,
+      }).toBe(true);
+
+      const subtitle = page.getByTestId("film-subtitle");
+      await expect(subtitle).toBeVisible();
+      await expect.poll(() => subtitle.innerText()).toMatch(/\S/);
+      const firstChapterText = await subtitle.innerText();
+      const firstChapter = await page.evaluate(() => window.__naviguideFilm?.chapterIdx ?? 0);
+      expect(firstChapterText).not.toMatch(TECHNICAL);
+
+      // Hors ligne, l'API sert le film brut à partir des règles. La provenance
+      // reste dans le DOM même si le style actif masque le badge.
+      const source = page.getByTestId("film-source");
+      await expect(source).toHaveAttribute("data-llm-source", "rules");
+      await expect(source).toHaveAttribute("data-ai-generated", "false");
+      if (selectedStyle === edited) {
+        await expect(source).toBeVisible();
+      } else {
+        await expect(source).toBeHidden();
+      }
+
+      // Le film tourne dans une boucle requestAnimationFrame pilotée par
+      // performance.now(). Un chapitre peut dépasser largement 2 secondes :
+      // avance en tranches virtuelles et vérifie aussi que la boucle a tourné.
+      let progress = await page.evaluate(() => ({
+        chapter: window.__naviguideFilm?.chapterIdx ?? 0,
+        elapsed: window.__naviguideFilm?.elapsed ?? 0,
+      }));
+      for (let i = 0; i < 18 && progress.chapter <= firstChapter; i += 1) {
+        await page.clock.runFor(5_000);
+        progress = await page.evaluate(() => ({
+          chapter: window.__naviguideFilm?.chapterIdx ?? 0,
+          elapsed: window.__naviguideFilm?.elapsed ?? 0,
+        }));
+      }
+      expect(progress.elapsed).toBeGreaterThan(0);
+      expect(progress.chapter).toBeGreaterThan(firstChapter);
+      const chapterText = await subtitle.innerText();
+      expect(chapterText).not.toBe(firstChapterText);
+      expect(chapterText).not.toMatch(TECHNICAL);
+
+      await page.getByTestId("replay-stop").click();
+      await expect(page.getByTestId("replay-start")).toBeVisible();
+      await expect(consoleErrors, "erreurs console").toEqual([]);
+      await expect(pageErrors, "erreurs page").toEqual([]);
     });
-
-    await page.goto(`/?lang=${lang}`);
-    await dismissNotForNav(page);
-    await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
-    await leaveCinema(page);
-    await page.getByTestId("view-suivre").click();
-    const start = page.getByTestId("replay-start");
-    await expect(start).toBeVisible({ timeout: 15_000 });
-    const raw = page.getByTestId("film-style-raw");
-    const written = page.getByTestId("film-style-written");
-    await expect(raw).toBeVisible();
-    await expect(written).toBeVisible();
-    await expect(raw).toHaveAttribute("aria-pressed", "true");
-    await written.click();
-    await expect(written).toHaveAttribute("aria-pressed", "true");
-    await raw.click();
-    await expect(raw).toHaveAttribute("aria-pressed", "true");
-    await expect(written).toHaveAttribute("aria-pressed", "false");
-
-    await expect(start).toBeEnabled({ timeout: 20_000 });
-    await start.click();
-    await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 8_000 });
-    await expect(page.getByTestId("film-subtitle")).toBeVisible();
-    const listen = page.getByTestId("listen");
-    if (await listen.count()) await expect(listen).toBeVisible();
-
-    // Each clock step must run animation frames; fastForward jumps over them,
-    // while the replay advances from requestAnimationFrame timestamps.
-    const targetSeconds = await page.evaluate(() => Number(window.__naviguideFilm?.targetSeconds) || 0);
-    const clockSteps = Math.min(48, Math.max(1, Math.ceil(targetSeconds / 5) + 2));
-    for (let i = 0; i < clockSteps; i += 1) {
-      if (await page.evaluate(() => Boolean(window.__naviguideFilm?.ended))) break;
-      await page.clock.runFor(5_000);
-    }
-    const reachedEnd = await page.evaluate(() => Boolean(window.__naviguideFilm?.ended));
-    expect(reachedEnd, "la relecture a atteint sa fin").toBe(true);
-    await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 8_000 });
-
-    const visibleText = await page.locator("body").innerText();
-    expect(visibleText).not.toMatch(TECHNICAL);
-    expect(consoleErrors, "erreurs console").toEqual([]);
-    expect(pageErrors, "erreurs page").toEqual([]);
-  });
+  }
 }
