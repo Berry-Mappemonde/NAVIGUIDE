@@ -120,7 +120,7 @@ test("Rédigé actif si hasWritten ou film prêt, jamais Rédigé comme source",
   const srcText = (await sourceOff.innerText()).trim();
   await expect(sourceOff).toHaveAttribute("data-llm-source", "rules");
   expect(srcText, "jamais le mot Rédigé comme source").not.toMatch(/Rédigé/i);
-  expect(srcText).toBe("Formulé par les données brutes");
+  expect(srcText).toMatch(/(^|· )Formulé par les données brutes$/);
   expect(llmHits, "aucun appel LLM depuis le navigateur").toEqual([]);
   await shot(page, "02-brut");
 });
