@@ -42,7 +42,7 @@ describe("EscaleLegend — fourchette sous la date", () => {
   it("ajoute eta-range sans retirer la date", () => {
     assert.match(src, /data-testid="escale-legend"/);
     assert.match(src, /data-testid="eta-range"/);
-    assert.match(src, /formatCivilDate/);
+    assert.match(src, /formatStopoverDate/);
     assert.match(src, /dateLabel/);
     assert.match(src, /formatEtaRange/);
     assert.match(src, /formatEtaRangeTitle/);

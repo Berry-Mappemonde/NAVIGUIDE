@@ -19,8 +19,11 @@ import {
   seekJournalEntry,
   visibleAlerts,
   displayIciFrame,
+  replayIciFrame,
   withNowLeg,
   localizeStoredTitle,
+  enDecimals,
+  localizeSourceTag,
   localizeStoredFact,
   localizeStoredLabel,
   aroundWithoutShown,
@@ -208,7 +211,10 @@ export function IciMaintenant({
     if (typeof onViewChange === "function") onViewChange(id);
     else setLocalView(id);
   };
-  const frame = displayIciFrame(moment, journalEntries, mode);
+  // Film en lecture : alertes et « Autour du bateau » à la position du film.
+  const frame = replayFrame?.at
+    ? replayIciFrame(moment, journalEntries, replayFrame.at)
+    : displayIciFrame(moment, journalEntries, mode);
   // Maintenant never repeats the card shown as Suivant, nor what it says.
   const momentNow = momentNowProp && !sameShownMoment(momentNowProp, momentFree) ? momentNowProp : null;
   const around = aroundWithoutShown(frame.around, momentFree);
@@ -439,7 +445,7 @@ export function IciMaintenant({
                   className="text-[11px] leading-snug text-slate-200"
                 >
                   <summary className="cursor-pointer list-inside">
-                    {localizeStoredTitle(item.title, lang)}
+                    {enDecimals(localizeStoredTitle(item.title, lang), lang)}
                     {item.fact ? <span className="text-slate-400"> · {localizeStoredFact(item.fact, lang)}</span> : null}
                   </summary>
                   {item.url ? (
@@ -460,7 +466,7 @@ export function IciMaintenant({
 
           <Section testId="ici-section-sources" label={t("iciSectionSources")}>
             <p data-testid="ici-sources-line" className="text-[10px] leading-snug text-slate-400">
-              {(frame.sources || []).filter(Boolean).join(" · ")}
+              {(frame.sources || []).filter(Boolean).map((tag) => localizeSourceTag(tag, lang)).join(" · ")}
             </p>
           </Section>
         </div>

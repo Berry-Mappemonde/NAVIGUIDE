@@ -430,6 +430,12 @@ async def build_context(
     ctx["climo"] = _climo_facts(lat, lon, now.month)
     ctx["layers"] = _layers_facts(ctx.get("around") if isinstance(ctx.get("around"), dict) else None, bag)
     ctx["dcFamilies"] = _dc_facts(bag)
+    try:
+        import port_web_context  # noqa: PLC0415
+
+        await port_web_context.attach(ctx, http, now)
+    except Exception:
+        ctx["portWeb"] = {"status": "unavailable", "reason": "error", "sources": []}
     return bound_facts(ctx)
 
 
@@ -1011,6 +1017,7 @@ def _prompt(question: str, ctx: dict, lang: str) -> tuple[str, str]:
         "question in at most FIVE plain sentences, from the facts provided (including the official "
         "logbook in journal — stops, EEZ, protected areas, weather, science, news, polar, "
         "skipper orders, plan review, cables, DC families). "
+        "When portWeb.status is ready, you may use its excerpts only — never invent beyond them; they are third-party web news about the port, never about our boat, its arrival or its weather: attribute them ('according to a web source') and never mix their figures with the boat's. "
         "Every figure you write must appear in the facts, with its unit. "
         f"If a fact is missing, say exactly: {missing} "
         "Never mention JSON, field names or keys such as atQuay or speedKnots; "
@@ -1019,7 +1026,8 @@ def _prompt(question: str, ctx: dict, lang: str) -> tuple[str, str]:
         "Tu es le journal de bord de l’expédition à la voile Berry-Mappemonde. Réponds à cette "
         "question difficile en CINQ phrases simples au plus, à partir des faits fournis (dont le journal "
         "officiel — escales, ZEE, AMP, météo, science, veilles, polaire, ordres, revue du plan, "
-        "câbles, familles DC). Chaque chiffre que tu écris doit "
+        "câbles, familles DC). Quand portWeb.status vaut ready, tu peux t'appuyer "
+        "sur ses extraits seulement — n'invente rien au-delà ; ce sont des nouvelles web de tiers sur le port, jamais sur notre bateau, son arrivée ni sa météo : attribue-les (« selon une source web ») et ne mêle jamais leurs chiffres à ceux du bateau. Chaque chiffre que tu écris doit "
         "figurer dans les faits, avec son unité. "
         f"Si un fait manque, dis exactement : {missing} "
         "N’écris jamais JSON ni les noms de champs "
@@ -1741,7 +1749,10 @@ async def answer_question(
                         "context": ctx,
                     }
                 raw, source = fact_text, "rules"
-            return _finish_answer(raw, ctx, lang, source, sentences=ULTRA_SENTENCES, chars=ULTRA_CHARS)
+            out = _finish_answer(raw, ctx, lang, source, sentences=ULTRA_SENTENCES, chars=ULTRA_CHARS)
+            if out.get("source") == "nemotron-ultra":
+                llm_budget.record_chat_ultra()
+            return out
         if fact_text is None:
             return {
                 "status": "failed",
@@ -1854,6 +1865,11 @@ async def post_logbook_chat(body: ChatIn, request: Request):
             logged = True
         except Exception as exc:  # the journal never breaks an answer
             log.warning("journal chat : %s", exc)
+    import port_web_context  # noqa: PLC0415
+
+    pw_ctx = out.get("context") if isinstance(out.get("context"), dict) else None
+    web_sources = port_web_context.web_sources_for_response(pw_ctx)
+    pw = pw_ctx.get("portWeb") if pw_ctx else None
     return enrich_llm_payload({
         "status": out["status"],
         "answer": out.get("answer"),
@@ -1864,4 +1880,6 @@ async def post_logbook_chat(body: ChatIn, request: Request):
         "entry": entry,
         "t": now.isoformat().replace("+00:00", "Z"),
         "facts": _facts_view(out.get("context")),
+        "webSources": web_sources,
+        "portWebStatus": pw.get("status") if isinstance(pw, dict) else None,
     })

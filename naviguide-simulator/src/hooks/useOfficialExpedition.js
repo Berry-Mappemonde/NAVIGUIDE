@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_T0_ISO, OFFICIAL_VOYAGE_ID, sampleClockAtTime } from "../engine/voyageClock.js";
 import { pickOfficialLiveClock } from "../utils/sceneGate.js";
-import { adminHeaders } from "../utils/adminSecret.js";
+import { adminHeaders, hasAdminSecret } from "../utils/adminSecret.js";
 import { officialGribQuery, officialGribStatus, officialGribWarning } from "./gribStatus.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
@@ -18,6 +18,11 @@ export function officialRetryDelayMs(attempt) {
 export function isOfficialClock(clock) {
   const t0 = Date.parse(clock?.t0 ?? "");
   return Number.isFinite(t0) && t0 === Date.parse(DEFAULT_T0_ISO);
+}
+
+/** A t0-only "preparing" response is not a usable live clock. */
+export function isUsableOfficialClock(clock) {
+  return isOfficialClock(clock) && Array.isArray(clock?.vertices) && clock.vertices.length > 1;
 }
 
 /**
@@ -116,7 +121,7 @@ export function useOfficialExpedition({
     if (!res.ok) return null;
     putRef.current = fp;
     setMeta(data);
-    if (data.clock) {
+    if (isUsableOfficialClock(data.clock)) {
       setServerClock(data.clock);
       setClockStatus("ready");
     }
@@ -141,11 +146,14 @@ export function useOfficialExpedition({
         return null;
       })
       .then((ck) => {
-        if (ck?.t0 && !cancelled) {
+        if (isUsableOfficialClock(ck) && !cancelled) {
           setServerClock(ck);
           setClockStatus("ready");
           return ck;
         }
+        // HTTP 200 status=preparing (t0 sans vertices) : pas une horloge utilisable.
+        // On ne touche pas à clockStatus (un repli figé déjà affiché reste) ; c'est
+        // gotClock (plus bas) qui fait continuer la relance espacée.
         return null;
       })
       .catch(() => { if (!cancelled) setClockStatus("absent"); return null; });
@@ -159,16 +167,17 @@ export function useOfficialExpedition({
       inflightRef.current = true;
       let gotClock = false;
       try {
-        // Horloge serveur d'abord : le PUT de réparation peut durer des secondes — l'attendre laissait
-        // l'UI sur le t0 client (15 mai, 0 nm) puis sautait à la position live. Les deux partent ENSEMBLE,
-        // une seule fois par tentative ; l'horloge vient du premier qui la porte (le PUT la rend aussi) —
-        // plus de relecture après le PUT : chaque lecture pèse 3,9 Mo (335 ko gzippés) derrière le tunnel.
-        // Horloge déjà là (rendu suivant du hook : meta, marques) : on ne la retélécharge pas ; le PUT
-        // ne repart que si l'empreinte de la route a changé (putOfficial rend sinon la réponse mémorisée).
+        // Lire l'horloge avant d'envoyer le PUT : une visite normale n'a pas besoin de renvoyer
+        // le gros voyage au serveur. Le PUT reste nécessaire pour une mise à jour admin ou pour
+        // réparer une horloge absente/inutilisable (notamment un corps « preparing » avec seulement t0).
         const haveClock = Boolean(serverClockRef.current);
-        const [ck, data] = await Promise.all([haveClock ? null : readClock(), putOfficial().catch(() => null)]);
+        const ck = haveClock ? null : await readClock();
+        // Une annulation de l'effet ne doit pas empêcher la réparation après un GET 404 :
+        // le PUT est aussi ce qui crée l'horloge officielle manquante.
+        const needPut = hasAdminSecret() || (!haveClock && !isUsableOfficialClock(ck));
+        const data = needPut ? await putOfficial().catch(() => null) : null;
         if (cancelled) return;
-        gotClock = haveClock || Boolean(ck) || Boolean(data?.clock?.t0);
+        gotClock = haveClock || isUsableOfficialClock(ck) || isUsableOfficialClock(data?.clock);
       } finally {
         inflightRef.current = false;
       }

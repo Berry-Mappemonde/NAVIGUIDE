@@ -22,6 +22,8 @@ from film_script import (
     film_write_window,
     film_ultra_open,
     write_film_chain,
+    _harbor_spoken,
+    _hold_phrase,
     film_estimated_seconds,
     film_priority_tier,
     fit_chapter_text,
@@ -97,6 +99,13 @@ from film_script import (
     zee_waters_label,
     _nm_label,
 )
+
+
+def test_raw_harbor_and_stopover_templates_respect_en_and_fr():
+    assert _harbor_spoken("de La Rochelle", "La Rochelle", "marina", "en") == "the La Rochelle marina"
+    assert _harbor_spoken("de La Rochelle", "La Rochelle", "marina", "fr") == "la marina de La Rochelle"
+    assert _hold_phrase(3, 0, "en") == "a three-day stopover"
+    assert _hold_phrase(3, 0, "fr") == "trois jours d'escale"
 from tests.test_voyage_journal import PUBLIC, _official
 from voyage_clock import OFFICIAL_T0
 
@@ -1465,7 +1474,7 @@ def test_rg1_air_window_not_told_as_navigation():
     assert re.search(r"le catamaran attend à Cayenne", blob), blob
     assert blob.lower().count("catamaran attend à cayenne") == 1
     assert re.search(r"second voilier", blob), blob
-    assert re.search(r"s'envole de Halifax pour Cayenne", blob), blob
+    assert re.search(r"s'envole d'Halifax pour Cayenne", blob), blob
     assert not re.search(r"s'envole de Cayenne pour Saint-Pierre", blob), blob
     assert not re.search(r"Berry-Mappemonde quitte Cayenne.{0,80}pour Saint-Pierre", blob), blob
     names = [(c.get("fromName") or "", c.get("toName") or "") for c in plan["chapters"]]
@@ -1485,7 +1494,7 @@ def test_rg1_air_window_not_told_as_navigation():
     )
     assert "Cayenne" in (next_sail.get("fromName") or "")
     assert "Saint-Pierre" not in (next_sail.get("fromName") or "")
-    assert not re.search(r"s'envole de Halifax", chs[air_out]["text"] or ""), chs[air_out]["text"]
+    assert not re.search(r"s'envole (?:de |d’)Halifax", chs[air_out]["text"] or ""), chs[air_out]["text"]
     assert not re.search(r"s'envole de Cayenne pour Halifax", chs[air_back]["text"] or ""), chs[air_back]["text"]
     assert not re.search(r"s'envole", chs[side_out]["text"] or ""), chs[side_out]["text"]
     assert re.search(r"second voilier", chs[side_out]["text"] or ""), chs[side_out]["text"]
@@ -1517,10 +1526,10 @@ def test_rg1_ensure_air_sentences_stay_on_matching_chapter():
     ]
     out = _ensure_air_sentences(chapters, marks=marks, moments=None, lang="fr")
     assert re.search(r"s'envole de Cayenne pour Halifax", out[0]["text"] or ""), out[0]["text"]
-    assert not re.search(r"s'envole de Halifax", out[0]["text"] or ""), out[0]["text"]
+    assert not re.search(r"s'envole (?:de |d’)Halifax", out[0]["text"] or ""), out[0]["text"]
     assert not re.search(r"s'envole", out[1]["text"] or ""), out[1]["text"]
     assert re.search(r"second voilier", out[1]["text"] or ""), out[1]["text"]
-    assert re.search(r"s'envole de Halifax pour Cayenne", out[3]["text"] or ""), out[3]["text"]
+    assert re.search(r"s'envole d'Halifax pour Cayenne", out[3]["text"] or ""), out[3]["text"]
     assert not re.search(r"s'envole de Cayenne pour Halifax", out[3]["text"] or ""), out[3]["text"]
     assert not re.search(r"s'envole", out[4]["text"] or ""), out[4]["text"]
     assert re.search(r"reprend la mer", out[4]["text"] or ""), out[4]["text"]
@@ -1721,6 +1730,30 @@ def test_coast_milestones_ordered_by_route():
     assert len(coast_picked) >= 3
     times = [c.get("tMs") or 0 for c in coast_picked]
     assert times == sorted(times)
+
+
+def test_coast_merge_uses_language_for_continental_geography():
+    changes = [
+        {"id": "shelf", "kind": "coast", "tMs": 1, "title": "Brest", "geo": {
+            "fr": "limite du plateau continental", "en": "Continental Shelf", "kind": "coast",
+        }},
+        {"id": "edge", "kind": "coast", "tMs": 86_400_001, "title": "Brest", "geo": {
+            "fr": "limite du continent", "kind": "coast",
+        }},
+        {"id": "fallback", "kind": "coast", "tMs": 172_800_001, "title": "Brest", "geo": {
+            "fr": "géographie inconnue", "kind": "coast",
+        }},
+    ]
+
+    en = dose_coast_changes(changes, span_ms=3 * 86_400_000, lang="en")
+    fr = dose_coast_changes(changes, span_ms=3 * 86_400_000, lang="fr")
+
+    assert en[0]["title"] == "Continental Shelf — Brest"
+    assert en[1]["title"] == "continental edge — Brest"
+    assert en[2]["title"] == "Brest"
+    assert fr[0]["title"] == "limite du plateau continental — Brest"
+    assert fr[1]["title"] == "limite du continent — Brest"
+    assert fr[2]["title"] == "géographie inconnue — Brest"
 
 
 def test_stock_ports_and_marinas_become_named_coasts():
@@ -1943,9 +1976,9 @@ def test_climo_sentence_and_dosage():
     fr = change_sentence(atlas, "fr")
     en = change_sentence(atlas, "en")
     assert "alizés de nord-est" in fr
-    assert "quinze nœuds de saison" in fr
+    assert "quinze nœuds, la moyenne de saison" in fr
     assert "northeasterly trade winds" in en
-    assert "fifteen seasonal knots" in en
+    assert "fifteen knots, the seasonal average" in en
     zone = {
         **atlas, "id": "climo:zone", "source": "zone_fallback", "nature": "zone",
         "windKnots": None, "dirFromDeg": None,
@@ -2697,7 +2730,7 @@ def test_rc22_fit_chapter_text_keeps_amp_project_drops_p3():
     arrival = "Arrivée à Ajaccio le 26 mai."
     p3 = [
         "Le 17 mai, longe la Galice — Camariñas, Muxía.",
-        "Le 18 mai, au sud du Cap-Vert, les alizés de nord-est s'installent : quinze nœuds de saison.",
+        "Le 18 mai, au sud du Cap-Vert, les alizés de nord-est s'installent : quinze nœuds, la moyenne de saison.",
         "Le 19 mai, un flotteur Argo.",
     ]
     extra = [f"Le {20 + i} mai, longe la côte — Port-{i}." for i in range(40)]
@@ -4849,7 +4882,7 @@ def test_ed1_write_window_follows_budget_and_accepts_integral():
 
 
 def test_ed1_judge_closed_serves_super_without_ultra(monkeypatch):
-    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")  # Ultra fermé : chemin Super seul
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     assert film_ultra_open() is False
     plan = {
@@ -4889,6 +4922,38 @@ def test_ed1_judge_closed_serves_super_without_ultra(monkeypatch):
     assert all(tier != "judge" for tier, _sys in hops)
 
 
+def test_write_film_chain_never_calls_translate_written_plan(monkeypatch):
+    import film_script as fs
+
+    async def _trap(*_a, **_k):
+        raise AssertionError("translate_written_plan must not run in production chain")
+
+    monkeypatch.setattr(fs, "translate_written_plan", _trap)
+    monkeypatch.setattr(fs, "film_ultra_open", lambda: False)
+
+    async def _fake_write(_plan, *, lang, cascade, seconds):
+        text = (_plan.get("chapters") or [{}])[0].get("text") or "x"
+        ch = {"id": "a", "text": text, "source": fs.WRITTEN_SOURCE}
+        return (
+            {"chapters": [ch], "source": fs.WRITTEN_SOURCE, "targetSeconds": 150},
+            {"rewritten": 1, "source": fs.WRITTEN_SOURCE},
+        )
+
+    async def _ok_reread(*_a, **_k):
+        return True, {"source": "rules"}
+
+    monkeypatch.setattr(fs, "write_stored_plan", _fake_write)
+    monkeypatch.setattr(fs, "reread_before_store", _ok_reread)
+
+    fr_raw = {"targetSeconds": 150, "chapters": [{"id": "a", "text": "Le 1er juin, départ vers Ajaccio."}]}
+    en_raw = {"targetSeconds": 150, "chapters": [{"id": "a", "text": "On June 1, departure for Ajaccio."}]}
+    fr_plan, en_plan, stats = asyncio.run(
+        fs.write_film_chain(fr_raw, seconds=150, en_raw=en_raw, cascade=lambda *_a, **_k: ""),
+    )
+    assert fr_plan and en_plan
+    assert stats.get("lightning") == 1
+
+
 def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "80000")
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
@@ -4910,6 +4975,8 @@ def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
 
     async def accept(system, user, **kw):
         hops.append(system[:20])
+        if "real stops" in system:
+            return '{"ok": true, "faults": []}', "nemotron-super"
         if "judge an already-written" in system:
             return '{"ok": true, "reason": "ok"}', "nemotron-ultra"
         if "edit an already-written" in system:
@@ -4958,7 +5025,7 @@ def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
 
 def test_ed2_mixed_nim_chapters_keep_nim_when_last_is_super(monkeypatch):
     """Deux chapitres NIM puis un Super : la source servie reste le repli, pas nemotron-super."""
-    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")  # Ultra fermé : chemin Super seul
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     assert film_ultra_open() is False
     plan = {
@@ -5007,9 +5074,19 @@ def test_ed2_mixed_nim_chapters_keep_nim_when_last_is_super(monkeypatch):
         )
         return text, src
 
-    fr, _en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=mixed))
-    assert seen == [1, 2, 3]
+    en_raw = {
+        "targetSeconds": 150,
+        "chapters": [
+            {**chapter, "text": "On May 15, Berry-Mappemonde leaves La Rochelle. Arrival in Ajaccio on May 26."}
+            for chapter in plan["chapters"]
+        ],
+    }
+    fr, en, stats = asyncio.run(
+        write_film_chain(plan, seconds=150, cascade=mixed, en_raw=en_raw),
+    )
+    assert seen == [1, 2, 3, 4, 5, 6]
     assert fr is not None
+    assert en is not None
     assert stats["source"] == "nvidia-gpt-oss-20b"
     assert fr["source"] == "nvidia-gpt-oss-20b"
     assert fr["source"] != "nemotron-super"
@@ -5641,6 +5718,57 @@ def test_reread_refuses_a_date_that_goes_backward():
     assert "date" in bar["faults"]
 
 
+def test_reanchor_never_moves_the_bar_back_before_a_later_depart():
+    """« Le 15 octobre » dit après un départ le 17 : défaut du texte, la barre ne recule pas."""
+    from film_script import _dates_regress, reanchor_written_chapter
+
+    text = (
+        "Le 17 octobre, Berry-Mappemonde quitte Papeete (Polynésie française), cap à l'ouest. "
+        "Le 15 octobre, à vingt-six milles, le projet Programme Animlagon en Nouvelle-Calédonie."
+    )
+    chapter = {
+        "text": text,
+        "tA": "2026-10-14T03:34:42Z",
+        "tB": "2026-10-27T13:55:18Z",
+        "anchors": [
+            {"charIdx": 0, "t": "2026-10-17T00:00:00Z"},
+            {"charIdx": text.index("Le 15 octobre"), "t": "2026-10-15T00:00:00Z"},
+        ],
+    }
+    out = reanchor_written_chapter(chapter, text, "fr")
+    ts = [a["t"] for a in out]
+    assert ts == sorted(ts)
+    assert _dates_regress(text, "fr")
+
+
+def test_reanchor_keeps_the_year_of_the_chapter_for_spoken_dates():
+    """« Le 9 février » d'un chapitre de 2027 reste en 2027 (pas 2026 par défaut)."""
+    from film_script import reanchor_written_chapter
+
+    text = (
+        "Le 30 janvier, Berry-Mappemonde quitte Saint-Gilles (La Réunion), cap à l'ouest pour Europa (TAAF). "
+        "Puis, les eaux malgaches. "
+        "Le 9 février, à dix-neuf milles, le projet ISEO. "
+        "Arrivée à Europa (TAAF) le 21 février."
+    )
+    chapter = {
+        "text": text,
+        "tA": "2027-01-27T07:32:22Z",
+        "tB": "2027-02-21T14:02:26Z",
+        "anchors": [
+            {"charIdx": 0, "t": "2027-01-30T07:32:22Z"},
+            {"charIdx": text.index("Puis"), "t": "2027-01-30T07:32:22Z"},
+            {"charIdx": text.index("Le 9 février"), "t": "2027-02-05T00:00:00Z"},
+            {"charIdx": text.index("Arrivée"), "t": "2027-02-21T14:02:26Z"},
+        ],
+    }
+    out = reanchor_written_chapter(chapter, text, "fr")
+    ts = [a["t"] for a in out]
+    assert all(t.startswith("2027") for t in ts), ts
+    assert ts == sorted(ts)
+    assert any(t.startswith("2027-02-09") for t in ts), ts
+
+
 def test_reread_refuses_a_later_stop_announced_on_the_wrong_leg():
     from film_script import nemotron_reread_report
 
@@ -5786,7 +5914,7 @@ def test_pacific_chapter_does_not_announce_mata_utu_or_noumea():
 
 def test_write_chain_does_not_store_a_skipped_stop(monkeypatch):
     """Le contrôle local refuse avant l'appel de relecture."""
-    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")  # Ultra fermé : chemin Super seul
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     from film_script import nemotron_reread_report
 
@@ -5823,7 +5951,7 @@ def test_write_chain_does_not_store_a_skipped_stop(monkeypatch):
 
 def test_write_chain_stores_nothing_when_the_reread_says_no(monkeypatch):
     """Texte honnête, relecture simulée qui refuse : rien en stock, aucun appel réseau."""
-    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")  # Ultra fermé : chemin Super seul
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     plan = {
         "chapters": [{
@@ -5854,7 +5982,7 @@ def test_write_chain_stores_nothing_when_the_reread_says_no(monkeypatch):
 
     fr, en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=fake))
     assert fr is None and en is None
-    assert stats.get("faults") == ["nemotron"]
+    assert stats.get("faults") == ["skip"]
     assert stats.get("reread") == "fail"
 
 
@@ -5978,7 +6106,6 @@ def test_halifax_saint_pierre_hop_not_voyage():
     assert "three days at sea" in (station_bare_ch["text"] or "")
     assert _opening_nm_label(leg_nm, "en") in (station_rev_ch["text"] or "")
     assert spoken_sea_days(leg_days, "en") in (station_rev_ch["text"] or "")
-
     from film_script import repair_side_hop_plan
 
     stale = {
@@ -6005,3 +6132,796 @@ def test_halifax_saint_pierre_hop_not_voyage():
     assert _opening_nm_label(leg_nm, "en") in repaired_text
     assert spoken_sea_days(leg_days, "en") in repaired_text
     assert "Arrival on 15 August." in repaired_text
+
+
+def test_window_leg_distance_keeps_film_odometer_scale():
+    from film_script import _window_leg_nm
+
+    window = {
+        "from": {"nm": 9658.68, "filmNm": 9818.68},
+        "to": {"filmNm": 16286.06},
+    }
+
+    assert round(_window_leg_nm(window), 2) == 6467.38
+
+
+def test_reread_reads_spelled_out_french_dates():
+    """Nemotron écrit « le quinze octobre » : la relecture doit voir le recul de date."""
+    from film_script import _dates_regress, _parse_spoken_date
+
+    assert _parse_spoken_date("Le quinze octobre, une campagne.", "fr").day == 15
+    assert _parse_spoken_date("Le trente et un décembre, arrivée.", "fr").day == 31
+    text = (
+        "Le 17 octobre, Berry-Mappemonde quitte Papeete (Polynésie française). "
+        "Le quinze octobre, à vingt-six milles, le projet Animlagon."
+    )
+    assert _dates_regress(text, "fr")
+
+
+# --- Lot PR #126 (2) : magasin désynchronisé, nombres épelés, verdicts tronqués, durée 150 s ---
+
+def test_moments_follow_their_leg_not_a_desynced_clock():
+    """Horloge et moments de deux simulations : Samoa (jambe Papeete → Mata-Utu)
+    ne parle jamais dans Cayenne → Papeete, même si sa date tombe dans cette fenêtre."""
+    from film_script import _align_moments_to_window
+
+    samoa = {
+        "t": "2026-10-01T15:00:00Z", "legIdx": 9, "changes": [],
+        "moment": {"leg": {"from": "Papeete (Polynésie française)", "to": "Mata-Utu (Wallis-et-Futuna)"}},
+    }
+    pacific = {
+        "t": "2026-09-01T00:00:00Z", "legIdx": 8, "changes": [],
+        "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Papeete (Polynésie française)"}},
+    }
+    free = {"t": "2026-09-10T00:00:00Z", "changes": []}
+    cay_pap = {
+        "fromName": "Cayenne (Guyane)", "destName": "Papeete (Polynésie française)",
+        "tA": _ms("2026-08-29T04:00:00Z"), "tB": _ms("2026-10-14T03:00:00Z"),
+    }
+    kept = _align_moments_to_window([samoa, pacific, free], cay_pap, None)
+    legs = [((m.get("moment") or {}).get("leg") or {}).get("to") for m in kept]
+    assert "Mata-Utu (Wallis-et-Futuna)" not in legs
+    assert "Papeete (Polynésie française)" in legs
+    assert free in kept
+    pap_mat = {
+        "fromName": "Papeete (Polynésie française)", "destName": "Mata-Utu (Wallis-et-Futuna)",
+        "tA": _ms("2026-10-14T03:00:00Z"), "tB": _ms("2026-10-27T13:00:00Z"),
+    }
+    moved = [m for m in _align_moments_to_window([samoa], pap_mat, None) if m.get("tSim")]
+    assert moved, "Samoa est reporté dans la fenêtre de SA jambe"
+    t = _ms(moved[0]["t"])
+    assert pap_mat["tA"] < t <= pap_mat["tB"]
+
+
+def test_spelled_number_is_checked_like_a_digit():
+    """173 épelé « cent soixante-dix-sept » (177) est un chiffre inventé."""
+    from story_cascade import filter_numbers, spelled_numbers_to_digits
+
+    assert spelled_numbers_to_digits("cent soixante-dix-sept milles") == "177 milles"
+    assert spelled_numbers_to_digits("quatre-vingt-dix-sept") == "97"
+    assert spelled_numbers_to_digits("vingt et un milles") == "21 milles"
+    assert spelled_numbers_to_digits("un mille deux cents milles") == "1200 milles"
+    assert spelled_numbers_to_digits("un bateau neuf") == "un bateau neuf"
+    facts = "Gustavia à 173 milles. 1 200 milles."
+    out, dropped = filter_numbers("Gustavia est à cent soixante-dix-sept milles.", facts, spelled=True)
+    assert dropped == 1 and out == ""
+    out, dropped = filter_numbers("Gustavia est à cent soixante-treize milles.", facts, spelled=True)
+    assert dropped == 0
+    out, dropped = filter_numbers("Un mille deux cents milles de mer.", facts, spelled=True)
+    assert dropped == 0
+
+
+def _one_chapter_plan():
+    return {
+        "chapters": [{
+            "id": "c0",
+            "text": "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Arrivée à Ajaccio le 26 mai.",
+            "tA": "2026-05-15T08:00:00Z", "tB": "2026-05-26T12:00:00Z",
+            "fromName": "La Rochelle", "toName": "Ajaccio (Corse)", "destName": "Ajaccio (Corse)",
+        }],
+    }
+
+
+def test_truncated_reread_verdict_is_never_a_pass():
+    from film_script import reread_before_store
+
+    stops = [{"name": "La Rochelle"}, {"name": "Ajaccio (Corse)"}]
+    for cut in ('{"ok": true, "faults": [', "", "The user wants me to check"):
+        async def fake(system, user, _cut=cut, **kw):
+            return _cut, "nemotron-super"
+        ok, rep = asyncio.run(reread_before_store(_one_chapter_plan(), stops, cascade=fake, lang="fr"))
+        assert ok is False, cut
+        assert rep["faults"] == ["verdict-illisible"]
+
+
+def test_english_film_final_reread_uses_mocked_judge_tier(monkeypatch):
+    import film_script as fs
+
+    monkeypatch.setattr(fs, "film_ultra_open", lambda: True)
+    monkeypatch.setattr(fs, "nemotron_reread_report", lambda *_a, **_k: {"ok": True, "faults": []})
+    seen = []
+
+    async def fake_cascade(_system, _user, **kw):
+        seen.append(kw)
+        return '{"ok": true, "faults": []}', "nemotron-ultra"
+
+    plan = {
+        "chapters": [{
+            "id": "c0",
+            "text": "On 15 May, Berry-Mappemonde leaves La Rochelle. Arrival in Ajaccio on 26 May.",
+            "fromName": "La Rochelle", "toName": "Ajaccio (Corsica)",
+        }],
+    }
+    stops = [{"name": "La Rochelle"}, {"name": "Ajaccio (Corsica)"}]
+    ok, report = asyncio.run(fs.reread_before_store(plan, stops, cascade=fake_cascade, lang="en"))
+
+    assert ok is True
+    assert report["source"] == "nemotron-ultra"
+    assert len(seen) == 1
+    assert seen[0]["tier"] == "judge"
+    assert seen[0]["max_tokens"] == fs.REREAD_MAX_TOKENS
+
+
+def test_truncated_ultra_judge_verdict_is_never_a_pass():
+    from film_script import judge_written_once
+
+    async def cut(system, user, **kw):
+        return '{"ok": tr', "nemotron-ultra"
+
+    assert asyncio.run(judge_written_once(_one_chapter_plan(), cascade=cut)) is False
+
+    seen = []
+
+    async def full(system, user, **kw):
+        seen.append(kw.get("max_tokens"))
+        assert '"facts"' in user, "le juge lit les faits du chapitre"
+        return '{"ok": true, "reason": "ok"}', "nemotron-ultra"
+
+    assert asyncio.run(judge_written_once(_one_chapter_plan(), cascade=full, raw_plan=_one_chapter_plan())) is True
+    assert seen and all(m >= 256 for m in seen)
+
+
+def test_ultra_edit_is_per_chapter_and_keeps_super_when_cut():
+    from film_script import edit_written_once
+
+    plan = _one_chapter_plan()
+    maxes = []
+
+    async def cut(system, user, **kw):
+        maxes.append(kw.get("max_tokens"))
+        return "Le 15 mai, Berry-Mappemonde laisse La", "nemotron-ultra"
+
+    assert asyncio.run(edit_written_once(plan, plan, cascade=cut)) is None
+    assert maxes and maxes[0] > len(plan["chapters"][0]["text"])
+
+
+def test_condensed_150_fits_the_measured_speech_rate():
+    from film_script import FILM_ESTIMATE_CPS, condense_written_plan, film_spoken_char_cap
+
+    sent = "Puis, les eaux d'un pays voisin, longées au large sous le vent."
+    chapters = []
+    for i in range(6):
+        body = " ".join([sent] * 12)
+        chapters.append({
+            "id": f"c{i}",
+            "text": f"Le {i + 1} juin, Berry-Mappemonde quitte Port{i}. {body} Arrivée à Port{i + 1} le {i + 2} juin.",
+            "tA": f"2026-06-{i + 1:02d}T08:00:00Z", "tB": f"2026-06-{i + 2:02d}T08:00:00Z",
+            "fromName": f"Port{i}", "destName": f"Port{i + 1}", "toName": f"Port{i + 1}",
+        })
+    out = condense_written_plan({"chapters": chapters}, 150, lang="fr")
+    assert out["chars"] <= film_spoken_char_cap(150) < 150 * FILM_ESTIMATE_CPS
+    assert out["estimatedSeconds"] <= 150
+    for ch in out["chapters"]:
+        assert "quitte" in ch["text"] and "Arrivée" in ch["text"]
+
+
+def test_llm_date_fault_needs_the_local_date_check():
+    """« date qui recule » du relecteur sur un texte aux dates en ordre : non retenue
+    (écrite dans le rapport) ; une escale sautée reste un refus."""
+    from film_script import reread_before_store
+
+    stops = [{"name": "La Rochelle"}, {"name": "Ajaccio (Corse)"}]
+
+    async def date_fault(system, user, **kw):
+        return '{"ok": false, "faults": ["date: 26 mai vs 15 mai"]}', "nemotron-ultra"
+
+    ok, rep = asyncio.run(reread_before_store(_one_chapter_plan(), stops, cascade=date_fault, lang="fr"))
+    assert ok is True
+    assert rep.get("unconfirmed") == ["date: 26 mai vs 15 mai"]
+
+    async def skip_fault(system, user, **kw):
+        return '{"ok": false, "faults": ["off-route: Rome", "date: x"]}', "nemotron-ultra"
+
+    ok, rep = asyncio.run(reread_before_store(_one_chapter_plan(), stops, cascade=skip_fault, lang="fr"))
+    assert ok is False and rep["faults"][0] == "off-route: Rome"
+
+
+def test_llm_skip_fault_is_checked_against_the_text():
+    from film_script import reread_before_store
+
+    stops = [{"name": "La Rochelle"}, {"name": "Ajaccio (Corse)"}]
+
+    async def named(system, user, **kw):
+        return '{"ok": false, "faults": ["skip: Ajaccio"]}', "nemotron-ultra"
+
+    ok, rep = asyncio.run(reread_before_store(_one_chapter_plan(), stops, cascade=named, lang="fr"))
+    assert ok is True and rep.get("unconfirmed") == ["skip: Ajaccio"]
+    plan = _one_chapter_plan()
+    plan["chapters"][0]["text"] = "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Le 26 mai, escale."
+    ok, rep = asyncio.run(reread_before_store(plan, stops, cascade=named, lang="fr"))
+    assert ok is False and rep["faults"] == ["skip: Ajaccio"]
+
+
+def test_partial_grouped_number_is_not_a_fact():
+    import story_cascade as sc
+    facts = {"raw": "départ vers La Rochelle : 8 393 milles, 96 jours de mer."}
+    out, dropped = sc.filter_numbers("Départ : 393 milles, 96 jours de mer.", facts, spelled=True)
+    assert dropped == 1 and out == ""
+    out, dropped = sc.filter_numbers("Départ : 8 393 milles, 96 jours de mer.", facts, spelled=True)
+    assert dropped == 0
+
+
+def test_super_spelled_numbers_become_digits_before_edit():
+    import film_script as fs
+    t = "Départ : huit mille trois cent quatre-vingt-treize milles, le trente et un mai 2026, un jour de mer."
+    assert fs._digits_for_speech(t) == "Départ : 8 393 milles, le 31 mai 2026, un jour de mer."
+
+
+def test_translation_never_mixes_french_fallback_sentences():
+    import asyncio
+    import film_script as fs
+    raw_ch = {"id": "c1", "text": "Le 4 juin, départ vers Fort-de-France. Arrivée le 14 juillet.", "anchors": []}
+    fr = {"chapters": [{**raw_ch, "text": "Le 4 juin, départ vers Fort-de-France. Arrivée le 14 juillet."}]}
+
+    async def half(system, user, **kw):
+        return "On June 4, departure for Fort-de-France.", "nemotron-lightning"
+
+    async def full(system, user, **kw):
+        return "On June 4, departure for Fort-de-France. Arrival on July 14.", "nemotron-lightning"
+
+    assert asyncio.run(fs.translate_written_plan(fr, {"chapters": [raw_ch]}, cascade=half)) is None
+    en = asyncio.run(fs.translate_written_plan(fr, {"chapters": [raw_ch]}, cascade=full))
+    assert en and "juin" not in en["chapters"][0]["text"]
+
+
+def test_english_exonyms_pass_but_invented_place_does_not():
+    import film_script as fs
+    got = fs._en_translation_names(
+        "Arrival at Ajaccio (Corsica). Then Samoan waters. Then Rome.",
+        "Arrivée à Ajaccio (Corse). Puis les eaux samoanes.",
+    )
+    assert {"corsica", "samoan"} <= got and "rome" not in got
+
+
+def test_translation_keeps_an_english_exonym_sentence():
+    import asyncio
+    import film_script as fs
+    raw_ch = {"id": "c1", "text": "Arrivée à Ajaccio (Corse).", "anchors": []}
+
+    async def tr(system, user, **kw):
+        return "Arrival at Ajaccio (Corsica).", "nemotron-lightning"
+
+    en = asyncio.run(fs.translate_written_plan({"chapters": [raw_ch]}, {"chapters": [raw_ch]}, cascade=tr))
+    assert en and en["chapters"][0]["text"] == "Arrival at Ajaccio (Corsica)."
+
+
+def test_translation_retry_asks_differently_and_skips_raw_number_filter():
+    import asyncio
+    import story_cascade as sc
+    import film_script as fs
+    raw_ch = {"id": "c1", "text": "Trois jours d'escale.", "anchors": []}
+    seen = []
+
+    async def tr(system, user, **kw):
+        seen.append((user, kw.get("facts")))
+        if len(seen) == 1:
+            return "Trois jours d'escale.", "nemotron-lightning"
+        return "3 days of stopover.", "nemotron-lightning"
+
+    en = asyncio.run(fs.translate_written_plan({"chapters": [raw_ch]}, {"chapters": [raw_ch]}, cascade=tr))
+    assert seen[0][0] != seen[1][0]
+    assert all(f is sc.NO_NUMBER_FILTER for _, f in seen)
+    assert en and en["chapters"][0]["text"] == "3 days of stopover."
+
+
+def test_english_translation_keeps_approximations_and_nationalities():
+    import film_script as fs
+    src = "Le 4 juin : 5 153 milles, une trentaine de jours de mer. Puis, les eaux espagnoles. Puis, L'ile Rousse."
+    en = "On June 4: 5 153 miles, about thirty days at sea. Then, Spanish waters. Then, L'Île-Rousse."
+    facts = {"raw": src, "en_names": sorted(n.title() for n in fs._en_translation_names(en, src)),
+             "approx": fs._fr_approx_numbers(src)}
+    _, rw, fb = fs.apply_written_guard(src, en, facts, lang="en")
+    assert fb == 0 and rw == 3
+
+
+def test_condense_150_drops_berth_and_repeated_region_before_cutting_facts():
+    import film_script as fs
+    chs = [{"id": f"c{i}", "fromName": "A", "toName": "Gustavia (Saint-Barthélemy)",
+            "text": "Le 21 juillet, départ vers Gustavia : 173 milles nautiques, un jour de mer. "
+                    "Arrivée à Gustavia (Saint-Barthélemy) le 23 juillet, à la marina de Gustavia. "
+                    "Arrivée à Gustavia (Saint-Barthélemy) le 23 juillet, à la marina de Gustavia."}
+           for i in range(20)]
+    fs._condense_to_spoken_seconds(chs, 150)
+    t = chs[0]["text"]
+    assert "173 milles" in t and "23 juillet" in t and "marina" not in t
+    assert t.count("Arrivée") == 1
+
+
+def test_non_breaking_hyphen_in_a_name_is_not_an_unknown_place():
+    import film_script as fs
+    src = "Arrivée à Mata-Utu (Wallis-et-Futuna) le 27 octobre."
+    out, rw, fb = fs.apply_written_guard(src, "Arrivée à Mata\u2011Utu (Wallis-et-Futuna) le 27 octobre.", {"raw": src})
+    assert fb == 0 and "\u2011" not in out
+
+
+def test_return_to_a_stop_is_not_a_skip():
+    import film_script as fs
+    rows = [{"name": n} for n in ("Marigot", "Cayenne (Guyane)", "Halifax (Nouvelle-Écosse)",
+                                  "Saint-Pierre (Saint-Pierre-et-Miquelon)", "Halifax (Nouvelle-Écosse)",
+                                  "Cayenne (Guyane)", "Papeete (Polynésie française)")]
+    rows = fs._as_stop_rows(rows)
+    assert fs._sea_between(rows, "Cayenne (Guyane)", "Papeete") == []
+    t = "Then, the catamaran sets sail again, heading for Papeete (French Polynesia)."
+    assert fs._cap_leg_faults(t, rows, "Cayenne (Guyane)", "Papeete (Polynésie française)") == []
+
+
+def test_grouped_distance_fact_keeps_its_thousands():
+    import film_script as fs
+    facts = fs.chapter_structured_facts({"text": "Le 4 juin : 5 153 milles, à 8 nœuds."}, lang="fr")
+    assert "5 153 milles" in facts["distances"] and "153 milles" not in facts["distances"]
+
+
+def test_close_but_different_place_is_not_an_exonym():
+    import film_script as fs
+    got = fs._en_translation_names("The Focolari Movement project. Then Rochefort.", "Mouvement des Focolari. La Rochelle.")
+    assert "movement" in got and "rochefort" not in got
+
+
+def test_truncated_reread_is_asked_again_shorter():
+    import asyncio
+    import film_script as fs
+    seen = []
+
+    async def casc(system, user, **kw):
+        seen.append(user)
+        if len(seen) == 1:
+            return '{"ok": false, "faults": ["date: a very long ramble that never', "nemotron-ultra"
+        return '{"ok": true, "faults": []}', "nemotron-ultra"
+
+    plan = {"chapters": [{"id": "c", "fromName": "A", "toName": "B", "text": "Départ de A. Arrivée à B."}]}
+    stops = [{"name": "A"}, {"name": "B"}]
+    ok, _ = asyncio.run(fs.reread_before_store(plan, stops, cascade=casc, lang="fr"))
+    assert ok and len(seen) == 2 and seen[0] != seen[1]
+
+
+def test_fortnight_only_translates_quinzaine():
+    import asyncio
+    import film_script as fs
+    raw_ch = {"id": "c", "text": "Le 17 octobre, une dizaine de jours de mer.", "anchors": []}
+    answers = iter(["On October 17, a fortnight at sea."] * 2)
+
+    async def tr(system, user, **kw):
+        return next(answers), "nemotron-lightning"
+
+    en = asyncio.run(fs.translate_written_plan({"chapters": [raw_ch]}, {"chapters": [raw_ch]}, cascade=tr))
+    assert en and "ten days" in en["chapters"][0]["text"]
+
+
+def _fc2_side_plan() -> dict:
+    """Deux jambes : La Rochelle → Ajaccio (mai) puis Halifax → Saint-Pierre (août)."""
+    return {
+        "chapters": [
+            {
+                "id": "leg-1", "tA": "2026-05-15T08:00:01Z", "tB": "2026-06-01T22:13:28Z",
+                "fromName": "La Rochelle", "toName": "Ajaccio (Corse)",
+                "text": "Le 15 mai, départ vers Ajaccio : 1 820 milles, une vingtaine de jours de mer. "
+                        "Arrivée à Ajaccio (Corse) le 1er juin.",
+            },
+            {
+                "id": "leg-8", "tA": "2026-08-19T04:28:25Z", "tB": "2026-08-21T18:34:56Z",
+                "fromName": "Halifax (Nouvelle-Écosse)",
+                "toName": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+                "text": "Le 19 août, à Halifax (Nouvelle-Écosse), l'équipage embarque sur un second voilier "
+                        "pour Saint-Pierre (Saint-Pierre-et-Miquelon). 497 milles, trois jours de mer. "
+                        "Arrivée à Saint-Pierre (Saint-Pierre-et-Miquelon) le 21 août.",
+            },
+        ],
+    }
+
+
+def test_fc2_side_boat_opening_is_never_a_redite():
+    """fc2 : l'ouverture du second bateau n'est ni remplacée ni coupée en premier."""
+    from film_script import _trim_sentence_rank  # noqa: PLC0415
+
+    for sent in (
+        "Le 19 août, à Halifax (Nouvelle-Écosse), l'équipage embarque sur un second voilier pour Saint-Pierre.",
+        "Puis, à Saint-Pierre, l'équipage reprend un second voilier pour Halifax.",
+        "On 19 August, in Halifax, the crew boards a second sailing boat for Saint-Pierre.",
+    ):
+        assert _trim_sentence_rank(sent) == 0, sent
+
+
+def test_fc2_dated_subject_stays_in_its_own_leg():
+    """« Le 21 mai, une bouée » ne remplace pas une phrase de la jambe d'août."""
+    bag = [{
+        "id": "dc:buoy", "kind": "buoy", "phrase": "Le 21 mai, une bouée.",
+        "name": "EMSO", "t": "2026-05-21T14:39:18Z",
+    }]
+    out = apply_chosen_subjects(_fc2_side_plan(), ["dc:buoy"], bag, 150)
+    side = out["chapters"][1]["text"]
+    assert "une bouée" not in side
+    assert "embarque sur un second voilier" in side
+    assert "497 milles" in side
+
+
+def _fc2_side_plan_with_slots(leg1_slot: bool = True, leg8_slot: bool = True) -> dict:
+    """Plan fc2 avec une phrase remplaçable (rang 2) dans chaque jambe voulue."""
+    plan = _fc2_side_plan()
+    if leg1_slot:
+        plan["chapters"][0]["text"] += " La côte basque défile au loin."
+    if leg8_slot:
+        plan["chapters"][1]["text"] += " La houle se creuse au large."
+    return plan
+
+
+def test_fc2_dated_subject_goes_to_its_own_leg_slot_not_the_first_slot():
+    """Règle de date (#137) : la bouée de mai prend l'emplacement de leg-1, pas celui d'août.
+
+    Sans la règle, le premier emplacement libre est pris : on place la bouée
+    dans leg-8 si leg-1 n'a pas d'emplacement ; ici on vérifie aussi l'ordre
+    inverse (emplacement d'août en tête de liste) en mettant la bouée seule.
+    """
+    from film_script import _repeat_slots, _trim_sentence_rank  # noqa: PLC0415
+
+    assert _trim_sentence_rank("La côte basque défile au loin.") >= 2
+    assert _trim_sentence_rank("La houle se creuse au large.") >= 2
+    bag = [{
+        "id": "dc:buoy", "kind": "buoy", "phrase": "Le 21 mai, une bouée.",
+        "name": "EMSO", "t": "2026-05-21T14:39:18Z",
+    }]
+    # Emplacement seulement dans leg-8 : sans la règle de date, la bouée de mai
+    # irait remplacer la houle d'août.
+    plan = _fc2_side_plan_with_slots(leg1_slot=False, leg8_slot=True)
+    assert len(_repeat_slots(plan["chapters"])) == 1
+    out = apply_chosen_subjects(plan, ["dc:buoy"], bag, 150)
+    assert "une bouée" not in out["chapters"][1]["text"]
+    assert "La houle se creuse au large." in out["chapters"][1]["text"]
+    # Emplacements dans les deux jambes : la bouée va dans leg-1 uniquement.
+    out = apply_chosen_subjects(_fc2_side_plan_with_slots(), ["dc:buoy"], bag, 150)
+    assert "Le 21 mai, une bouée." in out["chapters"][0]["text"]
+    assert "La côte basque" not in out["chapters"][0]["text"]
+    assert "une bouée" not in out["chapters"][1]["text"]
+    assert "La houle se creuse au large." in out["chapters"][1]["text"]
+
+
+def test_integral_dated_subject_without_slot_is_said_once_and_nothing_repeated():
+    """Intégral (seconds=0) : bouée datée sans emplacement + balise non datée.
+
+    Contre-revue 136-137 P1-1 : ``remaining[used:]`` redisait la balise (placée)
+    et perdait la bouée (sautée). Chaque sujet doit être dit exactement une fois,
+    la bouée dans sa jambe (leg-1, mai).
+    """
+    bag = [
+        {
+            "id": "dc:buoy", "kind": "buoy", "phrase": "Le 21 mai, une bouée.",
+            "name": "EMSO", "t": "2026-05-21T14:39:18Z",
+        },
+        {"id": "dc:aton", "kind": "aton", "phrase": "Une balise EMSO.", "name": "EMSO"},
+    ]
+    # Le seul emplacement est dans leg-8 (août) : la bouée de mai n'en a pas.
+    plan = _fc2_side_plan_with_slots(leg1_slot=False, leg8_slot=True)
+    out = apply_chosen_subjects(plan, ["dc:buoy", "dc:aton"], bag, 0)
+    blob = " ".join(c["text"] for c in out["chapters"])
+    assert blob.count("Une balise EMSO.") == 1, blob
+    assert blob.count("Le 21 mai, une bouée.") == 1, blob
+    assert "Le 21 mai, une bouée." in out["chapters"][0]["text"]
+    assert "une bouée" not in out["chapters"][1]["text"]
+
+
+def _rg6_long_chapters(lang: str = "fr") -> list[dict]:
+    """Chapitres 3:00 bruts (gabarit RG6, tout au rang 0), comme le stock regelé 768f20e."""
+    if lang == "en":
+        one = ("On 4 June, Berry-Mappemonde leaves Ajaccio (Corse), heading northwest for the long "
+               "crossing to Fort-de-France (Martinique). 5,153 miles, about forty days at sea, at 8 knots "
+               "on average. Arrival at Fort-de-France (Martinique) on 14 July, moored at the port of "
+               "Fort-de-France (Martinique).")
+        hop = ("On 17 July, from island to island, Berry-Mappemonde leaves Fort-de-France (Martinique), "
+               "heading west for Pointe-à-Pitre (Guadeloupe). 192 miles, one day at sea, at 8 knots on "
+               "average. Arrival at Pointe-à-Pitre (Guadeloupe) on 18 July, moored at Port de Sainte-Rose.")
+    else:
+        one = ("Le 4 juin, Berry-Mappemonde quitte Ajaccio (Corse), cap au nord-ouest pour la longue "
+               "traversée vers Fort-de-France (Martinique). 5 153 milles, une quarantaine de jours de mer, "
+               "à 8 nœuds de moyenne. Arrivée à Fort-de-France (Martinique) le 14 juillet, amarré au port "
+               "de Fort-de-France (Martinique).")
+        hop = ("Le 17 juillet, d'île en île, Berry-Mappemonde quitte Fort-de-France (Martinique), cap à "
+               "l'ouest pour Pointe-à-Pitre (Guadeloupe). 192 milles, un jour de mer, à 8 nœuds de "
+               "moyenne. Arrivée à Pointe-à-Pitre (Guadeloupe) le 18 juillet, amarré à Port de Sainte-Rose.")
+    return [{"id": f"leg-{i}", "text": one if i % 2 else hop} for i in range(1, 13)]
+
+
+def test_film_180_raw_rank0_template_is_cut_to_char_budget():
+    """3:00 brut : 3 448 car. pour 2 700 (stock regelé). On retire les incises, pas les faits."""
+    import film_script as fs  # noqa: PLC0415
+    from film_script import _film_apply_char_budget, _trim_sentence_rank, script_chars  # noqa: PLC0415
+
+    for lang in ("fr", "en"):
+        chapters = _rg6_long_chapters(lang)
+        assert all(
+            _trim_sentence_rank(s) == 0 for c in chapters for s in fs._sentences(c["text"])
+        ), "jeu de test : tout au rang 0"
+        assert script_chars(chapters) > film_char_budget(180)
+        _film_apply_char_budget(chapters, 180)
+        assert script_chars(chapters) <= film_char_budget(180), lang
+        blob = " ".join(c["text"] for c in chapters)
+        for fact in (("5 153 milles", "5,153 miles"), ("192 milles", "192 miles"),
+                     ("le 14 juillet", "on 14 July"), ("Pointe-à-Pitre", "Pointe-à-Pitre")):
+            assert fact[1 if lang == "en" else 0] in blob, (lang, fact)
+        # Chaque chapitre garde départ, distance et arrivée (aucune phrase retirée).
+        assert all(len(fs._sentences(c["text"])) == 3 for c in chapters), lang
+        assert "  " not in blob and " ." not in blob and ",." not in blob
+
+
+def test_film_150_and_integral_char_budget_unchanged_by_180_compaction():
+    """Le raccourcissement des incises ne touche ni l'intégral ni un 3:00 déjà sous le plafond."""
+    from film_script import _film_apply_char_budget  # noqa: PLC0415
+
+    chapters = _rg6_long_chapters("fr")[:3]
+    before = [c["text"] for c in chapters]
+    _film_apply_char_budget(chapters, 180)
+    assert [c["text"] for c in chapters] == before
+    chapters = _rg6_long_chapters("fr")
+    before = [c["text"] for c in chapters]
+    _film_apply_char_budget(chapters, 0)
+    assert [c["text"] for c in chapters] == before
+
+
+def test_en_guard_tolerates_demonyms_added_by_136():
+    """Contre-revue 136-137 P2-8 : « les eaux sri-lankaises » → « Sri Lankan waters » est toléré."""
+    import film_script as fs  # noqa: PLC0415
+
+    for en, fr, word in (
+        ("the Sri Lankan waters", "les eaux sri-lankaises", "lankan"),
+        ("the Omani waters", "les eaux omanaises", "omani"),
+        ("the Thai waters", "les eaux thaïlandaises", "thai"),
+        ("the Myanmar waters", "les eaux birmanes", "myanmar"),
+        ("the Malaysian waters", "les eaux malaisiennes", "malaysian"),
+        ("the Palauan waters", "les eaux palaosiennes", "palauan"),
+        ("the Gambian waters", "les eaux gambiennes", "gambian"),
+    ):
+        assert word in fs._en_translation_names(en, fr), en
+    # Une seule source : chaque démonyme anglais de la table est connu du garde-fou.
+    import toponyms  # noqa: PLC0415
+
+    for row in toponyms.territories():
+        for w in re.findall(r"[^\W\d_]+", str(row.get("adj_en") or "")):
+            assert w.casefold() in fs._EN_GEO_WORDS, w
+
+
+def test_reanchor_edited_chapter_relocates_sentences_and_drops_removed_ones():
+    import film_script as fs  # noqa: PLC0415
+
+    old = "Departure sentence. Removed sentence. Arrival sentence."
+    chapter = {
+        "text": "Departure sentence. Arrival sentence.",
+        "_anchorText": old,
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [
+            {"charIdx": 4, "t": "2026-05-15T09:00:00Z"},
+            {"charIdx": 24, "t": "2026-05-15T10:00:00Z"},
+            {"charIdx": 43, "t": "2026-05-15T11:00:00Z"},
+        ],
+    }
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["_anchorText"] == chapter["text"]
+    assert all(a["charIdx"] <= len(chapter["text"]) for a in chapter["anchors"])
+    # The removed sentence's 10:00 anchor was dropped.
+    assert "2026-05-15T10:00:00Z" not in {a["t"] for a in chapter["anchors"]}
+    assert chapter["anchors"] == [
+        {"charIdx": 0, "t": "2026-05-15T09:00:00Z"},
+        {"charIdx": len("Departure sentence. "), "t": "2026-05-15T11:00:00Z"},
+    ]
+
+
+def test_rules_films_keep_anchors_in_text_and_sentence_times_moving():
+    import film_script as fs  # noqa: PLC0415
+
+    for lang in ("fr", "en"):
+        for seconds in (150, 180):
+            plan = build_raw_script(
+                CLOCK, CLOCK["marks"], LIVE, JOURNAL,
+                lang=lang, seconds=seconds, now_ms=NOW_MS,
+            )
+            for chapter in plan["chapters"]:
+                text = chapter["text"]
+                assert all(a["charIdx"] <= len(text) for a in chapter["anchors"]), (lang, seconds, chapter["id"])
+                a, b = fs._ms(chapter["tA"]), fs._ms(chapter["tB"])
+                if not text or a is None or b is None or b <= a:
+                    continue
+                anchors = [{"charIdx": 0, "t": a}]
+                anchors.extend({"charIdx": p["charIdx"], "t": fs._ms(p["t"])} for p in chapter["anchors"])
+                anchors.append({"charIdx": len(text), "t": b})
+                starts = fs._sentences(text)
+                offsets = []
+                cursor = 0
+                for sentence in starts:
+                    offsets.append(text.find(sentence, cursor))
+                    cursor = offsets[-1] + len(sentence)
+                mapped = []
+                for offset in offsets:
+                    left = max((p for p in anchors if p["charIdx"] <= offset), key=lambda p: p["charIdx"])
+                    right = min((p for p in anchors if p["charIdx"] >= offset), key=lambda p: p["charIdx"])
+                    mapped_t = left["t"] if right["charIdx"] == left["charIdx"] else left["t"] + (right["t"] - left["t"]) * (offset - left["charIdx"]) / (right["charIdx"] - left["charIdx"])
+                    mapped.append(round(mapped_t))
+                run = 1
+                for i in range(1, len(mapped)):
+                    run = run + 1 if mapped[i] == mapped[i - 1] else 1
+                    assert run < 3, (lang, seconds, chapter["id"], mapped)
+
+
+def test_public_official_film_plan_strips_private_anchor_text():
+    import film_script as fs  # noqa: PLC0415
+
+    raw = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, JOURNAL,
+        lang="en", seconds=150, now_ms=NOW_MS,
+    )
+    public = fs._public_plan(raw, "rules")
+    assert public["chapters"]
+    assert all("_anchorText" not in chapter for chapter in public["chapters"])
+
+
+def test_reanchor_edited_chapter_drops_anchors_for_empty_or_rewritten_text():
+    import film_script as fs  # noqa: PLC0415
+
+    base = {
+        "_anchorText": "Original sentence.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [{"charIdx": 2, "t": "2026-05-15T09:00:00Z"}],
+    }
+    empty = {**base, "text": ""}
+    fs._reanchor_edited_chapter(empty, "en")
+    assert empty["anchors"] == []
+    assert empty["_anchorText"] == ""
+
+    rewritten = {**base, "text": "Completely rewritten sentence."}
+    fs._reanchor_edited_chapter(rewritten, "en")
+    assert rewritten["anchors"] == []
+    assert rewritten["_anchorText"] == rewritten["text"]
+
+
+def test_reanchor_edited_chapter_ignores_malformed_anchor_indices():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "Original sentence.",
+        "_anchorText": "Original sentence.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [{"charIdx": "bad", "t": "2026-05-15T09:00:00Z"}],
+    }
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == []
+
+
+def test_reanchor_edited_chapter_drops_anchors_without_source_text():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "A rewritten chapter.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [{"charIdx": 3, "t": "2026-05-15T09:00:00Z"}],
+    }
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == []
+    assert chapter["_anchorText"] == chapter["text"]
+
+
+def test_reanchor_edited_chapter_drops_ambiguous_boundary_and_duplicate_anchors():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "Bay. Approach to harbor.",
+        "_anchorText": "Bay. Approach to harbor. Approach to harbor.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [
+            {"charIdx": 0, "t": "2026-05-15T09:00:00Z"},
+            {"charIdx": 15, "t": "2026-05-15T10:00:00Z"},
+            {"charIdx": 34, "t": "2026-05-15T11:00:00Z"},
+        ],
+    }
+    fs._reanchor_edited_chapter(chapter, "en")
+    times = {anchor["t"] for anchor in chapter["anchors"]}
+    assert "2026-05-15T09:00:00Z" not in times  # +12 would cross into the next sentence.
+    assert "2026-05-15T10:00:00Z" not in times
+    assert "2026-05-15T11:00:00Z" not in times  # Duplicate occurrence was removed ambiguously.
+
+
+def test_reanchor_edited_chapter_drops_anchor_when_final_sentence_is_duplicated():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "Unique sentence.",
+        "_anchorText": "Unique sentence.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [{"charIdx": 0, "t": "2026-05-15T09:00:00Z"}],
+    }
+    chapter["text"] = "Unique sentence. Unique sentence."
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == []
+
+
+def test_reanchor_edited_chapter_drops_reordered_duplicate_sentence_anchors():
+    import film_script as fs  # noqa: PLC0415
+
+    original = "Bay. Bay! Approach."
+    chapter = {
+        "text": original,
+        "_anchorText": original,
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [
+            {"charIdx": 0, "t": "2026-05-15T09:00:00Z"},
+            {"charIdx": 5, "t": "2026-05-15T10:00:00Z"},
+            {"charIdx": 11, "t": "2026-05-15T11:00:00Z"},
+        ],
+    }
+    chapter["text"] = "Bay! Approach. Bay."
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == [
+        {"charIdx": len("Bay! "), "t": "2026-05-15T11:00:00Z"},
+    ]
+
+
+def test_bubble_payload_uses_localized_event_text_and_never_reuses_french_in_english():
+    import film_script as fs  # noqa: PLC0415
+
+    entry = {
+        "id": "project-1", "kind": "project", "name": "Aménagement côtier",
+        "t": "2026-05-16T08:00:00Z", "fact": "Des navires arrivent au port.",
+    }
+    ev = {"id": "project-1", "kind": "project", "name": entry["name"], "t": entry["t"], "entry": entry, "bubbleScore": 1}
+    previous = {"card": {"text": "Du 11 juin, des navires arrivent."}, "fact": "Du 11 juin, des navires arrivent."}
+
+    en = fs._bubble_payload(ev, {"text": "On 16 May, project Aménagement côtier."}, "en", previous)
+    assert en["fact"] == "On 16 May, project Aménagement côtier."
+    assert en["card"]["text"] == en["fact"]
+
+    entry["fact_en"] = "Ships arrive at the port."
+    en_with_translation = fs._bubble_payload(ev, {"text": "On 16 May, project Aménagement côtier."}, "en")
+    assert en_with_translation["card"]["text"] == "Ships arrive at the port."
+
+    fr = fs._bubble_payload(ev, {"text": "Le 16 mai, le projet Aménagement côtier."}, "fr", previous)
+    assert fr["card"]["text"] == previous["card"]["text"]
+
+
+def test_free_moments_require_geographic_evidence_in_known_window():
+    from film_script import _align_moments_to_window
+
+    t = "2026-10-15T12:00:00Z"
+    window = {
+        "fromName": "Papeete", "destName": "Mata-Utu",
+        "tA": _ms("2026-10-14T00:00:00Z"), "tB": _ms("2026-10-16T00:00:00Z"),
+        "clock": {"vertices": [
+            {"iso": t, "lat": -14, "lon": -171, "vehicle": "main"},
+            {"iso": "2026-09-01T00:00:00Z", "lat": 14.6, "lon": -61},
+            {"iso": t, "lat": 14.6, "lon": -61, "vehicle": "plane"},
+        ]},
+    }
+    samoa = {"t": t, "moment": {"here": {"at": {"lat": -14, "lon": -171}}}}
+    martinique = {"t": t, "lat": 14.6, "lon": -61}
+    unknown = {"t": t}
+    assigned = {**martinique, "moment": {"leg": {"from": "Papeete", "to": "Mata-Utu"}}}
+    kept = _align_moments_to_window([samoa, martinique, unknown, assigned], window, None)
+    assert samoa in kept
+    assert martinique not in kept
+    assert unknown not in kept
+    assert any((m.get("moment") or {}).get("leg") for m in kept)
+    endpoint_window = {"fromLat": -14, "fromLon": 179}
+    across = {"t": t, "pos": {"lat": -14, "lon": -179}}
+    assert _align_moments_to_window([across, martinique], endpoint_window, None) == [across]
+    assert _align_moments_to_window([unknown], {}, None) == [unknown]

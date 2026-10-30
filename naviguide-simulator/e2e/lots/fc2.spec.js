@@ -37,8 +37,13 @@ test("Halifax vers Saint-Pierre dit les milles de la jambe", async ({ page }) =>
           try {
             const u = new URL(url, location.origin);
             const chapters = Array.isArray(data?.chapters) ? data.chapters : [];
-            const hop = chapters.find((c) => /Halifax/.test(String(c?.fromName || c?.text || ""))
-              && /Saint-Pierre/.test(String(c?.toName || c?.text || "")));
+            // Jambe nommée Halifax → Saint-Pierre, sinon (stock figé RF5 du 27 sept.,
+            // antérieur au chapitre séparé) le chapitre qui raconte cet épisode.
+            const said = (c, k) => `${String(c?.[k] || "")} ${String(c?.text || "")}`;
+            const hop = chapters.find((c) => /Halifax/.test(String(c?.fromName || ""))
+              && /Saint-Pierre/.test(String(c?.toName || "")))
+              || chapters.find((c) => /Halifax/.test(said(c, "fromName"))
+                && /Saint-Pierre/.test(said(c, "toName")));
             window.__fc2Films.push({
               seconds: u.searchParams.get("seconds"),
               n: chapters.length,
@@ -113,8 +118,11 @@ test("Halifax vers Saint-Pierre dit les milles de la jambe", async ({ page }) =>
   expect(speak, "lecture du texte 2:30").toBeGreaterThanOrEqual(110);
   expect(speak, "lecture du texte 2:30").toBeLessThanOrEqual(190);
   expect(served.s150.hop, "Halifax → Saint-Pierre est dans le texte 2:30").not.toBe("");
-  expect(served.s150.tA.startsWith("2026-08-12"), served.s150.tA).toBe(true);
-  expect(served.s150.tB.startsWith("2026-08-15"), served.s150.tB).toBe(true);
+  // Les dates suivent l'horloge du stock servi (stock figé : arrivée à Saint-Pierre le 21 août),
+  // pas une horloge de production d'un jour donné : on exige la fenêtre d'août, dans l'ordre.
+  expect(served.s150.tA.startsWith("2026-08"), served.s150.tA).toBe(true);
+  expect(served.s150.tB.startsWith("2026-08"), served.s150.tB).toBe(true);
+  expect(Date.parse(served.s150.tB) > Date.parse(served.s150.tA), `${served.s150.tA} → ${served.s150.tB}`).toBe(true);
   expect(served.s150.hop).not.toMatch(VOYAGE_MILES);
   expect(served.s150.hop).toMatch(/milles|miles/);
   if ((served.s0?.chars || 0) / 15 > 190) {
@@ -154,8 +162,11 @@ test("Halifax vers Saint-Pierre dit les milles de la jambe", async ({ page }) =>
   const opened = await page.evaluate(() => {
     const f = window.__naviguideFilm || {};
     const chapters = Array.isArray(f.chapters) ? f.chapters : [];
-    const hop = chapters.find((c) => /Halifax/.test(String(c?.fromName || c?.text || ""))
-      && /Saint-Pierre/.test(String(c?.toName || c?.text || "")));
+    const said = (c, k) => `${String(c?.[k] || "")} ${String(c?.text || "")}`;
+    const hop = chapters.find((c) => /Halifax/.test(String(c?.fromName || ""))
+      && /Saint-Pierre/.test(String(c?.toName || "")))
+      || chapters.find((c) => /Halifax/.test(said(c, "fromName"))
+        && /Saint-Pierre/.test(said(c, "toName")));
     return {
       count: f.chapterCount || 0,
       budget: f.budgetSeconds,

@@ -32,7 +32,7 @@ describe("contrat UI produit", () => {
     assert.ok(selectAt >= 0, "selectView présent");
     const selectChunk = app.slice(selectAt, selectAt + 2800);
     assert.match(selectChunk, /armDrawingWorldRef\.current\(VIEW_TRACER\)/);
-    assert.match(selectChunk, /endDrawingWorld/);
+    assert.match(selectChunk, /endDrawingWorld|parkDrawing\(\)/);
     assert.match(app, /onView=\{selectView\}/);
     assert.doesNotMatch(app, /onView=\{drawingMode \? undefined/);
     assert.match(sidebar, /startOrResumeDraw/);

@@ -168,6 +168,25 @@ async def _startup_ici_warm():
         log.warning("startup ici warm: %s", exc)
 
 
+@app.on_event("startup")
+async def _startup_tf_catalog():
+    """Garde des modèles Token Factory : une lecture gratuite de `/models` par
+    hôte configuré, en fond (jamais en mode LLM off, ni sans clé, ni si
+    NAVIGUIDE_TF_MODEL_GUARD=0). Ensuite, relu à l'usage toutes les 6 h."""
+    try:
+        import llm_budget
+        import story_cascade
+        import tf_catalog
+
+        key = story_cascade.nebius_key()
+        if llm_budget.mode() == "off" or not key or not tf_catalog.enabled():
+            return
+        bases = [story_cascade.tf_base(t) for t in llm_budget.TIERS]
+        asyncio.get_running_loop().create_task(tf_catalog.prefetch(bases, key))
+    except Exception as exc:
+        log.warning("startup catalogue TF: %s", exc)
+
+
 def _dated_ici(reason: str, status: str = "unavailable") -> dict:
     return {"status": status, "reason": str(reason), "at": _now_iso()}
 
@@ -273,7 +292,7 @@ async def get_official_film(
     style: str = Query("raw"),
     t0: str | None = Query(None),
 ):
-    """Script du film — snapshot du stock RF2, jamais un calcul sur la requête."""
+    """Lit le script du film sans lancer de génération."""
     import official_store
     try:
         out = official_store.serve_film(lang=lang, seconds=seconds, style=style)
@@ -304,6 +323,7 @@ _film_write_hourly = rate_limited("film-write-hour", 10**9, 3600.0, global_limit
 async def post_official_film_write(
     lang: str = Query("fr"),
     seconds: int = Query(150, ge=0, le=300),
+    style: str = Query("written"),
     t0: str | None = Query(None),
 ):
     """Clic Rédigé : une chaîne Super / Ultra / Lightning, jamais au GET.
@@ -319,14 +339,14 @@ async def post_official_film_write(
     if int(seconds) not in official_store.FILM_VARIANT_SECONDS:
         raise HTTPException(422, "unsupported film duration")
     try:
-        out = await official_store.write_film_on_click(lang=lang, seconds=seconds)
+        out = await official_store.start_film_write(lang=lang, seconds=seconds)
     except Exception as exc:
         log.exception("POST /voyage/official/film")
         official_store.kick_worker()
         return official_store.preparing_payload("film", {
             "chapters": [], "source": "rules", "chars": 0,
             "targetSeconds": seconds, "hasWritten": False,
-            **_dated_ici(f"film indisponible: {exc}", "preparing"),
+            **_dated_ici("all-providers-failed", "preparing"),
         })
     if out.get("status") == official_store.PREPARING:
         official_store.kick_worker()

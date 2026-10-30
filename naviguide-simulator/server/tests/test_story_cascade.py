@@ -1,6 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
+import time
 from urllib.parse import urlparse
 
 import httpx
@@ -23,6 +24,7 @@ from story_cascade import (
     story_tier,
     translate,
     write_story,
+    TokenFactoryTimeout,
 )
 
 def _url_host_is(url: str, root: str) -> bool:
@@ -30,6 +32,11 @@ def _url_host_is(url: str, root: str) -> bool:
     host = (urlparse(str(url)).hostname or "").lower().rstrip(".")
     root = root.lower().strip(".")
     return bool(host) and (host == root or host.endswith("." + root))
+
+
+def _eu_tf_host_is(url: str) -> bool:
+    """Assert the request uses the fixed EU Token Factory host."""
+    return _url_host_is(url, "api.tokenfactory.nebius.com")
 
 
 # Capture PR #252 / revue du 22 sept. : fiche Pointe-à-Pitre servie depuis le cache.
@@ -50,7 +57,7 @@ def test_story_tier_ultra_for_escales_and_alerts():
 def test_default_cascade_is_token_factory_not_tavily():
     src = Path(__file__).resolve().parents[1].joinpath("story_cascade.py").read_text()
     assert "api.tokenfactory.nebius.com" in src
-    assert "api.tokenfactory.us-central1.nebius.com" in src
+    assert "Ultra default host is EU Token Factory" in src
     assert "NAVIGUIDE_LLM_PROVIDERS" in src
     assert "integrate.api.nvidia.com" in src  # NIM : 2e maillon
     assert "openrouter.ai" in src
@@ -58,6 +65,93 @@ def test_default_cascade_is_token_factory_not_tavily():
     assert "tavily.com" not in src
     assert DEFAULT_PROVIDERS == ("tokenfactory", "nim", "openrouter", "claude")
     assert providers() == list(DEFAULT_PROVIDERS)  # ordre du porteur (20 sept.)
+
+
+def test_missing_tokenfactory_key_skips_to_all_configured_providers(monkeypatch):
+    """L'absence de TF est tracée et ne coupe pas NIM → OpenRouter → Claude."""
+    import llm_budget
+    import story_cascade
+
+    monkeypatch.delenv("NEBIUS_API_KEY", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "claude-test")
+    calls = []
+
+    async def forbidden_tf(*_args, **_kwargs):
+        raise AssertionError("Token Factory doit être sauté sans clé")
+
+    async def fail_nim(*_args, **_kwargs):
+        calls.append("nim")
+        raise RuntimeError("NIM indisponible")
+
+    async def fail_openrouter(*_args, **_kwargs):
+        calls.append("openrouter")
+        raise RuntimeError("OpenRouter indisponible")
+
+    async def fail_claude(*_args, **_kwargs):
+        calls.append("claude")
+        raise RuntimeError("Claude indisponible")
+
+    monkeypatch.setattr(story_cascade, "_call_tokenfactory", forbidden_tf)
+    monkeypatch.setattr(story_cascade, "_call_nim", fail_nim)
+    monkeypatch.setattr(story_cascade, "_call_openrouter", fail_openrouter)
+    monkeypatch.setattr(story_cascade, "_call_claude", fail_claude)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(500),
+        )) as client:
+            return await cascade_text(
+                "sys", "local-replay-no-tf", client, tier="write",
+                fallback="Phrase locale.", facts=None,
+            )
+
+    text, source = asyncio.run(run())
+    assert (text, source) == ("Phrase locale.", "rules")
+    assert calls == ["nim", "openrouter", "claude"]
+    errors = llm_budget.last_errors()
+    assert errors[0] == {
+        "provider": "tokenfactory", "reason": "skipped: API key unavailable",
+    }
+    assert [item["provider"] for item in errors] == [
+        "tokenfactory", "nim", "openrouter", "claude",
+    ]
+
+
+def test_missing_tokenfactory_key_labels_successful_nim_fallback(monkeypatch):
+    import llm_budget
+    import story_cascade
+
+    monkeypatch.delenv("NEBIUS_API_KEY", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    calls = []
+
+    async def forbidden_tf(*_args, **_kwargs):
+        raise AssertionError("Token Factory doit être sauté sans clé")
+
+    async def nim_answer(*_args, **_kwargs):
+        calls.append("nim")
+        return "Réponse NIM locale.", f"nvidia-{story_cascade.NIM_MODEL}"
+
+    monkeypatch.setattr(story_cascade, "_call_tokenfactory", forbidden_tf)
+    monkeypatch.setattr(story_cascade, "_call_nim", nim_answer)
+
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await cascade_text(
+                "sys", "local-replay-nim", client, tier="write",
+                fallback="Phrase locale.", facts=None,
+            )
+
+    text, source = asyncio.run(run())
+    assert text == "Réponse NIM locale."
+    assert source == f"nvidia-{story_cascade.NIM_MODEL}"
+    assert calls == ["nim"]
+    status = llm_budget.status()
+    assert status["fallback"]["nim"] == 1
+    assert status["lastSourceByTier"]["write"] == "nim"
 
 
 def test_need_page_only_https_from_pack():
@@ -185,7 +279,7 @@ def test_write_story_returns_tidy_text_and_flags_local_fallback(monkeypatch):
     out = asyncio.run(run(handler))
     assert out["status"] == "ready"
     assert out["text"] == "La ZEE française a été quittée."
-    assert out["source"] == "nemotron-super"
+    assert out["source"] == "nemotron-super-vl"
     assert "+local" not in out["engine"]
 
     def only_meta(request: httpx.Request) -> httpx.Response:
@@ -204,7 +298,7 @@ def test_slim_event_keeps_skipper_used_and_tavily_null():
     assert out["skipper"]["boat"]["name"] == "Leopard 46"
 
 
-def _chat_ok(text="Récit court de la ZEE.", model="nvidia/nemotron-3-super-120b-a12b"):
+def _chat_ok(text="Récit court de la ZEE.", model="nvidia/Nemotron-3.5-Super-VL"):
     return {
         "choices": [{"message": {"content": text}}],
         "model": model,
@@ -224,9 +318,9 @@ def test_cascade_tokenfactory_write_is_nemotron_super(monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(str(request.url))
-        assert "tokenfactory.nebius.com" in str(request.url)
+        assert _url_host_is(str(request.url), "api.tokenfactory.nebius.com")
         body = request.read().decode()
-        assert "nemotron-3-super-120b-a12b" in body
+        assert "Nemotron-3.5-Super-VL" in body
         return httpx.Response(200, json=_chat_ok("Entrée dans la ZEE française."))
 
     monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
@@ -237,7 +331,7 @@ def test_cascade_tokenfactory_write_is_nemotron_super(monkeypatch):
             return await cascade_text(system, user, client, **kw)
 
     text, source = asyncio.run(run())
-    assert source == "nemotron-super"
+    assert source == "nemotron-super-vl"
     assert "ZEE" in text
     assert len(seen) == 1
     assert not any("openrouter" in u or "anthropic" in u or "nvidia.com" in u for u in seen)
@@ -337,7 +431,7 @@ def test_cascade_lock_one_call_for_two_identical_requests(monkeypatch):
             return a, b
 
     (t1, s1), (t2, s2) = asyncio.run(run())
-    assert {s1, s2} <= {"nemotron-super", "cache"}
+    assert {s1, s2} <= {"nemotron-super", "nemotron-super-vl", "cache"}
     assert t1 == t2
     assert len(seen) == 1
 
@@ -356,7 +450,7 @@ def test_filter_numbers_always_applied_on_cascade(monkeypatch):
             return await cascade_text(system, user, client, **kw)
 
     text, source = asyncio.run(run())
-    assert source == "nemotron-super"
+    assert source == "nemotron-super-vl"
     assert "5677" in text
     assert "99" not in text
 
@@ -367,6 +461,15 @@ def test_filter_numbers_drops_invented_figures():
         {"zee": {"mrgid": 5677}},
     )
     assert "5677" in text and "30" not in text and dropped == 1
+
+
+def test_filter_numbers_preserves_sentence_and_number_behavior():
+    text, dropped = filter_numbers(
+        "Port 5677 est calme. 30 kn demain ! Latitude 48,5 au nord?",
+        {"port": 5677, "latitude": 48.5},
+    )
+    assert text == "Port 5677 est calme. Latitude 48,5 au nord?"
+    assert dropped == 1
 
 
 def test_write_story_tokenfactory_first_without_page(monkeypatch):
@@ -396,7 +499,7 @@ def test_write_story_tokenfactory_first_without_page(monkeypatch):
     assert out["status"] == "ready"
     assert out["tavily"] is None
     assert out["cascade"] == "tokenfactory-openrouter-claude"
-    assert out["source"] == "nemotron-super"
+    assert out["source"] == "nemotron-super-vl"
     assert any("tokenfactory" in u for u in seen)
     assert not any("openrouter" in u or "anthropic" in u or "nvidia.com" in u for u in seen)
 
@@ -428,10 +531,10 @@ def test_write_story_cache_returns_origin_and_cache_hit(monkeypatch):
             return first, second
 
     first, second = asyncio.run(run())
-    assert first["status"] == "ready" and first["source"] == "nemotron-super"
+    assert first["status"] == "ready" and first["source"] == "nemotron-super-vl"
     assert first["cache_hit"] is False
     assert second["status"] == "ready"
-    assert second["source"] == "nemotron-super"
+    assert second["source"] == "nemotron-super-vl"
     assert second["source"] != "cache"
     assert second["cache_hit"] is True
     assert len(seen) == 1
@@ -717,6 +820,19 @@ def test_clean_text_strips_analyze_preamble():
     assert _clean_text(raw) == "Saint-Maur is a quiet harbor on the Marne."
 
 
+def test_clean_text_removes_opening_and_closing_fences():
+    assert _clean_text("```text\nA quiet harbor.\n```") == "A quiet harbor."
+    assert _clean_text("Before.\n```json\nAfter.\n```") == "Before.\nAfter."
+
+
+def test_long_whitespace_inputs_are_processed_quickly():
+    spaces = " " * 50_000
+    started = time.perf_counter()
+    assert filter_numbers(spaces, {}) == ("", 0)
+    assert _clean_text(spaces) == ""
+    assert time.perf_counter() - started < 1.0
+
+
 def test_clean_text_prompt_leak_is_empty():
     leaked = (
         "You translate a sailing-log paragraph from French to English. "
@@ -808,7 +924,7 @@ def test_cascade_think_block_keeps_final_sentence(monkeypatch):
 
     text, source = asyncio.run(run())
     assert text == "La Rochelle est un port."
-    assert source == "nemotron-super"
+    assert source == "nemotron-super-vl"
 
 
 def test_cascade_reasoning_only_falls_to_rules(monkeypatch):
@@ -856,7 +972,7 @@ def test_tokenfactory_payload_disables_thinking(monkeypatch):
 
     text, source = asyncio.run(run())
     assert "port" in text
-    assert source == "nemotron-super"
+    assert source == "nemotron-super-vl"
     assert seen["chat_template_kwargs"]["enable_thinking"] is False
     assert "thinking" not in seen["chat_template_kwargs"]
     assert seen["reasoning_effort"] == "none"
@@ -939,7 +1055,7 @@ def test_fast_tokenfactory_empty_retries_super(monkeypatch):
             )
 
     text, source = asyncio.run(run())
-    assert source == "nemotron-super"
+    assert source == "nemotron-super-vl"
     assert "Super" in text
     assert len(calls) == 2
     assert any("Lightning" in m for m in calls)
@@ -947,7 +1063,7 @@ def test_fast_tokenfactory_empty_retries_super(monkeypatch):
     import llm_budget
     st = llm_budget.status()
     assert st["retrySuper"] == 1
-    assert st["lastSourceByTier"]["fast"] == "nemotron-super"
+    assert st["lastSourceByTier"]["fast"] == "nemotron-super-vl"
 
 
 def test_fast_tokenfactory_success_clears_tier_errors(monkeypatch):
@@ -1027,9 +1143,9 @@ def test_ultra_payload_uses_cookbook_host_and_budget():
     assert "extra_body" not in payload
     assert payload["max_tokens"] == llm_budget.max_tokens_for("deep")
     assert payload["max_tokens"] == 2048
-    assert "us-central1" in story_cascade._tf_url("deep")
-    assert "us-central1" not in story_cascade._tf_url("fast")
-    assert "us-central1" not in story_cascade._tf_url("write")
+    assert _eu_tf_host_is(story_cascade._tf_url("deep"))
+    assert _eu_tf_host_is(story_cascade._tf_url("fast"))
+    assert _eu_tf_host_is(story_cascade._tf_url("write"))
 
 
 def test_tokenfactory_http_error_includes_body():
@@ -1125,7 +1241,7 @@ def test_empty_content_with_reasoning_stays_on_the_tier(monkeypatch):
 
     cases = (
         ("fast", "nvidia/Nemotron-3_5-Lightning", "nemotron-lightning", False),
-        ("write", "nvidia/nemotron-3-super-120b-a12b", "nemotron-super", False),
+        ("write", "nvidia/Nemotron-3.5-Super-VL", "nemotron-super-vl", False),
         ("deep", "nvidia/Nemotron-3-Ultra-550b-a55b", "nemotron-ultra", True),
         ("judge", "nvidia/Nemotron-3-Ultra-550b-a55b", "nemotron-ultra", True),
     )
@@ -1169,7 +1285,7 @@ def test_empty_content_with_reasoning_stays_on_the_tier(monkeypatch):
         tf = [(url, asked) for url, asked in seen if "tokenfactory" in url]
         assert len(tf) == 1, tier
         assert tf[0][1] == model, tier
-        assert ("us-central1" in tf[0][0]) is ultra_host, tier
+        assert _eu_tf_host_is(tf[0][0]), tier
         assert not any(
             _url_host_is(url, "nvidia.com")
             or _url_host_is(url, "openrouter.ai")
@@ -1254,20 +1370,20 @@ def test_fast_leak_reasoning_still_retries_super(monkeypatch):
 
     result = asyncio.run(run())
     text, source = result
-    assert source == "nemotron-super"
+    assert source == "nemotron-super-vl"
     assert "port" in text
     assert "JSON" not in text
     assert len(calls) == 2
     assert "Lightning" in calls[0]
     assert "super" in calls[1].lower()
-    assert result.model == "nvidia/nemotron-3-super-120b-a12b"
+    assert result.model == "nvidia/Nemotron-3.5-Super-VL"
     assert result.tier == "write"
 
 
 def test_write_story_keeps_exact_super_model_and_tier(monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content.decode())
-        assert body["model"] == "nvidia/nemotron-3-super-120b-a12b"
+        assert body["model"] == "nvidia/Nemotron-3.5-Super-VL"
         return httpx.Response(200, json=_chat_ok("Entrée dans la ZEE.", model=body["model"]))
 
     monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
@@ -1284,10 +1400,10 @@ def test_write_story_keeps_exact_super_model_and_tier(monkeypatch):
 
     out = asyncio.run(run())
     assert out["status"] == "ready"
-    assert out["source"] == "nemotron-super"
+    assert out["source"] == "nemotron-super-vl"
     assert out["tier"] == "write"
-    assert out["model"] == "nvidia/nemotron-3-super-120b-a12b"
-    assert out["ai_model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert out["model"] == "nvidia/Nemotron-3.5-Super-VL"
+    assert out["ai_model"] == "nvidia/Nemotron-3.5-Super-VL"
     assert out["ai_generated"] is True
     assert "Token Factory" not in out["model"]
 
@@ -1459,17 +1575,17 @@ def test_plain_reasoning_sentence_stays_on_nemotron(monkeypatch):
     out = asyncio.run(run())
     text = out.get("text") or ""
     assert out["status"] == "ready"
-    assert out["source"] == "nemotron-super"
+    assert out["source"] == "nemotron-super-vl"
     assert out["tier"] == "write"
-    assert out["model"] == "nvidia/nemotron-3-super-120b-a12b"
-    assert out["ai_model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert out["model"] == "nvidia/Nemotron-3.5-Super-VL"
+    assert out["ai_model"] == "nvidia/Nemotron-3.5-Super-VL"
     assert "houle" in text
     assert "Rochelle" in text
     assert "The user" not in text
     assert "JSON" not in text
     assert "port reste calme" not in text
     assert not any(_url_host_is(url, "nvidia.com") for url, _model in seen)
-    assert llm_budget.status()["lastSourceByTier"]["write"] == "nemotron-super"
+    assert llm_budget.status()["lastSourceByTier"]["write"] == "nemotron-super-vl"
     assert "lastError" not in llm_budget.status()
 
 
@@ -1491,12 +1607,12 @@ def test_english_reasoning_falls_back_to_nim(monkeypatch):
 
     good = asyncio.run(run_ok())
     text, source = good
-    assert source == "nemotron-super"
+    assert source == "nemotron-super-vl"
     assert text == kept
     assert "harbour stays quiet" not in text
-    assert good.model == "nvidia/nemotron-3-super-120b-a12b"
+    assert good.model == "nvidia/Nemotron-3.5-Super-VL"
     assert good.tier == "write"
-    assert llm_budget.last_source_by_tier().get("write") == "nemotron-super"
+    assert llm_budget.last_source_by_tier().get("write") == "nemotron-super-vl"
     assert not any(_url_host_is(url, "nvidia.com") for url, _model in seen)
     assert "lastError" not in llm_budget.status()
 
@@ -1599,14 +1715,14 @@ def test_reasoning_leak_is_a_labelled_nim_fallback(monkeypatch, tier, lang, reas
     assert err["provider"] == "tokenfactory"
     assert err["reason"].startswith("tokenfactory empty")
     tf = [url for url, _model in seen if "tokenfactory" in url]
-    assert any("nvidia.com" in url for url, _model in seen)
+    assert any(_url_host_is(url, "nvidia.com") for url, _model in seen)
     if tier == "fast":
         assert len(tf) == 2
-        assert all("us-central1" not in url for url in tf)
+        assert all(_eu_tf_host_is(url) for url in tf)
     elif tier == "deep":
-        assert len(tf) == 1 and "us-central1" in tf[0]
+        assert len(tf) == 1 and _eu_tf_host_is(tf[0])
     else:
-        assert len(tf) == 1 and "us-central1" not in tf[0]
+        assert len(tf) == 1 and _eu_tf_host_is(tf[0])
 
 
 def test_lightning_reasoning_content_finish_length_stays_lightning(monkeypatch):
@@ -1656,7 +1772,7 @@ def test_lightning_reasoning_content_finish_length_stays_lightning(monkeypatch):
     assert result.tier == "fast"
     assert len(seen) == 1
     assert "Lightning" in seen[0][1]
-    assert "us-central1" not in seen[0][0]
+    assert _eu_tf_host_is(seen[0][0])
     st = llm_budget.status()
     assert st["retrySuper"] == 0
     assert st["fallback"] == {"nim": 0, "openrouter": 0, "claude": 0}
@@ -1670,7 +1786,7 @@ def test_write_deep_judge_call_planned_token_factory_models(monkeypatch):
     import llm_budget
 
     cases = (
-        ("write", "nvidia/nemotron-3-super-120b-a12b", "nemotron-super", False, "Le bateau entre dans la ZEE."),
+        ("write", "nvidia/Nemotron-3.5-Super-VL", "nemotron-super-vl", False, "Le bateau entre dans la ZEE."),
         ("deep", "nvidia/Nemotron-3-Ultra-550b-a55b", "nemotron-ultra", True, "L'escale de La Rochelle est calme."),
         ("judge", "nvidia/Nemotron-3-Ultra-550b-a55b", "nemotron-ultra", True, "Le récit tient les faits du journal."),
     )
@@ -1706,7 +1822,7 @@ def test_write_deep_judge_call_planned_token_factory_models(monkeypatch):
         assert len(seen) == 1, tier
         url, asked, max_tokens = seen[0]
         assert asked == model, tier
-        assert ("us-central1" in url) is ultra_host, tier
+        assert _eu_tf_host_is(url), tier
         assert max_tokens == llm_budget.max_tokens_for(tier), tier
         st = llm_budget.status()
         assert st["lastSourceByTier"][tier] == source, tier
@@ -1741,22 +1857,23 @@ def test_write_story_calls_super_and_stop_calls_ultra(monkeypatch):
 
     written, stopped = asyncio.run(run())
     assert written["status"] == "ready"
-    assert written["source"] == "nemotron-super"
+    assert written["source"] == "nemotron-super-vl"
     assert written["tier"] == "write"
-    assert written["model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert written["model"] == "nvidia/Nemotron-3.5-Super-VL"
     assert stopped["status"] == "ready"
     assert stopped["source"] == "nemotron-ultra"
     assert stopped["tier"] == "deep"
     assert stopped["model"] == "nvidia/Nemotron-3-Ultra-550b-a55b"
     assert len(seen) == 2
-    assert seen[0][1] == "nvidia/nemotron-3-super-120b-a12b"
-    assert "us-central1" not in seen[0][0]
+    assert seen[0][1] == "nvidia/Nemotron-3.5-Super-VL"
+    assert _eu_tf_host_is(seen[0][0])
     assert seen[1][1] == "nvidia/Nemotron-3-Ultra-550b-a55b"
-    assert "us-central1" in seen[1][0]
+    assert _eu_tf_host_is(seen[1][0])
 
 
-NANO_ID = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+NANO_ID = "nvidia/Nemotron-3_5-Lightning"
 LIGHTNING_ID = "nvidia/Nemotron-3_5-Lightning"
+SUPER_VL_ID = "nvidia/Nemotron-3.5-Super-VL"
 
 
 def test_nano_call_stays_on_eu_host(monkeypatch):
@@ -1766,9 +1883,9 @@ def test_nano_call_stays_on_eu_host(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_TF_BASE_EU", "https://api.tokenfactory.nebius.com/v1")
     url = story_cascade._tf_url("nano")
     assert _url_host_is(url, "api.tokenfactory.nebius.com")
-    assert "us-central1" not in url
+    assert _eu_tf_host_is(url)
     assert url.endswith("/chat/completions")
-    assert "us-central1" in story_cascade._tf_url("deep")
+    assert _eu_tf_host_is(story_cascade._tf_url("deep"))
 
     seen = []
 
@@ -1792,17 +1909,17 @@ def test_nano_call_stays_on_eu_host(monkeypatch):
     result = asyncio.run(run())
     text, source = result
     assert text == "Le quai reste calme."
-    assert source == "nemotron-nano"
+    assert source == "nemotron-lightning"
     assert result.model == NANO_ID
     assert result.tier == "nano"
     assert len(seen) == 1
     assert seen[0][1] == NANO_ID
     assert _url_host_is(seen[0][0], "api.tokenfactory.nebius.com")
-    assert "us-central1" not in seen[0][0]
+    assert not _url_host_is(seen[0][0], "api.tokenfactory.us-central1.nebius.com")
 
 
 def test_nano_falls_back_to_lightning_with_its_label(monkeypatch):
-    """Nano en échec → Lightning, étiquette nemotron-lightning, toujours en EU."""
+    """Palier nano (Lightning id) en échec → repli fast Lightning, étiquette nemotron-lightning."""
     seen = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -1810,7 +1927,7 @@ def test_nano_falls_back_to_lightning_with_its_label(monkeypatch):
         url = str(request.url)
         model = body.get("model")
         seen.append((url, model))
-        if model == NANO_ID:
+        if len(seen) == 1:
             return httpx.Response(500, text='{"error":"nano down"}')
         if model == LIGHTNING_ID:
             return httpx.Response(200, json=_chat_ok("Le quai reste calme.", model=model))
@@ -1834,8 +1951,8 @@ def test_nano_falls_back_to_lightning_with_its_label(monkeypatch):
     assert "quai" in text
     assert source == "nemotron-lightning"
     assert result.model == LIGHTNING_ID
-    assert [m for _u, m in seen] == [NANO_ID, LIGHTNING_ID]
-    assert all("us-central1" not in url for url, _m in seen)
+    assert [m for _u, m in seen] == [LIGHTNING_ID, LIGHTNING_ID]
+    assert all(not _url_host_is(url, "api.tokenfactory.us-central1.nebius.com") for url, _m in seen)
     assert all(_url_host_is(url, "api.tokenfactory.nebius.com") for url, _m in seen)
     import llm_budget
     assert llm_budget.status()["lastSourceByTier"]["nano"] == "nemotron-lightning"
@@ -1874,6 +1991,70 @@ def test_nano_then_lightning_then_nim_keeps_nim_label(monkeypatch):
     assert source != "nemotron-nano"
     assert source != "nemotron-lightning"
     models = [m for url, m in seen if "tokenfactory" in url]
-    assert models == [NANO_ID, LIGHTNING_ID]
+    assert models == [LIGHTNING_ID, LIGHTNING_ID]
     assert any(_url_host_is(url, "integrate.api.nvidia.com") for url, _m in seen)
     assert not any("openrouter" in url or "anthropic" in url for url, _m in seen)
+    import llm_budget
+    assert llm_budget.status()["lastSourceByTier"]["nano"] == "nim"
+
+
+def test_timeout_tf_nim_called_openrouter_claude_skipped(monkeypatch):
+    """R36: GPT-OSS via NIM n'est pas un modèle Nemotron et est sauté après timeout.
+
+    Sans opt-in, après timeout TF la cascade ne peut pas traiter NIM comme
+    Nemotron : elle retourne la phrase locale sans appeler NIM, OpenRouter ou Claude.
+    """
+    import llm_budget
+    
+    seen = []
+    tf_timeout_count = 0
+    nim_called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal tf_timeout_count, nim_called
+        url = str(request.url)
+        body = json.loads(request.content.decode()) if request.content else {}
+        seen.append((url, body.get("model")))
+        if "tokenfactory" in url:
+            tf_timeout_count += 1
+            # Simule un timeout TF
+            raise TokenFactoryTimeout("tokenfactory timeout after 25 s")
+        if _url_host_is(url, "integrate.api.nvidia.com"):
+            nim_called = True
+            return httpx.Response(200, json=_chat_ok("Le port reste calme.", model="openai/gpt-oss-20b"))
+        if "openrouter" in url or "anthropic" in url:
+            # Ne doit pas être appelé
+            return httpx.Response(500, json={"error": "not expected"})
+        return httpx.Response(500, json={"error": "no"})
+
+    monkeypatch.setenv("NAVIGUIDE_TF_BASE_EU", "https://api.tokenfactory.nebius.com/v1")
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ant-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.setenv("NAVIGUIDE_LLM_TIMEOUT_FALLBACK", "0")  # Désactive le fallback hors Nemotron
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(
+                "sys", "user-timeout-test", client, tier="write", fallback="Phrase locale.", facts=None,
+            )
+
+    result = asyncio.run(run())
+    text, source = result
+    
+    assert text == "Phrase locale."
+    assert source == "rules"
+    assert not nim_called, "NIM GPT-OSS n'est pas un repli Nemotron"
+    assert tf_timeout_count == 1, f"Expected 1 TF call, got {tf_timeout_count}"
+    
+    # OpenRouter et Claude ne doivent PAS être appelés
+    openrouter_called = any("openrouter" in url for url, _ in seen)
+    claude_called = any("anthropic" in url for url, _ in seen)
+    assert not openrouter_called, "OpenRouter ne doit pas être appelé après timeout TF"
+    assert not claude_called, "Claude ne doit pas être appelé après timeout TF"
+    
+    errors = llm_budget.last_errors()
+    assert any(e.get("provider") == "tokenfactory" for e in errors)
+    assert llm_budget.fallback_usage().get("nim", 0) == 0

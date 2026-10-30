@@ -96,7 +96,7 @@ test("ligne Modèles du film : le modèle nommé, aucun logo", async ({ page }) 
   }
   text = await readSource();
   expect(text).toMatch(models);
-  expect(text).toMatch(/Nemotron|NVIDIA NIM|OpenRouter|Claude|règles|rules/);
+  expect(text).toMatch(/Nemotron|NVIDIA NIM|OpenRouter|Claude|règles|rules|données brutes|raw data/);
   await expect(source.locator("img, svg")).toHaveCount(0);
   expect(await thirdPartyLogoHits(page)).toEqual([]);
   await shot(page, "02-modeles");

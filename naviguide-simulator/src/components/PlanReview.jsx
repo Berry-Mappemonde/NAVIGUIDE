@@ -143,7 +143,9 @@ export const PlanReview = memo(function PlanReview({
           <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-300">{t("planReviewCommentTitle")}</p>
           {sentence ? (
             <p className="text-[10px] text-white/80 leading-snug mt-1 break-words [overflow-wrap:anywhere]" data-testid="plan-advice-sentence">{sentence}</p>
-          ) : null}
+          ) : (
+            <p className="text-[10px] text-white/60 leading-snug mt-1" data-testid="plan-advice-none">{t("planReviewNoChange")}</p>
+          )}
           {pills ? (
             <div className="flex flex-wrap gap-1 mt-1" data-testid="plan-advice-pills">
               <span className="px-1.5 py-0.5 rounded-md border border-rose-400/50 text-rose-100 text-[9px]">{pills.alerts}</span>
@@ -163,7 +165,10 @@ export const PlanReview = memo(function PlanReview({
             </button>
           ) : null}
           <AdviceCompare compare={compare} todayLabel={t("planCompareToday")} advisedLabel={t("planCompareAdvised")} />
-          <LlmSourceBadge source={source} testId="plan-review-source" className="mt-1 [&_span]:text-xs [&_span]:text-white" />
+          {/* Sans proposition, pas d'étiquette de source seule sous le titre (« règles » isolé, revue du 29/10). */}
+          {best ? (
+            <LlmSourceBadge source={source} testId="plan-review-source" className="mt-1 [&_span]:text-xs [&_span]:text-white" />
+          ) : null}
         </div>
       </div>
   );

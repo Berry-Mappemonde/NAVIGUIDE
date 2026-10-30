@@ -6,6 +6,7 @@ import time
 
 from moment import load_official_mini
 from plan_alerts import (
+    _fmt,
     cache_info,
     clear_plan_cache,
     evaluate_plan,
@@ -13,6 +14,11 @@ from plan_alerts import (
     plan_from_voyage,
     sample_track,
 )
+
+
+def test_alert_decimal_format_respects_english_and_french():
+    assert _fmt(2.7, 1, "en") == "2.7"
+    assert _fmt(2.7, 1, "fr") == "2,7"
 
 NOW = "2026-09-22T12:00:00Z"
 TH = {"galeKt": 34, "hsAlertM": 3.0}

@@ -21,6 +21,10 @@ function firstIndex(src, pattern) {
 }
 
 describe("Sidebar layout", () => {
+  it("nomme les commandes iconiques de la sidebar", () => {
+    assert.match(sidebar, /aria-label=\{open \? t\("hideSidebar"\) : t\("showExpeditionPanel"\)\}/);
+  });
+
   it("place carte Berry → chat → IciMaintenant, sans les anciens blocs", () => {
     const berryAt = firstIndex(sidebar, /<BerryCard/);
     const chatAt = firstIndex(sidebar, /<LogbookChat messages=\{chat\.messages\}/);
@@ -126,7 +130,7 @@ describe("Sidebar — : Tracer 2 onglets, Suivre 4", () => {
     assert.match(sidebar, /ici-tab-now|JournalPanel|ici-tab-journal|<JournalPanel /);
     assert.match(sidebar, /<JournalPanel /);
     assert.match(sidebar, /data-testid="expedition-story"/);
-    assert.match(sidebar, /story=\{\(Array\.isArray\(story\)/);
+    assert.match(sidebar, /story=\{routeSource !== "custom" && \(Array\.isArray\(story\)/);
     assert.doesNotMatch(sidebar, /story=\{isSuivre && !isDrawing &&/);
   });
 });

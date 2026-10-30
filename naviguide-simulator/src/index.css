@@ -178,6 +178,8 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 }
 
 /* Plein écran film : masque les sidebars sans les démonter. */
+.film-fullscreen .naviguide-demo-launch,
+.film-fullscreen .naviguide-demo-panel,
 .film-fullscreen .naviguide-sidebar-panel,
 .film-fullscreen .naviguide-sidebar-toggle {
   display: none !important;
@@ -619,7 +621,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 @media (max-width: 599px) {
   .naviguide-sidebar-panel {
     height: auto !important;
-    max-height: calc(100% - var(--sim-inset-bottom, 120px));
+    max-height: calc(100% - var(--sim-inset-bottom, 120px) - 8px);
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -757,5 +759,66 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   .naviguide-film-bar button {
     padding-left: 3px;
     padding-right: 3px;
+  }
+}
+
+/* Visite des juges : projecteur driver.js sous la bulle React (z 2300) et au-dessus de l'appli. */
+.driver-overlay { z-index: 2250 !important; }
+.driver-active .naviguide-demo-panel,
+.driver-active .naviguide-demo-panel *,
+.driver-active .naviguide-demo-launch,
+.driver-active .naviguide-demo-launch * { pointer-events: auto; }
+
+/* Arrow on the demo walkthrough panel (data-arrow) */
+.naviguide-demo-panel {
+  position: fixed;
+  overflow: visible; /* The inner content scrolls; the arrow remains visible. */
+}
+.naviguide-demo-panel::before {
+  content: "";
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 6px solid transparent;
+  z-index: 2400;
+}
+.naviguide-demo-panel[data-arrow="up"]::before {
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-bottom-color: var(--panel-border-color, rgba(15, 23, 42, 0.92));
+}
+.naviguide-demo-panel[data-arrow="down"]::before {
+  bottom: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-top-color: var(--panel-border-color, rgba(15, 23, 42, 0.92));
+}
+.naviguide-demo-panel[data-arrow="left"]::before {
+  left: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-right-color: var(--panel-border-color, rgba(15, 23, 42, 0.92));
+}
+.naviguide-demo-panel[data-arrow="right"]::before {
+  right: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-left-color: var(--panel-border-color, rgba(15, 23, 42, 0.92));
+}
+
+/* Pulse animation for "trace" step target */
+.naviguide-tour-pulse {
+  outline: 3px solid #00ffff;
+  outline-offset: 2px;
+  animation: naviguide-tour-pulse 2s ease-in-out infinite;
+}
+@keyframes naviguide-tour-pulse {
+  0%, 100% { outline-color: #00ffff; outline-width: 3px; }
+  50% { outline-color: rgba(0, 255, 255, 0.4); outline-width: 5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .naviguide-tour-pulse {
+    animation: none;
   }
 }

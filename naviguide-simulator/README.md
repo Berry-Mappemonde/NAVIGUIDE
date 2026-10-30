@@ -6,13 +6,11 @@ Every merge on `main` deploys this version.
 
 ## Models
 
-NAVIGUIDE runs five open NVIDIA Nemotron models on Nebius Token Factory:
+NAVIGUIDE runs three open NVIDIA Nemotron models on Nebius Token Factory:
 
-- Nemotron 3 Nano 30B: fast routing (chat intent, stopover question pick, film moment ids, JSON only).
-- Nemotron 3.5 Lightning: short sentences and FR→EN translation of every story.
-- Nemotron 3 Super 120B: writes the "Here" stories, the written film and the plan review.
+- Nemotron 3.5 Lightning: fast routing (chat intent, stopover question pick, film moment ids, JSON only), short sentences and FR→EN translation of every story. It replaces Nemotron 3 Nano 30B, retired from Token Factory on 9 November 2026.
+- Nemotron 3.5 Super VL: writes the "Here" stories, the written film and the plan review (it replaces Nemotron 3 Super 120B, retired on 9 November 2026), and looks at a local drawing of the route.
 - Nemotron 3 Ultra 550B: writes stopover and alert stories, then edits and judges the written film.
-- Nemotron 3.5 Super VL: looks at a local drawing of the route and picks the film's key moments.
 
 Every label on screen names the model that really answered; NIM fallback is labelled as such.
 
@@ -81,3 +79,5 @@ To display (already in the footer, the map and the modal):
 | Leopard 46 polar | ORC file loaded by the user / local default |
 
 Per-source URL, the licence string actually written in the repo, the credit on screen, and the survey date (or « à vérifier »): [DATA_SOURCES.md](DATA_SOURCES.md). Model ids, cascade, budgets, and the AI disclosure: [docs/AI_GOVERNANCE.md](docs/AI_GOVERNANCE.md).
+
+**Veille Tavily par escale (U0)** : active par défaut (`NAVIGUIDE_TAVILY_WATCH=1`). Mettre `NAVIGUIDE_TAVILY_WATCH=0` pour la désactiver. Les tests forcent l'arrêt (`conftest.py`).

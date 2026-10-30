@@ -364,11 +364,50 @@ def consecutive_homonyms(text: str) -> list[str]:
     return hits
 
 
+# Noms de ports bruts (jeux WPI / OSM en casse de titre ou sans accents) que le
+# film disait tels quels en français : « Fort De France », « Degrad Des Cannes »,
+# « L'ile Rousse », « St Johns », « Basse Terre ». Clé : minuscules sans accents.
+_PORT_NAME_FIX = {
+    "fort de france": "Fort-de-France",
+    "degrad des cannes": "Dégrad des Cannes",
+    "l'ile rousse": "L'Île-Rousse",
+    "l ile rousse": "L'Île-Rousse",
+    "ile rousse": "L'Île-Rousse",
+    "st johns": "Saint John's",
+    "st john's": "Saint John's",
+    "st. john's": "Saint John's",
+    "saint johns": "Saint John's",
+    "basse terre": "Basse-Terre",
+    "pointe a pitre": "Pointe-à-Pitre",
+    "st george's": "Saint George's",
+    "st georges": "Saint George's",
+    "st. george's": "Saint George's",
+    "pago pago harbor": "Pago Pago",
+    "st pierre": "Saint-Pierre",
+    "st denis": "Saint-Denis",
+    "saint denis": "Saint-Denis",
+}
+
+
+def _port_fix_key(s: str) -> str:
+    import unicodedata  # noqa: PLC0415
+    folded = "".join(
+        c for c in unicodedata.normalize("NFKD", s.replace("’", "'")) if not unicodedata.combining(c)
+    )
+    return re.sub(r"\s+", " ", folded).strip().casefold()
+
+
 def origin_name(raw: str | None) -> str:
-    """Nom d'origine : MAJUSCULES → casse de titre ; accents RC19 ; le mixte reste."""
+    """Nom d'origine : MAJUSCULES → casse de titre ; accents RC19 ; le mixte reste.
+
+    Quelques ports bruts connus reprennent leur graphie (_PORT_NAME_FIX).
+    """
     s = re.sub(r"\s+", " ", str(raw or "")).strip()
     if not s:
         return ""
+    fixed = _PORT_NAME_FIX.get(_port_fix_key(s))
+    if fixed:
+        return fixed
     letters = re.sub(r"[^A-Za-zÀ-ÿ]", "", s)
     if len(letters) < 3:
         return s

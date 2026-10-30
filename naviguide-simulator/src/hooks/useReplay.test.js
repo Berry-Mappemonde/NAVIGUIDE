@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt, sentenceSpan, stepFilmTime } from "../engine/replay.js";
-import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, arrivalBubbleFitsDestination, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmBudgetCanPlay, filmCharRatesStable, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, arrivalBubbleFitsDestination, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmBudgetCanPlay, filmCharRatesStable, filmChapterPlayheadCapped, filmEndCharIdx, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmResponseShouldRetry, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
 import { briefingForReplayPosition, replayPlace } from "./useReplay.js";
 import { VOICE_LEAD_MS, VOICE_MS_PER_CHAR } from "../utils/speak.js";
 import { shouldStopSpeakingOnChapterChange } from "./useReplayVoice.js";
@@ -18,6 +18,21 @@ const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
 const bar = readFileSync(join(here, "..", "components", "SimulationFilmBar.jsx"), "utf8");
 
 describe("useReplay contract", () => {
+  it("expose un état de chargement récupérable pour le film officiel, avec libellés FR/EN", () => {
+    assert.match(hook, /setTimeout\(\(\) => \{\s*requestTimedOut = true;\s*ac\.abort\(\);\s*\}, 30_000\)/);
+    assert.match(hook, /setFilmStatus\("timeout"\)/);
+    assert.match(hook, /setFilmStatus\("absent"\)/);
+    assert.match(hook, /const retryFilmLoad = useCallback/);
+    assert.match(app, /onRetryLoad: replay\.retryFilmLoad/);
+    assert.match(bar, /data-testid="film-load-status"/);
+    assert.match(bar, /data-testid="film-load-retry"/);
+    for (const key of ["filmLoadPending", "filmLoadPreparing", "filmLoadEmpty", "filmLoadError", "filmLoadTimeout", "filmLoadStale", "filmLoadRetry"]) {
+      assert.ok(fr[key], `fr.${key}`);
+      assert.ok(en[key], `en.${key}`);
+      assert.notEqual(fr[key], en[key], `${key} traduit`);
+    }
+  });
+
   it("replays on the official clock, consumes the film plan, and hands back to live at the end or on Stop", () => {
     assert.match(hook, /replayWindow\(clockToUse, Date\.now\(\)\)/);
     assert.match(hook, /fromLat: c\.fromLat/);
@@ -479,8 +494,9 @@ describe("Film officiel, pas la Simulation", () => {
     assert.equal(isReadyRemoteFilm({ status: "ready", chapters: [] }, { official: false }), false);
     assert.equal(canStartOfficialReplay({ officialClock: { t0: "x" }, remoteStatus: "preparing" }), false);
     assert.equal(FILM_PREPARE_POLL_MS, 10_000);
-    assert.equal(FILM_PREPARE_MAX_MS, 120_000);
     assert.match(hook, /FILM_PREPARE_POLL_MS/);
+    assert.match(hook, /if \(applied === "preparing"\) \{\s*retryTimer = setTimeout\(load, FILM_PREPARE_POLL_MS\);/);
+    assert.doesNotMatch(hook, /prepareStarted|FILM_PREPARE_MAX_MS/);
     assert.match(hook, /filmRequestPath\(voyageId\)/);
     assert.doesNotMatch(hook, /fetch\(`\$\{API\}\/voyage\/official\/film\?\$\{q\}`/);
   });
@@ -1026,6 +1042,24 @@ describe("useReplay — client robuste (E2, E3, E4)", () => {
     assert.doesNotMatch(resume.text, /s'envole/);
   });
 
+  it("Vol retour élidé « s'envole d’Halifax » (et apostrophe typographique) reconnu", () => {
+    const glued = [
+      "Le 18 août, l’équipage s’envole de Cayenne pour Halifax ; le catamaran attend à Cayenne.",
+      "Le 28 août, l'équipage s'envole d’Halifax pour Cayenne.",
+    ].join(" ");
+    const back = visibleFilmSubtitle(glued, {
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Cayenne (Guyane)",
+    });
+    assert.equal(back, "Le 28 août, l'équipage s'envole d’Halifax pour Cayenne.");
+    const out = visibleFilmSubtitle(glued, {
+      fromName: "Cayenne (Guyane)",
+      toName: "Halifax (Nouvelle-Écosse)",
+    });
+    assert.equal(out, "Le 18 août, l’équipage s’envole de Cayenne pour Halifax ; le catamaran attend à Cayenne.");
+    assert.ok(filmSubtitleShowsAir("Le 28 août, l’équipage s’envole d’Halifax pour Cayenne."));
+  });
+
   it("Phrase side sous le curseur même si le chapitre fusionné est étiqueté vol", () => {
     const merged = [
       "À Halifax, l'équipage embarque sur un second voilier pour Saint-Pierre.",
@@ -1249,22 +1283,32 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.equal(off.hasWritten, false);
     assert.equal(off.effectiveStyle, "raw");
     assert.equal(off.source, "rules");
-    assert.equal(writtenPillEnabled(off.hasWritten), false);
+    assert.equal(writtenPillEnabled(off.hasWritten), true);
     assert.equal(writtenPillEnabled({ hasWritten: false, filmReady: true }), true);
     assert.equal(writtenPillEnabled({ hasWritten: false, customFilm: true }), false);
+    assert.equal(writtenPillEnabled({ hasWritten: true, customFilm: true }), false);
+    assert.equal(writtenPillEnabled({ hasWritten: false, customFilm: false }), true);
     assert.equal(filmSourceKey(off.source), "storySourceRules");
     assert.equal(filmSourceKey("nemotron-super-reviewed-ultra"), "storySourceSuperReviewed");
     assert.equal(filmSourceKey("nemotron-super", "nemotron-ultra"), "storySourceSuperReviewed");
     assert.equal(filmSourceKey("nemotron-super"), "storySourceSuper");
     assert.equal(filmSourceKey("nemotron-nano"), "storySourceNano");
     assert.equal(filmSourceKey("nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"), "storySourceNano");
-    assert.equal(en.storySourceNano, "Nemotron 3 Nano · Token Factory");
-    assert.equal(fr.storySourceNano, "Nemotron 3 Nano · Token Factory");
+    assert.equal(en.storySourceNano, "Nemotron 3 Nano 30B · Token Factory");
+    assert.equal(fr.storySourceNano, "Nemotron 3 Nano 30B · Token Factory");
+    // Le palier write sert Super VL : « nemotron-super » sans modèle se lit Super VL.
+    assert.equal(filmSourceKey("nemotron-super-vl"), "storySourceSuperVl");
+    assert.equal(filmSourceKey("nemotron-super", "", "nvidia/Nemotron-3.5-Super-VL"), "storySourceSuper");
+    assert.equal(filmSourceKey("nemotron-super", "", "nvidia/nemotron-3-super-120b-a12b"), "storySourceSuper120b");
+    assert.equal(filmSourceKey("nemotron-super", "nemotron-ultra", "nvidia/nemotron-3-super-120b-a12b"), "storySourceSuper120bReviewed");
+    assert.equal(filmSourceKey("nemotron-super", "", "nvidia/Nemotron-3_5-Lightning"), "storySourceLightning");
     assert.equal(en.filmModels, "Models");
     assert.equal(fr.filmModels, "Modèles");
     assert.equal(filmSourceKey("openrouter"), "storySourceOpenrouter");
     assert.equal(filmSourceKey("nvidia-gpt-oss-20b"), "storySourceNim");
-    assert.match(en.storySourceSuper, /Nemotron 3 Super/);
+    assert.match(en.storySourceSuper, /Nemotron 3\.5 Super VL/);
+    assert.match(fr.storySourceSuper, /Nemotron 3\.5 Super VL/);
+    assert.match(en.storySourceSuper120b, /Nemotron 3 Super 120B/);
     assert.match(en.storySourceSuper, /Token Factory/);
     assert.match(en.storySourceSuperReviewed, /Token Factory/);
     assert.match(en.storySourceSuperReviewed, /reviewed by Ultra/);
@@ -1295,12 +1339,44 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.equal(filmRequestStyle("raw"), "raw");
   });
 
+  it("n'essaie pas Rédigé pour une route personnalisée et arrête un 405", () => {
+    assert.equal(filmResponseShouldRetry(405), false);
+    assert.equal(filmResponseShouldRetry(404), true);
+    const hook = readFileSync(new URL("./useReplay.js", import.meta.url), "utf8");
+    const styleHandler = hook.slice(hook.indexOf("const chooseFilmStyle"), hook.indexOf("return {\n    active,"));
+    assert.match(styleHandler, /if \(!isOfficialFilmVoyage\(voyageId\)\)/);
+    const probe = hook.slice(hook.indexOf("const probeWritten"), hook.indexOf("const load ="));
+    assert.match(probe, /style !== "raw" \|\| !official/);
+    assert.match(hook, /!filmResponseShouldRetry\(pack\?\.status\)/);
+  });
+
   it("demande style=written, lit hasWritten / source / ancres, aucun LLM navigateur", () => {
     assert.match(hook, /filmRequestStyle\(filmStyle\)/);
     assert.match(hook, /style=\$\{style\}/);
     assert.match(hook, /style=written/);
-    assert.match(hook, /method: "POST"/);
+    assert.match(hook, /style=written/);
+    const chooseAt = hook.indexOf("const chooseFilmStyle");
+    const chooseBlock = hook.slice(chooseAt, hook.indexOf("return {\n    active", chooseAt));
+    assert.match(chooseBlock, /if \(filmWritingRef\.current\) return/);
+    assert.match(chooseBlock, /if \(active && !hasWritten\) return/);
+    assert.match(chooseBlock, /if \(active\) stop\(\)/);
+    assert.match(chooseBlock, /filmWriteGenerationRef\.current/);
+    assert.match(chooseBlock, /generation !== filmWriteGenerationRef\.current/);
+    assert.match(chooseBlock, /filmWriteRequestRef\.current\?\.abort\(\)/);
+    assert.match(chooseBlock, /setTimeout\(\(\) => controller\.abort\(\), 30_000\)/);
+    assert.match(chooseBlock, /signal: controller\.signal/);
+    assert.match(chooseBlock, /if \(generation === filmWriteGenerationRef\.current\)[\s\S]*filmWritingRef\.current = false/);
+    assert.match(chooseBlock, /filmWritingRef\.current = true/);
+    assert.match(chooseBlock, /filmWritingRef\.current = false/);
+    assert.match(chooseBlock, /style=written/);
     assert.match(hook, /chooseFilmStyle/);
+    assert.match(hook, /filmWritePollGenRef\.current \+= 1;\s+filmWritePollAbortRef\.current\?\.abort\(\);\s+filmWritePollAbortRef\.current = null;/);
+    assert.match(hook, /const writeGen = \+\+filmWritePollGenRef\.current;/);
+    assert.match(hook, /if \(writeGen !== filmWritePollGenRef\.current\) return;/);
+    assert.match(hook, /\.catch\(\(\) => \{\s+if \(writeGen !== filmWritePollGenRef\.current\) return;\s+setFilmWriteError\(true\);\s+setFilmWriting\(false\);/);
+    assert.match(hook, /\.finally\(\(\) => \{[\s\S]*?if \(writeGen === filmWritePollGenRef\.current\) \{\s+filmWriteStartingRef\.current = false;/);
+    assert.match(hook, /finally \{\s+if \(gen === filmWritePollGenRef\.current\) \{\s+filmWriteStartingRef\.current = false;\s+\}\s+\}/);
+    assert.match(hook, /filmWritePollAbortRef\.current = null;\s+filmWriteStartingRef\.current = false;/);
     assert.match(hook, /resolveServedFilm/);
     assert.match(hook, /probeWritten/);
     assert.match(hook, /applyResolvedMeta/);
@@ -1314,16 +1390,38 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(bar, /testId="film-source"/);
     assert.match(bar, /textOnly/);
     assert.match(bar, /ed2WritingNemotron/);
+    assert.match(bar, /ed2WriteFailed/);
     const probeAt = hook.indexOf("const probeWritten");
     assert.ok(probeAt > 0);
     const probe = hook.slice(probeAt, probeAt + 900);
     assert.match(probe, /setFilmSource\(resolved\.source\)/);
     assert.match(probe, /setFilmReviewedBy\(resolved\.reviewedBy \|\| ""\)/);
-    assert.match(bar, /filmStoryWrittenSoon/);
+    assert.doesNotMatch(bar, /filmStoryWrittenSoon/);
     assert.match(bar, /replay\.hasWritten/);
     assert.match(bar, /film-style-\$\{id\}/);
     assert.match(bar, /\["raw", "filmStoryRaw"\], \["written", "filmStoryWritten"\]/);
     assert.match(bar, /hidden=\{\(replay\.style \|\| "raw"\) !== "written" \|\| !replay\.hasWritten\}/);
+  });
+
+  it("signale l’indisponibilité seulement après l’échec de toute la cascade", () => {
+    assert.match(hook, /data\?\.reason === "all-providers-failed"/);
+    assert.match(hook, /setWrittenUnavailable\("unavailable"\)/);
+    // RL191 (#191) on #159's async write: a network miss or an empty answer
+    // flags the write error but never "unavailable".
+    assert.match(hook, /\.catch\(\(\) => \{[^}]*?if \(generation === filmWriteGenerationRef\.current\) setWrittenUnavailable\(null\);/s);
+    assert.match(hook, /if \(!data\) \{[^}]*?setWrittenUnavailable\(null\);/s);
+    assert.doesNotMatch(hook, /if \(!data\) \{\s*setWrittenUnavailable\("unavailable"\)/);
+    assert.match(hook, /setWrittenUnavailable\(data\?\.reason === "all-providers-failed" \? "unavailable" : null\)/);
+    assert.match(hook, /writtenUnavailable,/);
+    assert.match(app, /writtenUnavailable: replay\.writtenUnavailable/);
+    assert.match(bar, /filmStoryWrittenUnavailable/);
+    assert.match(bar, /role="status"/);
+    assert.match(bar, /filmStoryWrittenRetry/);
+    assert.match(bar, /if \(!replay\.active\) replay\.onStyle\?\.\("written"\)/);
+    assert.match(hook, /setWrittenUnavailable\("unavailable"\)/);
+    assert.equal(fr.filmStoryWrittenUnavailable, "Le film rédigé est momentanément indisponible.");
+    assert.equal(en.filmStoryWrittenUnavailable, "The edited film is temporarily unavailable.");
+    assert.match(bar, /<span role="status">\{t\("filmStoryWrittenUnavailable"\)\}<\/span>/);
   });
 });
 
@@ -1468,5 +1566,28 @@ describe("Bateau sur la phrase, pas à tB", () => {
     assert.match(hook, /filmBoatAtPhrase/);
     assert.match(hook, /RC52/);
     assert.doesNotMatch(hook, /FILM_FLIP_HOLD_MS|panBy/);
+  });
+});
+
+describe("useReplay — fin du film (fl1)", () => {
+  const text = "Le 17 octobre, départ vers Mata-Utu : 1 642 milles, une dizaine de jours de mer. "
+    + "Arrivée à Mata-Utu (Wallis-et-Futuna) le 27 octobre, à la marina de Fineveke. "
+    + "Aujourd’hui, le bateau est à Mata-Utu (Wallis-et-Futuna). "
+    + "Les escales à venir : Nouméa, Dzaoudzi, Tromelin, Saint-Gilles, Europa, La Rochelle.";
+  const last = { text, chars: text.length };
+
+  it("au tick de fin, le sous-titre montre la clôture et pas la 1re phrase du dernier chapitre", () => {
+    const charIdx = filmEndCharIdx(last, 12, 13, 0);
+    assert.equal(charIdx, text.length);
+    const end = filmBarSubtitle({ chapterText: text, charIdx, pinned: false });
+    assert.match(end.text, /Dzaoudzi/);
+    const before = filmBarSubtitle({ chapterText: text, charIdx: 0, pinned: false });
+    assert.doesNotMatch(before.text, /Dzaoudzi/);
+  });
+
+  it("hors dernier chapitre ou sans longueur, garde l'index courant", () => {
+    assert.equal(filmEndCharIdx(last, 5, 13, 7), 7);
+    assert.equal(filmEndCharIdx(null, 12, 13, 3), 3);
+    assert.equal(filmEndCharIdx({ chars: 0 }, 12, 13, 4), 4);
   });
 });

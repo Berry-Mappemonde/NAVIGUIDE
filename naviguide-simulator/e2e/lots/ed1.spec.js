@@ -101,7 +101,7 @@ test("GET sans modèle, clic Rédigé, étiquette Super", async ({ page }) => {
   await expect(written).toHaveAttribute("aria-pressed", "true");
   expect(filmGets.some((u) => u.startsWith("POST ")), "le clic envoie POST film").toBeTruthy();
   const source = page.getByTestId("film-source");
-  await expect(source).toContainText("Nemotron 3 Super", { timeout: 8_000 });
+  await expect(source).toContainText("Nemotron 3.5 Super VL", { timeout: 8_000 });
   await expect(source).not.toHaveAttribute("hidden", "");
   const srcText = (await source.innerText()).trim();
   expect(srcText, "jamais le mot Rédigé comme source").not.toMatch(/Rédigé/i);
@@ -115,7 +115,7 @@ test("GET sans modèle, clic Rédigé, étiquette Super", async ({ page }) => {
       await written.click();
     }
   }
-  await expect(source).toContainText("Nemotron 3 Super");
+  await expect(source).toContainText("Nemotron 3.5 Super VL");
   await shot(page, "02-etiquette");
 
   const beforeReload = filmGets.filter((u) => u.startsWith("POST ")).length;
