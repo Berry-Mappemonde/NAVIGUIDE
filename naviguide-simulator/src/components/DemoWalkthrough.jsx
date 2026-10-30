@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Compass, Loader2, Play, X } from "lucide-react";
+import { driver } from "driver.js";
+import "driver.js/dist/driver.css";
 import { useLang } from "../i18n/LangContext.jsx";
-import { describeModelRoles, getDemoSteps, tourEditedOffer } from "./demoWalkthrough.js";
+import { describeModelRoles, getDemoSteps, tourEditedOffer, computePanelPosition, computeArrowDirection, getStagePadding } from "./demoWalkthrough.js";
 import { describeTfLatency } from "../utils/tfLatency.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
@@ -124,6 +126,111 @@ export function DemoWalkthrough({
     startRef.current();
   }, [autoStart]);
 
+  // Projecteur driver.js (MIT) : assombrit tout l'écran sauf l'élément réel de l'étape.
+  // Le panneau React reste la bulle (boutons, i18n, focus) ; driver.js ne gère que le spot.
+  const driverRef = useRef(null);
+  const [anchor, setAnchor] = useState(null);
+  const spotOn = open && !hidden && !collapsed;
+  const target = step?.target || null;
+
+  // Destruction immédiate si la cible est null (étapes welcome, models, return) :
+  // on tue l'instance AVANT tout rAF pour éviter tout overlay/dimming résiduel et la classe driver-active.
+  useEffect(() => {
+    if (spotOn && target === null) {
+      driverRef.current?.destroy();
+      driverRef.current = null;
+      setAnchor(null);
+    }
+  }, [spotOn, target]);
+
+  useEffect(() => {
+    if (!spotOn || !target) {
+      driverRef.current?.destroy();
+      driverRef.current = null;
+      setAnchor(null);
+      return undefined;
+    }
+    let raf = 0;
+    let tries = 0;
+    let last = "";
+    let stable = 0;
+    const stagePadding = getStagePadding(step.id);
+    const make = () => driver({
+      animate: false,
+      allowClose: false,
+      allowKeyboardControl: false,
+      overlayClickBehavior: () => {},
+      overlayOpacity: 0.62,
+      stagePadding,
+      stageRadius: 10,
+      smoothScroll: false,
+    });
+    const show = (el) => {
+      // Nouvelle instance à chaque mesure : refresh() / highlight() du même élément gardent l'ancien cadre.
+      driverRef.current?.destroy();
+      driverRef.current = make();
+      driverRef.current.highlight({ element: el });
+      const r = el.getBoundingClientRect();
+      setAnchor({ top: r.top, bottom: r.bottom, height: r.height });
+    };
+    // Les panneaux s'ouvrent puis glissent : on suit la position de l'élément et on recale
+    // le projecteur dès qu'il bouge (pas de projecteur sur un élément encore hors écran).
+    let shown = "";
+    const track = () => {
+      const el = document.querySelector(target);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const key = `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`;
+        stable = key === last ? stable + 1 : 0;
+        last = key;
+        if (stable >= 3 && key !== shown) { shown = key; show(el); }
+      } else if (driverRef.current) {
+        driverRef.current.destroy();
+        driverRef.current = null;
+        shown = "";
+        setAnchor(null);
+      }
+      tries += 1;
+      raf = window.requestAnimationFrame(track);
+    };
+    raf = window.requestAnimationFrame(track);
+    const onResize = () => {
+      shown = "";
+      last = "";
+      stable = 0;
+      tries = 0;
+      window.cancelAnimationFrame(raf);
+      raf = window.requestAnimationFrame(track);
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [spotOn, target, step.id]);
+  useEffect(() => () => { driverRef.current?.destroy(); driverRef.current = null; }, []);
+
+  // Pulse animation on "trace" step target — unique useEffect, réessaye si le bouton n'existe pas encore
+  useEffect(() => {
+    if (step.id !== "trace" || !target) return;
+    let el = document.querySelector(target);
+    let checkRaf = 0;
+    let attempts = 0;
+    const tryAdd = () => {
+      el = document.querySelector(target);
+      if (el) {
+        el.classList.add("naviguide-tour-pulse");
+      } else if (++attempts < 30) {
+        checkRaf = window.requestAnimationFrame(tryAdd);
+      }
+    };
+    tryAdd();
+    return () => {
+      window.cancelAnimationFrame(checkRaf);
+      if (el) el.classList.remove("naviguide-tour-pulse");
+    };
+  }, [step.id, target]);
+
   if (hidden) return null;
 
   const goTo = (nextIndex) => {
@@ -179,6 +286,15 @@ export function DemoWalkthrough({
     );
   }
 
+  // Compute panel position using pure logic from demoWalkthrough.js
+  const panelStyle = anchor && typeof window !== "undefined" && window.innerWidth >= 768
+    ? computePanelPosition(anchor, step.id, window.innerWidth, window.innerHeight)
+    : undefined;
+
+  const arrowDir = (anchor && window && window.innerWidth >= 768)
+    ? computeArrowDirection(anchor, step.id, window.innerWidth, window.innerHeight)
+    : undefined;
+
   return (
     <aside
       role="region"
@@ -186,8 +302,13 @@ export function DemoWalkthrough({
       data-testid="demo-walkthrough-panel"
       data-step={step.id}
       data-side={step.side}
-      className={`naviguide-demo-panel fixed z-[2300] flex flex-col overflow-y-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-md inset-x-2 bottom-2 max-h-[45dvh] md:inset-x-auto md:bottom-auto md:top-14 md:w-[min(23rem,calc(100vw-1.5rem))] md:max-h-[calc(100dvh-5rem)] ${side} ${surface}`}
+      data-target={step.target || ""}
+      data-spot={anchor ? "on" : "off"}
+      {...(arrowDir ? { "data-arrow": arrowDir } : {})}
+      style={panelStyle}
+      className={`naviguide-demo-panel fixed z-[2300] flex flex-col rounded-2xl border p-4 shadow-2xl backdrop-blur-md inset-x-2 bottom-2 max-h-[45dvh] md:inset-x-auto md:bottom-auto md:top-14 md:w-[min(23rem,calc(100vw-1.5rem))] md:max-h-[calc(100dvh-5rem)] ${side} ${surface}`}
     >
+      <div className="min-h-0 flex-1 overflow-y-auto">
       <p className="sr-only" aria-live="polite" data-testid="demo-walkthrough-live">
         {t("demoStepLive", { n: index + 1, total, title: step.title })}
       </p>
@@ -334,6 +455,7 @@ export function DemoWalkthrough({
       >
         {t("demoExit")}
       </button>
+      </div>
     </aside>
   );
 }

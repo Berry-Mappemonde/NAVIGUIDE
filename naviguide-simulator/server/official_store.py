@@ -3218,7 +3218,10 @@ async def write_film_on_click(
     )
     if not isinstance(fr_plan, dict) or not (fr_plan.get("chapters") or []):
         _log_fill_written(f"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})")
-        return serve_film(lang=lg, seconds=secs, style="written")
+        unavailable = serve_film(lang=lg, seconds=secs, style="written")
+        if stats.get("super", 0) == 0 and stats.get("source") == "rules":
+            unavailable["reason"] = "all-providers-failed"
+        return unavailable
     receipt = film_receipt(receipt_calls, stats, when)
     fr_plan = {**fr_plan, "receipt": receipt}
     body = _put_written_variant(body, "fr", secs, fr_plan, when, last_stop)

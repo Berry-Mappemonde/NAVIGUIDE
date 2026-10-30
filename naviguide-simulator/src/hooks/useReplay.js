@@ -225,10 +225,7 @@ export function resolveServedFilm(data, requestedStyle) {
 }
 
 export function writtenPillEnabled(hasWritten, opts) {
-  const flags = hasWritten && typeof hasWritten === "object" ? hasWritten : { ...(opts || {}), hasWritten };
-  if (flags.customFilm) return Boolean(flags.hasWritten);
-  if (flags.filmReady) return true;
-  return Boolean(flags.hasWritten);
+  return true;
 }
 
 export function isOfficialFilmVoyage(voyageId) {
@@ -1145,9 +1142,13 @@ export function useReplay({
   const [filmWebContext, setFilmWebContext] = useState(null);
   const [filmReceipt, setFilmReceipt] = useState(null);
   const [filmWriting, setFilmWriting] = useState(false);
+  const filmWritingRef = useRef(false);
+  const filmWriteRequestRef = useRef(null);
+  const filmWriteGenerationRef = useRef(0);
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
   const [filmWriteError, setFilmWriteError] = useState(false);
+  const [writtenUnavailable, setWrittenUnavailable] = useState(null);
   const filmWritePollGenRef = useRef(0);
   const filmWritePollAbortRef = useRef(null);
   const filmWriteStartingRef = useRef(false);
@@ -1733,6 +1734,17 @@ export function useReplay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voyageId]);
 
+  useEffect(() => {
+    filmWritingRef.current = false;
+    setFilmWriting(false);
+    return () => {
+      filmWriteGenerationRef.current += 1;
+      filmWriteRequestRef.current?.abort();
+      filmWriteRequestRef.current = null;
+      filmWritingRef.current = false;
+    };
+  }, [voyageId]);
+
   const onVoiceBoundary = useCallback((charIdx) => {
     const plan = planRef.current;
     if (!plan || finishedRef.current) return;
@@ -2289,6 +2301,10 @@ export function useReplay({
     if (next !== "written") {
       // Switching back to Raw must stop an in-flight write poll even when
       // filmStyle is already "raw" and the style effect cannot observe a change.
+      filmWriteGenerationRef.current += 1;
+      filmWriteRequestRef.current?.abort();
+      filmWriteRequestRef.current = null;
+      filmWritingRef.current = false;
       filmWritePollGenRef.current += 1;
       filmWritePollAbortRef.current?.abort();
       filmWritePollAbortRef.current = null;
@@ -2302,22 +2318,38 @@ export function useReplay({
       setFilmStyle("written");
       return;
     }
-    if (filmWriting || filmWriteStartingRef.current) return; // double-click guard
+    if (filmWritingRef.current) return;
+    if (filmWriteStartingRef.current) return; // double-click guard
+    if (active && !hasWritten) return;
+    if (active) stop();
     if (!isOfficialFilmVoyage(voyageId)) return;
     const path = filmRequestPath(voyageId);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
     setFilmWriteError(false);
+    setWrittenUnavailable(null);
+    filmWritingRef.current = true;
+    const generation = ++filmWriteGenerationRef.current;
+    const controller = new AbortController();
+    filmWriteRequestRef.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 30_000);
     const writeGen = ++filmWritePollGenRef.current;
     filmWriteStartingRef.current = true;
     setFilmWriting(true);
-    fetch(`${API}${path}?${q}`, { method: "POST" })
+    fetch(`${API}${path}?${q}`, { method: "POST", signal: controller.signal })
       .then((r) => {
         if (!r.ok) throw new Error(`film write HTTP ${r.status}`);
         return r.json();
       })
       .then((data) => {
+        if (generation !== filmWriteGenerationRef.current) return;
         if (writeGen !== filmWritePollGenRef.current) return;
-        if (!data) return;
+        if (!data) {
+          setWrittenUnavailable("unavailable");
+          setFilmWriteError(true);
+          setFilmWriting(false);
+          return;
+        }
+        if (data?.reason === "all-providers-failed") setWrittenUnavailable("unavailable");
         const status = String(data?.status || "").toLowerCase();
         if (status === "writing" || data?.writing) {
           void filmWriteNextStepRef.current();
@@ -2332,25 +2364,33 @@ export function useReplay({
           setFilmModel(resolved.model || "");
           setFilmWebContext(resolved.webContext || null);
           setFilmReceipt(resolved.receipt || null);
+          setWrittenUnavailable(null);
           setFilmWriting(false);
           return;
         }
         // A successful HTTP response can still mean that writing did not
         // start (LLM disabled, budget exhausted, or no valid raw plan).
         setFilmWriteError(true);
+        setWrittenUnavailable("unavailable");
         setFilmWriting(false);
       })
       .catch(() => {
         if (writeGen !== filmWritePollGenRef.current) return;
         setFilmWriteError(true);
         setFilmWriting(false);
+        if (generation === filmWriteGenerationRef.current) setWrittenUnavailable("unavailable");
       })
       .finally(() => {
+        clearTimeout(timeout);
+        if (generation === filmWriteGenerationRef.current) {
+          filmWriteRequestRef.current = null;
+          filmWritingRef.current = false;
+        }
         if (writeGen === filmWritePollGenRef.current) {
           filmWriteStartingRef.current = false;
         }
       });
-  }, [hasWritten, lang, targetSeconds, t0, voyageId]);
+  }, [active, hasWritten, lang, stop, targetSeconds, t0, voyageId]);
 
   // filmWriteNextStep: polls GET /voyage/official/film?style=written every 4s, up to 10min
   const filmWriteNextStep = useCallback(async () => {
@@ -2399,6 +2439,7 @@ export function useReplay({
         if (status === "preparing") continue;
         if (status === "failed") {
           setFilmWriteError(true);
+          setWrittenUnavailable("unavailable");
           setFilmWriting(false);
           return "stop";
         }
@@ -2413,6 +2454,7 @@ export function useReplay({
           setFilmWebContext(resolved.webContext || null);
           setFilmReceipt(resolved.receipt || null);
           setFilmWriteError(false);
+          setWrittenUnavailable(null);
           setFilmWriting(false);
           return "ready";
         }
@@ -2427,6 +2469,7 @@ export function useReplay({
     }
       if (gen !== filmWritePollGenRef.current) return "stop";
       setFilmWriteError(true);
+      setWrittenUnavailable("unavailable");
       setFilmWriting(false);
       return "stop";
     } finally {
@@ -2496,6 +2539,7 @@ export function useReplay({
     setFilmStyle: chooseFilmStyle,
     filmWriteNextStep,
     hasWritten,
+    writtenUnavailable,
     filmLoadedStyle,
     canStart,
     seekChapter,

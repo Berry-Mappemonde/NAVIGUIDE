@@ -6652,3 +6652,183 @@ def test_en_guard_tolerates_demonyms_added_by_136():
     for row in toponyms.territories():
         for w in re.findall(r"[^\W\d_]+", str(row.get("adj_en") or "")):
             assert w.casefold() in fs._EN_GEO_WORDS, w
+
+
+def test_reanchor_edited_chapter_relocates_sentences_and_drops_removed_ones():
+    import film_script as fs  # noqa: PLC0415
+
+    old = "Departure sentence. Removed sentence. Arrival sentence."
+    chapter = {
+        "text": "Departure sentence. Arrival sentence.",
+        "_anchorText": old,
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [
+            {"charIdx": 4, "t": "2026-05-15T09:00:00Z"},
+            {"charIdx": 24, "t": "2026-05-15T10:00:00Z"},
+            {"charIdx": 43, "t": "2026-05-15T11:00:00Z"},
+        ],
+    }
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["_anchorText"] == chapter["text"]
+    assert all(a["charIdx"] <= len(chapter["text"]) for a in chapter["anchors"])
+    # The removed sentence's 10:00 anchor was dropped.
+    assert "2026-05-15T10:00:00Z" not in {a["t"] for a in chapter["anchors"]}
+    assert chapter["anchors"] == [
+        {"charIdx": 0, "t": "2026-05-15T09:00:00Z"},
+        {"charIdx": len("Departure sentence. "), "t": "2026-05-15T11:00:00Z"},
+    ]
+
+
+def test_rules_films_keep_anchors_in_text_and_sentence_times_moving():
+    import film_script as fs  # noqa: PLC0415
+
+    for lang in ("fr", "en"):
+        for seconds in (150, 180):
+            plan = build_raw_script(
+                CLOCK, CLOCK["marks"], LIVE, JOURNAL,
+                lang=lang, seconds=seconds, now_ms=NOW_MS,
+            )
+            for chapter in plan["chapters"]:
+                text = chapter["text"]
+                assert all(a["charIdx"] <= len(text) for a in chapter["anchors"]), (lang, seconds, chapter["id"])
+                a, b = fs._ms(chapter["tA"]), fs._ms(chapter["tB"])
+                if not text or a is None or b is None or b <= a:
+                    continue
+                anchors = [{"charIdx": 0, "t": a}]
+                anchors.extend({"charIdx": p["charIdx"], "t": fs._ms(p["t"])} for p in chapter["anchors"])
+                anchors.append({"charIdx": len(text), "t": b})
+                starts = fs._sentences(text)
+                offsets = []
+                cursor = 0
+                for sentence in starts:
+                    offsets.append(text.find(sentence, cursor))
+                    cursor = offsets[-1] + len(sentence)
+                mapped = []
+                for offset in offsets:
+                    left = max((p for p in anchors if p["charIdx"] <= offset), key=lambda p: p["charIdx"])
+                    right = min((p for p in anchors if p["charIdx"] >= offset), key=lambda p: p["charIdx"])
+                    mapped_t = left["t"] if right["charIdx"] == left["charIdx"] else left["t"] + (right["t"] - left["t"]) * (offset - left["charIdx"]) / (right["charIdx"] - left["charIdx"])
+                    mapped.append(round(mapped_t))
+                run = 1
+                for i in range(1, len(mapped)):
+                    run = run + 1 if mapped[i] == mapped[i - 1] else 1
+                    assert run < 3, (lang, seconds, chapter["id"], mapped)
+
+
+def test_public_official_film_plan_strips_private_anchor_text():
+    import film_script as fs  # noqa: PLC0415
+
+    raw = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, JOURNAL,
+        lang="en", seconds=150, now_ms=NOW_MS,
+    )
+    public = fs._public_plan(raw, "rules")
+    assert public["chapters"]
+    assert all("_anchorText" not in chapter for chapter in public["chapters"])
+
+
+def test_reanchor_edited_chapter_drops_anchors_for_empty_or_rewritten_text():
+    import film_script as fs  # noqa: PLC0415
+
+    base = {
+        "_anchorText": "Original sentence.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [{"charIdx": 2, "t": "2026-05-15T09:00:00Z"}],
+    }
+    empty = {**base, "text": ""}
+    fs._reanchor_edited_chapter(empty, "en")
+    assert empty["anchors"] == []
+    assert empty["_anchorText"] == ""
+
+    rewritten = {**base, "text": "Completely rewritten sentence."}
+    fs._reanchor_edited_chapter(rewritten, "en")
+    assert rewritten["anchors"] == []
+    assert rewritten["_anchorText"] == rewritten["text"]
+
+
+def test_reanchor_edited_chapter_ignores_malformed_anchor_indices():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "Original sentence.",
+        "_anchorText": "Original sentence.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [{"charIdx": "bad", "t": "2026-05-15T09:00:00Z"}],
+    }
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == []
+
+
+def test_reanchor_edited_chapter_drops_anchors_without_source_text():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "A rewritten chapter.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [{"charIdx": 3, "t": "2026-05-15T09:00:00Z"}],
+    }
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == []
+    assert chapter["_anchorText"] == chapter["text"]
+
+
+def test_reanchor_edited_chapter_drops_ambiguous_boundary_and_duplicate_anchors():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "Bay. Approach to harbor.",
+        "_anchorText": "Bay. Approach to harbor. Approach to harbor.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [
+            {"charIdx": 0, "t": "2026-05-15T09:00:00Z"},
+            {"charIdx": 15, "t": "2026-05-15T10:00:00Z"},
+            {"charIdx": 34, "t": "2026-05-15T11:00:00Z"},
+        ],
+    }
+    fs._reanchor_edited_chapter(chapter, "en")
+    times = {anchor["t"] for anchor in chapter["anchors"]}
+    assert "2026-05-15T09:00:00Z" not in times  # +12 would cross into the next sentence.
+    assert "2026-05-15T10:00:00Z" not in times
+    assert "2026-05-15T11:00:00Z" not in times  # Duplicate occurrence was removed ambiguously.
+
+
+def test_reanchor_edited_chapter_drops_anchor_when_final_sentence_is_duplicated():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "Unique sentence.",
+        "_anchorText": "Unique sentence.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [{"charIdx": 0, "t": "2026-05-15T09:00:00Z"}],
+    }
+    chapter["text"] = "Unique sentence. Unique sentence."
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == []
+
+
+def test_reanchor_edited_chapter_drops_reordered_duplicate_sentence_anchors():
+    import film_script as fs  # noqa: PLC0415
+
+    original = "Bay. Bay! Approach."
+    chapter = {
+        "text": original,
+        "_anchorText": original,
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [
+            {"charIdx": 0, "t": "2026-05-15T09:00:00Z"},
+            {"charIdx": 5, "t": "2026-05-15T10:00:00Z"},
+            {"charIdx": 11, "t": "2026-05-15T11:00:00Z"},
+        ],
+    }
+    chapter["text"] = "Bay! Approach. Bay."
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == [
+        {"charIdx": len("Bay! "), "t": "2026-05-15T11:00:00Z"},
+    ]

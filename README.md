@@ -33,7 +33,7 @@ Shortcut: [https://naviguide.fr/?tour=1](https://naviguide.fr/?tour=1) opens the
 
 1. Click **Follow expedition**.
 2. Click **Replay the expedition**. If it is grey, the tooltip says **preparing**.
-3. When the film controls are up, **Raw** and **Edited** sit side by side. **Edited** is the written narration. If **Edited** is grey, the tooltip says **not yet written for this duration**. For accessibility, the speaker button in the film bar (labelled **Listen**) reads the film aloud: during a replay, the browser’s own speech synthesis (`speechSynthesis`, `naviguide-simulator/src/utils/speak.js`) reads each paragraph as the film plays, in English or French, with no Nemotron call and no NAVIGUIDE server call.
+3. When the film controls are up, **Raw** and **Edited** sit side by side. Click **Edited** to request the written narration. While the film plays, the pill is locked and its tooltip says **Stop the film to switch Raw/Edited**. If all providers fail, the page says **The edited film is temporarily unavailable.** For accessibility, the speaker button in the film bar (labelled **Listen**) reads the film aloud: during a replay, the browser’s own speech synthesis (`speechSynthesis`, `naviguide-simulator/src/utils/speak.js`) reads each paragraph as the film plays, in English or French, with no Nemotron call and no NAVIGUIDE server call.
 4. When the boat is at a stop, the panel is titled **Port of call sheet**. If that stop is inside the watch window and a watch was stored, a card is titled with the port name, the words **watch of**, and a date, plus one sentence. If no watch was stored, that card is absent. The sheet still lists the places it has.
 5. In the side panel, **Logbook — ask a question**. The field reads **Wind at the boat? Next stop?** Press the button whose tooltip is **Send**. Under **Try a question:**, three chips send a ready question in one click: **Why? · Ultra** (a why question, answered by Nemotron 3 Ultra), **Port news · Tavily** (how the web describes the port of the next stop: Ultra with Tavily web sources) and **Wind · Lightning** (Lightning reads the question, the facts answer).
 
@@ -64,7 +64,7 @@ The `deep` tier uses the same Ultra id. `story_tier` in `naviguide-simulator/ser
 
 Nemotron 3 Nano 30B and Nemotron 3 Super 120B leave Token Factory on 9 November 2026, so the `nano` tier now serves Lightning and the `write` tier serves Super VL. Both ids are listed by `GET /v1/models` on Token Factory. Hosts in `naviguide-simulator/server/story_cascade.py`: the `nano` tier on `https://api.tokenfactory.nebius.com/v1` (EU base), Lightning (`fast`) and Super VL (`write`) on the same default base (`NAVIGUIDE_TF_BASE` changes it), Ultra (`deep` and `judge`) on `https://api.tokenfactory.us-central1.nebius.com/v1`.
 
-**Cascade.** A 24-hour SQLite cache is read first. If the daily budget or `NAVIGUIDE_LLM_MODE` refuses the call, nothing is sent and the source is `budget`. Otherwise the default order in `DEFAULT_PROVIDERS` is Token Factory, then NIM, then OpenRouter, then Claude. If the caller passed a fallback string and every provider failed, the source is `rules`.
+**Cascade.** A 24-hour SQLite cache is read first. If the daily budget or `NAVIGUIDE_LLM_MODE` refuses the call, nothing is sent and the source is `budget`. The default order is Token Factory, NIM, OpenRouter, then Claude. After a Token Factory timeout, the cascade continues to NIM, OpenRouter and Claude by default so a model remains available; set `NAVIGUIDE_LLM_TIMEOUT_FALLBACK=0` to disable these fallbacks. NIM currently serves `openai/gpt-oss-20b`, a non-Nemotron model, and is labelled `nvidia-openai/gpt-oss-20b`. If the caller passed a fallback string and every permitted provider failed, the source is `rules`.
 
 On the `fast` tier only, an empty Token Factory body, an HTTP status of 500 or higher, or a timeout is tried once more on Token Factory with the Super VL model. A 4xx does not take that second try. On the `nano` tier, a Token Factory failure is tried once more on Token Factory as Lightning, then the cascade continues. NIM is `openai/gpt-oss-20b` at `https://integrate.api.nvidia.com/v1/chat/completions`. OpenRouter defaults to `openai/gpt-4o-mini`. Claude is `claude-haiku-4-5`.
 
@@ -96,7 +96,7 @@ Tavily is called at runtime in three places a visitor reaches: the logbook chat,
 
 The stop watch below is a separate server job.
 
-The watch is a server job. It stays off until `NAVIGUIDE_TAVILY_WATCH=1` (the default is `0`). When it is on, it covers a stop from 10 days before arrival through 2 days after, at most two rounds, once per stop. Lightning writes one sentence from the extracts. If a second round is needed, the `nano` tier (Lightning) picks one remaining id from a fixed list. It does not invent a question. Caps, unless overridden: 2 searches per stop, 6 searches per day, 80 Tavily credits per day. The dated card, when a watch is stored and not expired, is titled `{name} · watch of {date}`.
+The watch is a server job. It is **active by default** (`NAVIGUIDE_TAVILY_WATCH=1` unless explicitly set to `0`). The “Tavily watch” switch in the right sidebar settings turns it on or off on the server (admin key required); the choice is stored and wins over the variable. When it is on, it covers a stop from 10 days before arrival through 2 days after, at most two rounds, once per stop. Lightning writes one sentence from the extracts. If a second round is needed, the `nano` tier (Lightning) picks one remaining id from a fixed list. It does not invent a question. Caps, unless overridden: 2 searches per stop, 6 searches per day, 80 Tavily credits per day. The dated card, when a watch is stored and not expired, is titled `{name} · watch of {date}`.
 
 The separate “re-read the official port page” judge is off unless `NAVIGUIDE_TRUTH_JUDGE=1`.
 
@@ -188,12 +188,12 @@ In numbers (from git, code files only): on August 26, 2026 the repository held 0
 
 ## Known limitations
 
-- **Fallbacks are not NVIDIA-on-Nebius.** When Token Factory fails, the default order continues to NVIDIA NIM (`openai/gpt-oss-20b`), then OpenRouter (`openai/gpt-4o-mini`), then Claude (`claude-haiku-4-5`). Such answers are labelled with their provider, not as Nemotron.
+- **Fallbacks are not NVIDIA-on-Nebius.** On Token Factory failures, including timeouts by default, the cascade can continue to NVIDIA NIM (`openai/gpt-oss-20b`), then OpenRouter (`openai/gpt-4o-mini`), then Claude (`claude-haiku-4-5`). Those models are not Nemotron and are labelled accordingly. Set `NAVIGUIDE_LLM_TIMEOUT_FALLBACK=0` to disable fallbacks after a timeout.
 - **The number filter only checks numbers.** `filter_numbers` drops a sentence whose figures are not in the facts. A sentence with no number is kept, so a non-numeric invention is not caught.
 - **The official-port judge is off by default.** It runs only when `NAVIGUIDE_TRUTH_JUDGE=1`.
 - **No dollar cap by default.** Daily token budgets apply per tier, but there is no dollar cutoff unless `NAVIGUIDE_LLM_DAILY_USD` is set.
 - **Cached answers can be up to a day old.** The cascade cache lives 24 hours; a written film is cached for one day, a written story for seven days.
-- **Edited is not always available.** If no written film exists for the chosen duration, the **Edited** button is grey.
+- **The first written film for a duration takes time.** It is requested through Token Factory, then NIM, OpenRouter and Claude; a fallback model may write it.
 - **No red-team evaluation.** This repository has no red-team eval directory or report, and was not adversarially tested with NVIDIA garak or promptfoo.
 - **Not for navigation.** Maps and figures come from public sources and calculations; this is not an official chart.
 

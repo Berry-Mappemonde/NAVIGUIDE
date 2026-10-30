@@ -1,4 +1,5 @@
 """Le film et l'horloge répondent sans passer par la file du briefing."""
+import asyncio
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
@@ -179,3 +180,17 @@ def test_post_film_rate_limit_on_this_process(monkeypatch):
     assert blocked.status_code == 429
     assert blocked.headers.get("retry-after")
     admin_guard.reset_limiters()
+
+
+def test_main_post_film_generation_exception_has_unavailable_reason(monkeypatch):
+    import main
+    import official_store as main_official_store
+
+    async def fail_write(**_kwargs):
+        raise RuntimeError("synthetic generation failure")
+
+    monkeypatch.setattr(main_official_store, "start_film_write", fail_write)
+    monkeypatch.setattr(main_official_store, "kick_worker", lambda: None)
+    response = asyncio.run(main.post_official_film_write(lang="fr", seconds=150))
+    assert response["status"] == "preparing"
+    assert response["reason"] == "all-providers-failed"

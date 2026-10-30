@@ -292,7 +292,7 @@ async def get_official_film(
     style: str = Query("raw"),
     t0: str | None = Query(None),
 ):
-    """Script du film — snapshot du stock RF2, jamais un calcul sur la requête."""
+    """Lit le script du film sans lancer de génération."""
     import official_store
     try:
         out = official_store.serve_film(lang=lang, seconds=seconds, style=style)
@@ -323,6 +323,7 @@ _film_write_hourly = rate_limited("film-write-hour", 10**9, 3600.0, global_limit
 async def post_official_film_write(
     lang: str = Query("fr"),
     seconds: int = Query(150, ge=0, le=300),
+    style: str = Query("written"),
     t0: str | None = Query(None),
 ):
     """Clic Rédigé : une chaîne Super / Ultra / Lightning, jamais au GET.
@@ -345,7 +346,7 @@ async def post_official_film_write(
         return official_store.preparing_payload("film", {
             "chapters": [], "source": "rules", "chars": 0,
             "targetSeconds": seconds, "hasWritten": False,
-            **_dated_ici(f"film indisponible: {exc}", "preparing"),
+            **_dated_ici("all-providers-failed", "preparing"),
         })
     if out.get("status") == official_store.PREPARING:
         official_store.kick_worker()
