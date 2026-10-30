@@ -82,7 +82,14 @@ for (const [lang, title, calls, rewritten] of [
     const receipt = page.getByTestId("film-receipt");
     await expect(receipt).toBeVisible();
     await expect(receipt.locator("summary")).toHaveText(title);
+    const bar = page.getByTestId("film-bar");
+    const heightBefore = await bar.evaluate((el) => el.getBoundingClientRect().height);
     await receipt.locator("summary").click();
+    await expect.poll(() => bar.evaluate((el) => el.getBoundingClientRect().height)).toBe(heightBefore);
+    await expect.poll(() => receipt.evaluate((el) => getComputedStyle(el).overflowY)).toBe("auto");
+    await expect.poll(() => receipt.evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThanOrEqual(
+      await bar.evaluate((el) => el.getBoundingClientRect().top),
+    );
     await expect(page.getByTestId("film-receipt-model")).toHaveCount(3);
     await expect(page.getByTestId("film-receipt-models")).toContainText(calls);
     await expect(page.getByTestId("film-receipt-models")).toContainText("Nemotron 3 Ultra");
