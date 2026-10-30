@@ -955,16 +955,22 @@ def start_background(loop: asyncio.AbstractEventLoop | None = None) -> bool:
 
 
 _WATCH_LOOP_TASK: "asyncio.Task | None" = None
+_WATCH_LOOP_RESTART = False
 
 
 def ensure_watch_loop(loop=None) -> bool:
     """Lance la boucle de veille une seule fois (démarrage, ou interrupteur R42 allumé)."""
-    global _WATCH_LOOP_TASK
+    global _WATCH_LOOP_TASK, _WATCH_LOOP_RESTART
     if _WATCH_LOOP_TASK is not None and not _WATCH_LOOP_TASK.done():
+        if watch_enabled() and _WATCH_LOOP_TASK.cancelling():
+            _WATCH_LOOP_RESTART = True
         return False
     try:
         loop = loop or asyncio.get_event_loop()
         _WATCH_LOOP_TASK = loop.create_task(_watch_loop())
+        add_done = getattr(_WATCH_LOOP_TASK, "add_done_callback", None)
+        if add_done is not None:
+            add_done(_watch_loop_done)
         _state["watch"] = {"status": "scheduled"}
         return True
     except Exception as exc:
@@ -974,14 +980,25 @@ def ensure_watch_loop(loop=None) -> bool:
 
 def cancel_watch_loop() -> bool:
     """Arrête la veille périodique dès que le réglage la désactive."""
-    global _WATCH_LOOP_TASK
+    global _WATCH_LOOP_RESTART
     task = _WATCH_LOOP_TASK
-    _WATCH_LOOP_TASK = None
     if task is None or task.done():
         return False
+    _WATCH_LOOP_RESTART = False
     task.cancel()
     _state["watch"] = {"status": "disabled"}
     return True
+
+
+def _watch_loop_done(task: asyncio.Task) -> None:
+    """Libère la référence et honore un ON arrivé pendant l'annulation."""
+    global _WATCH_LOOP_TASK, _WATCH_LOOP_RESTART
+    if _WATCH_LOOP_TASK is task:
+        _WATCH_LOOP_TASK = None
+        restart = _WATCH_LOOP_RESTART
+        _WATCH_LOOP_RESTART = False
+        if restart and watch_enabled():
+            ensure_watch_loop()
 
 
 async def _watch_loop(pause_s: float | None = None) -> None:

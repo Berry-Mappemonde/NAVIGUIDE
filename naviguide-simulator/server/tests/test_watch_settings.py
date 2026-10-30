@@ -60,7 +60,44 @@ def test_disabling_setting_cancels_periodic_watch_loop(monkeypatch):
 
     assert response["enabled"] is False
     assert task.cancelled is True
-    assert ici_warm._WATCH_LOOP_TASK is None
+    assert ici_warm._WATCH_LOOP_TASK is task
+
+
+def test_on_during_cancellation_restarts_exactly_one_watch_loop(monkeypatch):
+    import ici_warm  # noqa: PLC0415
+
+    enabled = True
+    started = []
+    monkeypatch.setattr(escale_watch, "watch_enabled", lambda: enabled)
+
+    async def waiting_loop():
+        started.append(asyncio.current_task())
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(ici_warm, "_watch_loop", waiting_loop)
+
+    async def scenario():
+        nonlocal enabled
+        ici_warm._WATCH_LOOP_TASK = None
+        assert ici_warm.ensure_watch_loop()
+        first = ici_warm._WATCH_LOOP_TASK
+        await asyncio.sleep(0)
+        enabled = False
+        assert ici_warm.cancel_watch_loop()
+        assert ici_warm._WATCH_LOOP_TASK is first
+        enabled = True
+        assert not ici_warm.ensure_watch_loop()
+        await asyncio.gather(first, return_exceptions=True)
+        await asyncio.sleep(0)
+        second = ici_warm._WATCH_LOOP_TASK
+        assert second is not None and second is not first
+        assert len(started) == 2
+        enabled = False
+        second.cancel()
+        await asyncio.gather(second, return_exceptions=True)
+        ici_warm._WATCH_LOOP_TASK = None
+
+    asyncio.run(scenario())
 
 
 def test_off_means_zero_search(monkeypatch):
