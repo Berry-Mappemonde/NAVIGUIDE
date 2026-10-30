@@ -5,6 +5,7 @@
 import en from "../i18n/en.js";
 import fr from "../i18n/fr.js";
 import { nmToRoundedKm } from "./berryLegs.js";
+import { lookup as lookupToponym } from "../engine/toponyms.js";
 
 function isEn(lang) {
   return String(lang || "").toLowerCase().startsWith("en");
@@ -99,7 +100,19 @@ export function displayStopName(name, lang = "fr", t = null) {
   if (isSaintMaur(base)) return labelOf("fv2StopSaintMaur", lang, t);
   if (isAzores(base)) return labelOf("fv2StopAzores", lang, t);
   if (!region) return base;
+  if (isEn(lang)) region = englishRegion(region);
   return `${base} (${region})`;
+}
+
+/** « Polynésie française » → « French Polynesia » in English; unknown regions stay as written. */
+const REGION_EN = Object.freeze({ "nouvelle-écosse": "Nova Scotia" });
+
+function englishRegion(region) {
+  const fixed = REGION_EN[String(region).toLowerCase()];
+  if (fixed) return fixed;
+  const row = lookupToponym(region);
+  const en = row && row.kind !== "high_seas" && row.kind !== "overlap" ? String(row.en || "").trim() : "";
+  return en || region;
 }
 
 /** « Açores (Corse) » → « Açores ». « Ajaccio (Corse) » ne bouge pas. */

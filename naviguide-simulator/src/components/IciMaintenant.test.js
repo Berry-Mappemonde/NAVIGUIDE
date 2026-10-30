@@ -442,3 +442,14 @@ describe("IciMaintenant — : Suivre × ma route", () => {
     assert.equal(legsFromClockMarks({ marks: [{ name: "Seul" }] }).length, 0);
   });
 });
+
+
+it("localizes geographic exonyms in stored title parentheses without changing FR", () => {
+  for (const [raw, expected] of [
+    ["Pojada (Polynésie Française)", "Pojada (French Polynesia)"],
+    ["Station (Wallis-et-Futuna)", "Station (Wallis and Futuna)"],
+  ]) {
+    assert.equal(localizeStoredTitle(raw, "en"), expected);
+    assert.equal(localizeStoredTitle(raw, "fr"), raw);
+  }
+});

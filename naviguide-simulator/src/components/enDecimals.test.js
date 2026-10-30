@@ -7,6 +7,8 @@ describe("revue EN 0951 : séparateur décimal des faits stockés", () => {
     assert.equal(enDecimals("Marina (2,7 nm)", "en"), "Marina (2.7 nm)");
     assert.equal(enDecimals("Marina (2,7 nm)", "fr"), "Marina (2,7 nm)");
     assert.equal(enDecimals("1,500 nm", "en"), "1,500 nm");
+    assert.equal(enDecimals("1,72 nm/h · 4,0 d · 21,7 d", "en"), "1.72 nm/h · 4.0 d · 21.7 d");
+    assert.equal(enDecimals("1,72 nm/h · 4,0 d", "fr"), "1,72 nm/h · 4,0 d");
     assert.match(localizeStoredFact("à 2,7 nm", "en"), /2\.7 nm/);
   });
 });

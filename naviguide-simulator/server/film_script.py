@@ -9484,10 +9484,25 @@ def _align_moments_to_window(moments: list[dict], w: dict, depart_ms: Optional[i
     plusieurs jours : couper par date seule versait les eaux de Samoa ou Tonga dans
     Cayenne → Papeete. Un moment qui porte sa jambe ne parle que dans la fenêtre de
     la même jambe ; ses dates sont reportées proportionnellement dans cette fenêtre.
-    Les moments sans jambe gardent le découpage par date.
+    Les moments sans jambe gardent le découpage par date, avec un contrôle
+    géographique dès que la fenêtre possède une géométrie connue.
     """
     frm, dest = _leg_key(w.get("fromName")), _leg_key(w.get("destName") or w.get("toName"))
     t_a, t_b = w.get("tA"), w.get("tB")
+    points = []
+    for v in ((w.get("clock") or {}).get("vertices") or []):
+        if not isinstance(v, dict) or v.get("vehicle") in {"plane", "land"}:
+            continue
+        t = _ms(v.get("iso"))
+        if t is None or t_a is None or t_b is None or not t_a <= t <= t_b:
+            continue
+        pair = _row_latlon(v)
+        if pair:
+            points.append(pair)
+    for prefix in ("from", "to"):
+        pair = _row_latlon(w.get(prefix)) or _as_latlon(w.get(f"{prefix}Lat"), w.get(f"{prefix}Lon"))
+        if pair:
+            points.append(pair)
     free: list[dict] = []
     mine: list[tuple[int, dict]] = []
     for m in moments:
@@ -9495,7 +9510,9 @@ def _align_moments_to_window(moments: list[dict], w: dict, depart_ms: Optional[i
             continue
         mf, mt = _moment_leg_ends(m)
         if not mf and not mt:
-            free.append(m)
+            pair = _row_latlon(m)
+            if not points or (pair and any(_nm_between(*pair, *p) <= 300 for p in points)):
+                free.append(m)
             continue
         if frm and dest and mf == frm and mt == dest:
             t = _change_t(m)
