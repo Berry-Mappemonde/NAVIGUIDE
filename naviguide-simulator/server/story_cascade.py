@@ -14,6 +14,9 @@ import logging
 import os
 import re
 import time
+import random
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -51,11 +54,51 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 NIM_MODEL = "openai/gpt-oss-20b"
 
+# NIM free-tier controls: concurrency (default 2, 1..16), max attempts
+# (default 3, 1..5), plus optional fast tiers/model overrides.
+_nim_loop_semaphores: dict[asyncio.AbstractEventLoop, asyncio.Semaphore] = {}
+_nim_sleep = asyncio.sleep
+
+
+def _nim_int_env(name: str, default: int, low: int, high: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return min(high, max(low, value))
+
+
+def _nim_semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    semaphore = _nim_loop_semaphores.get(loop)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(_nim_int_env("NAVIGUIDE_NIM_CONCURRENCY", 2, 1, 16))
+        _nim_loop_semaphores[loop] = semaphore
+    return semaphore
+
+
+def _nim_retry_delay(response: httpx.Response, attempt: int) -> float:
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        try:
+            return min(20.0, max(0.0, float(int(retry_after))))
+        except ValueError:
+            try:
+                when = parsedate_to_datetime(retry_after)
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=timezone.utc)
+                return min(20.0, max(0.0, (when - datetime.now(timezone.utc)).total_seconds()))
+            except (TypeError, ValueError, OverflowError):
+                pass
+    delay = min(8.0, 1.0 * (2 ** (attempt - 1)))
+    return random.uniform(0.0, delay)
+
 
 def nim_model(tier: str = "") -> str:
     """Modèle NIM (build.nvidia.com, gratuit) : dev / tests sans Token Factory.
 
     NAVIGUIDE_NIM_MODEL_<PALIER> (NANO, FAST, WRITE, DEEP, JUDGE), sinon
+    NAVIGUIDE_NIM_FAST_TIERS + NAVIGUIDE_NIM_FAST_MODEL, sinon
     NAVIGUIDE_NIM_MODEL, sinon le défaut historique NIM_MODEL.
     """
     t = (tier or "").strip().upper()
@@ -63,6 +106,10 @@ def nim_model(tier: str = "") -> str:
         per_tier = (os.environ.get(f"NAVIGUIDE_NIM_MODEL_{t}") or "").strip()
         if per_tier:
             return per_tier
+        fast_tiers = {x.strip().upper() for x in os.environ.get("NAVIGUIDE_NIM_FAST_TIERS", "").split(",") if x.strip()}
+        fast_model = (os.environ.get("NAVIGUIDE_NIM_FAST_MODEL") or "").strip()
+        if t in fast_tiers and fast_model:
+            return fast_model
     return (os.environ.get("NAVIGUIDE_NIM_MODEL") or "").strip() or NIM_MODEL
 OR_MODEL = os.environ.get("OPENROUTER_MODEL") or "openai/gpt-4o-mini"
 CLAUDE_MODEL = "claude-haiku-4-5"
@@ -1147,11 +1194,21 @@ async def _call_nim(
         "reasoning_effort": "low",
         "chat_template_kwargs": {"thinking": False},
     }
-    r = await client.post(
-        NVIDIA_URL,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json=payload,
-    )
+    attempts = _nim_int_env("NAVIGUIDE_NIM_MAX_ATTEMPTS", 3, 1, 5)
+    for attempt in range(1, attempts + 1):
+        async with _nim_semaphore():
+            r = await client.post(
+                NVIDIA_URL,
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json=payload,
+            )
+        if r.status_code not in (429, 503):
+            break
+        if attempt >= attempts:
+            raise _http_error("nvidia", r)
+        delay = _nim_retry_delay(r, attempt)
+        log.info("cascade nim retry: attempt %d/%d in %.3fs", attempt + 1, attempts, delay)
+        await _nim_sleep(delay)
     if r.status_code >= 400:
         raise _http_error("nvidia", r)
     data = r.json()
