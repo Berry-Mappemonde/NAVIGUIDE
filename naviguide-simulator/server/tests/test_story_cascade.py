@@ -70,6 +70,93 @@ def test_default_cascade_is_token_factory_not_tavily():
     assert providers() == list(DEFAULT_PROVIDERS)  # ordre du porteur (20 sept.)
 
 
+def test_missing_tokenfactory_key_skips_to_all_configured_providers(monkeypatch):
+    """L'absence de TF est tracée et ne coupe pas NIM → OpenRouter → Claude."""
+    import llm_budget
+    import story_cascade
+
+    monkeypatch.delenv("NEBIUS_API_KEY", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "claude-test")
+    calls = []
+
+    async def forbidden_tf(*_args, **_kwargs):
+        raise AssertionError("Token Factory doit être sauté sans clé")
+
+    async def fail_nim(*_args, **_kwargs):
+        calls.append("nim")
+        raise RuntimeError("NIM indisponible")
+
+    async def fail_openrouter(*_args, **_kwargs):
+        calls.append("openrouter")
+        raise RuntimeError("OpenRouter indisponible")
+
+    async def fail_claude(*_args, **_kwargs):
+        calls.append("claude")
+        raise RuntimeError("Claude indisponible")
+
+    monkeypatch.setattr(story_cascade, "_call_tokenfactory", forbidden_tf)
+    monkeypatch.setattr(story_cascade, "_call_nim", fail_nim)
+    monkeypatch.setattr(story_cascade, "_call_openrouter", fail_openrouter)
+    monkeypatch.setattr(story_cascade, "_call_claude", fail_claude)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(500),
+        )) as client:
+            return await cascade_text(
+                "sys", "local-replay-no-tf", client, tier="write",
+                fallback="Phrase locale.", facts=None,
+            )
+
+    text, source = asyncio.run(run())
+    assert (text, source) == ("Phrase locale.", "rules")
+    assert calls == ["nim", "openrouter", "claude"]
+    errors = llm_budget.last_errors()
+    assert errors[0] == {
+        "provider": "tokenfactory", "reason": "skipped: API key unavailable",
+    }
+    assert [item["provider"] for item in errors] == [
+        "tokenfactory", "nim", "openrouter", "claude",
+    ]
+
+
+def test_missing_tokenfactory_key_labels_successful_nim_fallback(monkeypatch):
+    import llm_budget
+    import story_cascade
+
+    monkeypatch.delenv("NEBIUS_API_KEY", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    calls = []
+
+    async def forbidden_tf(*_args, **_kwargs):
+        raise AssertionError("Token Factory doit être sauté sans clé")
+
+    async def nim_answer(*_args, **_kwargs):
+        calls.append("nim")
+        return "Réponse NIM locale.", f"nvidia-{story_cascade.NIM_MODEL}"
+
+    monkeypatch.setattr(story_cascade, "_call_tokenfactory", forbidden_tf)
+    monkeypatch.setattr(story_cascade, "_call_nim", nim_answer)
+
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await cascade_text(
+                "sys", "local-replay-nim", client, tier="write",
+                fallback="Phrase locale.", facts=None,
+            )
+
+    text, source = asyncio.run(run())
+    assert text == "Réponse NIM locale."
+    assert source == f"nvidia-{story_cascade.NIM_MODEL}"
+    assert calls == ["nim"]
+    status = llm_budget.status()
+    assert status["fallback"]["nim"] == 1
+    assert status["lastSourceByTier"]["write"] == "nim"
+
+
 def test_need_page_only_https_from_pack():
     assert need_page({"needPage": True, "pageUrl": "https://douane.gouv.fr/x"}) == (
         True, "https://douane.gouv.fr/x",
