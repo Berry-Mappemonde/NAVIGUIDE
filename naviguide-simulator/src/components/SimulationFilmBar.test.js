@@ -33,6 +33,15 @@ function t(key, vars = {}) {
 }
 
 describe("barre film — vitesse cyclique", () => {
+  it("annonce l’état du chargement du film et propose une reprise", () => {
+    assert.match(bar, /data-testid="film-load-status"[\s\S]*?role=\{replay\.writtenUnavailable \? undefined : "status"\}/);
+    assert.match(bar, /className="flex min-w-0 max-w-full items-center gap-1/);
+    assert.match(bar, /className="min-w-0 truncate"/);
+    assert.match(bar, /data-testid="film-load-retry"/);
+    assert.match(bar, /\["empty", "absent", "timeout", "stale"\]/);
+    assert.match(bar, /animate-spin/);
+  });
+
   it("4 clics : réel → lecture → normale → accélérée → réel", () => {
     assert.deepEqual(PROFILES.map((p) => p.id), ["real", "read", "normal", "fast"]);
     let id = "real";
@@ -50,6 +59,15 @@ describe("barre film — vitesse cyclique", () => {
     assert.equal((bar.match(/data-testid="film-speed"/g) || []).length, 1);
     assert.doesNotMatch(bar, /PROFILES\.map/);
     assert.match(bar, /onClick=\{\(\) => onProfile\(nextFilmSpeed\(profile\)\)\}/);
+  });
+});
+
+describe("barre film — noms accessibles des commandes", () => {
+  it("nomme les boutons de progression, événements et lecture/pause", () => {
+    assert.match(bar, /aria-label=\{showPlaybackControls \? t\("filmScrub"\) : undefined\}/);
+    assert.match(bar, /aria-label=\{ev\.phrase \|\| ev\.type\}/);
+    assert.match(bar, /aria-label=\{playing \? t\("pause"\) : t\("play"\)\}/);
+    assert.match(bar, /aria-label=\{t\("showFilmBar"\)\}/);
   });
 });
 

@@ -186,14 +186,12 @@ async function readPolarResponse(response) {
   throw error;
 }
 
-function polarErrorDetail(error, t) {
+export function polarErrorDetail(error, t) {
   if (error?.code === "DEFAULT_POLAR_NOT_FOUND") return t("polarDefaultUnavailable");
   if (error?.status === 401 || error?.status === 503) return t("adminKeyRequired");
   if (error?.status === 413) return t("polarFileTooLarge");
-  if (error?.status >= 500) {
-    return t("polarServiceUnavailable", { status: error.status });
-  }
-  if (error?.detail) return error.detail;
+  if (error?.status >= 500) return t("polarServiceUnavailable");
+  // Server details may contain internal codes or exception text.
   return t("polarNetworkError");
 }
 

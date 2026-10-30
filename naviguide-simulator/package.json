@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/a11yButtons.test.js src/utils/*.test.js src/i18n/*.test.js src/engine/*.test.js src/layers/*.test.js src/constants/*.test.js src/hooks/*.test.js src/map/*.test.js src/components/*.test.js scripts/film-cinematique.test.mjs",
+    "test": "node --test src/a11yButtons.test.js src/utils/*.test.js src/i18n/*.test.js src/engine/*.test.js src/layers/*.test.js src/constants/*.test.js src/hooks/*.test.js src/map/*.test.js src/components/*.test.js scripts/film-cinematique.test.mjs scripts/revue-locale-nim.test.mjs",
     "server": "uvicorn server.main:app --host 127.0.0.1 --port 8010 --reload",
     "e2e": "playwright test",
     "e2e:store": "PW_WITH_API=1 playwright test e2e/lots",

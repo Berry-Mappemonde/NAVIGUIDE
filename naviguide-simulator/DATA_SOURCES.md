@@ -94,7 +94,7 @@ Copernicus Data Space (Sentinel-2) is a different service. Its licence is **à v
 | URL | `https://api.tavily.com` (`server/tavily_client.py:18`), `POST /extract` et `POST /search` (`server/tavily_client.py:70`, `server/tavily_client.py:133`). Surcharge : `TAVILY_API_BASE`. |
 | Conditions d’utilisation | **à vérifier**. Le dépôt ne les copie pas. |
 | Attribution affichée | Badge « Vérifié le {date} · Tavily + Nemotron 3 Ultra » / « Checked {date} · Tavily + Nemotron 3 Ultra » (`src/i18n/fr.js:164`, `src/i18n/en.js:164`). Aucun fichier `src/**/*.jsx` ne contient le mot Tavily : pas de bouton. |
-| Date de relevé | **à vérifier**. La veille ne part que si `NAVIGUIDE_TAVILY_WATCH` vaut 1 ; le défaut est 0 (`server/escale_watch.py:94-102`). |
+| Date de relevé | **à vérifier**. La veille est active par défaut (`server/escale_watch.py:100-102`) ; `NAVIGUIDE_TAVILY_WATCH=0` la désactive. |
 
 Le détail (fenêtre, tours, plafonds, données envoyées) est dans [docs/AI_GOVERNANCE.md](docs/AI_GOVERNANCE.md).
 

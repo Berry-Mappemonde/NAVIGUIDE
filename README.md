@@ -63,13 +63,34 @@ Primary inference goes to Nebius Token Factory. The ids below are the defaults i
 
 The `deep` tier uses the same Ultra id. `story_tier` in `naviguide-simulator/server/story_cascade.py` picks it for the written story (`POST /ici/story`) of a stopover or a major alert; every other written story stays on `write`. The VL call runs only from `naviguide-simulator/scripts/one_shot.py` with `--run`. The image it sends is drawn locally. Map tiles are not sent.
 
-Nemotron 3 Nano 30B and Nemotron 3 Super 120B leave Token Factory on 9 November 2026, so the `nano` tier now serves Lightning and the `write` tier serves Super VL. Both ids are listed by `GET /v1/models` on Token Factory. Hosts in `naviguide-simulator/server/story_cascade.py`: the `nano` tier on `https://api.tokenfactory.nebius.com/v1` (EU base), Lightning (`fast`) and Super VL (`write`) on the same default base (`NAVIGUIDE_TF_BASE` changes it), Ultra (`deep` and `judge`) on `https://api.tokenfactory.us-central1.nebius.com/v1`.
+Nemotron 3 Nano 30B and Nemotron 3 Super 120B leave Token Factory on 9 November 2026, so the `nano` tier now serves Lightning and the `write` tier serves Super VL. Both ids are listed by `GET /v1/models` on Token Factory. In `naviguide-simulator/server/story_cascade.py`, `nano` and `write` use `NAVIGUIDE_TF_BASE_EU` (EU by default), `fast` uses `NAVIGUIDE_TF_BASE`, and Ultra (`deep`/`judge`) uses `NAVIGUIDE_TF_BASE_ULTRA` (EU by default). Both write and Ultra default to `https://api.tokenfactory.nebius.com/v1`.
 
 **Cascade.** A 24-hour SQLite cache is read first. If the daily budget or `NAVIGUIDE_LLM_MODE` refuses the call, nothing is sent and the source is `budget`. The default order is Token Factory, NIM, OpenRouter, then Claude. After a Token Factory timeout, the cascade continues to NIM, OpenRouter and Claude by default so a model remains available; set `NAVIGUIDE_LLM_TIMEOUT_FALLBACK=0` to disable these fallbacks. NIM currently serves `openai/gpt-oss-20b`, a non-Nemotron model, and is labelled `nvidia-openai/gpt-oss-20b`. If the caller passed a fallback string and every permitted provider failed, the source is `rules`.
+
+### The LLM cascade
+
+The default provider order is `DEFAULT_PROVIDERS` in `naviguide-simulator/server/story_cascade.py`. HTTP errors such as 402, 429, and 5xx, and timeouts, move to the next provider; timeout fallback is on unless `NAVIGUIDE_LLM_TIMEOUT_FALLBACK` is set to `0`, `false`, `no`, or `off`. The last resort is the deterministic `rules` text built from raw facts.
+
+```mermaid
+flowchart TD
+    A["Nebius Token Factory · Nemotron<br/>tier defaults: Lightning / Super-VL / Ultra<br/>NAVIGUIDE_TF_TIMEOUT_S: 25 s<br/>NAVIGUIDE_TF_TIMEOUT_ULTRA_S: 45 s"]
+    B["NVIDIA NIM · openai/gpt-oss-20b<br/>NVIDIA_URL · TIMEOUT: 25 s, connect: 8 s"]
+    C["OpenRouter · openai/gpt-4o-mini<br/>OPENROUTER_URL · TIMEOUT: 25 s, connect: 8 s"]
+    D["Claude · claude-haiku-4-5<br/>ANTHROPIC_URL · TIMEOUT: 25 s, connect: 8 s"]
+    E["Deterministic rules text<br/>raw facts"]
+    A -->|"timeout / HTTP 402, 429, 5xx"| B
+    B -->|"timeout / HTTP error"| C
+    C -->|"timeout / HTTP error"| D
+    D -->|"timeout / HTTP error"| E
+```
+
+The Token Factory tier model defaults are `nvidia/Nemotron-3_5-Lightning` (`nano`, `fast`), `nvidia/Nemotron-3.5-Super-VL` (`write`), and `nvidia/Nemotron-3-Ultra-550b-a55b` (`deep`, `judge`), from `llm_budget.DEFAULT_MODELS`; `NAVIGUIDE_TF_MODEL_*` variables can override them. Provider credentials are read from `NEBIUS_API_KEY`, `NVIDIA_API_KEY`, `OPENROUTER_API_KEY`, and `ANTHROPIC_API_KEY`.
 
 On the `fast` tier only, an empty Token Factory body, an HTTP status of 500 or higher, or a timeout is tried once more on Token Factory with the Super VL model. A 4xx does not take that second try. On the `nano` tier, a Token Factory failure is tried once more on Token Factory as Lightning, then the cascade continues. NIM is `openai/gpt-oss-20b` at `https://integrate.api.nvidia.com/v1/chat/completions`. OpenRouter defaults to `openai/gpt-4o-mini`. Claude is `claude-haiku-4-5`.
 
 **Numbers.** `filter_numbers` in `naviguide-simulator/server/story_cascade.py` drops every sentence that contains a number not already in the facts. A sentence with no number is kept. The filter does not catch a non-numeric invention.
+
+**NIM model settings.** Set `NAVIGUIDE_NIM_MODEL` to override the default model for every tier; `NAVIGUIDE_NIM_MODEL_NANO`, `_FAST`, `_WRITE`, `_DEEP`, or `_JUDGE` overrides it for that tier. With neither set, the model remains `openai/gpt-oss-20b`. `NAVIGUIDE_NIM_DEADLINE_S` limits the complete NIM attempt, including semaphore wait and retries: default `30` seconds, clamped to 1–300 seconds.
 
 **Budgets** when the matching variable is unset (`naviguide-simulator/server/llm_budget.py`):
 
@@ -97,7 +118,7 @@ Tavily is called at runtime in three places a visitor reaches: the logbook chat,
 
 The stop watch below is a separate server job.
 
-The watch is a server job. It is **active by default** (`NAVIGUIDE_TAVILY_WATCH=1` unless explicitly set to `0`). The “Tavily watch” switch in the right sidebar settings turns it on or off on the server (admin key required); the choice is stored and wins over the variable. When it is on, it covers a stop from 10 days before arrival through 2 days after, at most two rounds, once per stop. Lightning writes one sentence from the extracts. If a second round is needed, the `nano` tier (Lightning) picks one remaining id from a fixed list. It does not invent a question. Caps, unless overridden: 2 searches per stop, 6 searches per day, 80 Tavily credits per day. The dated card, when a watch is stored and not expired, is titled `{name} · watch of {date}`.
+The watch is a server job. It is **active by default** (`NAVIGUIDE_TAVILY_WATCH=1` unless explicitly set to `0`). It also runs during server warm-up (`ici_warm.py`). The “Tavily watch” switch in the right sidebar settings turns it on or off on the server (admin key required); the choice is stored and wins over the variable. When it is on, it covers a stop from 10 days before arrival through 2 days after, at most two rounds, once per stop. Lightning writes one sentence from the extracts. If a second round is needed, the `nano` tier (Lightning) picks one remaining id from a fixed list. It does not invent a question. Caps, unless overridden: 2 searches per stop, 6 searches per day, 80 Tavily credits per day. The dated card, when a watch is stored and not expired, is titled `{name} · watch of {date}`.
 
 The separate “re-read the official port page” judge is off unless `NAVIGUIDE_TRUTH_JUDGE=1`.
 
@@ -132,6 +153,35 @@ Model governance: [naviguide-simulator/docs/AI_GOVERNANCE.md](naviguide-simulato
 
 ## Run locally
 
+From the repository root, use Node.js 24 and Python 3.12. In terminal 1:
+
+```bash
+cd naviguide-simulator
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r server/requirements.txt
+export NEBIUS_API_KEY=your_token_factory_key
+export NVIDIA_API_KEY=your_nim_key
+npm run server
+```
+
+Token Factory (`NEBIUS_API_KEY`) is the first provider in the default cascade: Token Factory → NVIDIA NIM → OpenRouter → Claude, with timeout fallback enabled by default. `NVIDIA_API_KEY` enables the NIM fallback, which serves `openai/gpt-oss-20b` at `https://integrate.api.nvidia.com/v1`; that model is not Nemotron. Token Factory serves Lightning for `nano` and `fast`, Super VL for `write`, and Ultra for `deep` and `judge`. `TAVILY_API_KEY` is optional. The Tavily watch is enabled by default, but without the key its requests make no network calls and web sources are unavailable.
+
+For a frozen-stock run with no model or web keys, omit the `export` line and start the API this way instead:
+
+```bash
+env -u NEBIUS_API_KEY NAVIGUIDE_OFFLINE=1 NAVIGUIDE_LLM_MODE=off npm run server
+```
+
+This blocks outgoing HTTP and uses the local stock. In terminal 2, from the repository root:
+
+```bash
+cd naviguide-simulator
+npm run dev
+```
+
+Open [http://localhost:5174](http://localhost:5174), choose **Follow expedition**, then click **Replay the expedition**. The film replays from the official stock; **Edited** requests its written version when available.
+
 | Tool | Version |
 |---|---|
 | Node.js | 24 ([.nvmrc](.nvmrc)) |
@@ -159,7 +209,7 @@ npm run dev
 
 `npm run dev` is the Vite dev server. `npm run server` is the same API with `--reload` on `127.0.0.1:8010`.
 
-Names in [naviguide-simulator/server/.env.example](naviguide-simulator/server/.env.example), and nowhere a value: `NEBIUS_API_KEY`, `NAVIGUIDE_TF_BASE`, `NAVIGUIDE_TF_MODEL_NANO`, `NAVIGUIDE_TF_MODEL_FAST`, `NAVIGUIDE_TF_MODEL_WRITE`, `NAVIGUIDE_TF_MODEL_JUDGE`, `NAVIGUIDE_LLM_PROVIDERS`, `NAVIGUIDE_LLM_DAILY_TOKENS_NANO`, `NAVIGUIDE_LLM_DAILY_TOKENS_FAST`, `NAVIGUIDE_LLM_DAILY_TOKENS_WRITE`, `NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `NVIDIA_API_KEY`, `TAVILY_API_KEY`, `TAVILY_API_BASE`, `NAVIGUIDE_TAVILY_WATCH`, `NAVIGUIDE_WATCH_DAILY_SEARCHES`.
+Names in [naviguide-simulator/server/.env.example](naviguide-simulator/server/.env.example), and nowhere a value: `NEBIUS_API_KEY`, `NAVIGUIDE_TF_BASE`, `NAVIGUIDE_TF_BASE_ULTRA`, `NAVIGUIDE_TF_BASE_EU`, `NAVIGUIDE_PORT_WEB`, `NAVIGUIDE_TF_MODEL_NANO`, `NAVIGUIDE_TF_MODEL_FAST`, `NAVIGUIDE_TF_MODEL_WRITE`, `NAVIGUIDE_TF_MODEL_JUDGE`, `NAVIGUIDE_LLM_PROVIDERS`, `NAVIGUIDE_LLM_DAILY_TOKENS_NANO`, `NAVIGUIDE_LLM_DAILY_TOKENS_FAST`, `NAVIGUIDE_LLM_DAILY_TOKENS_WRITE`, `NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `NVIDIA_API_KEY`, `TAVILY_API_KEY`, `TAVILY_API_BASE`, `NAVIGUIDE_TAVILY_WATCH`, `NAVIGUIDE_WATCH_DAILY_SEARCHES`.
 
 `NAVIGUIDE_LLM_MODE` is read by the server and is not in that example. Set `NAVIGUIDE_LLM_MODE=off` to run with no paid model call. Stories then stay on rules, cache, or the local text.
 
@@ -185,7 +235,7 @@ A merge to `main` deploys [https://naviguide.fr](https://naviguide.fr) on Contab
 
 Measured from git on code files only. The sentence is copied from that measurement. It is not an estimate.
 
-In numbers (from git, code files only): on August 26, 2026 the repository held 0 code files and 0 lines — the NAVIGUIDE simulator did not exist. Today it holds 708 code files and 174,566 lines, and 100% of those lines (174,566) were written or rewritten since August 26, 2026 — 1094 commits, 811 files touched. The simulator (171,071 lines) is entirely post-August 26, 2026.
+In numbers (measured at commit e481787d, from git, code files only): on August 26, 2026 the repository held 0 code files and 0 lines — the NAVIGUIDE simulator did not exist. Today it holds 934 code files and 223,567 lines, and 100% of those lines (223,567) were written or rewritten since August 26, 2026 — 1,361 commits since 2026-08-26T16:00:00Z.
 
 ## Known limitations
 

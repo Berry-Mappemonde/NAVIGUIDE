@@ -392,6 +392,7 @@ export const Sidebar = memo(function Sidebar({
         type="button"
         onClick={onToggle}
         aria-expanded={open ? "true" : "false"}
+        aria-label={open ? t("hideSidebar") : t("showExpeditionPanel")}
         className={`naviguide-sidebar-toggle naviguide-sidebar-toggle--left absolute top-4 z-30 bg-slate-900/95 text-white
           rounded-full flex items-center justify-center shadow-lg
           hover:bg-slate-800 transition-all duration-300
