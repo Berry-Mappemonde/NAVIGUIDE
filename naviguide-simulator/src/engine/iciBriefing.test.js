@@ -3,13 +3,21 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { TERRITORIAL_SEA_NM, cleanStoryText, hereWithoutFalseHighSeas, highSeasRuledOut, nearestStop, nearestStopNm, replayHereFrame, climatologySentence, climatologyShownOnBanner, highSeasClaimAllowed, narrateIci, narrateIciSegments, phraseForEvent, pickFilmPhrase } from "./iciBriefing.js";
+import { TERRITORIAL_SEA_NM, cleanStoryText, formatIciReason, hereWithoutFalseHighSeas, highSeasRuledOut, nearestStop, nearestStopNm, replayHereFrame, climatologySentence, climatologyShownOnBanner, highSeasClaimAllowed, narrateIci, narrateIciSegments, phraseForEvent, pickFilmPhrase } from "./iciBriefing.js";
 import { filmZeeBucket } from "./filmZeeStep.js";
 import { KNOWN_SOURCES, SOURCE_URLS, segmentSources } from "./briefingLinks.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
 const FORBIDDEN = /Ports\s*\/\s*Sécurité|AgentPanel|\/agents\/|Cruisers|Nemotron|Tavily/i;
+
+describe("formatIciReason", () => {
+  it("ne laisse pas passer overpass_unavailable en brut", () => {
+    assert.match(formatIciReason("overpass_unavailable", "fr"), /Overpass/i);
+    assert.match(formatIciReason("outside_us_enc;overpass_unavailable", "en"), /Outside NOAA ENC/i);
+    assert.doesNotMatch(formatIciReason("overpass_unavailable", "fr"), /overpass_unavailable/);
+  });
+});
 
 describe("narrateIci", () => {
   it("describes outside_us_enc as missing NOAA ENC coverage in both languages", () => {
