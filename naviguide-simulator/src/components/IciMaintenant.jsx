@@ -23,6 +23,7 @@ import {
   withNowLeg,
   localizeStoredTitle,
   enDecimals,
+  localizeSourceTag,
   localizeStoredFact,
   localizeStoredLabel,
   aroundWithoutShown,
@@ -465,7 +466,7 @@ export function IciMaintenant({
 
           <Section testId="ici-section-sources" label={t("iciSectionSources")}>
             <p data-testid="ici-sources-line" className="text-[10px] leading-snug text-slate-400">
-              {(frame.sources || []).filter(Boolean).join(" · ")}
+              {(frame.sources || []).filter(Boolean).map((tag) => localizeSourceTag(tag, lang)).join(" · ")}
             </p>
           </Section>
         </div>

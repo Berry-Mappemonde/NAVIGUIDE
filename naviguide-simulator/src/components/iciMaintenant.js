@@ -3,6 +3,7 @@ import { entryNmFrom, momentNearest } from "../hooks/useMomentJournal.js";
 import frDict from "../i18n/fr.js";
 import enDict from "../i18n/en.js";
 import { displayStopName } from "../utils/stopLabels.js";
+import { lookup as lookupToponym, sheetLabel } from "../engine/toponyms.js";
 
 const MONTHS_SHORT = {
   fr: ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],
@@ -209,12 +210,27 @@ export function localizeStoredTitle(title, lang) {
       adj = paren[1].trim();
       extra = ` ${paren[2]}`;
     }
+    // Toponym table first: « samoane », « (Polynésie française) » or
+    // « (Saint-Vincent-et-les-Grenadines) » must not leak into the EN UI.
+    const row = lookupToponym(raw) || lookupToponym(paren ? paren[2].slice(1, -1) : adj) || lookupToponym(adj);
+    if (row) {
+      const label = sheetLabel(row.fr || raw, "en");
+      if (label && label !== "EEZ") return `${prefix}${label}`;
+    }
     const enAdj = ZEE_ADJ_EN[adj.toLowerCase()];
     if (enAdj) return `${prefix}${enAdj} EEZ${extra}`;
     return `${prefix}Exclusive economic zone ${adj}${extra}`;
   }
   if (/zone économique exclusive/i.test(raw)) {
     return raw.replace(/zone économique exclusive/gi, "Exclusive economic zone").replace(/\bZEE\b/g, "EEZ");
+  }
+  const zeeShort = /^ZEE\b\s*(.*)$/.exec(raw);
+  if (zeeShort) {
+    const rest = zeeShort[1].trim();
+    const row = rest ? lookupToponym(rest) : null;
+    const label = row ? sheetLabel(row.fr || rest, "en") : "";
+    if (label && label !== "EEZ") return label;
+    return rest ? `EEZ ${rest}` : "EEZ";
   }
   const escale = /^(?:Escale|Stopover)\s+(.+)$/i.exec(raw);
   if (escale) return `Stopover ${escale[1]}`;
@@ -426,6 +442,13 @@ const NO_POE_FOR = /^aucun port d['’]entr[ée]e officiel n['’]est connu pour
 
 /** Stored server facts are French: the entry alert goes through i18n FR / EN. */
 /** « (2,7 nm) » stocké en français → « (2.7 nm) » en EN ; « 1,500 nm » (milliers) intact. */
+/** Sources line of the Now panel: the « zee » producer reads « EEZ » in English. */
+export function localizeSourceTag(tag, lang) {
+  const raw = String(tag || "");
+  if (lang !== "en") return raw;
+  return /^zee$/i.test(raw.trim()) ? "EEZ" : raw;
+}
+
 export function enDecimals(text, lang) {
   const raw = String(text ?? "");
   if (lang !== "en" || !raw) return raw;
