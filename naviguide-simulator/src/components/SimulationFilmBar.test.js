@@ -59,8 +59,12 @@ describe("barre film — film officiel indisponible", () => {
   it("explique l’état vide dans la langue active au lieu d’annoncer une préparation", () => {
     const unavailableBranch = bar.slice(bar.indexOf("replay?.unavailable"));
     assert.match(unavailableBranch, /title=\{t\("replayUnavailable"\)\}/);
+    assert.match(unavailableBranch, /aria-label=\{`\$\{t\("replayStart"\)\}: \$\{t\("replayUnavailable"\)\}`\}/);
+    assert.match(unavailableBranch, /<span role="status"[\s\S]*?\{t\("replayUnavailable"\)\}/);
     assert.notEqual(en.replayUnavailable, en.replayPreparing);
     assert.notEqual(fr.replayUnavailable, fr.replayPreparing);
+    assert.match(en.replayUnavailable, /^The official expedition film is unavailable right now\.$/);
+    assert.match(fr.replayUnavailable, /^Le film officiel de l’expédition est momentanément indisponible\.$/);
   });
 });
 
