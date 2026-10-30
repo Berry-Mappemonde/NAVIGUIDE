@@ -29,9 +29,12 @@ for (const [lang, label] of [["fr", "Veille Tavily"], ["en", "Tavily watch"]]) {
       await showRightPanel(page);
       await expect(page.getByTestId("tavily-watch-toggle")).toHaveAttribute("aria-checked", String(!before));
     } finally {
-      // Remet le réglage serveur dans son état de départ, même si une assertion a échoué.
-      const res = await request.post(`${API}/escale/watch/settings`, { data: { enabled: before } });
-      expect(res.ok(), `restauration de la veille : HTTP ${res.status()}`).toBeTruthy();
+      // Remet le réglage serveur dans son état de départ, sans masquer l'erreur d'origine.
+      const secret = (process.env.NAVIGUIDE_ADMIN_SECRET || "").trim();
+      const headers = secret ? { "X-Naviguide-Admin": secret } : {};
+      const res = await request.post(`${API}/escale/watch/settings`, { data: { enabled: before }, headers })
+        .catch((err) => ({ ok: () => false, status: () => String(err) }));
+      if (!res.ok()) console.warn(`R42 : restauration de la veille impossible (HTTP ${res.status()})`);
     }
   });
 }
