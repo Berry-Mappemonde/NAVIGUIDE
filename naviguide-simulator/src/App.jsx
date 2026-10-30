@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Redo2, Undo2, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar.jsx";
-import { PanelBoundary } from "./components/RootErrorBoundary.jsx";
+import { PanelBoundary, ReplayErrorBoundary } from "./components/RootErrorBoundary.jsx";
 import { CarnetDeBord, mapPageHref, useCarnetPage } from "./components/CarnetDeBord.jsx";
 import { ToolsSidebar } from "./components/ToolsSidebar.jsx";
 import { LayerFichePopup } from "./components/LayerFichePopup.jsx";
@@ -2281,7 +2281,7 @@ export default function App() {
         </div>
       )}
 
-      <PanelBoundary>
+      <ReplayErrorBoundary>
       <SimulationFilmBar
         ref={filmBarRef}
         barRef={filmBarRef}
@@ -2376,7 +2376,7 @@ export default function App() {
         } : null}
         disclaimer={t("creditsLine")}
       />
-      </PanelBoundary>
+      </ReplayErrorBoundary>
 
       <RecomputeDialog
         draft={vessel.draft}
