@@ -47,3 +47,11 @@ export function publicFilmWebContext(data) {
   if (!port || !sources.length) return null;
   return { port, fetchedAt: ctx.fetchedAt || null, sources };
 }
+
+/**
+ * Contexte web à garder quand un nouveau film est servi : toujours celui du
+ * film servi, jamais celui du précédent (film B sans Tavily → null).
+ */
+export function nextFilmWebContext(_previous, resolved) {
+  return resolved?.webContext || null;
+}

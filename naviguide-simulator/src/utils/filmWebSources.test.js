@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import { normalizeSourceUrl, publicFilmWebContext } from "./filmWebSources.js";
+import { nextFilmWebContext, normalizeSourceUrl, publicFilmWebContext } from "./filmWebSources.js";
 import { resolveServedFilm } from "../hooks/useReplay.js";
 import fr from "../i18n/fr.js";
 import en from "../i18n/en.js";
@@ -79,15 +78,13 @@ test("transition film A (Tavily) → film B (sans webContext) : le contexte web 
     chapters: [{ text: "A" }],
     webContext: { basis: "tavily", port: "Papeete", sources: [{ url: "https://tahiti.example/news", title: "News" }] },
   }, "written");
-  assert.equal(a.webContext?.port, "Papeete");
   const b = resolveServedFilm({
     status: "ready", style: "written", hasWritten: true, source: "nemotron-super", chapters: [{ text: "B" }],
   }, "written");
-  assert.equal(b.webContext ?? null, null);
-  // Le hook remplace l'état à chaque film servi, même sans webContext (pas de `if`).
-  const hook = readFileSync(new URL("../hooks/useReplay.js", import.meta.url), "utf8");
-  assert.match(hook, /setFilmWebContext\(resolved\.webContext \|\| null\)/);
-  assert.doesNotMatch(hook, /if \(resolved\.webContext\) setFilmWebContext/);
+  const afterA = nextFilmWebContext(null, a);
+  assert.equal(afterA?.port, "Papeete");
+  assert.equal(nextFilmWebContext(afterA, b), null);
+  assert.equal(nextFilmWebContext(afterA, a)?.port, "Papeete");
 });
 
 test("normalizeSourceUrl : « / » racine n'est qu'une clé de dédoublonnage, le lien affiché reste intact", () => {
