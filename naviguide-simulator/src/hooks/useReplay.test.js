@@ -1328,6 +1328,8 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(hook, /method: "POST"/);
     assert.match(hook, /chooseFilmStyle/);
     assert.match(hook, /filmWritePollGenRef\.current \+= 1;\s+filmWritePollAbortRef\.current\?\.abort\(\);\s+filmWritePollAbortRef\.current = null;/);
+    assert.match(hook, /const writeGen = \+\+filmWritePollGenRef\.current;/);
+    assert.match(hook, /if \(writeGen !== filmWritePollGenRef\.current\) return;/);
     assert.match(hook, /setFilmWriteError\(true\);\s+setFilmWriting\(false\);\s+\}\)\s+\.catch/);
     assert.match(hook, /resolveServedFilm/);
     assert.match(hook, /probeWritten/);

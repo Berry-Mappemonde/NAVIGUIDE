@@ -2307,6 +2307,7 @@ export function useReplay({
     const path = filmRequestPath(voyageId);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
     setFilmWriteError(false);
+    const writeGen = ++filmWritePollGenRef.current;
     filmWriteStartingRef.current = true;
     setFilmWriting(true);
     fetch(`${API}${path}?${q}`, { method: "POST" })
@@ -2315,6 +2316,7 @@ export function useReplay({
         return r.json();
       })
       .then((data) => {
+        if (writeGen !== filmWritePollGenRef.current) return;
         if (!data) return;
         const status = String(data?.status || "").toLowerCase();
         if (status === "writing" || data?.writing) {
