@@ -50,7 +50,8 @@ log_dir="$(mktemp -d "${TMPDIR:-/tmp}/naviguide-review.XXXXXX")"
 
 cd "$APP_DIR"
 env -u NEBIUS_API_KEY -u NAVIGUIDE_OFFLINE -u NAVIGUIDE_LLM_MODE \
-  NAVIGUIDE_LLM_PROVIDERS=nim NVIDIA_API_KEY="$NVIDIA_API_KEY_2" \
+  PYTHON_DOTENV_DISABLED=1 NAVIGUIDE_LLM_PROVIDERS=nim \
+  NVIDIA_API_KEY="$NVIDIA_API_KEY_2" \
   /workspace/nv-venv/bin/python -m uvicorn server.main:app \
   --host "$API_HOST" --port "$API_PORT" \
   >"$log_dir/api.log" 2>&1 &
