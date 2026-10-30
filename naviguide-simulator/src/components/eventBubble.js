@@ -115,7 +115,7 @@ export function bubbleTitle(card, max = EVENT_BUBBLE_TITLE_MAX, lang = "fr") {
 }
 
 export function bubbleFacts(card, lang = "fr") {
-  const text = String(card?.text || "").trim();
+  const text = String((isEnLang(lang) && card?.text_en) || card?.text || "").trim();
   if (!text) return "";
   // Contenu de données seulement en français : masqué en EN (jamais traduit ici).
   if (isEnLang(lang) && looksFrench(text)) return "";
@@ -171,7 +171,7 @@ export function filmEventCard(ev, lang = "fr") {
   if (!ev) return null;
   const card = ev.card && typeof ev.card === "object" ? ev.card : {};
   const title = localizeStoredTitle(card.title || ev.title || ev.kind || "", lang);
-  const candidate = card.text || ev.fact || "";
+  const candidate = (isEnLang(lang) && (card.text_en || ev.fact_en)) || card.text || ev.fact || "";
   const text = isEnLang(lang) && looksFrench(candidate) ? "" : candidate;
   return {
     ...card,

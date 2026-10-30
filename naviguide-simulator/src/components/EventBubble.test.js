@@ -231,3 +231,11 @@ describe("eventBubble — : seuil de score et somme 20 s", () => {
     assert.equal(gate.accept({ id: "zee-1", kind: "zee", score: 2 })?.id, "zee-1");
   });
 });
+
+describe("EN text_en priority", () => {
+  it("EN prefers text_en over French text", async () => {
+    const { bubbleFacts } = await import("./eventBubble.js");
+    assert.match(bubbleFacts({ text: "Le bateau longe la côte des Baléares avec les alizés.", text_en: "The boat sails along the Balearic coast." }, "en"), /Balearic/);
+    assert.match(bubbleFacts({ text: "Le bateau longe la côte.", text_en: "The boat sails." }, "fr"), /bateau/);
+  });
+});
