@@ -72,10 +72,13 @@ for (const lang of ["fr", "en"]) {
     const listen = page.getByTestId("listen");
     if (await listen.count()) await expect(listen).toBeVisible();
 
-    // Capture the active bar at 100%, then let the replay settle into its ended state.
-    for (let i = 0; i < 12; i += 1) {
+    // Each clock step must run animation frames; fastForward jumps over them,
+    // while the replay advances from requestAnimationFrame timestamps.
+    const targetSeconds = await page.evaluate(() => Number(window.__naviguideFilm?.targetSeconds) || 0);
+    const clockSteps = Math.min(48, Math.max(1, Math.ceil(targetSeconds / 5) + 2));
+    for (let i = 0; i < clockSteps; i += 1) {
       if (await page.evaluate(() => Boolean(window.__naviguideFilm?.ended))) break;
-      await page.clock.fastForward(5_000);
+      await page.clock.runFor(5_000);
     }
     const reachedEnd = await page.evaluate(() => Boolean(window.__naviguideFilm?.ended));
     expect(reachedEnd, "la relecture a atteint sa fin").toBe(true);
