@@ -6073,7 +6073,6 @@ def test_halifax_saint_pierre_hop_not_voyage():
     assert "three days at sea" in (station_bare_ch["text"] or "")
     assert _opening_nm_label(leg_nm, "en") in (station_rev_ch["text"] or "")
     assert spoken_sea_days(leg_days, "en") in (station_rev_ch["text"] or "")
-
     from film_script import repair_side_hop_plan
 
     stale = {
@@ -6100,6 +6099,17 @@ def test_halifax_saint_pierre_hop_not_voyage():
     assert _opening_nm_label(leg_nm, "en") in repaired_text
     assert spoken_sea_days(leg_days, "en") in repaired_text
     assert "Arrival on 15 August." in repaired_text
+
+
+def test_window_leg_distance_keeps_film_odometer_scale():
+    from film_script import _window_leg_nm
+
+    window = {
+        "from": {"nm": 9658.68, "filmNm": 9818.68},
+        "to": {"filmNm": 16286.06},
+    }
+
+    assert round(_window_leg_nm(window), 2) == 6467.38
 
 
 def test_reread_reads_spelled_out_french_dates():
