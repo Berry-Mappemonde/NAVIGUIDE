@@ -11,9 +11,11 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import time
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +68,7 @@ KNOWN_SOURCES = frozenset({
     "nemotron-ultra",
     "openrouter", "claude", "rules", "budget", "cache",
 })
+_TF_DEADLINE: ContextVar[float | None] = ContextVar("tf_cascade_deadline", default=None)
 
 
 def tf_timeout(tier: str) -> httpx.Timeout:
@@ -89,7 +92,7 @@ def tf_timeout(tier: str) -> httpx.Timeout:
         val = float(raw) if raw else default
     except (TypeError, ValueError):
         val = default
-    if val <= 0:
+    if not math.isfinite(val) or val <= 0:
         val = default
     connect = min(8.0, val)
     return httpx.Timeout(val, connect=connect)
@@ -100,7 +103,6 @@ _INFLIGHT: dict[str, asyncio.Future] = {}
 _INFLIGHT_GUARD: asyncio.Lock | None = None
 _TF_SEMA: asyncio.Semaphore | None = None
 
-_FENCE_RE = re.compile(r"^```(?:json|text)?\s*|\s*```$", re.M)
 _THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
 _THINK_OPEN_RE = re.compile(r"<think\b[^>]*>.*\Z", re.IGNORECASE | re.DOTALL)
 _PROMPT_LEAK_RE = re.compile(
@@ -372,7 +374,7 @@ def filter_numbers(answer: str, facts: Any, *, spelled: bool = False) -> tuple[s
     blob = facts if isinstance(facts, str) else json.dumps(facts, ensure_ascii=False, default=str)
     allowed = _numbers_spoken(blob) if spelled else _numbers(blob)
     kept, dropped = [], 0
-    for s in _SENT_SPLIT_RE.split(answer or ""):
+    for s in _split_sentences(answer or ""):
         s = s.strip()
         if not s:
             continue
@@ -396,7 +398,7 @@ def expand_spoken_units(text: str, lang: str = "fr") -> str:
 
 def split_short_sentences(text: str, max_len: int = 160) -> str:
     """Phrases courtes et complètes — jamais de coupure au milieu."""
-    parts = [p.strip() for p in _SENT_SPLIT_RE.split(text or "") if p.strip()]
+    parts = [p.strip() for p in _split_sentences(text or "") if p.strip()]
     out: list[str] = []
     for part in parts:
         chunk = part if part.endswith((".", "!", "?", "…")) else f"{part}."
@@ -549,7 +551,7 @@ def _strip_preamble(txt: str) -> str:
 
 def _clean_text(txt: str | None) -> str:
     s = _strip_think(txt or "")
-    s = _FENCE_RE.sub("", s.strip()).strip()
+    s = _strip_fences(s.strip()).strip()
     s = _strip_preamble(s)
     if _PROMPT_LEAK_RE.search(s):
         return ""
@@ -567,7 +569,58 @@ _META_RE = re.compile(
     r"analyze user input|thinking off|wait, let me|translate a sailing-log)",
     re.IGNORECASE,
 )
-_SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
+def _split_sentences(text: str) -> list[str]:
+    """Split after sentence punctuation and whitespace in one linear pass."""
+    parts: list[str] = []
+    start = 0
+    i = 0
+    while i < len(text):
+        if text[i] in ".!?…":
+            whitespace_end = i + 1
+            while whitespace_end < len(text) and text[whitespace_end].isspace():
+                whitespace_end += 1
+            if whitespace_end > i + 1 and whitespace_end < len(text):
+                parts.append(text[start:i + 1])
+                start = whitespace_end
+                i = whitespace_end
+                continue
+            i = whitespace_end
+        else:
+            i += 1
+    parts.append(text[start:])
+    return parts
+
+
+def _strip_fences(text: str) -> str:
+    """Remove line-start opening and line-end closing fences without regex backtracking."""
+    chars = list(text)
+    i = 0
+    while i < len(text):
+        line_start = i == 0 or text[i - 1] == "\n"
+        if text.startswith("```", i):
+            end = i + 3
+            if end == len(text) or text[end] == "\n":
+                before = i
+                while before > 0 and text[before - 1].isspace():
+                    before -= 1
+                for j in range(before, end):
+                    chars[j] = ""
+                i = end
+                continue
+        if line_start and text.startswith("```", i):
+            after = i + 3
+            if text.startswith("json", after):
+                after += 4
+            elif text.startswith("text", after):
+                after += 4
+            while after < len(text) and text[after].isspace():
+                after += 1
+            for j in range(i, after):
+                chars[j] = ""
+            i = after
+            continue
+        i += 1
+    return "".join(chars)
 _WORD_RE = re.compile(r"[0-9A-Za-zÀ-ÿ]+")
 # Marqueurs de raisonnement. Une phrase douteuse ne devient pas le texte visiteur.
 _REASON_MARK_RE = re.compile(
@@ -709,7 +762,7 @@ def tidy_story(
     raw = re.sub(r"\s{2,}", " ", raw).strip()
     if not raw:
         return (fallback or "").strip()
-    kept = [s.strip() for s in _SENT_SPLIT_RE.split(raw) if s.strip() and not _META_RE.search(s)]
+    kept = [s.strip() for s in _split_sentences(raw) if s.strip() and not _META_RE.search(s)]
     out = " ".join(kept[:max_sentences]).strip()
     if len(out) > max_chars:
         cut = out[:max_chars]
@@ -753,6 +806,10 @@ GUARD_SUBSTITUTES: dict[str, tuple[str, ...]] = {
 }
 
 
+class TokenFactoryModelMissing(RuntimeError):
+    """Catalogue connu : aucun palier admissible ne possède le modèle demandé."""
+
+
 async def _guarded_tier(tier: str, client: httpx.AsyncClient) -> str:
     """Palier à appeler après la garde du catalogue.
 
@@ -784,7 +841,7 @@ async def _guarded_tier(tier: str, client: httpx.AsyncClient) -> str:
             )
             return alt
     llm_budget.record_model_missing(t, model)
-    raise RuntimeError(f"tokenfactory model missing from catalog: {model} @ {base}")
+    raise TokenFactoryModelMissing(f"tokenfactory model missing from catalog: {model} @ {base}")
 
 
 class CascadeResult(tuple):
@@ -902,10 +959,10 @@ def _recover_reasoning_text(raw: Any, *, prompt: str = "", lang: str = "fr") -> 
     else:
         parts = _message_parts(raw)
         blob = _parts_text(parts, reasoning=True) or _parts_text(parts, reasoning=False)
-    stripped = _strip_preamble(_strip_think(_FENCE_RE.sub("", blob or "")))
+    stripped = _strip_preamble(_strip_think(_strip_fences(blob or "")))
     want_en = _is_en(lang)
     kept: list[str] = []
-    for sentence in _SENT_SPLIT_RE.split(stripped):
+    for sentence in _split_sentences(stripped):
         sentence = sentence.strip()
         if not sentence:
             continue
@@ -965,6 +1022,11 @@ def _claude_text(data: dict[str, Any] | None) -> str:
 
 def _http_error(provider: str, response: httpx.Response) -> RuntimeError:
     """Keep the exact HTTP status and a short body — never swallow a 4xx/5xx."""
+    if provider == "tokenfactory" and hasattr(response, "extensions"):
+        llm_budget.record_latency_error(
+            llm_budget.normalize_tier(str(response.extensions.get("tf-tier") or "write")),
+            "httpErrors", float(response.extensions.get("tf-elapsed-ms") or 0), response.status_code,
+        )
     body = " ".join((response.text or "").split())[:180]
     msg = f"{provider} HTTP {response.status_code}"
     if body:
@@ -1057,8 +1119,15 @@ async def _call_tokenfactory(
     payload = _tf_payload(system, user, t, max_tokens)
     timeout = tf_timeout(t)
     sema = _tf_limiter()
+    deadline = _TF_DEADLINE.get()
+    remaining = max(0.0, deadline - time.monotonic()) if deadline is not None else timeout.read
+    if remaining <= 0:
+        llm_budget.record_latency_timeout(t)
+        raise TokenFactoryTimeout("tokenfactory cascade deadline exhausted")
+    queue_timeout = min(1.0, timeout.read, max(0.001, remaining - 0.005))
+    started = time.monotonic()
     try:
-        await asyncio.wait_for(sema.acquire(), timeout=timeout.read)
+        await asyncio.wait_for(sema.acquire(), timeout=queue_timeout)
     except asyncio.TimeoutError as exc:
         # File d'attente du limiteur pleine trop longtemps : repli étiqueté.
         llm_budget.record_latency_timeout(t)
@@ -1067,16 +1136,17 @@ async def _call_tokenfactory(
     try:
         # Échéance totale (P2-1) : httpx.Timeout borne chaque lecture, pas la
         # requête entière ; une réponse au compte-gouttes pouvait la dépasser.
-        r = await asyncio.wait_for(
-            client.post(
+        remaining = max(0.001, deadline - time.monotonic()) if deadline is not None else timeout.read
+        async with asyncio.timeout(remaining):
+            r = await client.post(
                 _tf_url(t),
                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
                 json=payload,
-                timeout=timeout,
-            ),
-            timeout=timeout.read,
-        )
+                timeout=httpx.Timeout(min(timeout.read, remaining), connect=min(timeout.connect, remaining)),
+            )
         elapsed_ms = (time.monotonic() - started) * 1000.0
+        r.extensions["tf-tier"] = t
+        r.extensions["tf-elapsed-ms"] = elapsed_ms
     except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
         llm_budget.record_latency_timeout(t)
         # Budget (P2-3) : la génération a pu partir côté Token Factory ;
@@ -1084,9 +1154,38 @@ async def _call_tokenfactory(
         est_pt, _ = _estimate_tokens(system, user, "")
         llm_budget.record(t, est_pt, int(payload.get("max_tokens") or 0))
         raise TokenFactoryTimeout(f"tokenfactory timeout after {timeout.read:g} s") from exc
+    except httpx.RequestError:
+        llm_budget.record_latency_error(t, "networkErrors", (time.monotonic() - started) * 1000.0)
+        raise
     finally:
         sema.release()
     if r.status_code >= 400:
+        body = r.text
+        rejected = False
+        quota_exhausted = r.status_code == 402
+        try:
+            payload = r.json()
+            errors = payload.get("error") if isinstance(payload, dict) else None
+            if isinstance(errors, dict):
+                code = str(errors.get("code") or "").lower()
+                error_type = str(errors.get("type") or "").lower()
+                quota_exhausted = quota_exhausted or code == "insufficient_quota" or error_type == "insufficient_quota" or code.startswith("credit_balance_") or error_type.startswith("credit_balance_")
+                param = str(errors.get("param") or "").lower()
+                rejected = code in {"model_not_found", "model_not_supported", "invalid_model"} and (not param or param == "model")
+                body = " ".join((str(errors.get("message") or ""), code, param))
+            if isinstance(payload, dict):
+                quota_exhausted = quota_exhausted or any(
+                    str(payload.get(key) or "").lower() == "insufficient_quota"
+                    or str(payload.get(key) or "").lower().startswith("credit_balance_")
+                    for key in ("type", "code")
+                )
+        except (ValueError, UnicodeDecodeError):
+            pass
+        if quota_exhausted:
+            llm_budget.pause_tokenfactory_for_quota()
+        explicit = re.search(r"(?:model|model_id|model id).{0,50}(?:not found|does not exist|unknown|unsupported|invalid)|(?:not found|does not exist|unknown|unsupported|invalid).{0,50}(?:model|model_id|model id)", body, re.I)
+        if rejected or (r.status_code in (400, 404) and explicit):
+            tf_catalog.invalidate(tf_base(t))
         raise _http_error("tokenfactory", r)
     # Latence par palier du modèle appelé (C1-a) : aller-retour HTTP réussi.
     llm_budget.record_latency(t, elapsed_ms)
@@ -1277,6 +1376,7 @@ async def _cascade_once(
     max_tokens: int | None = None,
     lang: str = "fr",
 ) -> tuple[str, str]:
+    tf_deadline = time.monotonic() + tf_timeout(tier).read
     cache_key = prompt_cache_key(system, user, tier, online=online, max_tokens=max_tokens)
     hit = _cache_get(cache_key)
     if hit:
@@ -1291,19 +1391,23 @@ async def _cascade_once(
     asked_lang = "en" if _is_en(lang) else "fr"
 
     async def _tokenfactory_hop() -> tuple[str, str]:
-        call_tier = await _guarded_tier(norm_tier, http)
-        if call_tier != norm_tier:
-            # Remplaçant étiqueté : source et modèle du palier qui répond.
-            return await _call_tokenfactory(
-                system, user, call_tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
-                lang=asked_lang,
-            )
+        call_tier = norm_tier
         try:
+            call_tier = await _guarded_tier(norm_tier, http)
+            if call_tier != norm_tier:
+                return await _call_tokenfactory(
+                    system, user, call_tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
+                    lang=asked_lang,
+                )
             return await _call_tokenfactory(
                 system, user, tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
                 lang=asked_lang,
             )
         except Exception as exc:
+            if isinstance(exc, TokenFactoryModelMissing):
+                raise
+            if llm_budget.tokenfactory_quota_paused():
+                raise
             if norm_tier == "nano":
                 # File pleine (P2-2) : Lightning ré-attendrait la même file.
                 if isinstance(exc, TokenFactoryTimeout) and exc.queue:
@@ -1312,12 +1416,13 @@ async def _cascade_once(
                 # le maillon NIM du tour de providers si Lightning échoue aussi.
                 if not llm_budget.allow("fast"):
                     raise
+                fallback_tier = await _guarded_tier("fast", http)
                 log.warning("cascade nano: %s — repli Lightning", exc)
                 return await _call_tokenfactory(
-                    system, user, "fast", http, max_tokens=max_tokens, cascade_tier=norm_tier,
+                    system, user, fallback_tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
                     lang=asked_lang,
                 )
-            if norm_tier != "fast" or not _tf_fast_super_retry(exc):
+            if call_tier != "fast" or not _tf_fast_super_retry(exc):
                 raise
             llm_budget.record_retry_super()
             budget = max_tokens if max_tokens is not None else llm_budget.max_tokens_for(norm_tier)
@@ -1347,13 +1452,29 @@ async def _cascade_once(
     failures: list[dict[str, str]] = []
     tf_timed_out = False
     for name, step in hops:
+        if name == "tokenfactory" and llm_budget.tokenfactory_quota_paused():
+            failures.append({"provider": name, "reason": "skipped: quota exhausted"})
+            continue
         if tf_timed_out and name in NON_NEMOTRON_PROVIDERS and not timeout_fallback_allowed():
             # P1-2 : pas de repli silencieux hors Nemotron après un timeout TF
             # (défaut des providers). Texte de règles étiqueté à la place.
             failures.append({"provider": name, "reason": "skipped: non-Nemotron after tokenfactory timeout"})
             continue
         try:
-            result = await step()
+            if name == "tokenfactory":
+                token = _TF_DEADLINE.set(tf_deadline)
+                catalog_token = tf_catalog.set_deadline(tf_deadline)
+                try:
+                    remaining = max(0.0, tf_deadline - time.monotonic())
+                    if remaining <= 0:
+                        raise TokenFactoryTimeout("tokenfactory cascade deadline exhausted")
+                    async with asyncio.timeout(remaining):
+                        result = await step()
+                finally:
+                    tf_catalog.reset_deadline(catalog_token)
+                    _TF_DEADLINE.reset(token)
+            else:
+                result = await step()
             text, source = result
             if facts is not NO_NUMBER_FILTER:
                 text = _apply_filter(text, facts if facts is not None else user)
@@ -1381,7 +1502,7 @@ async def _cascade_once(
             failures.append({"provider": name, "reason": last})
         except Exception as exc:
             last = str(exc)[:240]
-            if name == "tokenfactory" and _is_tf_timeout(exc):
+            if name == "tokenfactory" and (_is_tf_timeout(exc) or time.monotonic() >= tf_deadline):
                 tf_timed_out = True
             log.warning("cascade %s: %r", name, exc)
             failures.append({"provider": name, "reason": last})

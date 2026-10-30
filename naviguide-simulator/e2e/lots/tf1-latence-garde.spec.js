@@ -17,9 +17,9 @@ const LLM = {
   judge: { tokens: 3000, calls: 1, usd: 0.006 },
   tavily: { credits: 0, calls: 0 },
   latency: {
-    fast: { lastMs: 820, medianMs: 870, calls: 3 },
-    write: { lastMs: 2200, medianMs: 2140, calls: 2 },
-    judge: { lastMs: 6380, medianMs: 6380, calls: 1 },
+    fast: { lastMs: 820, medianMs: 870, calls: 3, samples: 3 },
+    write: { lastMs: 2200, medianMs: 2140, calls: 2, samples: 2 },
+    judge: { lastMs: 6380, medianMs: 6380, calls: 1, samples: 1 },
   },
   modelGuard: {
     enabled: true,
