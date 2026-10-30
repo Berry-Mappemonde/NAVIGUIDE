@@ -120,6 +120,28 @@ def test_R2c_non_timeout_failure_keeps_default_cascade(monkeypatch):
     assert res[1].startswith("nvidia-")
 
 
+def test_I5_catalogue_deadline_still_reaches_nim(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_LLM_PROVIDERS", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_TIMEOUT_FALLBACK", "1")
+    monkeypatch.setenv("NAVIGUIDE_TF_MODEL_GUARD", "1")
+    monkeypatch.setenv("NAVIGUIDE_TF_TIMEOUT_S", "0.03")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nv-test")
+    seen = []
+
+    async def handler(req):
+        seen.append(str(req.url))
+        if "tokenfactory" in str(req.url):
+            await asyncio.sleep(0.08)  # catalogue GET expires within the shared TF budget
+            return httpx.Response(200, json={"data": []})
+        body = json.loads(req.read().decode())
+        return httpx.Response(200, json=_ok(body.get("model", "nim")))
+
+    res = _run(handler, tier="write")
+    assert res[1].startswith("nvidia-")
+    assert any("tokenfactory" in url for url in seen)
+    assert any("nvidia" in url for url in seen)
+
+
 def test_R3_timeout_is_a_total_deadline(monkeypatch):
     """httpx read=1 s mais un serveur qui égrène un octet / 0,4 s pendant ~3 s."""
     monkeypatch.setenv("NAVIGUIDE_LLM_PROVIDERS", "tokenfactory")

@@ -22,6 +22,7 @@ import logging
 import math
 import os
 import time
+from contextvars import ContextVar, Token
 from datetime import datetime, timezone
 from typing import Any
 
@@ -35,6 +36,15 @@ DEFAULT_TTL_S = 6 * 3600.0
 # essai avant ce délai. Le garde reste « inconnu » et ne remplace rien.
 RETRY_AFTER_FAIL_S = 600.0
 TIMEOUT = httpx.Timeout(5.0, connect=3.0)
+_DEADLINE: ContextVar[float | None] = ContextVar("tf_catalog_deadline", default=None)
+
+
+def set_deadline(deadline: float) -> Token:
+    return _DEADLINE.set(deadline)
+
+
+def reset_deadline(token: Token) -> None:
+    _DEADLINE.reset(token)
 
 _LOCKS: dict[str, asyncio.Lock] = {}
 
@@ -105,16 +115,20 @@ def parse_catalog(data: Any) -> list[str] | None:
     return ids or None
 
 
-async def refresh(base: str, key: str, client: httpx.AsyncClient) -> dict[str, Any]:
+async def refresh(base: str, key: str, client: httpx.AsyncClient, remaining: float | None = None) -> dict[str, Any]:
     """Lit le catalogue de l'hôte (un GET, sans jeton facturé) et le met en cache."""
     b = _norm_base(base)
     started = time.monotonic()
     entry: dict[str, Any]
     try:
+        request_timeout = TIMEOUT if remaining is None else httpx.Timeout(
+            min(TIMEOUT.read, max(0.001, remaining)),
+            connect=min(TIMEOUT.connect, max(0.001, remaining)),
+        )
         r = await client.get(
             f"{b}/models",
             headers={"Authorization": f"Bearer {key}"},
-            timeout=TIMEOUT,
+            timeout=request_timeout,
         )
         ms = int(round((time.monotonic() - started) * 1000))
         if r.status_code >= 400:
@@ -142,11 +156,25 @@ async def ensure_fresh(base: str, key: str, client: httpx.AsyncClient) -> dict[s
         if _fresh(entry, time.time()):
             return entry
         lock = _LOCKS.setdefault(b, asyncio.Lock())
-        async with lock:
-            entry = _get(b)
-            if _fresh(entry, time.time()):
-                return entry
-            return await refresh(b, key, client)
+        deadline = _DEADLINE.get()
+        remaining = max(0.0, deadline - time.monotonic()) if deadline is not None else None
+        if remaining is not None and remaining <= 0:
+            return None
+
+        async def read():
+            async with lock:
+                entry = _get(b)
+                if _fresh(entry, time.time()):
+                    return entry
+                left = max(0.0, deadline - time.monotonic()) if deadline is not None else None
+                if left is not None and left <= 0:
+                    return None
+                return await refresh(b, key, client, left)
+
+        if remaining is None:
+            return await read()
+        async with asyncio.timeout(remaining):
+            return await read()
     except Exception as exc:
         log.warning("catalogue Token Factory %s : %r", b, exc)
         return None

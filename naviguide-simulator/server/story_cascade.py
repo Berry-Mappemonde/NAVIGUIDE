@@ -15,6 +15,7 @@ import math
 import os
 import re
 import time
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +68,7 @@ KNOWN_SOURCES = frozenset({
     "nemotron-ultra",
     "openrouter", "claude", "rules", "budget", "cache",
 })
+_TF_DEADLINE: ContextVar[float | None] = ContextVar("tf_cascade_deadline", default=None)
 
 
 def tf_timeout(tier: str) -> httpx.Timeout:
@@ -970,6 +972,11 @@ def _claude_text(data: dict[str, Any] | None) -> str:
 
 def _http_error(provider: str, response: httpx.Response) -> RuntimeError:
     """Keep the exact HTTP status and a short body — never swallow a 4xx/5xx."""
+    if provider == "tokenfactory" and hasattr(response, "extensions"):
+        llm_budget.record_latency_error(
+            llm_budget.normalize_tier(str(response.extensions.get("tf-tier") or "write")),
+            "httpErrors", float(response.extensions.get("tf-elapsed-ms") or 0), response.status_code,
+        )
     body = " ".join((response.text or "").split())[:180]
     msg = f"{provider} HTTP {response.status_code}"
     if body:
@@ -1062,7 +1069,13 @@ async def _call_tokenfactory(
     payload = _tf_payload(system, user, t, max_tokens)
     timeout = tf_timeout(t)
     sema = _tf_limiter()
-    queue_timeout = min(1.0, timeout.read)
+    deadline = _TF_DEADLINE.get()
+    remaining = max(0.0, deadline - time.monotonic()) if deadline is not None else timeout.read
+    if remaining <= 0:
+        llm_budget.record_latency_timeout(t)
+        raise TokenFactoryTimeout("tokenfactory cascade deadline exhausted")
+    queue_timeout = min(1.0, timeout.read, max(0.001, remaining - 0.005))
+    started = time.monotonic()
     try:
         await asyncio.wait_for(sema.acquire(), timeout=queue_timeout)
     except asyncio.TimeoutError as exc:
@@ -1073,14 +1086,17 @@ async def _call_tokenfactory(
     try:
         # Échéance totale (P2-1) : httpx.Timeout borne chaque lecture, pas la
         # requête entière ; une réponse au compte-gouttes pouvait la dépasser.
-        async with asyncio.timeout(timeout.read):
+        remaining = max(0.001, deadline - time.monotonic()) if deadline is not None else timeout.read
+        async with asyncio.timeout(remaining):
             r = await client.post(
                 _tf_url(t),
                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
                 json=payload,
-                timeout=timeout,
+                timeout=httpx.Timeout(min(timeout.read, remaining), connect=min(timeout.connect, remaining)),
             )
         elapsed_ms = (time.monotonic() - started) * 1000.0
+        r.extensions["tf-tier"] = t
+        r.extensions["tf-elapsed-ms"] = elapsed_ms
     except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
         llm_budget.record_latency_timeout(t)
         # Budget (P2-3) : la génération a pu partir côté Token Factory ;
@@ -1088,6 +1104,9 @@ async def _call_tokenfactory(
         est_pt, _ = _estimate_tokens(system, user, "")
         llm_budget.record(t, est_pt, int(payload.get("max_tokens") or 0))
         raise TokenFactoryTimeout(f"tokenfactory timeout after {timeout.read:g} s") from exc
+    except httpx.RequestError:
+        llm_budget.record_latency_error(t, "networkErrors", (time.monotonic() - started) * 1000.0)
+        raise
     finally:
         sema.release()
     if r.status_code >= 400:
@@ -1296,6 +1315,7 @@ async def _cascade_once(
     max_tokens: int | None = None,
     lang: str = "fr",
 ) -> tuple[str, str]:
+    tf_deadline = time.monotonic() + tf_timeout(tier).read
     cache_key = prompt_cache_key(system, user, tier, online=online, max_tokens=max_tokens)
     hit = _cache_get(cache_key)
     if hit:
@@ -1375,7 +1395,20 @@ async def _cascade_once(
             failures.append({"provider": name, "reason": "skipped: non-Nemotron after tokenfactory timeout"})
             continue
         try:
-            result = await step()
+            if name == "tokenfactory":
+                token = _TF_DEADLINE.set(tf_deadline)
+                catalog_token = tf_catalog.set_deadline(tf_deadline)
+                try:
+                    remaining = max(0.0, tf_deadline - time.monotonic())
+                    if remaining <= 0:
+                        raise TokenFactoryTimeout("tokenfactory cascade deadline exhausted")
+                    async with asyncio.timeout(remaining):
+                        result = await step()
+                finally:
+                    tf_catalog.reset_deadline(catalog_token)
+                    _TF_DEADLINE.reset(token)
+            else:
+                result = await step()
             text, source = result
             if facts is not NO_NUMBER_FILTER:
                 text = _apply_filter(text, facts if facts is not None else user)
@@ -1401,7 +1434,7 @@ async def _cascade_once(
             failures.append({"provider": name, "reason": last})
         except Exception as exc:
             last = str(exc)[:240]
-            if name == "tokenfactory" and _is_tf_timeout(exc):
+            if name == "tokenfactory" and (_is_tf_timeout(exc) or time.monotonic() >= tf_deadline):
                 tf_timed_out = True
             log.warning("cascade %s: %r", name, exc)
             failures.append({"provider": name, "reason": last})

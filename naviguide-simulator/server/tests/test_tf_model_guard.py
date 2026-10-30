@@ -225,8 +225,9 @@ def test_latency_ignores_failed_http(monkeypatch):
     def handler(request):
         return httpx.Response(529, json={"error": "overloaded"})
     monkeypatch.setenv("NAVIGUIDE_TF_MODEL_GUARD", "0")
-    _run(handler)
-    assert "latency" not in llm_budget.status()
+    _run(handler, tier="write")
+    assert llm_budget.status()["latency"]["write"]["httpErrors"]["last"]["status"] == 529
+    assert llm_budget.status()["latency"]["write"]["samples"] == 0
 
 
 def test_status_has_no_prompt_and_no_key():
@@ -351,7 +352,7 @@ def test_tf_call_never_without_timeout(monkeypatch):
     _run(handler, tier="write", user="Une ZEE pour write.")
     _run(handler, tier="fast", user="Une ZEE pour fast.")
     _run(handler, tier="judge", user="Une ZEE pour judge.")
-    assert [c.get("read") for c in captured] == [25.0, 25.0, 45.0]
+    assert all(0 < c.get("read", 0) <= expected for c, expected in zip(captured, [25.0, 25.0, 45.0]))
     assert all(c.get("connect") == 8.0 for c in captured)
 
 

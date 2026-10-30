@@ -347,15 +347,16 @@ def record(tier: str, prompt_tokens: int, completion_tokens: int) -> dict[str, A
     pt = max(0, int(prompt_tokens))
     ct = max(0, int(completion_tokens))
     add_usd = estimate_usd(t, pt, ct)
-    with _LOCK:
-        cur = get_usage(t)
+    def update(raw):
+        cur = raw if isinstance(raw, dict) else _empty()
+        cur = {**_empty(), **cur}
         cur["prompt_tokens"] = int(cur["prompt_tokens"]) + pt
         cur["completion_tokens"] = int(cur["completion_tokens"]) + ct
         cur["tokens"] = int(cur["prompt_tokens"]) + int(cur["completion_tokens"])
         cur["calls"] = int(cur["calls"]) + 1
         cur["usd"] = round(float(cur["usd"]) + add_usd, 8)
-        pearl_store.kv_put(NS, _kv_key(t), cur)
-        return dict(cur)
+        return cur
+    return dict(pearl_store.kv_update(NS, _kv_key(t), update))
 
 
 def _last_source_by_tier_raw() -> dict[str, str]:
@@ -746,6 +747,10 @@ def _latency_raw(day: str | None = None) -> dict[str, dict[str, Any]]:
         except (TypeError, ValueError):
             timeouts = 0
         out[k] = {"samples": samples[-LATENCY_SAMPLES:], "calls": calls, "timeouts": timeouts}
+        for error_key in ("networkErrors", "httpErrors"):
+            errors = v.get(error_key) or []
+            if isinstance(errors, list):
+                out[k][error_key] = [dict(e) for e in errors[-LATENCY_SAMPLES:] if isinstance(e, dict)]
     return out
 
 
@@ -760,13 +765,15 @@ def record_latency(tier: str, ms: float) -> None:
         return
     if val < 0:
         return
-    with _LOCK:
-        cur = _latency_raw()
+    def update(raw):
+        cur = raw if isinstance(raw, dict) else {}
+        cur = {k: dict(v) for k, v in cur.items() if k in TIERS and isinstance(v, dict)}
         row = cur.get(t) or {"samples": [], "calls": 0, "timeouts": 0}
         row["samples"] = (list(row["samples"]) + [val])[-LATENCY_SAMPLES:]
         row["calls"] = int(row["calls"]) + 1
         cur[t] = row
-        pearl_store.kv_put(NS, _latency_key(), cur)
+        return cur
+    pearl_store.kv_update(NS, _latency_key(), update)
 
 
 def record_latency_timeout(tier: str) -> None:
@@ -774,12 +781,42 @@ def record_latency_timeout(tier: str) -> None:
     import pearl_store  # noqa: PLC0415
 
     t = normalize_tier(tier)
-    with _LOCK:
-        cur = _latency_raw()
+    def update(raw):
+        cur = raw if isinstance(raw, dict) else {}
+        cur = {k: dict(v) for k, v in cur.items() if k in TIERS and isinstance(v, dict)}
         row = cur.get(t) or {"samples": [], "calls": 0, "timeouts": 0}
         row["timeouts"] = int(row["timeouts"]) + 1
         cur[t] = row
-        pearl_store.kv_put(NS, _latency_key(), cur)
+        return cur
+    pearl_store.kv_update(NS, _latency_key(), update)
+
+
+def record_latency_error(tier: str, kind: str, ms: float, status: int | None = None) -> None:
+    """Record a failed TF request separately from successful latency samples."""
+    import pearl_store  # noqa: PLC0415
+
+    if kind not in {"networkErrors", "httpErrors"}:
+        return
+    t = normalize_tier(tier)
+    try:
+        duration = max(0, int(round(float(ms))))
+    except (TypeError, ValueError):
+        return
+
+    def update(raw):
+        cur = raw if isinstance(raw, dict) else {}
+        cur = {k: dict(v) for k, v in cur.items() if k in TIERS and isinstance(v, dict)}
+        row = cur.setdefault(t, {"samples": [], "calls": 0, "timeouts": 0})
+        entries = list(row.get(kind) or [])
+        error = {"ms": duration}
+        if kind == "httpErrors":
+            error["status"] = int(status or 0)
+        entries = (entries + [error])[-LATENCY_SAMPLES:]
+        row[kind] = entries
+        cur[t] = row
+        return cur
+
+    pearl_store.kv_update(NS, _latency_key(), update)
 
 
 def _median(values: list[int]) -> int | None:
@@ -793,12 +830,12 @@ def _median(values: list[int]) -> int | None:
 
 def latency_status(day: str | None = None) -> dict[str, dict[str, int]]:
     """`{tier: {lastMs, medianMs, calls, timeouts?}}` pour les paliers appelés aujourd'hui."""
-    out: dict[str, dict[str, int]] = {}
+    out: dict[str, dict[str, Any]] = {}
     for t, row in _latency_raw(day).items():
         samples = row["samples"]
         calls = int(row["calls"])
         timeouts = int(row.get("timeouts", 0))
-        if not samples and timeouts == 0:
+        if not samples and timeouts == 0 and not row.get("networkErrors") and not row.get("httpErrors"):
             continue
         entry: dict[str, int] = {"calls": calls, "samples": len(samples)}
         if samples:
@@ -806,6 +843,10 @@ def latency_status(day: str | None = None) -> dict[str, dict[str, int]]:
             entry["medianMs"] = _median(samples) or 0
         if timeouts > 0:
             entry["timeouts"] = timeouts
+        for key in ("networkErrors", "httpErrors"):
+            errors = row.get(key) or []
+            if errors:
+                entry[key] = {"count": len(errors), "last": dict(errors[-1])}
         out[t] = entry
     return out
 
