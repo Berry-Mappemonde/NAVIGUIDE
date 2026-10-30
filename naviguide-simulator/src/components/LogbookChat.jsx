@@ -79,7 +79,7 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
   };
 
   return (
-    <div data-testid="logbook-chat" className="sim-box-chat rounded-lg border border-violet-500/25 bg-violet-950/25 p-2 min-w-0">
+    <div data-testid="logbook-chat" data-tour="logbook" className="sim-box-chat rounded-lg border border-violet-500/25 bg-violet-950/25 p-2 min-w-0">
       <div className="flex items-center gap-1.5 mb-1 flex-shrink-0">
         <MessageSquare size={12} className="text-violet-200" />
         <div className="text-[10px] font-semibold uppercase tracking-wider text-violet-200 leading-snug">{t("logbookChatTitle")}</div>
