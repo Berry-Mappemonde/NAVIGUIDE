@@ -25,6 +25,8 @@ describe("LogbookChat contract", () => {
     assert.match(src, /data-testid="logbook-chat-ai-notice"/);
     assert.match(src, /data-testid="logbook-chat-ai-notice-dismiss"/);
     assert.match(src, /aiActChatNotice/);
+    assert.match(src, /<p role="status" aria-live="polite" data-testid="logbook-chat-ai-notice-text">\{showAiNotice \? t\("aiActChatNotice"\) : ""\}<\/p>/);
+    assert.match(src, /<div\s+data-testid="logbook-chat-ai-notice"[\s\S]{0,500}<p role="status" aria-live="polite" data-testid="logbook-chat-ai-notice-text">\{showAiNotice \?/);
     assert.match(src, /naviguide-ai-act-chat-notice-v1/);
     assert.match(src, /onFocus=\{onChatFocus\}/);
     assert.match(src, /messages\.length > 0/);
@@ -155,7 +157,8 @@ describe("LogbookChat example questions (one click, three real paths)", () => {
 
 describe("R44 : accessibilité du chat et de la notice AI Act", () => {
   it("la notice est une région live (role=status, aria-live=polite) autour du texte seul", () => {
-    assert.match(src, /<p role="status" aria-live="polite" data-testid="logbook-chat-ai-notice-text">\{t\("aiActChatNotice"\)\}<\/p>/);
+    assert.match(src, /<p role="status" aria-live="polite" data-testid="logbook-chat-ai-notice-text">\{showAiNotice \? t\("aiActChatNotice"\) : ""\}<\/p>/);
+    assert.match(src, /<div\s+data-testid="logbook-chat-ai-notice"[\s\S]{0,500}<p role="status" aria-live="polite" data-testid="logbook-chat-ai-notice-text">\{showAiNotice \?/);
     assert.doesNotMatch(src, /role="note"/);
   });
   it("champ et bouton Envoyer ont un nom accessible i18n ; le focus revient au champ", () => {

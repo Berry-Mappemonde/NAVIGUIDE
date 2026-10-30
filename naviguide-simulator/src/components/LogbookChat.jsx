@@ -132,13 +132,13 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
           {error ? <p className="text-[10px] text-amber-300/90 leading-snug" role="alert" data-testid="logbook-chat-error">{error}</p> : null}
         </div>
       </div>
-      {showAiNotice ? (
-        <div
-          data-testid="logbook-chat-ai-notice"
-          className="mt-1.5 rounded-md border border-violet-300/45 bg-violet-950 px-2 py-1.5 text-xs leading-snug text-violet-50"
-        >
-          {/* Région live autour du texte seul : la notice AI Act est annoncée, pas le bouton. */}
-          <p role="status" aria-live="polite" data-testid="logbook-chat-ai-notice-text">{t("aiActChatNotice")}</p>
+      <div
+        data-testid="logbook-chat-ai-notice"
+        className={showAiNotice ? "mt-1.5 rounded-md border border-violet-300/45 bg-violet-950 px-2 py-1.5 text-xs leading-snug text-violet-50" : ""}
+      >
+        {/* Région live persistante : seul le texte est annoncé, pas le bouton. */}
+        <p role="status" aria-live="polite" data-testid="logbook-chat-ai-notice-text">{showAiNotice ? t("aiActChatNotice") : ""}</p>
+        {showAiNotice ? (
           <button
             type="button"
             data-testid="logbook-chat-ai-notice-dismiss"
@@ -147,8 +147,8 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
           >
             {t("aiActChatNoticeDismiss")}
           </button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
       <div
         data-testid="logbook-chat-examples"
         className="mt-1 flex flex-nowrap items-center gap-0.5 flex-shrink-0 min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
