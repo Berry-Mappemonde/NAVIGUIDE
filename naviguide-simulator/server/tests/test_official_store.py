@@ -2123,7 +2123,7 @@ def test_ed1_write_query_runs_once_then_cache(client, tmp_path, monkeypatch):
     store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
     calls = {"n": 0}
 
-    async def fake_chain(plan, *, seconds=150, cascade=None):
+    async def fake_chain(plan, *, seconds=150, cascade=None, **kwargs):
         calls["n"] += 1
         written = {
             "chapters": list(plan.get("chapters") or []),
@@ -2174,7 +2174,7 @@ def test_film_write_rate_limit_and_offered_durations(client, tmp_path, monkeypat
     store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
     calls = {"n": 0}
 
-    async def fake_chain(plan, *, seconds=150, cascade=None):
+    async def fake_chain(plan, *, seconds=150, cascade=None, **kwargs):
         calls["n"] += 1
         written = {
             "chapters": list(plan.get("chapters") or []),

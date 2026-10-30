@@ -181,7 +181,9 @@ def test_run_stops_at_the_cap_and_resumes_without_repaying(monkeypatch):
     state["block"] = False
     result = one_shot.run(stories_once.JOB, est["fingerprint"])
     assert result["completed"][0:2] == stopped.value.completed
-    assert calls == ["write", "judge", "judge", "fast", "write", "judge", "judge", "fast"]
+    # With parallel FR/EN write_film_chain, translate calls write_film_chain for EN (write+judge+judge = 3 calls per EN instead of 1 fast)
+    # Two stories: first run does 1st story FR (write, judge), second run does 1st story EN (judge, judge) + 2nd story FR (write, judge)
+    assert calls == ["write", "judge", "judge", "write", "judge", "judge"]
     assert len(result["completed"]) == 8
 
 

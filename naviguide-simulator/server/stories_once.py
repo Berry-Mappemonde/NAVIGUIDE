@@ -530,7 +530,8 @@ def _judge(story: dict, row: dict) -> None:
 
 
 def _translate(story: dict, row: dict) -> None:
-    from film_script import write_film_chain, _raw_plan_for  # noqa: PLC0415
+    from film_script import write_film_chain  # noqa: PLC0415
+    from official_store import _raw_plan_for  # noqa: PLC0415
 
     if _slot_text(row, "en"):
         return
