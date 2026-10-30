@@ -28,9 +28,10 @@ describe("useOfficialExpedition — position officielle", () => {
     assert.match(source, /if \(!enabled\) \{\s*frozenClientRef\.current = null;\s*return null;/);
   });
 
-  it("lit l’horloge avant le PUT et répare une fois par empreinte de route", () => {
+  it("saute le PUT si le GET fournit l’horloge, mais répare après un GET absent même si l’effet est annulé", () => {
     assert.match(source, /const ck = haveClock \? null : await readClock\(\);[\s\S]*?const routeFingerprint = `\$\{points\.length\}/);
-    assert.match(source, /const needPut = hasAdminSecret\(\) \|\| putRef\.current !== routeFingerprint \|\| \(!haveClock && !isUsableOfficialClock\(ck\)\);/);
+    assert.match(source, /const needPut = hasAdminSecret\(\) \|\| \(!haveClock && !isUsableOfficialClock\(ck\) && putRef\.current !== routeFingerprint\);/);
+    assert.doesNotMatch(source, /const ck = haveClock \? null : await readClock\(\);\s*if \(cancelled\) return;/);
     assert.match(source, /const data = needPut \? await putOfficial\(\)\.catch\(\(\) => null\) : null;/);
     assert.ok(source.includes("gotClock = haveClock || isUsableOfficialClock(ck) || isUsableOfficialClock(data?.clock);"));
     assert.ok(source.includes("if (isUsableOfficialClock(ck) && !cancelled)"));
