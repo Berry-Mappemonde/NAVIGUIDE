@@ -36,7 +36,9 @@ describe("LogbookChat contract", () => {
     assert.match(hook, /source: body\.source \|\| body\.engine \|\| null/);
     assert.match(hook, /reason/);
     assert.doesNotMatch(hook, /Nemotron|Tavily|Nebius/i);
-    assert.doesNotMatch(hook, /useEffect/);
+    assert.match(hook, /signal:\s*controller\.signal/);
+    assert.match(hook, /requestController\.current\?\.abort\(\)/);
+    assert.match(hook, /err\?\.code === "aborted"/);
   });
 
   it("keeps the translator callable when recording the question timestamp", () => {

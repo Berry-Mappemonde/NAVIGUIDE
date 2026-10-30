@@ -25,16 +25,29 @@ export async function postLogbookChat({ url, body, fetchImpl = fetch, timeoutMs 
   }, timeoutMs);
 
   try {
+    const parseJson = async (response) => {
+      try {
+        return await response.json();
+      } catch (err) {
+        if (timedOut) throw Object.assign(new Error("Request timed out"), { code: "timeout", detail: null, status: null });
+        if (signal?.aborted) throw Object.assign(new Error("Request aborted"), { code: "aborted", detail: null, status: null });
+        throw err;
+      }
+    };
     let response;
     try {
       response = await fetchImpl(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
     } catch (err) {
       if (timedOut) throw Object.assign(new Error("Request timed out"), { code: "timeout", detail: null, status: null });
+      if (signal?.aborted) throw Object.assign(new Error("Request aborted"), { code: "aborted", detail: null, status: null });
       if (err instanceof TypeError || err?.name === "TypeError") throw Object.assign(new Error("Network request failed"), { code: "network", detail: err.message, status: null });
       throw err;
     }
-    if (response.ok) return await response.json();
-    const payload = await response.json().catch(() => ({}));
+    if (response.ok) return await parseJson(response);
+    const payload = await parseJson(response).catch((err) => {
+      if (err?.code === "timeout" || err?.code === "aborted") throw err;
+      return {};
+    });
     const detail = payload?.detail ?? null;
     const code = errorCode(response.status, detail);
     throw Object.assign(new Error(detailText(detail) || `HTTP ${response.status}`), { code, detail, status: response.status });

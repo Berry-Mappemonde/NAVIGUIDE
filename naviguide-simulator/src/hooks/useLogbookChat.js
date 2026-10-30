@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { adminHeaders } from "../utils/adminSecret.js";
 import { chatErrorKey, postLogbookChat } from "../utils/logbookChatRequest.js";
 import { useLang } from "../i18n/LangContext.jsx";
@@ -19,11 +19,16 @@ export function useLogbookChat({ lang = "fr", contextFn = null } = {}) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
   const inFlight = useRef(false);
+  const requestController = useRef(null);
+
+  useEffect(() => () => requestController.current?.abort(), []);
 
   const ask = useCallback(async (question, opts = {}) => {
     const q = String(question || "").trim();
     if (!q || inFlight.current) return null;
     inFlight.current = true;
+    const controller = new AbortController();
+    requestController.current = controller;
     setPending(true);
     setError(null);
     const timestamp = new Date().toISOString();
@@ -39,6 +44,7 @@ export function useLogbookChat({ lang = "fr", contextFn = null } = {}) {
         url: `${API_URL}/logbook/chat`,
         fetchImpl: (url, options) => fetch(url, { ...options, headers: { ...options.headers, ...adminHeaders() } }),
         body: { question: q, lang, context },
+        signal: controller.signal,
       });
       const reply = {
         role: "logbook",
@@ -55,10 +61,12 @@ export function useLogbookChat({ lang = "fr", contextFn = null } = {}) {
       setMessages((prev) => [...prev, reply].slice(-HISTORY_MAX));
       return reply;
     } catch (err) {
+      if (err?.code === "aborted" || err?.name === "AbortError") return null;
       console.warn("Logbook chat request failed:", err?.detail ?? err?.message);
       setError(tr(chatErrorKey(err?.code)));
       return null;
     } finally {
+      if (requestController.current === controller) requestController.current = null;
       inFlight.current = false;
       setPending(false);
     }

@@ -31,6 +31,17 @@ describe("postLogbookChat", () => {
     await assert.rejects(postLogbookChat({ url: "/chat", body: {}, timeoutMs: 5, fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")))) }), { code: "timeout" });
   });
 
+  it("classifies timeout while reading a slow successful response body", async () => {
+    await assert.rejects(postLogbookChat({ url: "/chat", body: {}, timeoutMs: 5, fetchImpl: (_url, { signal }) => Promise.resolve({ ok: true, json: () => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")))) }) }), { code: "timeout" });
+  });
+
+  it("classifies caller cancellation", async () => {
+    const controller = new AbortController();
+    const request = postLogbookChat({ url: "/chat", body: {}, signal: controller.signal, fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")))) });
+    controller.abort();
+    await assert.rejects(request, { code: "aborted" });
+  });
+
   it("classifies network failures", async () => {
     await assert.rejects(postLogbookChat({ url: "/chat", body: {}, fetchImpl: async () => { throw new TypeError("Failed to fetch"); } }), { code: "network" });
   });
