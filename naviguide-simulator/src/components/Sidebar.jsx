@@ -398,6 +398,7 @@ export const Sidebar = memo(function Sidebar({
           hover:bg-slate-800 transition-all duration-300
           w-9 h-9 border border-slate-700
           ${open ? "left-[322px]" : "left-4"}`}
+        aria-label={open ? t("hideSidebar") : t("showExpeditionPanel")}
         title={open ? t("hideSidebar") : t("showExpeditionPanel")}
       >
         {open ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
