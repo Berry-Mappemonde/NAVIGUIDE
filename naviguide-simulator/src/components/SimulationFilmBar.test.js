@@ -53,6 +53,15 @@ describe("barre film — vitesse cyclique", () => {
   });
 });
 
+describe("barre film — noms accessibles des commandes", () => {
+  it("nomme les boutons de progression, événements et lecture/pause", () => {
+    assert.match(bar, /aria-label=\{showPlaybackControls \? t\("filmScrub"\) : undefined\}/);
+    assert.match(bar, /aria-label=\{ev\.phrase \|\| ev\.type\}/);
+    assert.match(bar, /aria-label=\{playing \? t\("pause"\) : t\("play"\)\}/);
+    assert.match(bar, /aria-label=\{t\("showFilmBar"\)\}/);
+  });
+});
+
 describe("barre film — libellé météo du point", () => {
   it("climatology + weatherLine global + sources vides → climatologie seule", () => {
     assert.equal(

@@ -182,6 +182,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
           type="button"
           data-testid="show-film-bar"
           onClick={() => onHideBar?.(false)}
+          aria-label={t("showFilmBar")}
           className="mx-auto block px-2 py-1 rounded-md text-[10px] font-semibold bg-slate-950/80 border border-white/15 text-white/80"
         >
           {t("showFilmBar")}
@@ -292,6 +293,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             type="button"
             onClick={onBarClick}
             disabled={!showPlaybackControls}
+            aria-label={showPlaybackControls ? t("filmScrub") : undefined}
             className="absolute inset-0 w-full h-full rounded-full"
             title={showPlaybackControls ? t("filmScrub") : undefined}
           >
@@ -320,6 +322,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     : "bg-transparent border-cyan-200"
                 }`}
                 style={{ left: `${left}%` }}
+                aria-label={ev.phrase || ev.type}
                 title={ev.phrase || ev.type}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -625,6 +628,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 <button
                   type="button"
                   onClick={onTogglePlay}
+                  aria-label={playing ? t("pause") : t("play")}
                   className="w-7 h-6 rounded-md bg-cyan-600 hover:bg-cyan-500 flex items-center justify-center"
                   title={playing ? t("pause") : t("play")}
                 >
