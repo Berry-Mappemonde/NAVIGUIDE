@@ -373,8 +373,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               {t("hideFilmBar")}
             </button>
           ) : null}
-          <div data-testid="film-commands" className="flex items-start gap-1 min-w-0 flex-1">
-          <div className="flex items-center gap-1 flex-wrap min-w-0 flex-1">
+          <div data-testid="film-commands" className="flex flex-wrap items-start gap-1 min-w-0 flex-1">
+          <div className="flex items-center gap-1 flex-wrap flex-1">
             {onCinema ? (
               <button
                 type="button"

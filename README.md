@@ -71,6 +71,8 @@ On the `fast` tier only, an empty Token Factory body, an HTTP status of 500 or h
 
 **Numbers.** `filter_numbers` in `naviguide-simulator/server/story_cascade.py` drops every sentence that contains a number not already in the facts. A sentence with no number is kept. The filter does not catch a non-numeric invention.
 
+**NIM model settings.** Set `NAVIGUIDE_NIM_MODEL` to override the default model for every tier; `NAVIGUIDE_NIM_MODEL_NANO`, `_FAST`, `_WRITE`, `_DEEP`, or `_JUDGE` overrides it for that tier. With neither set, the model remains `openai/gpt-oss-20b`. `NAVIGUIDE_NIM_DEADLINE_S` limits the complete NIM attempt, including semaphore wait and retries: default `30` seconds, clamped to 1–300 seconds.
+
 **Budgets** when the matching variable is unset (`naviguide-simulator/server/llm_budget.py`):
 
 | Tier | Tokens per day |
@@ -131,6 +133,36 @@ Licences are stated here only when this repository names them. The sheet with UR
 Model governance: [naviguide-simulator/docs/AI_GOVERNANCE.md](naviguide-simulator/docs/AI_GOVERNANCE.md).
 
 ## Run locally
+
+### Run it locally
+
+From the repository root, use Node.js 24 and Python 3.12. In terminal 1:
+
+```bash
+cd naviguide-simulator
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r server/requirements.txt
+export NVIDIA_API_KEY=your_nim_key
+env -u NEBIUS_API_KEY npm run server
+```
+
+`NVIDIA_API_KEY` enables NVIDIA NIM in development. It serves `openai/gpt-oss-20b` as a fallback at `https://integrate.api.nvidia.com/v1`; that model is not Nemotron. Token Factory (`NEBIUS_API_KEY`) is optional in production. Its tiers use Lightning for `nano` and `fast`, Super VL for `write`, and Ultra for `deep` and `judge`. `TAVILY_API_KEY` is optional; without it, web sources are absent.
+
+For a frozen-stock run with no model or web keys, omit the `export` line and start the API this way instead:
+
+```bash
+env -u NEBIUS_API_KEY NAVIGUIDE_OFFLINE=1 NAVIGUIDE_LLM_MODE=off npm run server
+```
+
+This blocks outgoing HTTP and uses the local stock. In terminal 2, from the repository root:
+
+```bash
+cd naviguide-simulator
+npm run dev
+```
+
+Open [http://localhost:5174](http://localhost:5174), choose **Follow expedition**, then click **Replay the expedition**. The film replays from the official stock; **Edited** requests its written version when available.
 
 | Tool | Version |
 |---|---|
