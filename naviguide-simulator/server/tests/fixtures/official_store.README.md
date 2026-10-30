@@ -20,6 +20,14 @@ fb82b26, 4a88e93). La recette tourne sur la route du gel (empreinte
 c4a0d2dc06cea61b) en attendant un stock recalculé sur la route publiée ; l'étape
 CI « Stock figé de la recette et route publiée » donne l'empreinte publiée du jour.
 
+Film 150 s rédigé (29 oct. 2026, feat/film-150s) : la clé film `…:2026-10-29:vs1-ed2`
+porte aussi `written.fr["150"]` et `written.en["150"]`, issus d'un run réel Token Factory
+(Super-VL rédige, Ultra édite/juge/relit, Lightning traduit ; relecture FR et EN « pass »,
+reçu de 56 appels, 0 repli). FR ≈ 139 s, EN ≈ 132 s (15 car./s). Seule la clé `written`
+a été ajoutée : les variantes brutes 150/180/intégral et les autres familles sont
+inchangées, la route du gel aussi. `test_frozen_store_holds_reviewed_150s_film_fr_and_en`
+vérifie leur présence.
+
 Commande pour régénérer (après un vrai calcul, si la route ou t0 change) :
 
 ```bash

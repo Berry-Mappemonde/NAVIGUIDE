@@ -2,6 +2,11 @@
  * NAVIGUIDE — French translations
  */
 export default {
+  chatErrTimeout: "Le chat n'a pas répondu à temps. Réessayez.",
+  chatErrNetwork: "Impossible de joindre le chat. Vérifiez votre connexion et réessayez.",
+  chatErrEmpty: "Veuillez saisir une question.",
+  chatErrTooLong: "Votre question est trop longue. Raccourcissez-la puis réessayez.",
+  chatErrServer: "Le chat a rencontré une erreur. Réessayez plus tard.",
   // ── Drawing mode ────────────────────────────────────────────────────────────
   drawStart:      "Choisissez votre point de départ",
   drawFirstStop:  "Choisissez votre première escale",
@@ -123,7 +128,7 @@ export default {
   storySourceUltra: "Nemotron 3 Ultra · Token Factory",
   storySourceOpenrouter: "OpenRouter",
   storySourceClaude: "Claude",
-  storySourceRules: "règles",
+  storySourceRules: "Formulé par les données brutes",
   storySourceBudget: "budget",
   storySourceCache: "cache",
   storySourceNim: "NVIDIA NIM (repli)",
@@ -226,7 +231,7 @@ export default {
   logbookChatTitle: "Journal de bord — posez une question",
   filmWebSourcesTitle: "Sources web (Tavily) · {port} :",
   tfLatencyLine: "Temps de réponse Token Factory aujourd’hui sur ce serveur (médiane) : {list}.",
-  tfLatencyItem: "{model} {s} s",
+  tfLatencyItem: "{model} {s} s (n={n})",
   tfLatencyDecimal: ",",
   tfModelMissingLine: "Absent du catalogue Token Factory aujourd’hui : {model}, remplacé par {substitute} ; ses textes portent son propre nom.",
   tfModelMissingNone: "Absent du catalogue Token Factory aujourd’hui : {model} ; ses textes passent au repli suivant, étiqueté.",
@@ -249,7 +254,12 @@ export default {
   logbookWebSourcesTitle: "Sources web (Tavily)",
   logbookWebUnavailable: "Veille web indisponible (clé Tavily absente ou erreur).",
   logbookChatPlaceholder: "Quel vent au bateau ? Prochaine escale ?",
+  tavilyWatchLabel: "Veille Tavily",
+  tavilyWatchHint: "Recherche web côté serveur sur les escales proches (de 10 jours avant à 2 jours après)",
+  tavilyWatchAdmin: "Clé admin requise pour changer la veille",
+  tavilyWatchError: "Veille : serveur injoignable",
   logbookChatInputLabel: "Votre question au carnet de bord",
+
   logbookChatSend: "Envoyer",
   logbookExamplesTitle: "Essayez une question :",
   logbookExampleDeepQ: "Pourquoi le bateau vise-t-il sa prochaine escale, et quel est le principal risque ?",
@@ -286,7 +296,9 @@ export default {
   filmStorySource: "Récit : {source}",
   filmStoryRaw: "Brut",
   filmStoryWritten: "Rédigé",
-  filmStoryWrittenSoon: "pas encore rédigé pour cette durée",
+  filmStoryLockedPlaying: "Arrêtez le film pour passer Brut/Rédigé",
+  filmStoryWrittenUnavailable: "Le film rédigé est momentanément indisponible.",
+  filmStoryWrittenRetry: "Réessayer",
   recomputeConstraintsSkipper: "Sous les ordres du skipper : vent < {wind}, mer < {hs} — aucun pas de route dans ces conditions.",
   recomputeConstraintsDefault: "Sans ordre du skipper : seule la mer ≥ {hs} est évitée.",
   drawingInProgress: "Tracé en cours",
@@ -302,6 +314,7 @@ export default {
   planReviewOk: "rien à signaler",
   planReviewEmpty: "Aucune jambe à revoir.",
   planReviewCommentTitle: "Ce que je changerais",
+  planReviewNoChange: "Aucun changement proposé pour l’instant.",
   planReviewLegAlerts: "alertes : {n}",
   planReviewApply: "Appliquer",
   planReviewLanes: "couloirs : {names}",
@@ -705,6 +718,8 @@ export default {
 
   // ED2
   ed2WritingNemotron: "Rédaction en cours…",
+  ed2WritingWait:    "Attente de la rédaction…",
+  ed2WriteFailed:    "Échec de la rédaction",
   ed2BrandLine: "NVIDIA · Nebius",
 
   // FM1

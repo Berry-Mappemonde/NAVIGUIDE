@@ -202,6 +202,12 @@ async def fetch_port_web(
         _save_cache(query, {**out, "fetchedAt": _now_iso(), "port": label, "query": query}, day)
         return out
 
+    status = data.get("status") if isinstance(data, dict) else None
+    if isinstance(status, int) and status >= 400:
+        out = _unavailable("http-error")
+        _save_cache(query, {**out, "fetchedAt": _now_iso(), "port": label, "query": query}, day)
+        return out
+
     sources = _normalize_results(data.get("results") if isinstance(data, dict) else [])
     llm_budget.remember_tavily_port(label)
     if not sources:

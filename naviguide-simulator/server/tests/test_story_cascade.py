@@ -23,6 +23,7 @@ from story_cascade import (
     story_tier,
     translate,
     write_story,
+    TokenFactoryTimeout,
 )
 
 def _url_host_is(url: str, root: str) -> bool:
@@ -1877,3 +1878,67 @@ def test_nano_then_lightning_then_nim_keeps_nim_label(monkeypatch):
     assert models == [LIGHTNING_ID, LIGHTNING_ID]
     assert any(_url_host_is(url, "integrate.api.nvidia.com") for url, _m in seen)
     assert not any("openrouter" in url or "anthropic" in url for url, _m in seen)
+    import llm_budget
+    assert llm_budget.status()["lastSourceByTier"]["nano"] == "nim"
+
+
+def test_timeout_tf_nim_called_openrouter_claude_skipped(monkeypatch):
+    """R36: GPT-OSS via NIM n'est pas un modèle Nemotron et est sauté après timeout.
+
+    Sans opt-in, après timeout TF la cascade ne peut pas traiter NIM comme
+    Nemotron : elle retourne la phrase locale sans appeler NIM, OpenRouter ou Claude.
+    """
+    import llm_budget
+    
+    seen = []
+    tf_timeout_count = 0
+    nim_called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal tf_timeout_count, nim_called
+        url = str(request.url)
+        body = json.loads(request.content.decode()) if request.content else {}
+        seen.append((url, body.get("model")))
+        if "tokenfactory" in url:
+            tf_timeout_count += 1
+            # Simule un timeout TF
+            raise TokenFactoryTimeout("tokenfactory timeout after 25 s")
+        if _url_host_is(url, "integrate.api.nvidia.com"):
+            nim_called = True
+            return httpx.Response(200, json=_chat_ok("Le port reste calme.", model="openai/gpt-oss-20b"))
+        if "openrouter" in url or "anthropic" in url:
+            # Ne doit pas être appelé
+            return httpx.Response(500, json={"error": "not expected"})
+        return httpx.Response(500, json={"error": "no"})
+
+    monkeypatch.setenv("NAVIGUIDE_TF_BASE_EU", "https://api.tokenfactory.nebius.com/v1")
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ant-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.setenv("NAVIGUIDE_LLM_TIMEOUT_FALLBACK", "0")  # Désactive le fallback hors Nemotron
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(
+                "sys", "user-timeout-test", client, tier="write", fallback="Phrase locale.", facts=None,
+            )
+
+    result = asyncio.run(run())
+    text, source = result
+    
+    assert text == "Phrase locale."
+    assert source == "rules"
+    assert not nim_called, "NIM GPT-OSS n'est pas un repli Nemotron"
+    assert tf_timeout_count == 1, f"Expected 1 TF call, got {tf_timeout_count}"
+    
+    # OpenRouter et Claude ne doivent PAS être appelés
+    openrouter_called = any("openrouter" in url for url, _ in seen)
+    claude_called = any("anthropic" in url for url, _ in seen)
+    assert not openrouter_called, "OpenRouter ne doit pas être appelé après timeout TF"
+    assert not claude_called, "Claude ne doit pas être appelé après timeout TF"
+    
+    errors = llm_budget.last_errors()
+    assert any(e.get("provider") == "tokenfactory" for e in errors)
+    assert llm_budget.fallback_usage().get("nim", 0) == 0

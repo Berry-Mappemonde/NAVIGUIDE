@@ -300,6 +300,7 @@ test("VG1 — étape 1 → 2 (welcome → models) < 2 s avec cache vide", async 
   expect(elapsed).toBeLessThan(2000);
 });
 
+
 test("VG1 — étape 5 (layers) : cible = summary [data-tour=layers] (pas le details entier)", async ({ page }) => {
   await open(page);
   await startTour(page);
@@ -352,7 +353,8 @@ test("VG1 — étape 7 (trace) : bouton Tracer visible, pulse, classe retirée �
   await expect(panel(page)).toHaveAttribute("data-step", "trace");
   // Quitter la visite : la classe pulse doit être retirée
   await page.keyboard.press("Escape");
-  await expect(traceBtn).not.toHaveClass(/naviguide-tour-pulse/);
+  await expect(traceBtn).not.toHaveClass("naviguide-tour-pulse");
+
 });
 
 test("VG1 — flèche bulle → élément : data-arrow up/down/left/right + ::before", async ({ page }) => {

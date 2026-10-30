@@ -54,8 +54,10 @@ OR_MODEL = os.environ.get("OPENROUTER_MODEL") or "openai/gpt-4o-mini"
 CLAUDE_MODEL = "claude-haiku-4-5"
 MAX_TOKENS = 400
 TIMEOUT = httpx.Timeout(25.0, connect=8.0)
-TIMEOUT_ULTRA = httpx.Timeout(45.0, connect=8.0)
 DEFAULT_PROVIDERS = ("tokenfactory", "nim", "openrouter", "claude")
+# Maillons hors Nemotron : après un timeout Token Factory, on continue la
+# cascade par défaut ; NAVIGUIDE_LLM_TIMEOUT_FALLBACK=0 permet de l'arrêter.
+NON_NEMOTRON_PROVIDERS = frozenset({"nim", "openrouter", "claude"})
 CACHE_NS = "llm-cache"
 CACHE_TTL_S = 24 * 3600.0
 TF_PARALLEL_DEFAULT = 4
@@ -996,9 +998,44 @@ def _tf_payload(system: str, user: str, tier: str, max_tokens: int | None = None
     return payload
 
 
+class TokenFactoryTimeout(RuntimeError):
+    """Timeout Token Factory étiqueté (garde de latence).
+
+    `queue=True` : la file du limiteur est restée pleine (aucun POST parti).
+    `queue=False` : le POST a dépassé l'échéance totale du palier.
+    """
+
+    def __init__(self, message: str, *, queue: bool = False) -> None:
+        super().__init__(message)
+        self.queue = queue
+
+
+def _is_tf_timeout(exc: BaseException | None) -> bool:
+    """Vrai si `exc` (ou une exception de sa chaîne) est un timeout TF."""
+    seen = 0
+    while exc is not None and seen < 8:
+        if isinstance(exc, TokenFactoryTimeout):
+            return True
+        exc = exc.__cause__ or exc.__context__
+        seen += 1
+    return False
+
+
+def timeout_fallback_allowed() -> bool:
+    """Autorise le repli après timeout TF par défaut, sauf opt-out explicite."""
+    return _env("NAVIGUIDE_LLM_TIMEOUT_FALLBACK").strip().lower() not in {"0", "false", "no", "off"}
+
+
 def _tf_fast_super_retry(exc: BaseException) -> bool:
-    """Second essai Super (LT1) : vide, 5xx ou timeout — pas les 4xx."""
-    if isinstance(exc, httpx.TimeoutException):
+    """Second essai Super (LT1) : vide, 5xx ou timeout HTTP — pas les 4xx.
+
+    Le timeout HTTP arrive enveloppé (TokenFactoryTimeout, PR #153) : on le
+    reconnaît. Le timeout de file (`queue`) est exclu : la file est partagée,
+    un second essai ré-attendrait la même file.
+    """
+    if isinstance(exc, TokenFactoryTimeout):
+        return not exc.queue
+    if isinstance(exc, (httpx.TimeoutException, asyncio.TimeoutError)):
         return True
     msg = str(exc)
     if "tokenfactory empty" in msg:
@@ -1026,19 +1063,28 @@ async def _call_tokenfactory(
     except asyncio.TimeoutError as exc:
         # File d'attente du limiteur pleine trop longtemps : repli étiqueté.
         llm_budget.record_latency_timeout(t)
-        raise RuntimeError("tokenfactory queue timeout") from exc
+        raise TokenFactoryTimeout("tokenfactory queue timeout", queue=True) from exc
     started = time.monotonic()
     try:
-        r = await client.post(
-            _tf_url(t),
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json=payload,
-            timeout=timeout,
+        # Échéance totale (P2-1) : httpx.Timeout borne chaque lecture, pas la
+        # requête entière ; une réponse au compte-gouttes pouvait la dépasser.
+        r = await asyncio.wait_for(
+            client.post(
+                _tf_url(t),
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=timeout,
+            ),
+            timeout=timeout.read,
         )
         elapsed_ms = (time.monotonic() - started) * 1000.0
-    except httpx.TimeoutException as exc:
+    except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
         llm_budget.record_latency_timeout(t)
-        raise RuntimeError(f"tokenfactory timeout after {int(timeout.read)} s") from exc
+        # Budget (P2-3) : la génération a pu partir côté Token Factory ;
+        # estimation prudente (prompt estimé + max_tokens) comptée au plafond.
+        est_pt, _ = _estimate_tokens(system, user, "")
+        llm_budget.record(t, est_pt, int(payload.get("max_tokens") or 0))
+        raise TokenFactoryTimeout(f"tokenfactory timeout after {timeout.read:g} s") from exc
     finally:
         sema.release()
     if r.status_code >= 400:
@@ -1097,7 +1143,7 @@ async def _call_nim(
     text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
     if not text:
         raise RuntimeError("nvidia empty")
-    source = f"nvidia-{NIM_MODEL.split('/')[-1]}"
+    source = f"nvidia-{NIM_MODEL}"
     model = _exact_model(source, str((data or {}).get("model") or ""), NIM_MODEL)
     return _as_result(text, source, model=model, tier=tier)
 
@@ -1260,6 +1306,9 @@ async def _cascade_once(
             )
         except Exception as exc:
             if norm_tier == "nano":
+                # File pleine (P2-2) : Lightning ré-attendrait la même file.
+                if isinstance(exc, TokenFactoryTimeout) and exc.queue:
+                    raise
                 # Repli étiqueté : Lightning (source nemotron-lightning), puis
                 # le maillon NIM du tour de providers si Lightning échoue aussi.
                 if not llm_budget.allow("fast"):
@@ -1297,7 +1346,13 @@ async def _cascade_once(
             )))
 
     failures: list[dict[str, str]] = []
+    tf_timed_out = False
     for name, step in hops:
+        if tf_timed_out and name in NON_NEMOTRON_PROVIDERS and not timeout_fallback_allowed():
+            # P1-2 : pas de repli silencieux hors Nemotron après un timeout TF
+            # (défaut des providers). Texte de règles étiqueté à la place.
+            failures.append({"provider": name, "reason": "skipped: non-Nemotron after tokenfactory timeout"})
+            continue
         try:
             result = await step()
             text, source = result
@@ -1308,6 +1363,8 @@ async def _cascade_once(
                     llm_budget.remember_cascade_errors(failures, tier=norm_tier)
                 if name in llm_budget.FALLBACK_PROVIDERS:
                     llm_budget.record_fallback(name, norm_tier)
+                    # Status tracks the provider; the returned source retains
+                    # the precise NIM model label for honest fallback labelling.
                     llm_budget.remember_source(name, norm_tier)
                 public = source if source in KNOWN_SOURCES else (
                     "openrouter" if source.startswith("openrouter") else source
@@ -1325,6 +1382,8 @@ async def _cascade_once(
             failures.append({"provider": name, "reason": last})
         except Exception as exc:
             last = str(exc)[:240]
+            if name == "tokenfactory" and _is_tf_timeout(exc):
+                tf_timed_out = True
             log.warning("cascade %s: %r", name, exc)
             failures.append({"provider": name, "reason": last})
 

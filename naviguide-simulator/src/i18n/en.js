@@ -2,6 +2,11 @@
  * NAVIGUIDE — English translations (default)
  */
 export default {
+  chatErrTimeout: "The chat did not answer in time. Please try again.",
+  chatErrNetwork: "Could not reach the chat. Check your connection and try again.",
+  chatErrEmpty: "Please enter a question.",
+  chatErrTooLong: "Your question is too long. Shorten it and try again.",
+  chatErrServer: "The chat encountered an error. Please try again later.",
   // ── Drawing mode ───────────────────────────────────────────────────────────
   drawStart:      "Choose your starting point",
   drawFirstStop:  "Choose your first stop",
@@ -123,7 +128,7 @@ export default {
   storySourceUltra: "Nemotron 3 Ultra · Token Factory",
   storySourceOpenrouter: "OpenRouter",
   storySourceClaude: "Claude",
-  storySourceRules: "rules",
+  storySourceRules: "Written from raw data",
   storySourceBudget: "budget",
   storySourceCache: "cache",
   storySourceNim: "NVIDIA NIM (fallback)",
@@ -226,7 +231,7 @@ export default {
   logbookChatTitle: "Logbook — ask a question",
   filmWebSourcesTitle: "Web sources (Tavily) · {port}:",
   tfLatencyLine: "Token Factory response time today on this server (median): {list}.",
-  tfLatencyItem: "{model} {s} s",
+  tfLatencyItem: "{model} {s} s (n={n})",
   tfLatencyDecimal: ".",
   tfModelMissingLine: "Not in the Token Factory catalog today: {model}. {substitute} answers instead, and its texts carry its own name.",
   tfModelMissingNone: "Not in the Token Factory catalog today: {model}. Its texts use the next labelled fallback.",
@@ -249,7 +254,12 @@ export default {
   logbookWebSourcesTitle: "Web sources (Tavily)",
   logbookWebUnavailable: "Web watch unavailable (missing Tavily key or error).",
   logbookChatPlaceholder: "Wind at the boat? Next stop?",
+  tavilyWatchLabel: "Tavily watch",
+  tavilyWatchHint: "Server-side web search on upcoming stops (10 days before to 2 days after)",
+  tavilyWatchAdmin: "An admin key is needed to change the watch",
+  tavilyWatchError: "Watch: server unreachable",
   logbookChatInputLabel: "Ask the logbook",
+
   logbookChatSend: "Send",
   logbookExamplesTitle: "Try a question:",
   logbookExampleDeepQ: "Why is the boat heading for its next stop, and what is the main risk?",
@@ -286,7 +296,9 @@ export default {
   filmStorySource: "Story: {source}",
   filmStoryRaw: "Raw",
   filmStoryWritten: "Edited",
-  filmStoryWrittenSoon: "not yet written for this duration",
+  filmStoryLockedPlaying: "Stop the film to switch Raw/Edited",
+  filmStoryWrittenUnavailable: "The edited film is temporarily unavailable.",
+  filmStoryWrittenRetry: "Retry",
   recomputeConstraintsSkipper: "Under the skipper's orders: wind < {wind}, sea < {hs} — no step of the route in those conditions.",
   recomputeConstraintsDefault: "Without skipper's orders: only a sea ≥ {hs} is avoided.",
   drawingInProgress: "Drawing in progress",
@@ -302,6 +314,7 @@ export default {
   planReviewOk: "nothing to report",
   planReviewEmpty: "No leg to review.",
   planReviewCommentTitle: "What I would change",
+  planReviewNoChange: "No change suggested for now.",
   planReviewLegAlerts: "alerts: {n}",
   planReviewApply: "Apply",
   planReviewLanes: "lanes: {names}",
@@ -706,6 +719,8 @@ export default {
 
   // ED2
   ed2WritingNemotron: "Writing…",
+  ed2WritingWait:    "Waiting for writing…",
+  ed2WriteFailed:    "Writing failed",
   ed2BrandLine: "NVIDIA · Nebius",
 
   // FM1

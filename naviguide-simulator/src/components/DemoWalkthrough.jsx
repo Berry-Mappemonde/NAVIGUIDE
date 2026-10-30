@@ -187,12 +187,24 @@ export function DemoWalkthrough({
         stable = key === last ? stable + 1 : 0;
         last = key;
         if (stable >= 3 && key !== shown) { shown = key; show(el); }
+      } else if (driverRef.current) {
+        driverRef.current.destroy();
+        driverRef.current = null;
+        shown = "";
+        setAnchor(null);
       }
       tries += 1;
-      if (tries < 600) raf = window.requestAnimationFrame(track);
+      raf = window.requestAnimationFrame(track);
     };
     raf = window.requestAnimationFrame(track);
-    const onResize = () => { shown = ""; };
+    const onResize = () => {
+      shown = "";
+      last = "";
+      stable = 0;
+      tries = 0;
+      window.cancelAnimationFrame(raf);
+      raf = window.requestAnimationFrame(track);
+    };
     window.addEventListener("resize", onResize);
     return () => {
       window.cancelAnimationFrame(raf);
@@ -303,6 +315,7 @@ export function DemoWalkthrough({
       data-spot={anchor ? "on" : "off"}
       className={`flex max-h-[45dvh] flex-col overflow-y-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-md md:max-h-[calc(100dvh-5rem)] ${surface}`}
     >
+      <div className="min-h-0 flex-1 overflow-y-auto">
       <p className="sr-only" aria-live="polite" data-testid="demo-walkthrough-live">
         {t("demoStepLive", { n: index + 1, total, title: step.title })}
       </p>
@@ -449,6 +462,7 @@ export function DemoWalkthrough({
       >
         {t("demoExit")}
       </button>
+      </div>
     </aside>
     </div>
   );

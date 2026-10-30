@@ -26,11 +26,12 @@ function filmPayload({ written, seconds = 150, lang = "fr", receipt, webContext 
     targetSeconds: seconds,
     chapters: [{ text: "Le 15 mai, Berry-Mappemonde quitte La Rochelle.", anchors: [{ t: 0, i: 0 }] }],
     ...(written && receipt ? { receipt } : {}),
-    ...(webContext ? { webContext } : {}),
+    ...(written && webContext ? { webContext } : {}),
   };
 }
 
-async function openWritten(page, lang, receipt, webSources = []) {
+async function openWritten(page, lang, receipt, webContext = null) {
+
   await page.addInitScript((l) => localStorage.setItem("naviguide_lang_v4", l), lang);
   const cached = new Set();
   await page.route("**/voyage/**/film**", async (route) => {
@@ -41,9 +42,6 @@ async function openWritten(page, lang, receipt, webSources = []) {
     const key = `${url.searchParams.get("lang") || lang}:${seconds}`;
     if (req.method() === "POST") cached.add(key);
     const written = req.method() === "POST" || (style === "written" && cached.has(key));
-    const webContext = webSources.length
-      ? { basis: "tavily", port: "La Rochelle", fetchedAt: "2026-10-29T13:40:00Z", sources: webSources }
-      : undefined;
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify(filmPayload({ written, seconds, lang, receipt, webContext })),
@@ -90,18 +88,26 @@ test("sans reçu servi, aucun reçu affiché", async ({ page }) => {
   await expect(page.getByTestId("film-receipt")).toHaveCount(0);
 });
 
+const webContext = {
+  basis: "tavily",
+  port: "La Rochelle",
+  fetchedAt: "2026-10-17T10:00:00Z",
+  sources: [
+    { title: "Port news", domain: "news.com", url: "https://news.com/port" },
+    { title: "Marine forecast", domain: "weather.org", url: "https://weather.org/marine" },
+    { title: "Tide tables", domain: "tides.net", url: "https://tides.net/rochelle" },
+  ],
+};
+
+
 for (const [lang, tavilyTitle] of [
   ["fr", "Sources web Tavily affichées avec le film : 3"],
   ["en", "Web sources from Tavily shown with the film: 3"],
 ]) {
   test(`${lang} : le reçu affiche le nombre de sources Tavily (webContext.sources)`, async ({ page }) => {
     test.setTimeout(90_000);
-    const webSources = [
-      { title: "Port news", domain: "news.com", url: "https://news.com/port" },
-      { title: "Marine forecast", domain: "weather.org", url: "https://weather.org/marine" },
-      { title: "Tide tables", domain: "tides.net", url: "https://tides.net/rochelle" },
-    ];
-    await openWritten(page, lang, RECEIPT, webSources);
+    await openWritten(page, lang, RECEIPT, webContext);
+
     const receipt = page.getByTestId("film-receipt");
     await expect(receipt).toBeVisible();
     await expect(receipt.locator("summary")).toHaveText(
