@@ -9195,7 +9195,10 @@ def _reanchor_edited_chapter(ch: dict, lang: str) -> None:
             normalized = speak_film_text(sentence, lang)
             original_count = sum(speak_film_text(s, lang) == normalized for _, _, s in spans)
             final_count = sum(speak_film_text(s, lang) == normalized for s in final_sentences)
-            if original_count > 1 and original_count != final_count:
+            # A sentence can be attributed to its anchor by text alone only
+            # when it has one unambiguous occurrence on both sides. Equal
+            # duplicate counts are not enough: edits may have reordered them.
+            if original_count != 1 or final_count != 1:
                 sentence = None
         anchor_t = _ms(anchor["t"])
         if sentence and anchor_t is not None and _locate_spoken(final, speak_film_text(sentence, lang), 0) >= 0:

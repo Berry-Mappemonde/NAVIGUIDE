@@ -6604,8 +6604,10 @@ def test_reanchor_edited_chapter_relocates_sentences_and_drops_removed_ones():
     assert all(a["charIdx"] <= len(chapter["text"]) for a in chapter["anchors"])
     # The removed sentence's 10:00 anchor was dropped.
     assert "2026-05-15T10:00:00Z" not in {a["t"] for a in chapter["anchors"]}
-    assert any(a["charIdx"] < len("Departure sentence.") for a in chapter["anchors"])
-    assert any(a["charIdx"] >= len("Departure sentence. ") for a in chapter["anchors"])
+    assert chapter["anchors"] == [
+        {"charIdx": 0, "t": "2026-05-15T09:00:00Z"},
+        {"charIdx": len("Departure sentence. "), "t": "2026-05-15T11:00:00Z"},
+    ]
 
 
 def test_rules_films_keep_anchors_in_text_and_sentence_times_moving():
@@ -6723,3 +6725,40 @@ def test_reanchor_edited_chapter_drops_ambiguous_boundary_and_duplicate_anchors(
     assert "2026-05-15T09:00:00Z" not in times  # +12 would cross into the next sentence.
     assert "2026-05-15T10:00:00Z" not in times
     assert "2026-05-15T11:00:00Z" not in times  # Duplicate occurrence was removed ambiguously.
+
+
+def test_reanchor_edited_chapter_drops_anchor_when_final_sentence_is_duplicated():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "Unique sentence.",
+        "_anchorText": "Unique sentence.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [{"charIdx": 0, "t": "2026-05-15T09:00:00Z"}],
+    }
+    chapter["text"] = "Unique sentence. Unique sentence."
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == []
+
+
+def test_reanchor_edited_chapter_drops_reordered_duplicate_sentence_anchors():
+    import film_script as fs  # noqa: PLC0415
+
+    original = "Bay. Bay! Approach."
+    chapter = {
+        "text": original,
+        "_anchorText": original,
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [
+            {"charIdx": 0, "t": "2026-05-15T09:00:00Z"},
+            {"charIdx": 5, "t": "2026-05-15T10:00:00Z"},
+            {"charIdx": 11, "t": "2026-05-15T11:00:00Z"},
+        ],
+    }
+    chapter["text"] = "Bay! Approach. Bay."
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == [
+        {"charIdx": len("Bay! "), "t": "2026-05-15T11:00:00Z"},
+    ]
