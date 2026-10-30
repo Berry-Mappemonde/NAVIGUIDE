@@ -33,6 +33,13 @@ function t(key, vars = {}) {
 }
 
 describe("barre film — vitesse cyclique", () => {
+  it("annonce l’état du chargement du film et propose une reprise", () => {
+    assert.match(bar, /data-testid="film-load-status" role="status" aria-live="polite"/);
+    assert.match(bar, /data-testid="film-load-retry"/);
+    assert.match(bar, /\["empty", "absent", "timeout", "stale"\]/);
+    assert.match(bar, /animate-spin/);
+  });
+
   it("4 clics : réel → lecture → normale → accélérée → réel", () => {
     assert.deepEqual(PROFILES.map((p) => p.id), ["real", "read", "normal", "fast"]);
     let id = "real";

@@ -18,6 +18,21 @@ const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
 const bar = readFileSync(join(here, "..", "components", "SimulationFilmBar.jsx"), "utf8");
 
 describe("useReplay contract", () => {
+  it("expose un état de chargement récupérable pour le film officiel, avec libellés FR/EN", () => {
+    assert.match(hook, /setTimeout\(\(\) => \{\s*requestTimedOut = true;\s*ac\.abort\(\);\s*\}, 30_000\)/);
+    assert.match(hook, /setFilmStatus\("timeout"\)/);
+    assert.match(hook, /setFilmStatus\("absent"\)/);
+    assert.match(hook, /const retryFilmLoad = useCallback/);
+    assert.match(app, /onRetryLoad: replay\.retryFilmLoad/);
+    assert.match(bar, /data-testid="film-load-status"/);
+    assert.match(bar, /data-testid="film-load-retry"/);
+    for (const key of ["filmLoadPending", "filmLoadPreparing", "filmLoadEmpty", "filmLoadError", "filmLoadTimeout", "filmLoadStale", "filmLoadRetry"]) {
+      assert.ok(fr[key], `fr.${key}`);
+      assert.ok(en[key], `en.${key}`);
+      assert.notEqual(fr[key], en[key], `${key} traduit`);
+    }
+  });
+
   it("replays on the official clock, consumes the film plan, and hands back to live at the end or on Stop", () => {
     assert.match(hook, /replayWindow\(clockToUse, Date\.now\(\)\)/);
     assert.match(hook, /fromLat: c\.fromLat/);
