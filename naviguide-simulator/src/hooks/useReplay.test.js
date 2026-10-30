@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt, sentenceSpan, stepFilmTime } from "../engine/replay.js";
-import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, arrivalBubbleFitsDestination, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmBudgetCanPlay, filmCharRatesStable, filmChapterPlayheadCapped, filmEndCharIdx, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, arrivalBubbleFitsDestination, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmBudgetCanPlay, filmCharRatesStable, filmChapterPlayheadCapped, filmEndCharIdx, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmResponseShouldRetry, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
 import { briefingForReplayPosition, replayPlace } from "./useReplay.js";
 import { VOICE_LEAD_MS, VOICE_MS_PER_CHAR } from "../utils/speak.js";
 import { shouldStopSpeakingOnChapterChange } from "./useReplayVoice.js";
@@ -1269,7 +1269,8 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.equal(off.source, "rules");
     assert.equal(writtenPillEnabled(off.hasWritten), true);
     assert.equal(writtenPillEnabled({ hasWritten: false, filmReady: true }), true);
-    assert.equal(writtenPillEnabled({ hasWritten: false, customFilm: true }), true);
+    assert.equal(writtenPillEnabled({ hasWritten: false, customFilm: true }), false);
+    assert.equal(writtenPillEnabled({ hasWritten: true, customFilm: true }), false);
     assert.equal(filmSourceKey(off.source), "storySourceRules");
     assert.equal(filmSourceKey("nemotron-super-reviewed-ultra"), "storySourceSuperReviewed");
     assert.equal(filmSourceKey("nemotron-super", "nemotron-ultra"), "storySourceSuperReviewed");
@@ -1319,6 +1320,17 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.equal(raw.effectiveStyle, "raw");
     assert.equal(filmRequestStyle("written"), "written");
     assert.equal(filmRequestStyle("raw"), "raw");
+  });
+
+  it("n'essaie pas Rédigé pour une route personnalisée et arrête un 405", () => {
+    assert.equal(filmResponseShouldRetry(405), false);
+    assert.equal(filmResponseShouldRetry(404), true);
+    const hook = readFileSync(new URL("./useReplay.js", import.meta.url), "utf8");
+    const styleHandler = hook.slice(hook.indexOf("const chooseFilmStyle"), hook.indexOf("return {\n    active,"));
+    assert.match(styleHandler, /if \(!isOfficialFilmVoyage\(voyageId\)\)/);
+    const probe = hook.slice(hook.indexOf("const probeWritten"), hook.indexOf("const load ="));
+    assert.match(probe, /style !== "raw" \|\| !official/);
+    assert.match(hook, /!filmResponseShouldRetry\(pack\?\.status\)/);
   });
 
   it("demande style=written, lit hasWritten / source / ancres, aucun LLM navigateur", () => {
