@@ -347,6 +347,15 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             ) : filmSubtitle}
           </div>
         ) : null}
+        {replay?.chapterProvenance?.model && replay?.chapterProvenance?.source ? (
+          <LlmSourceBadge
+            source={replay.chapterProvenance.source}
+            label={`${filmSourceLabel(replay.chapterProvenance.source, "", t, replay.chapterProvenance.model)} · ${replay.chapterProvenance.model} · ${replay.chapterProvenance.tier}`}
+            testId="film-chapter-served-model"
+            textOnly
+            className="mt-0.5 [&_span]:text-[9px] [&_span]:text-white/65"
+          />
+        ) : null}
         {storiesPending > 0 ? (
           <div data-testid="stories-pending" className="text-[10px] text-white/55 leading-tight mt-0.5">
             {t("storiesPending", { n: storiesPending })}
