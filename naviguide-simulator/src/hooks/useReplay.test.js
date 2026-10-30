@@ -1267,9 +1267,9 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.equal(off.hasWritten, false);
     assert.equal(off.effectiveStyle, "raw");
     assert.equal(off.source, "rules");
-    assert.equal(writtenPillEnabled(off.hasWritten), false);
+    assert.equal(writtenPillEnabled(off.hasWritten), true);
     assert.equal(writtenPillEnabled({ hasWritten: false, filmReady: true }), true);
-    assert.equal(writtenPillEnabled({ hasWritten: false, customFilm: true }), false);
+    assert.equal(writtenPillEnabled({ hasWritten: false, customFilm: true }), true);
     assert.equal(filmSourceKey(off.source), "storySourceRules");
     assert.equal(filmSourceKey("nemotron-super-reviewed-ultra"), "storySourceSuperReviewed");
     assert.equal(filmSourceKey("nemotron-super", "nemotron-ultra"), "storySourceSuperReviewed");
@@ -1325,7 +1325,9 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(hook, /filmRequestStyle\(filmStyle\)/);
     assert.match(hook, /style=\$\{style\}/);
     assert.match(hook, /style=written/);
-    assert.match(hook, /method: "POST"/);
+    assert.match(hook, /style=written/);
+    assert.match(hook, /fetch\(`\$\{API\}\$\{path\}\?\$\{q\}`\)/);
+    assert.doesNotMatch(hook.slice(hook.indexOf("const chooseFilmStyle"), hook.indexOf("return {\n    active")), /if \(hasWritten\)\s*\{/);
     assert.match(hook, /chooseFilmStyle/);
     assert.match(hook, /resolveServedFilm/);
     assert.match(hook, /probeWritten/);
@@ -1345,11 +1347,23 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     const probe = hook.slice(probeAt, probeAt + 900);
     assert.match(probe, /setFilmSource\(resolved\.source\)/);
     assert.match(probe, /setFilmReviewedBy\(resolved\.reviewedBy \|\| ""\)/);
-    assert.match(bar, /filmStoryWrittenSoon/);
+    assert.doesNotMatch(bar, /filmStoryWrittenSoon/);
     assert.match(bar, /replay\.hasWritten/);
     assert.match(bar, /film-style-\$\{id\}/);
     assert.match(bar, /\["raw", "filmStoryRaw"\], \["written", "filmStoryWritten"\]/);
     assert.match(bar, /hidden=\{\(replay\.style \|\| "raw"\) !== "written" \|\| !replay\.hasWritten\}/);
+  });
+
+  it("signale l’indisponibilité seulement après l’échec de toute la cascade", () => {
+    assert.match(hook, /data\?\.reason === "all-providers-failed"/);
+    assert.match(hook, /setWrittenUnavailable\("unavailable"\)/);
+    assert.match(hook, /\.catch\(\(\) => setWrittenUnavailable\(null\)\)/);
+    assert.match(hook, /writtenUnavailable,/);
+    assert.match(app, /writtenUnavailable: replay\.writtenUnavailable/);
+    assert.match(bar, /filmStoryWrittenUnavailable/);
+    assert.match(bar, /role="status"/);
+    assert.match(bar, /filmStoryWrittenRetry/);
+    assert.match(hook, /setWrittenUnavailable\("unavailable"\)/);
   });
 });
 

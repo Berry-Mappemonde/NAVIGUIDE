@@ -292,10 +292,12 @@ async def get_official_film(
     style: str = Query("raw"),
     t0: str | None = Query(None),
 ):
-    """Script du film — snapshot du stock RF2, jamais un calcul sur la requête."""
+    """Script du film; une demande rédigée peut lancer la chaîne au premier plan."""
     import official_store
     try:
         out = official_store.serve_film(lang=lang, seconds=seconds, style=style)
+        if str(style or "raw").lower() == "written" and not out.get("hasWritten"):
+            out = await official_store.write_film_on_click(lang=lang, seconds=seconds)
     except Exception as exc:
         log.exception("GET /voyage/official/film")
         official_store.kick_worker()
