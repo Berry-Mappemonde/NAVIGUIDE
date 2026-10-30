@@ -118,7 +118,7 @@ def test_estimate_counts_the_chain_and_does_not_call(monkeypatch):
     assert calls == []
     assert est["calls"] == 8
     assert est["calls"] != stories_once.BATCH_FIGURE
-    assert [item["tier"] for item in est["items"]] == ["write", "judge", "judge", "fast"] * 2
+    assert [item["tier"] for item in est["items"]] == ["write", "judge", "judge", "write"] * 2
     extra = stories_once.estimate_extra()
     assert "stories: 2" in extra
     assert "batch_figure: 177" in extra
@@ -181,9 +181,10 @@ def test_run_stops_at_the_cap_and_resumes_without_repaying(monkeypatch):
     state["block"] = False
     result = one_shot.run(stories_once.JOB, est["fingerprint"])
     assert result["completed"][0:2] == stopped.value.completed
-    # With parallel FR/EN write_film_chain, translate calls write_film_chain for EN (write+judge+judge = 3 calls per EN instead of 1 fast)
-    # Two stories: first run does 1st story FR (write, judge), second run does 1st story EN (judge, judge) + 2nd story FR (write, judge)
-    assert calls == ["write", "judge", "judge", "write", "judge", "judge"]
+    assert calls == [
+        "write", "judge", "judge", "write", "judge", "judge",
+        "write", "judge", "judge", "write", "judge", "judge",
+    ]
     assert len(result["completed"]) == 8
 
 

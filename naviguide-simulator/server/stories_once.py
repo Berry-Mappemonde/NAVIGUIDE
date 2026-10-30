@@ -28,12 +28,12 @@ REV = "pg1"
 BATCH_FIGURE = 177
 
 # Forme locale d'un appel, calée sur les plafonds déjà écrits dans la chaîne
-# (une phrase : plancher 400, juge 128, traduction plancher 256). Pas une sortie de modèle.
+# (une phrase : plancher 400, juge 128, rédaction EN plancher 400). Pas une sortie de modèle.
 _STEPS = (
     ("w", "write", 512, 400),
     ("e", "judge", 512, 400),
     ("j", "judge", 256, 128),
-    ("t", "fast", 512, 256),
+    ("t", "write", 512, 400),
 )
 _STEP = {step: (tier, prompt, completion) for step, tier, prompt, completion in _STEPS}
 
@@ -161,12 +161,12 @@ def _poe(ev: dict) -> dict[str, Any]:
     }
 
 
-def _phrase(story: dict) -> str:
-    text = str(story.get("rules") or "").strip()
+def _phrase(story: dict, lang: str = "fr") -> str:
+    text = str(story.get("rules") or "").strip() if lang != "en" else ""
     if not text:
         from film_script import phrase_for_ici_event  # noqa: PLC0415
 
-        text = (phrase_for_ici_event(story.get("event") or {}, "fr") or "").strip()
+        text = (phrase_for_ici_event(story.get("event") or {}, lang) or "").strip()
     if text and text[-1] not in ".!?…":
         text += "."
     return text
@@ -426,8 +426,8 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _plan_dict(story: dict) -> dict[str, Any]:
-    text = _phrase(story)
+def _plan_dict(story: dict, lang: str = "fr") -> dict[str, Any]:
+    text = _phrase(story, lang)
     name = story.get("name") or ""
     return {
         "chapters": [{
@@ -529,19 +529,18 @@ def _judge(story: dict, row: dict) -> None:
     )
 
 
-def _translate(story: dict, row: dict) -> None:
+def _write_english(story: dict, row: dict) -> None:
     from film_script import write_film_chain  # noqa: PLC0415
-    from official_store import _raw_plan_for  # noqa: PLC0415
 
     if _slot_text(row, "en"):
         return
     fr = _slot_text(row, "fr")
-    if not fr or not _phrase(story):
+    if not fr or not _phrase(story, "en"):
         return
-    en_raw = _raw_plan_for(row, "en", 0)
-    if not en_raw:
-        return
-    en_plan, _, _ = _run(write_film_chain(en_raw, seconds=0, cascade=_cascade()))
+    en_raw = _plan_dict(story, "en")
+    en_plan, _, _ = _run(write_film_chain(
+        en_raw, seconds=0, cascade=_cascade(), lang="en",
+    ))
     if not en_plan or not (en_plan.get("chapters") or []):
         return
     _record("t")
@@ -574,7 +573,7 @@ def execute_call(call: Any) -> dict[str, Any]:
     elif step == "j":
         _judge(story, row)
     else:
-        _translate(story, row)
+        _write_english(story, row)
     _save(doc)
     return {"id": call.call_id, "cached": False}
 
@@ -598,7 +597,7 @@ def estimate_extra() -> str:
         f"batch_figure: {BATCH_FIGURE}",
         f"batch_figure_differs: {differs}",
         "calls_per_story: 4",
-        "roles: write edit judge translate",
+        "roles: write edit judge write-en-direct",
         "langs: fr en",
     ]
     return "\n".join(lines) + "\n"
