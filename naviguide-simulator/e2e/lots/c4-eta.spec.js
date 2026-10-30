@@ -14,6 +14,9 @@ test("Revue de plan : chaque étape a une date", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
+  // Plan review dates are exposed in Suivre's review tab; Tracer keeps its own layout.
+  await page.getByTestId("view-suivre").click();
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
 
   await openReviewTab(page);
   const review = page.getByTestId("plan-review");
@@ -33,7 +36,7 @@ test("Revue de plan : chaque étape a une date", async ({ page }) => {
     }
   } else {
     // Sans API le tableau est vide : le panneau reste visible (lot « nombres seulement »).
-    await expect(review).toContainText(/Revue du plan|Plan review|indisponible|Aucune jambe/i);
+    await expect(review).toContainText(/Revue du plan|Plan review|indisponible|Aucune jambe|No leg to review/i);
   }
   await review.scrollIntoViewIfNeeded();
   await shot(page, "01-revue");

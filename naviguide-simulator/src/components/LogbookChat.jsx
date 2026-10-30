@@ -81,7 +81,9 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
     onAsk?.(q);
   };
 
+  // L'avis reste hors du cadre à hauteur fixe pour préserver la place des réponses.
   return (
+    <>
     <div data-testid="logbook-chat" data-tour="logbook" className="sim-box-chat rounded-lg border border-violet-500/25 bg-violet-950/25 p-2 min-w-0">
       <div className="flex items-center gap-1.5 mb-1 flex-shrink-0">
         <MessageSquare size={12} className="text-violet-200" />
@@ -132,23 +134,6 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
           {error ? <p className="text-[10px] text-amber-300/90 leading-snug" role="alert" data-testid="logbook-chat-error">{error}</p> : null}
         </div>
       </div>
-      {showAiNotice ? (
-        <div
-          data-testid="logbook-chat-ai-notice"
-          className="mt-1.5 rounded-md border border-violet-300/45 bg-violet-950 px-2 py-1.5 text-xs leading-snug text-violet-50"
-        >
-          {/* Région live autour du texte seul : la notice AI Act est annoncée, pas le bouton. */}
-          <p role="status" aria-live="polite" data-testid="logbook-chat-ai-notice-text">{t("aiActChatNotice")}</p>
-          <button
-            type="button"
-            data-testid="logbook-chat-ai-notice-dismiss"
-            onClick={dismissAiNotice}
-            className="mt-1 text-xs font-semibold text-white underline underline-offset-2 hover:text-violet-100"
-          >
-            {t("aiActChatNoticeDismiss")}
-          </button>
-        </div>
-      ) : null}
       <div
         data-testid="logbook-chat-examples"
         className="mt-1 flex flex-nowrap items-center gap-0.5 flex-shrink-0 min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
@@ -193,5 +178,23 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
         </button>
       </form>
     </div>
+    {showAiNotice ? (
+      <div
+        data-testid="logbook-chat-ai-notice"
+        className="mt-1.5 rounded-md border border-violet-300/45 bg-violet-950 px-2 py-1.5 text-xs leading-snug text-violet-50"
+      >
+        {/* Région live autour du texte seul : la notice AI Act est annoncée, pas le bouton. */}
+        <p role="status" aria-live="polite" data-testid="logbook-chat-ai-notice-text">{t("aiActChatNotice")}</p>
+        <button
+          type="button"
+          data-testid="logbook-chat-ai-notice-dismiss"
+          onClick={dismissAiNotice}
+          className="mt-1 text-xs font-semibold text-white underline underline-offset-2 hover:text-violet-100"
+        >
+          {t("aiActChatNoticeDismiss")}
+        </button>
+      </div>
+    ) : null}
+    </>
   );
 });
