@@ -1397,6 +1397,11 @@ def get_official_moments(
                 from moment_journal import _with_clock, rows_from_voyage  # noqa: PLC0415
 
                 rows = rows_from_voyage(OFFICIAL_VOYAGE_ID, _with_clock(voy), lang="en")
+                # The frozen/offline voyage may not contain the pearl history
+                # needed to rebuild the localized view. Keep the stored journal
+                # in that case instead of replacing it with an empty response.
+                if not rows:
+                    rows = out.get("moments") or []
                 if until:
                     from moment_journal import _iso_le  # noqa: PLC0415
 
