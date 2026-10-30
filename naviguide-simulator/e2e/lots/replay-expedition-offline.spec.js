@@ -62,8 +62,12 @@ for (const lang of ["fr", "en"]) {
       } else {
         await edited.click();
         const unavailable = page.locator('[data-testid="film-bar"] [role="status"]');
+        // Rédigé async (#159) : le statut « Chargement du film… » s'affiche pendant le job ;
+        // on attend l'état terminal (rédigé servi ou indisponible), pas un statut quelconque.
+        const UNAVAILABLE = /momentanément indisponible|temporarily unavailable/i;
         await expect.poll(async () => (
-          await edited.getAttribute("aria-pressed") === "true" || await unavailable.isVisible()
+          await edited.getAttribute("aria-pressed") === "true"
+          || (await unavailable.isVisible() && UNAVAILABLE.test(await unavailable.innerText()))
         ), { timeout: 45_000 }).toBe(true);
         if (await edited.getAttribute("aria-pressed") === "true") {
           start = page.getByTestId("replay-start");
