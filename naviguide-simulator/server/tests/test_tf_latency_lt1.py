@@ -80,6 +80,11 @@ def test_R2_timeout_default_providers_stays_nemotron(monkeypatch):
 
 def test_R2b_timeout_fallback_opt_in_is_labelled(monkeypatch):
     """Opt-in explicite : le repli NIM reste possible et étiqueté (nvidia-…)."""
+    # story_cascade's dotenv loading may restore the developer's `off` mode
+    # after conftest clears it; this test exercises a mocked provider hop.
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "all")
+    # The handler below is MockTransport; permit the local mocked HTTP path.
+    monkeypatch.delenv("NAVIGUIDE_OFFLINE", raising=False)
     monkeypatch.delenv("NAVIGUIDE_LLM_PROVIDERS", raising=False)
     monkeypatch.setenv("NAVIGUIDE_LLM_TIMEOUT_FALLBACK", "1")
     monkeypatch.setenv("NVIDIA_API_KEY", "nv-test")

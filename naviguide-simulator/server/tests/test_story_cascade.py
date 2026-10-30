@@ -23,6 +23,7 @@ from story_cascade import (
     story_tier,
     translate,
     write_story,
+    _call_nim,
 )
 
 def _url_host_is(url: str, root: str) -> bool:
@@ -521,6 +522,31 @@ def test_nim_still_available_behind_the_flag(monkeypatch):
     assert "ZEE" in text
     assert any("nvidia.com" in u for u in seen)
     assert source.startswith("nvidia-")
+
+
+def test_nim_records_reported_usage(monkeypatch):
+    import llm_budget
+
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test")
+    before = llm_budget.get_usage("write")
+
+    def handler(_request):
+        return httpx.Response(200, json={
+            "model": "openai/gpt-oss-20b",
+            "choices": [{"message": {"content": "La ZEE reste calme."}}],
+            "usage": {"prompt_tokens": 23, "completion_tokens": 7},
+        })
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await _call_nim("system", "user", client, tier="write")
+
+    result = asyncio.run(run())
+    assert result[0] == "La ZEE reste calme."
+    usage = llm_budget.get_usage("write")
+    assert usage["calls"] == before["calls"] + 1
+    assert usage["prompt_tokens"] == before["prompt_tokens"] + 23
+    assert usage["completion_tokens"] == before["completion_tokens"] + 7
 
 
 FR_STORY = "Le 21 mai 2026 le bateau entre dans la ZEE française à La Rochelle, 36,5 kn [[ev:wx:gale]]."

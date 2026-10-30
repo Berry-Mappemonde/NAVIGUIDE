@@ -1021,7 +1021,11 @@ def _is_tf_timeout(exc: BaseException | None) -> bool:
 
 
 def timeout_fallback_allowed() -> bool:
-    """NAVIGUIDE_LLM_TIMEOUT_FALLBACK=1 : autorise NIM/OpenRouter/Claude après un timeout TF."""
+    """Return whether non-Nemotron providers may run after a Token Factory timeout.
+
+    NIM, OpenRouter, and Claude are skipped after a TF timeout by default;
+    set NAVIGUIDE_LLM_TIMEOUT_FALLBACK to 1/true/yes/on to opt in.
+    """
     return _env("NAVIGUIDE_LLM_TIMEOUT_FALLBACK").strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -1142,6 +1146,8 @@ async def _call_nim(
     text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
     if not text:
         raise RuntimeError("nvidia empty")
+    pt, ct = _usage_tokens(data, system, user, text)
+    llm_budget.record(tier, pt, ct)
     source = f"nvidia-{NIM_MODEL.split('/')[-1]}"
     model = _exact_model(source, str((data or {}).get("model") or ""), NIM_MODEL)
     return _as_result(text, source, model=model, tier=tier)
