@@ -641,12 +641,16 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                   type="button"
                   disabled
                   aria-disabled="true"
+                  aria-label={`${t("replayStart")}: ${t("replayUnavailable")}`}
                   data-testid="replay-start"
                   className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed disabled:pointer-events-none"
-                  title={t("replayPreparing")}
+                  title={t("replayUnavailable")}
                 >
                   ↺ {t("replayStart")}
                 </button>
+                <span role="status" className="min-w-0 text-[9px] leading-tight text-sky-100/90">
+                  {t("replayUnavailable")}
+                </span>
               </div>
             ) : null}
           </div>

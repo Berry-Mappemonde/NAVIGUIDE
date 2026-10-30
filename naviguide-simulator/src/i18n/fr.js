@@ -284,6 +284,7 @@ export default {
   replayStartTitle: "Rejouer la route de Saint-Maur à aujourd’hui, racontée jour par jour",
   replayBerryOnly: "Revoir : route Berry-Mappemonde seulement — bientôt pour votre route",
   replayPreparing: "en préparation",
+  replayUnavailable: "Le film officiel de l’expédition est momentanément indisponible.",
   filmLoadPending: "Chargement du film…",
   filmLoadPreparing: "Le film est en préparation…",
   filmLoadEmpty: "Aucun film reçu pour le moment.",

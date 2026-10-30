@@ -284,6 +284,7 @@ export default {
   replayStartTitle: "Replay the route from Saint-Maur to today, told day by day",
   replayBerryOnly: "Replay: Berry-Mappemonde route only — coming soon for your route",
   replayPreparing: "preparing",
+  replayUnavailable: "The official expedition film is unavailable right now.",
   filmLoadPending: "Loading film…",
   filmLoadPreparing: "The film is being prepared…",
   filmLoadEmpty: "No film received yet.",
