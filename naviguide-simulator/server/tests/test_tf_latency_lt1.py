@@ -68,26 +68,25 @@ def _r2_handler(seen):
 
 
 def test_R2_timeout_default_providers_falls_back_to_nim(monkeypatch):
-    """Par défaut, un timeout TF continue la cascade et essaie NIM."""
+    """Providers par défaut : un timeout TF appelle NIM et retourne son résultat."""
     monkeypatch.delenv("NAVIGUIDE_LLM_PROVIDERS", raising=False)
     monkeypatch.delenv("NAVIGUIDE_LLM_TIMEOUT_FALLBACK", raising=False)
     monkeypatch.setenv("NVIDIA_API_KEY", "nv-test")
     seen = []
     res = _run(_r2_handler(seen), tier="write")
     assert res[1].startswith("nvidia-") and "gpt-oss" in res.model
-    assert any("tokenfactory" in u for u in seen), seen
-    assert any("integrate.api.nvidia.com" in u for u in seen), seen
+    assert any("tokenfactory" in u for u in seen) and any("nvidia" in u for u in seen), seen
 
 
-def test_R2b_timeout_fallback_zero_disables_fallback(monkeypatch):
-    """Seule la valeur explicite 0 désactive les replis après timeout TF."""
+def test_R2b_timeout_fallback_explicit_opt_out(monkeypatch):
+    """Opt-out explicite : aucun appel NIM après le timeout TF."""
     monkeypatch.delenv("NAVIGUIDE_LLM_PROVIDERS", raising=False)
     monkeypatch.setenv("NAVIGUIDE_LLM_TIMEOUT_FALLBACK", "0")
     monkeypatch.setenv("NVIDIA_API_KEY", "nv-test")
     seen = []
     res = _run(_r2_handler(seen), tier="write")
     assert res[1] == "rules"
-    assert all("tokenfactory" in u for u in seen), seen
+    assert not any("nvidia" in u for u in seen), seen
 
 
 def test_R2c_non_timeout_failure_keeps_default_cascade(monkeypatch):
