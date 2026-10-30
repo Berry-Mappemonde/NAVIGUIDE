@@ -24,7 +24,7 @@ export function normalizeFilmWebSourceUrl(url) {
     if (!host) return "";
     let path = u.pathname;
     if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
-    return `${u.protocol.toLowerCase()}//${host}${path}`;
+    return `${u.protocol.toLowerCase()}//${host}${u.port ? `:${u.port}` : ""}${path}${u.search}`;
   } catch {
     return "";
   }

@@ -33,7 +33,7 @@ _STEPS = (
     ("w", "write", 512, 400),
     ("e", "judge", 512, 400),
     ("j", "judge", 256, 128),
-    ("t", "fast", 512, 256),
+    ("t", "write", 2048, 2048),
 )
 _STEP = {step: (tier, prompt, completion) for step, tier, prompt, completion in _STEPS}
 
@@ -548,11 +548,7 @@ def _translate(story: dict, row: dict) -> None:
     text = _chapter_text(en_plan)
     if not text:
         return
-    extra = {}
-    reviewed = (row.get("fr") or {}).get("reviewedBy")
-    if reviewed:
-        extra["reviewedBy"] = reviewed
-    _put_slot(row, "en", text, str((en_plan or {}).get("source") or ""), **extra)
+    _put_slot(row, "en", text, str((en_plan or {}).get("source") or ""))
 
 
 def execute_call(call: Any) -> dict[str, Any]:

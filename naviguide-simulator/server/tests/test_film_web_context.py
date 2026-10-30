@@ -112,6 +112,15 @@ def test_compact_dedupes_urls_by_normalized_key():
     assert {s["domain"] for s in out["sources"]} == {"example.com", "other.org"}
 
 
+def test_url_normalization_keeps_query_and_normalizes_host_port():
+    assert film_web_context._normalize_url_key("https://WWW.Example.COM:8443/foo/?a=1#part") == (
+        "https://example.com:8443/foo?a=1"
+    )
+    assert film_web_context._normalize_url_key("https://example.com/foo?a=2") != (
+        film_web_context._normalize_url_key("https://example.com/foo?a=1")
+    )
+
+
 def test_compact_rejects_empty_url_host():
     assert film_web_context.compact({
         "status": "ready",

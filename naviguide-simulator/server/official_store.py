@@ -2981,7 +2981,7 @@ _FILM_WRITE_FAILED: set[tuple[str, int]] = set()
 
 def film_write_running(lang: str, seconds: int) -> bool:
     """Check if a film write task is running for the given key."""
-    key = ((lang or "fr")[:2].lower(), int(seconds or 0))
+    key = ("pair", int(seconds or 0))
     task = _FILM_WRITE_TASKS.get(key)
     return task is not None and not task.done()
 
@@ -3003,6 +3003,7 @@ async def start_film_write(
     lg = (lang or "fr")[:2].lower()
     secs = int(seconds or 0)
     key = (lg, secs)
+    task_key = ("pair", secs)
 
     # Check cache first — if written film ready, serve it immediately
     cached = serve_film(lang=lg, seconds=secs, style="written")
@@ -3010,7 +3011,7 @@ async def start_film_write(
         return cached
 
     # If a task is already running for this key, return writing status
-    existing_task = _FILM_WRITE_TASKS.get(key)
+    existing_task = _FILM_WRITE_TASKS.get(task_key)
     if existing_task and not existing_task.done():
         return {
             **cached,
@@ -3046,7 +3047,8 @@ async def start_film_write(
         _log_fill_written(f"written clic {lg} {secs}s : plafond write — brut")
         return serve_film(lang=lg, seconds=secs, style="written")
 
-    _FILM_WRITE_FAILED.discard(key)
+    _FILM_WRITE_FAILED.discard(("fr", secs))
+    _FILM_WRITE_FAILED.discard(("en", secs))
 
     # Launch background task
     async def _write_task():
@@ -3056,23 +3058,32 @@ async def start_film_write(
             fr_plan, en_plan, stats = await write_film_chain(
                 fr_raw, seconds=secs, cascade=cascade_fn, en_raw=en_raw,
             )
-            if not isinstance(fr_plan, dict) or not (fr_plan.get("chapters") or []):
+            fr_ok = isinstance(fr_plan, dict) and bool(fr_plan.get("chapters") or [])
+            en_ok = isinstance(en_plan, dict) and bool(en_plan.get("chapters") or [])
+            if not fr_ok and not en_ok:
                 _log_fill_written(f"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})")
                 _FILM_WRITE_FAILED.add(key)
                 return
             receipt = film_receipt(receipt_calls, stats, when)
-            fr_plan = {**fr_plan, "receipt": receipt}
+            if fr_ok:
+                fr_plan = {**fr_plan, "receipt": receipt}
             # Re-fetch hit and body to avoid UnboundLocalError from closure rebinding
             hit = get("film")
             body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
             if not isinstance(body, dict):
                 return
-            body = _put_written_variant(body, "fr", secs, fr_plan, when, last_stop)
-            if isinstance(en_plan, dict) and (en_plan.get("chapters") or []):
+            if fr_ok:
+                body = _put_written_variant(body, "fr", secs, fr_plan, when, last_stop)
+            if en_ok:
                 en_plan = {**en_plan, "receipt": receipt}
                 body = _put_written_variant(body, "en", secs, en_plan, when, last_stop)
             put("film", body, hit.get("key"))
-            _FILM_WRITE_FAILED.discard(key)
+            for language, succeeded in (("fr", fr_ok), ("en", en_ok)):
+                result_key = (language, secs)
+                if succeeded:
+                    _FILM_WRITE_FAILED.discard(result_key)
+                else:
+                    _FILM_WRITE_FAILED.add(result_key)
             _log_fill_written(
                 f"written clic {lg} {secs}s : source={stats.get('source')} "
                 f"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} lightning={stats.get('lightning')}"
@@ -3082,10 +3093,10 @@ async def start_film_write(
             _FILM_WRITE_FAILED.add(key)
         finally:
             # Clean up task reference
-            _FILM_WRITE_TASKS.pop(key, None)
+            _FILM_WRITE_TASKS.pop(task_key, None)
 
     task = asyncio.create_task(_write_task())
-    _FILM_WRITE_TASKS[key] = task
+    _FILM_WRITE_TASKS[task_key] = task
 
     # Return immediately with writing status; hasWritten=False until 1st successful poll (docstring l. 2997)
     return {
@@ -3181,7 +3192,8 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
     # Check if a write task failed for this key
     lg = (lang or "fr")[:2].lower()
     secs = int(seconds or 0)
-    if (lg, secs) in _FILM_WRITE_FAILED:
+    # A failed written pass must never hide the already available raw film.
+    if _is_written_style(style) and (lg, secs) in _FILM_WRITE_FAILED:
         return {
             "status": "failed",
             "hasWritten": False,

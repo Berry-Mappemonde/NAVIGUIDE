@@ -24,6 +24,17 @@ def test_film_returns_the_snapshot(monkeypatch):
     assert res.json()["lang"] == "en"
 
 
+def test_film_missing_lang_defaults_to_french(monkeypatch):
+    monkeypatch.setattr(
+        film_front.official_store,
+        "serve_film",
+        lambda **kwargs: {"status": "ready", "chapters": [], "lang": kwargs["lang"]},
+    )
+    res = TestClient(film_front.app).get("/voyage/official/film")
+    assert res.status_code == 200
+    assert res.json()["lang"] == "fr"
+
+
 def test_clock_returns_the_stored_bytes(monkeypatch):
     monkeypatch.setattr(film_front.official_store, "serve_clock_bytes", lambda: b'{"t":1}')
     client = TestClient(film_front.app)

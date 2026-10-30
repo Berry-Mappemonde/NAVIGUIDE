@@ -23,21 +23,22 @@ MAX_SOURCES = 3
 
 
 def _domain(url: str) -> str:
-    host = urlparse(url).netloc.lower()
+    host = (urlparse(url).hostname or "").lower()
     return host[4:] if host.startswith("www.") else host
 
 
 def _normalize_url_key(url: str) -> str:
     """Clé de dédoublonnage : schéma/hôte en minuscules, sans www., sans / final ni fragment."""
     p = urlparse(url)
-    host = (p.netloc or "").lower()
+    host = (p.hostname or "").lower()
     if host.startswith("www."):
         host = host[4:]
     path = p.path or ""
     if len(path) > 1 and path.endswith("/"):
         path = path[:-1]
     scheme = (p.scheme or "http").lower()
-    return f"{scheme}://{host}{path}"
+    port = f":{p.port}" if p.port is not None else ""
+    return f"{scheme}://{host}{port}{path}{'?' + p.query if p.query else ''}"
 
 
 def _url_has_host(url: str) -> bool:

@@ -1149,6 +1149,8 @@ export function useReplay({
   const [hasWritten, setHasWritten] = useState(false);
   const [filmWriteError, setFilmWriteError] = useState(false);
   const filmWritePollGenRef = useRef(0);
+  const filmWritePollAbortRef = useRef(null);
+  const filmWriteStartingRef = useRef(false);
   const filmWriteNextStepRef = useRef(async () => "stop");
   // Style du plan chargé (visite des juges, bouton Rédigé) : "written" / "raw" quand le serveur
   // a servi le style demandé, "mismatch" quand il a servi le Brut à une demande Rédigé.
@@ -2294,14 +2296,18 @@ export function useReplay({
       setFilmStyle("written");
       return;
     }
-    if (filmWriting) return; // double-click guard
+    if (filmWriting || filmWriteStartingRef.current) return; // double-click guard
     if (!isOfficialFilmVoyage(voyageId)) return;
     const path = filmRequestPath(voyageId);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
     setFilmWriteError(false);
+    filmWriteStartingRef.current = true;
     setFilmWriting(true);
     fetch(`${API}${path}?${q}`, { method: "POST" })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        if (!r.ok) throw new Error(`film write HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data) => {
         if (!data) return;
         const status = String(data?.status || "").toLowerCase();
@@ -2324,6 +2330,9 @@ export function useReplay({
       .catch(() => {
         setFilmWriteError(true);
         setFilmWriting(false);
+      })
+      .finally(() => {
+        filmWriteStartingRef.current = false;
       });
   }, [hasWritten, lang, targetSeconds, t0, voyageId]);
 
@@ -2332,7 +2341,9 @@ export function useReplay({
     if (!isOfficialFilmVoyage(voyageId)) return "stop";
 
     const gen = ++filmWritePollGenRef.current;
+    filmWritePollAbortRef.current?.abort();
     const ac = new AbortController();
+    filmWritePollAbortRef.current = ac;
     const path = filmRequestPath(voyageId);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=written&t0=${encodeURIComponent(t0)}`;
     const maxAttempts = 150; // 4s * 150 = 600s = 10min
@@ -2407,10 +2418,13 @@ export function useReplay({
 
   useEffect(() => {
     filmWritePollGenRef.current += 1;
+    filmWritePollAbortRef.current?.abort();
     return () => {
       filmWritePollGenRef.current += 1;
+      filmWritePollAbortRef.current?.abort();
+      filmWritePollAbortRef.current = null;
     };
-  }, [voyageId, lang, targetSeconds, t0]);
+  }, [voyageId, lang, targetSeconds, t0, filmStyle]);
 
   return {
     active,

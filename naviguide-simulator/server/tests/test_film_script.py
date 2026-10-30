@@ -5041,9 +5041,19 @@ def test_ed2_mixed_nim_chapters_keep_nim_when_last_is_super(monkeypatch):
         )
         return text, src
 
-    fr, _en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=mixed))
+    en_raw = {
+        "targetSeconds": 150,
+        "chapters": [
+            {**chapter, "text": "On May 15, Berry-Mappemonde leaves La Rochelle. Arrival in Ajaccio on May 26."}
+            for chapter in plan["chapters"]
+        ],
+    }
+    fr, en, stats = asyncio.run(
+        write_film_chain(plan, seconds=150, cascade=mixed, en_raw=en_raw),
+    )
     assert seen == [1, 2, 3, 4, 5, 6]
     assert fr is not None
+    assert en is not None
     assert stats["source"] == "nvidia-gpt-oss-20b"
     assert fr["source"] == "nvidia-gpt-oss-20b"
     assert fr["source"] != "nemotron-super"
