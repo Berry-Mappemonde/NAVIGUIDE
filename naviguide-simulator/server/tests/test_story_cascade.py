@@ -33,6 +33,14 @@ def _url_host_is(url: str, root: str) -> bool:
     return bool(host) and (host == root or host.endswith("." + root))
 
 
+def _tier_host_is(url: str, tier: str) -> bool:
+    """Compare a request with the configured Token Factory host for its tier."""
+    import story_cascade
+
+    expected_host = urlparse(story_cascade.tf_base(tier)).hostname or ""
+    return _url_host_is(url, expected_host)
+
+
 # Capture PR #252 / revue du 22 sept. : fiche Pointe-à-Pitre servie depuis le cache.
 CAPTURE_LEAK = (
     "Input: A large JSON object containing marina lists.\n"
@@ -224,7 +232,7 @@ def test_cascade_tokenfactory_write_is_nemotron_super(monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(str(request.url))
-        assert "tokenfactory.nebius.com" in str(request.url)
+        assert _url_host_is(str(request.url), "api.tokenfactory.nebius.com")
         body = request.read().decode()
         assert "Nemotron-3.5-Super-VL" in body
         return httpx.Response(200, json=_chat_ok("Entrée dans la ZEE française."))
@@ -1656,7 +1664,7 @@ def test_lightning_reasoning_content_finish_length_stays_lightning(monkeypatch):
     assert result.tier == "fast"
     assert len(seen) == 1
     assert "Lightning" in seen[0][1]
-    assert "us-central1" not in seen[0][0]
+    assert _tier_host_is(seen[0][0], "fast")
     st = llm_budget.status()
     assert st["retrySuper"] == 0
     assert st["fallback"] == {"nim": 0, "openrouter": 0, "claude": 0}
@@ -1750,7 +1758,7 @@ def test_write_story_calls_super_and_stop_calls_ultra(monkeypatch):
     assert stopped["model"] == "nvidia/Nemotron-3-Ultra-550b-a55b"
     assert len(seen) == 2
     assert seen[0][1] == "nvidia/Nemotron-3.5-Super-VL"
-    assert "us-central1" not in seen[0][0]
+    assert _tier_host_is(seen[0][0], "write")
     assert seen[1][1] == "nvidia/Nemotron-3-Ultra-550b-a55b"
     assert _url_host_is(seen[1][0], "api.tokenfactory.nebius.com")
 
@@ -1767,7 +1775,7 @@ def test_nano_call_stays_on_eu_host(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_TF_BASE_EU", "https://api.tokenfactory.nebius.com/v1")
     url = story_cascade._tf_url("nano")
     assert _url_host_is(url, "api.tokenfactory.nebius.com")
-    assert "us-central1" not in url
+    assert _tier_host_is(url, "nano")
     assert url.endswith("/chat/completions")
     assert _url_host_is(story_cascade._tf_url("deep"), "api.tokenfactory.nebius.com")
 
@@ -1799,7 +1807,7 @@ def test_nano_call_stays_on_eu_host(monkeypatch):
     assert len(seen) == 1
     assert seen[0][1] == NANO_ID
     assert _url_host_is(seen[0][0], "api.tokenfactory.nebius.com")
-    assert "us-central1" not in seen[0][0]
+    assert not _url_host_is(seen[0][0], "api.tokenfactory.us-central1.nebius.com")
 
 
 def test_nano_falls_back_to_lightning_with_its_label(monkeypatch):
@@ -1836,7 +1844,7 @@ def test_nano_falls_back_to_lightning_with_its_label(monkeypatch):
     assert source == "nemotron-lightning"
     assert result.model == LIGHTNING_ID
     assert [m for _u, m in seen] == [LIGHTNING_ID, LIGHTNING_ID]
-    assert all("us-central1" not in url for url, _m in seen)
+    assert all(not _url_host_is(url, "api.tokenfactory.us-central1.nebius.com") for url, _m in seen)
     assert all(_url_host_is(url, "api.tokenfactory.nebius.com") for url, _m in seen)
     import llm_budget
     assert llm_budget.status()["lastSourceByTier"]["nano"] == "nemotron-lightning"

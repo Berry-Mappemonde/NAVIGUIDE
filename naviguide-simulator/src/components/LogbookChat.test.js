@@ -10,6 +10,17 @@ const hook = readFileSync(join(here, "..", "hooks", "useLogbookChat.js"), "utf8"
 const sidebar = readFileSync(join(here, "Sidebar.jsx"), "utf8");
 
 describe("LogbookChat contract", () => {
+  it("announces new messages and errors, and labels the chat controls", () => {
+    assert.match(src, /data-testid="logbook-chat-list"[^>]*role="log"[^>]*aria-live="polite"/);
+    assert.match(src, /role="alert"[^>]*data-testid="logbook-chat-error"/);
+    assert.match(src, /aria-label=\{t\("logbookChatInputLabel"\)\}/);
+    assert.match(src, /aria-label=\{t\("logbookChatSend"\)\}/);
+    const en = readFileSync(join(here, "..", "i18n", "en.js"), "utf8");
+    const fr = readFileSync(join(here, "..", "i18n", "fr.js"), "utf8");
+    assert.match(en, /logbookChatInputLabel: "Ask the logbook"/);
+    assert.match(fr, /logbookChatInputLabel: "Votre question au carnet de bord"/);
+  });
+
   it("affiche l’avis au premier échange et s’en souvient", () => {
     assert.match(src, /data-testid="logbook-chat-ai-notice"/);
     assert.match(src, /data-testid="logbook-chat-ai-notice-dismiss"/);
@@ -28,14 +39,30 @@ describe("LogbookChat contract", () => {
   });
 
   it("the hook posts one question at a time to /logbook/chat with the admin header and the client facts", () => {
-    assert.match(hook, /fetch\(`\$\{API_URL\}\/logbook\/chat`/);
+    assert.match(hook, /postLogbookChat\(\{/);
+    assert.match(hook, /url:\s*`\$\{API_URL\}\/logbook\/chat`/);
     assert.match(hook, /\.\.\.adminHeaders\(\)/);
     assert.match(hook, /inFlight\.current/);
     assert.match(hook, /contextFn\(\)/);
     assert.match(hook, /source: body\.source \|\| body\.engine \|\| null/);
     assert.match(hook, /reason/);
     assert.doesNotMatch(hook, /Nemotron|Tavily|Nebius/i);
-    assert.doesNotMatch(hook, /useEffect/);
+    assert.match(hook, /signal:\s*controller\.signal/);
+    assert.match(hook, /requestController\.current\?\.abort\(\)/);
+    assert.match(hook, /err\?\.code === "aborted"/);
+  });
+
+  it("does not update hook state after unmount while an aborted request settles", () => {
+    assert.match(hook, /mounted\.current = false;\s*requestController\.current\?\.abort\(\)/);
+    assert.match(hook, /if \(mounted\.current\) setMessages\(\(prev\) => \[\.\.\.prev, reply\]/);
+    assert.match(hook, /if \(mounted\.current\) setError\(/);
+    assert.match(hook, /if \(mounted\.current\) setPending\(false\)/);
+  });
+
+  it("keeps the translator callable when recording the question timestamp", () => {
+    assert.match(hook, /const \{ t: tr \} = useLang\(\)/);
+    assert.match(hook, /setError\(tr\(chatErrorKey\(err\?\.code\)\)\)/);
+    assert.doesNotMatch(hook, /const t\s*=/);
   });
 
   it("shows the cascade source under the answer and does not fetch on render", () => {

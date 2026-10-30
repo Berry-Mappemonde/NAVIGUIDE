@@ -32,12 +32,13 @@ export function describeTfLatency(llm, t) {
     for (const tier of tiers) {
       const row = lat[tier];
       const median = Number(row?.medianMs);
+      const samples = Number(row?.samples) || 0;
       const calls = Number(row?.calls) || 0;
-      if (!row || !Number.isFinite(median) || median < 0 || calls <= 0) continue;
-      if (!best || calls > best.calls) best = { tier, median, calls };
+      if (!row || !Number.isFinite(median) || median < 0 || samples <= 0) continue;
+      if (!best || calls > best.calls) best = { tier, median, calls, samples };
     }
     if (best) {
-      items.push(t("tfLatencyItem", { model: modelDisplayName(models[best.tier]) || best.tier, s: seconds(best.median, decimal), n: String(best.calls) }));
+      items.push(t("tfLatencyItem", { model: modelDisplayName(models[best.tier]) || best.tier, s: seconds(best.median, decimal), n: String(best.samples) }));
     }
   }
   if (items.length) out.latency = t("tfLatencyLine", { list: items.join(" · ") });
