@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import fr from "../i18n/fr.js";
+import en from "../i18n/en.js";
 import {
   clockRegimeText,
   clockWeatherTooltip,
@@ -68,6 +70,18 @@ describe("barre film — noms accessibles des commandes", () => {
     assert.match(bar, /aria-label=\{ev\.phrase \|\| ev\.type\}/);
     assert.match(bar, /aria-label=\{playing \? t\("pause"\) : t\("play"\)\}/);
     assert.match(bar, /aria-label=\{t\("showFilmBar"\)\}/);
+  });
+});
+
+describe("barre film — pilule Rédigé sur une route personnalisée", () => {
+  it("désactive la pilule et explique la restriction en français et en anglais", () => {
+    assert.match(bar, /writtenPillEnabled\(\{ customFilm: replay\.customFilm \}\)/);
+    assert.match(bar, /disabled=\{id === "written" && !writtenPillEnabled/);
+    assert.match(bar, /aria-disabled=\{locked\}/);
+    assert.match(bar, /t\("filmStoryWrittenCustomUnavailable"\)/);
+    assert.notEqual(fr.filmStoryWrittenCustomUnavailable, en.filmStoryWrittenCustomUnavailable);
+    assert.match(fr.filmStoryWrittenCustomUnavailable, /route personnalisée/);
+    assert.match(en.filmStoryWrittenCustomUnavailable, /custom route/);
   });
 });
 
