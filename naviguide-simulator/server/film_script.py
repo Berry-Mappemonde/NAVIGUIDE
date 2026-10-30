@@ -4157,8 +4157,12 @@ def _window_leg_nm(w: dict) -> Optional[float]:
     a_nm, b_nm = num(frm, "nm"), num(dest, "nm")
     if a_nm is not None and b_nm is not None and (b_nm - a_nm) > 1:
         return b_nm - a_nm
-    a = num(frm, "nm", "filmNm")
-    b = num(dest, "nm", "filmNm")
+    # Keep both endpoints on the same odometer when the window mixes scales.
+    a_film, b_film = num(frm, "filmNm"), num(dest, "filmNm")
+    if a_film is not None and b_film is not None and (b_film - a_film) > 1:
+        return b_film - a_film
+    a = a_film if b_film is not None else a_nm
+    b = b_film if b_film is not None else b_nm
     if b is None and isinstance(w.get("destNm"), (int, float)):
         b = float(w["destNm"])
     if a is None or b is None:

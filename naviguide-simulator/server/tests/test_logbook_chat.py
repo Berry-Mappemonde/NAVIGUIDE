@@ -242,6 +242,41 @@ def test_hard_question_with_judge_calls_ultra_once(monkeypatch):
     assert "0" in out["answer"]
 
 
+@pytest.mark.parametrize(
+    ("cascade_source", "judge_allowed", "answer", "expected_records"),
+    [
+        ("nemotron-ultra", True, "Stay at the quay: speed is 0 kn.", 1),
+        ("nemotron-super", True, "Stay at the quay: speed is 0 kn.", 0),
+        ("rules", True, "Stay at the quay: speed is 0 kn.", 0),
+        ("nemotron-ultra", False, "Stay at the quay: speed is 0 kn.", 0),
+        ("nemotron-ultra", True, "The JSON does not contain any information.", 0),
+    ],
+)
+def test_chat_ultra_counter_tracks_only_actual_ultra_responses(
+    monkeypatch, cascade_source, judge_allowed, answer, expected_records,
+):
+    recorded = []
+
+    async def fake_cascade(system, user, client=None, **kw):
+        return answer, cascade_source
+
+    async def fake_ctx(*_a, **_k):
+        return {"official": {"atQuay": True, "speedKnots": 0}}
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    import llm_budget
+    monkeypatch.setattr(llm_budget, "allow", lambda tier: judge_allowed)
+    monkeypatch.setattr(llm_budget, "record_chat_ultra", lambda: recorded.append(True))
+
+    out = asyncio.run(logbook_chat.answer_question(
+        "Pourquoi ralentir ?", "fr", {}, datetime.now(timezone.utc),
+    ))
+
+    assert out["status"] == "ready"
+    assert len(recorded) == expected_records
+
+
 def test_filter_numbers_drops_sentences_with_figures_absent_from_the_facts():
     ctx = {"official": {"wind": {"windKnots": 14.2, "dirFromDeg": 250}}, "nextStop": {"name": "Ajaccio", "eta": "2026-10-03T10:00:00Z"}}
     text, dropped = logbook_chat.filter_numbers(
