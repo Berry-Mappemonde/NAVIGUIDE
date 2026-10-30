@@ -19,7 +19,13 @@ async function stubFilm(page, written) {
     }
     const url = new URL(req.url());
     const style = url.searchParams.get("style") || "raw";
-    const res = await route.fetch();
+    let res;
+    try {
+      res = await route.fetch();
+    } catch {
+      // Playwright peut fermer la route si le sondage survit à la fin du test.
+      return;
+    }
     const data = await res.json().catch(() => null);
     if (!data || style !== "written") {
       await route.fulfill({ response: res, json: data ?? undefined });
