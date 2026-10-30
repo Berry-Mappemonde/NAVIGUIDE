@@ -226,12 +226,26 @@ def test_official_moments_english_keeps_frozen_rows_when_rebuild_is_empty(monkey
 
     fr = voyage_api.get_official_moments(lang="fr")
     en = voyage_api.get_official_moments(lang="en")
-    assert en["count"] == fr["count"] > 0
-    assert [row["pos"] for row in en["moments"]] == [row["pos"] for row in fr["moments"]]
-    for key in ("around", "alerts"):
-        assert sum(len((row.get("moment") or {}).get(key) or []) for row in en["moments"]) == sum(
-            len((row.get("moment") or {}).get(key) or []) for row in fr["moments"]
-        )
+    assert fr["count"] > 0
+    assert en["count"] == 0
+
+
+def test_official_moments_english_fallback_only_keeps_explicitly_english_rows(monkeypatch):
+    stored = [
+        {"lang": "fr", "t": "2026-01-01T00:00:00Z", "changes": [{"title": "Station croisée"}]},
+        {"lang": "en", "t": "2026-01-02T00:00:00Z", "changes": [{"title": "Station passed"}]},
+        {"t": "2026-01-03T00:00:00Z", "changes": [{"title": "Unknown language"}]},
+    ]
+    monkeypatch.setattr(voyage_api.official_store, "serve_moments", lambda **_kw: {
+        "status": "ready", "count": len(stored), "moments": stored,
+    })
+    monkeypatch.setattr(voyage_api, "load_voyage", lambda _voyage_id: {"voyageId": "official"})
+    monkeypatch.setattr("moment_journal.rows_from_voyage", lambda *_a, **_kw: [])
+
+    response = voyage_api.get_official_moments(lang="en")
+
+    assert response["count"] == 1
+    assert response["moments"] == [stored[1]]
 
 
 def test_explain_recompute_fast_tier_filters_invented_numbers(monkeypatch):
