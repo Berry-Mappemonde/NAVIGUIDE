@@ -217,8 +217,9 @@ def _alert(kind: str, severity: str, when: datetime, lat: float, lon: float, fac
             "where": {"lat": round(lat, 3), "lon": round(lon, 3)}, "fact": fact, "weight": int(weight)}
 
 
-def _fmt(value: float, digits: int = 0) -> str:
-    return (f"{value:.{digits}f}" if digits else str(int(round(value)))).replace(".", ",")
+def _fmt(value: float, digits: int = 0, lang: str = "fr") -> str:
+    rendered = f"{value:.{digits}f}" if digits else str(int(round(value)))
+    return rendered if str(lang).lower().startswith("en") else rendered.replace(".", ",")
 
 def _cyclone_alert(lat: float, lon: float, when: datetime, cell: dict) -> dict | None:
     dated = False
@@ -266,7 +267,7 @@ def _hook(module: str, names: tuple[str, ...], lat: float, lon: float, when: dat
     return None
 
 
-def _optional_extras(lat: float, lon: float, when: datetime) -> list[dict]:
+def _optional_extras(lat: float, lon: float, when: datetime, lang: str = "fr") -> list[dict]:
     out, zone = [], _hook("piracy_zones", ("zone_at", "piracy_at"), lat, lon, when)
     if isinstance(zone, dict) and (zone.get("name") or zone.get("zone")):
         level = str(zone.get("level") or "LOW").upper()
@@ -278,7 +279,7 @@ def _optional_extras(lat: float, lon: float, when: datetime) -> list[dict]:
         lanes = pack.get("lanes") or pack.get("name") or "couloir"
         fact = f"Couloir {lanes[0] if isinstance(lanes, list) and lanes else lanes}"
         if pack.get("score") is not None:
-            fact += f" · score {_fmt(float(pack['score']), 2)}"
+            fact += f" · score {_fmt(float(pack['score']), 2, lang)}"
         out.append(_alert("traffic", "decision", when, lat, lon, fact, 1))
     return out
 
@@ -300,7 +301,7 @@ def _amp_restriction(amp: dict) -> str | None:
     return des.strip() if isinstance(des, str) and des.strip() else None
 
 
-def _sample_alerts(lat, lon, when, now, thresholds, *, nm, clock, pearls, climo) -> list[dict]:
+def _sample_alerts(lat, lon, when, now, thresholds, *, nm, clock, pearls, climo, lang="fr") -> list[dict]:
     gale = _threshold(thresholds, "galeKt", "windKt", "wind_max_kt", default=DEFAULT_GALE_KT)
     hs_lim = _threshold(thresholds, "hsAlertM", "hsM", "hs_max_m", default=DEFAULT_HS_M)
     past = when <= now
@@ -328,9 +329,9 @@ def _sample_alerts(lat, lon, when, now, thresholds, *, nm, clock, pearls, climo)
             out.append(alert)
 
     if kn is not None and kn >= gale:
-        add(_alert("wind", "alert", when, lat, lon, f"Vent {wsrc} {_fmt(kn)} kn ≥ {_fmt(gale)} kn (mois {when.month})", 3 if kn >= gale + 6 else 2))
+        add(_alert("wind", "alert", when, lat, lon, f"Vent {wsrc} {_fmt(kn, lang=lang)} kn ≥ {_fmt(gale, lang=lang)} kn (mois {when.month})", 3 if kn >= gale + 6 else 2))
     if hs is not None and hs >= hs_lim:
-        add(_alert("sea", "alert", when, lat, lon, f"Hs {hsrc} {_fmt(hs, 1)} m ≥ {_fmt(hs_lim, 1)} m (mois {when.month})", 3 if hs >= hs_lim + 1 else 2))
+        add(_alert("sea", "alert", when, lat, lon, f"Hs {hsrc} {_fmt(hs, 1, lang)} m ≥ {_fmt(hs_lim, 1, lang)} m (mois {when.month})", 3 if hs >= hs_lim + 1 else 2))
     add(_cyclone_alert(lat, lon, when, cell))
     zee = pearl.get("zee") if isinstance(pearl, dict) and isinstance(pearl.get("zee"), dict) else {}
     poe = [p for p in (pearl.get("poe") or []) if isinstance(p, dict) and p.get("name")] if pearl else []
@@ -342,7 +343,7 @@ def _sample_alerts(lat, lon, when, now, thresholds, *, nm, clock, pearls, climo)
     for amp in (a for a in amps if isinstance(a, dict) and _amp_restriction(a)):
         add(_alert("mpa", "decision", when, lat, lon, f"{amp.get('name') or 'AMP'} — {_amp_restriction(amp)}", 1))
         break
-    for extra in _optional_extras(lat, lon, when):
+    for extra in _optional_extras(lat, lon, when, lang):
         add(extra)
     return out
 
@@ -361,7 +362,7 @@ def _cache_key(plan: dict, now: datetime) -> str:
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def _evaluate_leg(leg: dict, idx: int, now: datetime, thresholds: dict, clock: dict | None, climo: dict | None) -> dict:
+def _evaluate_leg(leg: dict, idx: int, now: datetime, thresholds: dict, clock: dict | None, climo: dict | None, lang: str = "fr") -> dict:
     depart = _as_dt(leg.get("departIso") or leg.get("depart"))
     kn = _f(leg.get("kn") or leg.get("plannedKnots")) or PLANNED_KNOTS
     kn = kn if kn > 0 else PLANNED_KNOTS
@@ -373,13 +374,13 @@ def _evaluate_leg(leg: dict, idx: int, now: datetime, thresholds: dict, clock: d
     for sample in samples:
         when = depart + timedelta(hours=float(sample["nm"]) / kn)
         alerts.extend(_sample_alerts(float(sample["lat"]), float(sample["lon"]), when, now, thresholds,
-                                    nm=float(sample["nm"]), clock=clock, pearls=pearls, climo=climo))
+                                    nm=float(sample["nm"]), clock=clock, pearls=pearls, climo=climo, lang=lang))
     return {"idx": int(leg["idx"] if leg.get("idx") is not None else idx), "from": leg.get("from"), "to": leg.get("to"),
             "depart": depart.strftime("%Y-%m-%d"), "arrive": arrive.strftime("%Y-%m-%d"),
             "alerts": alerts, "score": sum(int(a.get("weight") or 0) for a in alerts), "frozen": arrive <= now}
 
 
-def evaluate_plan(plan: dict, *, now: Any = None, climatology: dict | None = None) -> dict:
+def evaluate_plan(plan: dict, *, now: Any = None, climatology: dict | None = None, lang: str = "fr") -> dict:
     global _CACHE_HITS, _CACHE_MISSES
     if not isinstance(plan, dict):
         return {"legs": [], "total": 0}
@@ -392,7 +393,7 @@ def evaluate_plan(plan: dict, *, now: Any = None, climatology: dict | None = Non
             if (lg.get("depart") or lg.get("departIso")) and _leg_points(lg) and (lg.get("from"), lg.get("to")) not in have
         )
     now_dt = _as_dt(now or src.get("now") or datetime.now(timezone.utc))
-    key = _cache_key(src, now_dt)
+    key = f"{_cache_key(src, now_dt)}:{str(lang).lower()}"
     if key in _CACHE:
         _CACHE_HITS += 1
         return copy.deepcopy(_CACHE[key])
@@ -400,7 +401,7 @@ def evaluate_plan(plan: dict, *, now: Any = None, climatology: dict | None = Non
     thresholds = src.get("skipper_thresholds") or plan.get("skipper_thresholds") or {}
     clock = src.get("clock") if isinstance(src.get("clock"), dict) else None
     climo = climatology or load_climatology_mini()
-    legs = [_evaluate_leg(leg, i, now_dt, thresholds, clock, climo) for i, leg in enumerate(src.get("legs") or [])]
+    legs = [_evaluate_leg(leg, i, now_dt, thresholds, clock, climo, lang) for i, leg in enumerate(src.get("legs") or [])]
     out = {"legs": legs, "total": int(sum(lg["score"] for lg in legs))}
     _CACHE[key] = out
     return copy.deepcopy(out)

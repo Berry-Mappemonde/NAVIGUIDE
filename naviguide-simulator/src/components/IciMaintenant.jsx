@@ -22,6 +22,7 @@ import {
   replayIciFrame,
   withNowLeg,
   localizeStoredTitle,
+  enDecimals,
   localizeStoredFact,
   localizeStoredLabel,
   aroundWithoutShown,
@@ -443,7 +444,7 @@ export function IciMaintenant({
                   className="text-[11px] leading-snug text-slate-200"
                 >
                   <summary className="cursor-pointer list-inside">
-                    {localizeStoredTitle(item.title, lang)}
+                    {enDecimals(localizeStoredTitle(item.title, lang), lang)}
                     {item.fact ? <span className="text-slate-400"> · {localizeStoredFact(item.fact, lang)}</span> : null}
                   </summary>
                   {item.url ? (

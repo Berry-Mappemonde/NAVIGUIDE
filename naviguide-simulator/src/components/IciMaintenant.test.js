@@ -338,6 +338,7 @@ describe("IciMaintenant — : onglet Récit et journal nommé", () => {
     assert.equal(localizeStoredTitle("AMP Taaone", "en"), "Marine protected area Taaone");
     assert.equal(localizeStoredTitle("Aire marine protégée Matavai", "en"), "Marine protected area Matavai");
     assert.equal(localizeStoredTitle("Zone économique exclusive espagnole", "en"), "Spanish EEZ");
+    assert.equal(localizeStoredTitle("Zone économique exclusive vénézuélienne", "en"), "Venezuelan EEZ");
     assert.equal(localizeStoredTitle("Entrée dans Zone économique exclusive française (France métropolitaine)", "en"), "Entering French EEZ (France métropolitaine)");
     assert.equal(journalChangeLabel({
       changes: [{ kind: "zee-enter", score: 2, title: "Zone économique exclusive espagnole", fact: "" }],

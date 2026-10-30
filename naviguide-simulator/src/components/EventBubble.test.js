@@ -9,12 +9,14 @@ import {
   EventBubbleGate,
   FilmEventScoreGate,
   applyBubbleClose,
+  bubbleFacts,
   bubbleId,
   bubbleScore,
   bubbleTitle,
   createEventPopupOptions,
   ensureEventPopup,
   followPopupToMarker,
+  filmEventCard,
   isBubbleSuppressed,
   pickFilmEvent,
   shouldShowFilmEvent,
@@ -53,6 +55,15 @@ function fakeMarker(lat, lng) {
 }
 
 describe("EventBubble — contrat", () => {
+  it("masque un corps français en anglais et conserve le français en français", () => {
+    const ev = { kind: "zee", fact: "Du 11 juin, des navires arrivent.", card: { text: "Du 11 juin, des navires arrivent." } };
+    assert.equal(filmEventCard(ev, "en").text, "");
+    assert.equal(bubbleFacts({ text: ev.fact }, "en"), "");
+    assert.equal(filmEventCard(ev, "fr").text, ev.fact);
+    assert.equal(bubbleFacts({ text: ev.fact }, "fr"), ev.fact);
+    assert.equal(filmEventCard({ ...ev, fact: "Ships arrive.", card: { text: "Ships arrive." } }, "en").text, "Ships arrive.");
+  });
+
   it("L.popup : autoPan false, pas de croix Leaflet, classe event-bubble, 280 px", () => {
     const opts = createEventPopupOptions();
     assert.equal(opts.autoPan, false);
@@ -135,6 +146,15 @@ describe("EventBubble — contrat", () => {
     assert.equal(pickFilmEvent({
       chapter, voiceLed: false, tMs: Date.parse("2026-05-27T13:00:00Z"),
     })?.id, "wx");
+  });
+
+  it("localise le titre ZEE des bulles et cartes du film en EN sans modifier le FR", () => {
+    const card = { kind: "zee", title: "Zone économique exclusive vénézuélienne" };
+    assert.equal(bubbleTitle(card, undefined, "fr"), card.title);
+    assert.equal(bubbleTitle(card, undefined, "en"), "Venezuelan EEZ");
+    assert.equal(filmEventCard({ card }).title, card.title);
+    assert.equal(filmEventCard({ card }, "en").title, "Venezuelan EEZ");
+    assert.match(src, /bubbleTitle\(card, undefined, lang\)/);
   });
 
   it("la scène resynchronise la popup après syncMarkers ; le film ouvre la bulle", () => {

@@ -88,9 +88,9 @@ function CardLinks({ entity, t }) {
 }
 
 export function EventBubble({ card, onClose }) {
-  const { t } = useLang();
-  const title = useMemo(() => bubbleTitle(card), [card]);
-  const facts = useMemo(() => bubbleFacts(card), [card]);
+  const { lang, t } = useLang();
+  const title = useMemo(() => bubbleTitle(card, undefined, lang), [card, lang]);
+  const facts = useMemo(() => bubbleFacts(card, lang), [card, lang]);
   const chips = useMemo(() => bubbleChips(card), [card]);
   if (!card) return null;
   return (
