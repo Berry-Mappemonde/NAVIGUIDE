@@ -1,4 +1,5 @@
 import { KIND_ICON } from "../engine/journalFormat.js";
+import { localizeStoredTitle } from "./iciMaintenant.js";
 
 export const EVENT_BUBBLE_MIN_MS = 3000;
 export const EVENT_BUBBLE_FADE_MS = 200;
@@ -37,14 +38,15 @@ export function isNowAlertOrDecision(card) {
   return card.judge === "now";
 }
 
-export function bubbleTitle(card, max = EVENT_BUBBLE_TITLE_MAX) {
-  const raw = String(card?.title || card?.kind || "").trim();
+export function bubbleTitle(card, max = EVENT_BUBBLE_TITLE_MAX, lang = "fr") {
+  const raw = localizeStoredTitle(String(card?.title || card?.kind || "").trim(), lang);
   if (raw.length <= max) return raw;
   return `${raw.slice(0, Math.max(1, max - 1)).trimEnd()}…`;
 }
 
-export function bubbleFacts(card) {
+export function bubbleFacts(card, lang = "fr") {
   const text = String(card?.text || "").trim();
+  if (String(lang).toLowerCase().startsWith("en") && /\b(?:du|des|les|une|avec|pour|dans|sur|navires|désaccord|aménagement)\b/i.test(text)) return "";
   if (!text) return "";
   const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
   return sentences.slice(0, 2).join(" ");
@@ -94,11 +96,14 @@ export function shouldShowFilmEvent(score, pendingScores = []) {
   return sum >= BUBBLE_SCORE_SUM;
 }
 
-export function filmEventCard(ev) {
+export function filmEventCard(ev, lang = "fr") {
   if (!ev) return null;
   const card = ev.card && typeof ev.card === "object" ? ev.card : {};
-  const title = card.title || ev.title || ev.kind || "";
-  const text = card.text || ev.fact || "";
+  const title = localizeStoredTitle(card.title || ev.title || ev.kind || "", lang);
+  const candidate = card.text || ev.fact || "";
+  const text = String(lang).toLowerCase().startsWith("en") && /\b(?:du|des|les|une|avec|pour|dans|sur|navires|désaccord|aménagement)\b/i.test(candidate)
+    ? ""
+    : candidate;
   return {
     ...card,
     id: card.id || ev.id,

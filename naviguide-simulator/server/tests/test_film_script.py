@@ -22,6 +22,8 @@ from film_script import (
     film_write_window,
     film_ultra_open,
     write_film_chain,
+    _harbor_spoken,
+    _hold_phrase,
     film_estimated_seconds,
     film_priority_tier,
     fit_chapter_text,
@@ -97,6 +99,13 @@ from film_script import (
     zee_waters_label,
     _nm_label,
 )
+
+
+def test_raw_harbor_and_stopover_templates_respect_en_and_fr():
+    assert _harbor_spoken("de La Rochelle", "La Rochelle", "marina", "en") == "the La Rochelle marina"
+    assert _harbor_spoken("de La Rochelle", "La Rochelle", "marina", "fr") == "la marina de La Rochelle"
+    assert _hold_phrase(3, 0, "en") == "a three-day stopover"
+    assert _hold_phrase(3, 0, "fr") == "trois jours d'escale"
 from tests.test_voyage_journal import PUBLIC, _official
 from voyage_clock import OFFICIAL_T0
 
@@ -1721,6 +1730,30 @@ def test_coast_milestones_ordered_by_route():
     assert len(coast_picked) >= 3
     times = [c.get("tMs") or 0 for c in coast_picked]
     assert times == sorted(times)
+
+
+def test_coast_merge_uses_language_for_continental_geography():
+    changes = [
+        {"id": "shelf", "kind": "coast", "tMs": 1, "title": "Brest", "geo": {
+            "fr": "limite du plateau continental", "en": "Continental Shelf", "kind": "coast",
+        }},
+        {"id": "edge", "kind": "coast", "tMs": 86_400_001, "title": "Brest", "geo": {
+            "fr": "limite du continent", "kind": "coast",
+        }},
+        {"id": "fallback", "kind": "coast", "tMs": 172_800_001, "title": "Brest", "geo": {
+            "fr": "géographie inconnue", "kind": "coast",
+        }},
+    ]
+
+    en = dose_coast_changes(changes, span_ms=3 * 86_400_000, lang="en")
+    fr = dose_coast_changes(changes, span_ms=3 * 86_400_000, lang="fr")
+
+    assert en[0]["title"] == "Continental Shelf — Brest"
+    assert en[1]["title"] == "continental edge — Brest"
+    assert en[2]["title"] == "Brest"
+    assert fr[0]["title"] == "limite du plateau continental — Brest"
+    assert fr[1]["title"] == "limite du continent — Brest"
+    assert fr[2]["title"] == "géographie inconnue — Brest"
 
 
 def test_stock_ports_and_marinas_become_named_coasts():
@@ -6842,3 +6875,25 @@ def test_reanchor_edited_chapter_drops_reordered_duplicate_sentence_anchors():
     assert chapter["anchors"] == [
         {"charIdx": len("Bay! "), "t": "2026-05-15T11:00:00Z"},
     ]
+
+
+def test_bubble_payload_uses_localized_event_text_and_never_reuses_french_in_english():
+    import film_script as fs  # noqa: PLC0415
+
+    entry = {
+        "id": "project-1", "kind": "project", "name": "Aménagement côtier",
+        "t": "2026-05-16T08:00:00Z", "fact": "Des navires arrivent au port.",
+    }
+    ev = {"id": "project-1", "kind": "project", "name": entry["name"], "t": entry["t"], "entry": entry, "bubbleScore": 1}
+    previous = {"card": {"text": "Du 11 juin, des navires arrivent."}, "fact": "Du 11 juin, des navires arrivent."}
+
+    en = fs._bubble_payload(ev, {"text": "On 16 May, project Aménagement côtier."}, "en", previous)
+    assert en["fact"] == "On 16 May, project Aménagement côtier."
+    assert en["card"]["text"] == en["fact"]
+
+    entry["fact_en"] = "Ships arrive at the port."
+    en_with_translation = fs._bubble_payload(ev, {"text": "On 16 May, project Aménagement côtier."}, "en")
+    assert en_with_translation["card"]["text"] == "Ships arrive at the port."
+
+    fr = fs._bubble_payload(ev, {"text": "Le 16 mai, le projet Aménagement côtier."}, "fr", previous)
+    assert fr["card"]["text"] == previous["card"]["text"]

@@ -1122,7 +1122,7 @@ def dose_zee_changes(changes: list[dict], span_ms: int) -> list[dict]:
     return kept
 
 
-def dose_coast_changes(changes: list[dict], span_ms: int) -> list[dict]:
+def dose_coast_changes(changes: list[dict], span_ms: int, lang: str = "fr") -> list[dict]:
     """Au plus un jalon de côte par jour de film ; même géographie le même jour → une phrase."""
     coasts = [c for c in changes if _is_coast_source(c)]
     coasts.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
@@ -1131,11 +1131,26 @@ def dose_coast_changes(changes: list[dict], span_ms: int) -> list[dict]:
         raw = change_place_name(c) or short_name(c.get("title") or "")
         name = _coast_port_short(raw) or raw
         geo = _coast_geo(raw) or _coast_geo(name)
+        source_geo = c.get("geo") if isinstance(c.get("geo"), dict) else None
         day = _utc_day(c)
         key = f"{day}:{(geo[0] if geo else name).casefold()}"
         buckets.setdefault(key, []).append({**c, "ports": [name] if name else [], "geo": (
-            {"fr": geo[0], "en": geo[1], "kind": geo[2]} if geo else None
+            {"fr": geo[0], "en": geo[1], "kind": geo[2]} if geo else source_geo
         )})
+    def geo_title(geo: dict | None) -> str:
+        if not isinstance(geo, dict):
+            return ""
+        fr = str(geo.get("fr") or "")
+        if not _en(lang):
+            return fr
+        en = str(geo.get("en") or "")
+        if en:
+            return en
+        return {
+            "limite du plateau continental": "continental shelf edge",
+            "limite du continent": "continental edge",
+        }.get(fr.casefold(), "")
+
     merged: list[dict] = []
     for group in buckets.values():
         first = group[0]
@@ -1154,9 +1169,7 @@ def dose_coast_changes(changes: list[dict], span_ms: int) -> list[dict]:
             **first,
             "id": first.get("id") or f"coast:{ports[0] if ports else first.get('tMs')}",
             "kind": "coast",
-            "title": " — ".join(
-                [((geo or {}).get("fr") or "")] + ports
-            ).strip(" —") or (ports[0] if ports else first.get("title")),
+            "title": " — ".join([geo_title(geo)] + ports).strip(" —") or (ports[0] if ports else first.get("title")),
             "ports": ports,
             "geo": geo,
         })
@@ -1179,7 +1192,7 @@ def dose_coast_changes(changes: list[dict], span_ms: int) -> list[dict]:
                     islands[island_at[geo_key]] = {
                         **prev,
                         "ports": ports,
-                        "title": " — ".join([((prev.get("geo") or {}).get("fr") or "")] + ports).strip(" —"),
+                        "title": " — ".join([geo_title(prev.get("geo"))] + ports).strip(" —"),
                     }
                 continue
             if geo_key:
@@ -3655,14 +3668,18 @@ def _bubble_payload(ev: dict, chapter: dict, lang: str, prev: dict | None = None
         score = bubble_score(entry, role=ev.get("role"))
     title = short_name(ev.get("name") or "") or (prev or {}).get("title") or entry.get("kind") or ev.get("kind") or ""
     fact = event_sentence({**ev, "name": ev.get("name") or title}, lang).strip()
-    if not fact:
+    if _en(lang):
+        fact = str(entry.get("fact_en") or fact or "").strip()
+    if not fact and not _en(lang):
         fact = ((prev or {}).get("card") or {}).get("text") or (prev or {}).get("fact") or ""
     char_idx = (prev or {}).get("charIdx")
     if char_idx is None:
         char_idx = _event_char_idx(ev, chapter, fact)
     card = dict((prev or {}).get("card") or _card(entry))
     card["title"] = card.get("title") or title
-    card["text"] = card.get("text") or fact
+    # Les anciennes cartes peuvent conserver le texte FR dans card.text. En EN,
+    # ne garder que le texte produit dans cette langue (ou fact_en).
+    card["text"] = (fact if _en(lang) else (card.get("text") or fact))
     card["kind"] = card.get("kind") or ev.get("kind")
     card["score"] = score
     if not card.get("at"):
@@ -4306,6 +4323,12 @@ def _spoken_days_word(n: int, lang: str) -> str:
     if _en(lang):
         return f"{_spoken_int(n, lang)} day" + ("" if n == 1 else "s")
     return f"{_spoken_int(n, lang)} jour" + ("" if n == 1 else "s")
+
+
+def _spoken_day_adjective(n: int, lang: str) -> str:
+    if _en(lang):
+        return f"{_spoken_int(n, lang)}-day"
+    return _spoken_days_word(n, lang)
 
 
 def review_fingerprint(review: dict | None) -> str:
@@ -6106,6 +6129,8 @@ def _harbor_spoken(name: str, dest: str, kind: str, lang: str) -> str:
         return raw if not en else raw
     marina = kind == "marina" or bool(re.search(r"marina|minimes", raw, re.I))
     if marina:
+        if en:
+            raw = re.sub(r"^(?:de |du |des |d['’])", "", raw, flags=re.I).strip()
         return f"the {raw} marina" if en else f"la marina {raw}"
     return f"the port of {raw}" if en else f"le port {_de(raw)}"
 
@@ -6131,7 +6156,7 @@ def _hold_phrase(days: int, chapter_i: int, lang: str) -> str:
     spoken = _spoken_days_word(int(days), lang)
     if _en(lang):
         variants = (
-            f"a {spoken} stopover",
+            f"a {_spoken_day_adjective(int(days), lang)} stopover",
             f"a stay of {spoken}",
             f"{spoken} at the harbour",
             f"{spoken} alongside",
@@ -7449,12 +7474,12 @@ def _cap_argo_candidates(pool: list[dict], spare: list[dict]) -> tuple[list[dict
 
 def select_chapter_changes(
     changes: list[dict], t_a: int, t_b: int, *, budget: bool = True, tier: Optional[int] = None,
-    clock: dict | None = None, depart_ms: Optional[int] = None,
+    clock: dict | None = None, depart_ms: Optional[int] = None, lang: str = "fr",
 ) -> list[dict]:
     usable = _usable_changes(changes)
     span = (t_b or 0) - (t_a or 0)
     zee = dose_zee_changes(usable, span)
-    coast = dose_coast_changes(usable, span)
+    coast = dose_coast_changes(usable, span, lang=lang)
     amp = dose_amp_changes(usable, span)
     proj = dose_project_changes(usable, span)
     climo = dose_climo_changes(usable, span)
@@ -9577,7 +9602,7 @@ def build_raw_from_moments(
             flat = [c for c in flat if _station_ident(c) not in stations_said]
         selected = select_chapter_changes(
             flat, w["tA"], w["tB"], budget=has_budget, tier=tier if has_budget else None,
-            clock=w.get("clock") or clock, depart_ms=depart_ms,
+            clock=w.get("clock") or clock, depart_ms=depart_ms, lang=lang,
         )
         # Une aire déjà dite, une fois. Le 2:30 n'en empile pas une seconde.
         if compact and any(_is_amp_change(c) for c in selected_all):

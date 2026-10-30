@@ -425,8 +425,15 @@ export function aroundWithoutShown(around, shownCard) {
 const NO_POE_FOR = /^aucun port d['’]entr[ée]e officiel n['’]est connu pour (.+?)\.?$/i;
 
 /** Stored server facts are French: the entry alert goes through i18n FR / EN. */
+/** « (2,7 nm) » stocké en français → « (2.7 nm) » en EN ; « 1,500 nm » (milliers) intact. */
+export function enDecimals(text, lang) {
+  const raw = String(text ?? "");
+  if (lang !== "en" || !raw) return raw;
+  return raw.replace(/(\d),(\d)(?!\d)(?=\s*(?:nm|kn|km|m|°C|%)(?![a-z]))/gi, "$1.$2");
+}
+
 export function localizeStoredFact(text, lang) {
-  const raw = String(text || "").trim();
+  const raw = enDecimals(String(text || "").trim(), lang);
   if (!raw) return raw;
   const dict = lang === "en" ? enDict : frDict;
   const m = NO_POE_FOR.exec(raw);

@@ -2201,11 +2201,11 @@ export function useReplay({
         plan,
       }) || approachStopEvent(chapter, { frac: approachFrac });
       const destName = chapter?.toName || "";
-      const fittingEv = filmEv && arrivalBubbleFitsDestination(filmEventCard(filmEv), destName)
+      const fittingEv = filmEv && arrivalBubbleFitsDestination(filmEventCard(filmEv, lang), destName)
         ? filmEv
         : null;
       const accepted = filmScoreRef.current.accept(fittingEv);
-      let shown = filmBubbleRef.current.propose(filmEventCard(accepted));
+      let shown = filmBubbleRef.current.propose(filmEventCard(accepted, lang));
       if (shown && !arrivalBubbleFitsDestination(shown, destName)) {
         filmBubbleRef.current.dismiss();
         shown = null;

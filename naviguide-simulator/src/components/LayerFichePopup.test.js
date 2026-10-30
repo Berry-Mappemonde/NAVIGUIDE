@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import fr from "../i18n/fr.js";
 import en from "../i18n/en.js";
+import { localizeStoredTitle } from "./iciMaintenant.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "LayerFichePopup.jsx"), "utf8");
@@ -26,5 +27,16 @@ describe("fiche de calque : libellés traduits", () => {
     }
     assert.equal(fr.layerFicheCluster, "{count} points regroupés");
     assert.equal(en.layerFicheCluster, "{count} grouped points");
+  });
+
+  it("localise le nom de ZEE en EN et conserve le libellé FR", () => {
+    const title = "Zone économique exclusive vénézuélienne";
+    assert.match(src, /localizeStoredTitle\(props\.GEONAME \|\| props\.geoname \|\| props\.name \|\| "", lang\)/);
+    assert.equal(localizeStoredTitle(title, "fr"), title);
+    assert.equal(localizeStoredTitle(title, "en"), "Venezuelan EEZ");
+  });
+
+  it("préfixe le nom du projet en EN, sans modifier son titre en FR", () => {
+    assert.match(src, /name \? \(lang\.startsWith\("en"\) \? `Project: \$\{name\}` : name\)/);
   });
 });
