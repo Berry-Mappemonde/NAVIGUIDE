@@ -303,6 +303,7 @@ export default {
   filmStorySource: "Récit : {source}",
   filmStoryRaw: "Brut",
   filmStoryWritten: "Rédigé",
+  filmStoryWrittenCustomUnavailable: "Le film rédigé n’est pas disponible sur une route personnalisée.",
   filmStoryLockedPlaying: "Arrêtez le film pour passer Brut/Rédigé",
   filmStoryWrittenUnavailable: "Le film rédigé est momentanément indisponible.",
   filmStoryWrittenRetry: "Réessayer",

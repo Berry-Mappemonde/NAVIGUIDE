@@ -1287,6 +1287,7 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.equal(writtenPillEnabled({ hasWritten: false, filmReady: true }), true);
     assert.equal(writtenPillEnabled({ hasWritten: false, customFilm: true }), false);
     assert.equal(writtenPillEnabled({ hasWritten: true, customFilm: true }), false);
+    assert.equal(writtenPillEnabled({ hasWritten: false, customFilm: false }), true);
     assert.equal(filmSourceKey(off.source), "storySourceRules");
     assert.equal(filmSourceKey("nemotron-super-reviewed-ultra"), "storySourceSuperReviewed");
     assert.equal(filmSourceKey("nemotron-super", "nemotron-ultra"), "storySourceSuperReviewed");
