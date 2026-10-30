@@ -29,8 +29,10 @@ describe("useOfficialExpedition — position officielle", () => {
   });
 
   it("saute le PUT si le GET fournit l’horloge, mais répare après un GET absent même si l’effet est annulé", () => {
-    assert.match(source, /const ck = haveClock \? null : await readClock\(\);[\s\S]*?const routeFingerprint = `\$\{points\.length\}/);
-    assert.match(source, /const needPut = hasAdminSecret\(\) \|\| \(!haveClock && !isUsableOfficialClock\(ck\) && putRef\.current !== routeFingerprint\);/);
+    assert.match(source, /const ck = haveClock \? null : await readClock\(\);[\s\S]*?const needPut = /);
+    // Horloge absente ou inutilisable → PUT de réparation, même si un PUT précédent est mémorisé
+    // (putOfficial rend alors sa réponse mémorisée) : sinon l'horloge 404 n'est jamais recréée.
+    assert.match(source, /const needPut = hasAdminSecret\(\) \|\| \(!haveClock && !isUsableOfficialClock\(ck\)\);/);
     assert.doesNotMatch(source, /const ck = haveClock \? null : await readClock\(\);\s*if \(cancelled\) return;/);
     assert.match(source, /const data = needPut \? await putOfficial\(\)\.catch\(\(\) => null\) : null;/);
     assert.ok(source.includes("gotClock = haveClock || isUsableOfficialClock(ck) || isUsableOfficialClock(data?.clock);"));

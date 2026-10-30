@@ -174,8 +174,7 @@ export function useOfficialExpedition({
         const ck = haveClock ? null : await readClock();
         // Une annulation de l'effet ne doit pas empêcher la réparation après un GET 404 :
         // le PUT est aussi ce qui crée l'horloge officielle manquante.
-        const routeFingerprint = `${points.length}|${points[0]?.lat}|${points[points.length - 1]?.lat}|${expeditionId || ""}`;
-        const needPut = hasAdminSecret() || (!haveClock && !isUsableOfficialClock(ck) && putRef.current !== routeFingerprint);
+        const needPut = hasAdminSecret() || (!haveClock && !isUsableOfficialClock(ck));
         const data = needPut ? await putOfficial().catch(() => null) : null;
         if (cancelled) return;
         gotClock = haveClock || isUsableOfficialClock(ck) || isUsableOfficialClock(data?.clock);
