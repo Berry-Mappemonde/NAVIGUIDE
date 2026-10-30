@@ -12640,9 +12640,10 @@ async def write_film_chain(
         accepted = _stamp_written_plan(super_plan, WRITTEN_SOURCE, seconds, model=_write_model())
     else:
         stats["source"] = origin or "rules"
-        from story_cascade import NIM_MODEL  # noqa: PLC0415
-        nim_source = f"nvidia-{NIM_MODEL.split('/')[-1]}"
-        model = NIM_MODEL if (origin or "") == nim_source else (origin or None)
+        from story_cascade import nim_model  # noqa: PLC0415
+        nim_name = nim_model("write")
+        nim_source = f"nvidia-{nim_name.split('/')[-1]}"
+        model = nim_name if (origin or "") == nim_source else (origin or None)
         accepted = _stamp_written_plan(super_plan, origin or "rules", seconds, model=model)
 
     ref_raw = full_raw if secs == 150 else raw

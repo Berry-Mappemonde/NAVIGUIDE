@@ -50,6 +50,20 @@ NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 NIM_MODEL = "openai/gpt-oss-20b"
+
+
+def nim_model(tier: str = "") -> str:
+    """Modèle NIM (build.nvidia.com, gratuit) : dev / tests sans Token Factory.
+
+    NAVIGUIDE_NIM_MODEL_<PALIER> (NANO, FAST, WRITE, DEEP, JUDGE), sinon
+    NAVIGUIDE_NIM_MODEL, sinon le défaut historique NIM_MODEL.
+    """
+    t = (tier or "").strip().upper()
+    if t:
+        per_tier = (os.environ.get(f"NAVIGUIDE_NIM_MODEL_{t}") or "").strip()
+        if per_tier:
+            return per_tier
+    return (os.environ.get("NAVIGUIDE_NIM_MODEL") or "").strip() or NIM_MODEL
 OR_MODEL = os.environ.get("OPENROUTER_MODEL") or "openai/gpt-4o-mini"
 CLAUDE_MODEL = "claude-haiku-4-5"
 MAX_TOKENS = 400
@@ -1118,8 +1132,9 @@ async def _call_nim(
     key = nvidia_key()
     if not key:
         raise RuntimeError("NVIDIA_API_KEY missing")
+    nim = nim_model(tier)
     payload = {
-        "model": NIM_MODEL,
+        "model": nim,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -1142,8 +1157,8 @@ async def _call_nim(
     text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
     if not text:
         raise RuntimeError("nvidia empty")
-    source = f"nvidia-{NIM_MODEL.split('/')[-1]}"
-    model = _exact_model(source, str((data or {}).get("model") or ""), NIM_MODEL)
+    source = f"nvidia-{nim.split('/')[-1]}"
+    model = _exact_model(source, str((data or {}).get("model") or ""), nim)
     return _as_result(text, source, model=model, tier=tier)
 
 
