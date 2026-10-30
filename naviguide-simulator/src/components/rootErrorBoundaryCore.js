@@ -6,6 +6,11 @@ export const ROOT_ERROR_COPY = {
   en: { title: "Something went wrong", message: "The app could not be displayed correctly.", reload: "Reload" },
 };
 
+export const REPLAY_ERROR_COPY = {
+  fr: { message: "Le replay a rencontré une erreur.", retry: "Réessayer le replay" },
+  en: { message: "Replay hit an error.", retry: "Retry replay" },
+};
+
 export function pickErrorLanguage(storage, browserLanguage = "") {
   try {
     const stored = readStoredLang(storage);
@@ -64,5 +69,19 @@ export class PanelBoundary extends React.Component {
       return React.createElement("div", { role: "alert", style: { padding: 8, color: "#fca5a5", fontSize: 12 }, lang }, copy[0], " ", React.createElement("button", { type: "button", onClick: () => this.setState({ failed: false }) }, copy[1]));
     }
     return this.props.children;
+  }
+}
+
+export class ReplayErrorBoundary extends React.Component {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(error, info) { console.error("NAVIGUIDE replay render error:", error, info); }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    const lang = pickErrorLanguage(typeof localStorage === "undefined" ? null : localStorage, typeof navigator === "undefined" ? "" : navigator.language);
+    const copy = REPLAY_ERROR_COPY[lang];
+    return React.createElement("div", { role: "alert", "data-testid": "replay-error-fallback", lang, className: "text-center text-xs text-rose-200" },
+      React.createElement("span", null, copy.message, " "),
+      React.createElement("button", { type: "button", "data-testid": "replay-error-retry", onClick: () => this.setState({ failed: false }), className: "underline" }, copy.retry));
   }
 }

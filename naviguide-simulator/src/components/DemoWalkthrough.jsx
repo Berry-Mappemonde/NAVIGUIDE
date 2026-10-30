@@ -22,6 +22,9 @@ export { getDemoSteps } from "./demoWalkthrough.js";
  * pendant la lecture du film ; panneau du côté opposé à celui que l'étape ouvre,
  * et en bas de l'écran sous 768 px.
  */
+/** Nombre d'images (rAF) pendant lesquelles on attend le bouton Tracer monté tard. */
+export const PULSE_MAX_ATTEMPTS = 30;
+
 export function DemoWalkthrough({
   replayReady = false,
   replayActive = false,
@@ -213,14 +216,15 @@ export function DemoWalkthrough({
   // Pulse animation on "trace" step target — unique useEffect, réessaye si le bouton n'existe pas encore
   useEffect(() => {
     if (step.id !== "trace" || !target) return;
-    let el = document.querySelector(target);
+    let el = null;
+    // checkRaf ne sert qu'à l'annulation : un id rAF n'est pas un nombre d'essais.
     let checkRaf = 0;
     let attempts = 0;
     const tryAdd = () => {
       el = document.querySelector(target);
       if (el) {
         el.classList.add("naviguide-tour-pulse");
-      } else if (++attempts < 30) {
+      } else if (++attempts < PULSE_MAX_ATTEMPTS) {
         checkRaf = window.requestAnimationFrame(tryAdd);
       }
     };
@@ -296,17 +300,21 @@ export function DemoWalkthrough({
     : undefined;
 
   return (
+    <div
+      data-arrow={arrowDir || undefined}
+      style={panelStyle}
+      className={`naviguide-demo-panel fixed z-[2300] inset-x-2 bottom-2 md:inset-x-auto md:bottom-auto md:top-14 md:w-[min(23rem,calc(100vw-1.5rem))] ${side}`}
+    >
     <aside
       role="region"
       aria-label={t("demoRegion")}
       data-testid="demo-walkthrough-panel"
+      data-arrow={arrowDir || undefined}
       data-step={step.id}
       data-side={step.side}
       data-target={step.target || ""}
       data-spot={anchor ? "on" : "off"}
-      {...(arrowDir ? { "data-arrow": arrowDir } : {})}
-      style={panelStyle}
-      className={`naviguide-demo-panel fixed z-[2300] flex flex-col rounded-2xl border p-4 shadow-2xl backdrop-blur-md inset-x-2 bottom-2 max-h-[45dvh] md:inset-x-auto md:bottom-auto md:top-14 md:w-[min(23rem,calc(100vw-1.5rem))] md:max-h-[calc(100dvh-5rem)] ${side} ${surface}`}
+      className={`flex max-h-[45dvh] flex-col overflow-y-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-md md:max-h-[calc(100dvh-5rem)] ${surface}`}
     >
       <div className="min-h-0 flex-1 overflow-y-auto">
       <p className="sr-only" aria-live="polite" data-testid="demo-walkthrough-live">
@@ -457,5 +465,6 @@ export function DemoWalkthrough({
       </button>
       </div>
     </aside>
+    </div>
   );
 }
