@@ -34,12 +34,9 @@ def _url_host_is(url: str, root: str) -> bool:
     return bool(host) and (host == root or host.endswith("." + root))
 
 
-def _tier_host_is(url: str, tier: str) -> bool:
-    """Compare a request with the configured Token Factory host for its tier."""
-    import story_cascade
-
-    expected_host = urlparse(story_cascade.tf_base(tier)).hostname or ""
-    return _url_host_is(url, expected_host)
+def _eu_tf_host_is(url: str) -> bool:
+    """Assert the request uses the fixed EU Token Factory host."""
+    return _url_host_is(url, "api.tokenfactory.nebius.com")
 
 
 # Capture PR #252 / revue du 22 sept. : fiche Pointe-à-Pitre servie depuis le cache.
@@ -60,7 +57,7 @@ def test_story_tier_ultra_for_escales_and_alerts():
 def test_default_cascade_is_token_factory_not_tavily():
     src = Path(__file__).resolve().parents[1].joinpath("story_cascade.py").read_text()
     assert "api.tokenfactory.nebius.com" in src
-    assert "api.tokenfactory.us-central1.nebius.com" in src
+    assert "Ultra default host is EU Token Factory" in src
     assert "NAVIGUIDE_LLM_PROVIDERS" in src
     assert "integrate.api.nvidia.com" in src  # NIM : 2e maillon
     assert "openrouter.ai" in src
@@ -1059,9 +1056,9 @@ def test_ultra_payload_uses_cookbook_host_and_budget():
     assert "extra_body" not in payload
     assert payload["max_tokens"] == llm_budget.max_tokens_for("deep")
     assert payload["max_tokens"] == 2048
-    assert _tier_host_is(story_cascade._tf_url("deep"), "deep")
-    assert not _tier_host_is(story_cascade._tf_url("fast"), "deep")
-    assert not _tier_host_is(story_cascade._tf_url("write"), "deep")
+    assert _eu_tf_host_is(story_cascade._tf_url("deep"))
+    assert _eu_tf_host_is(story_cascade._tf_url("fast"))
+    assert _eu_tf_host_is(story_cascade._tf_url("write"))
 
 
 def test_tokenfactory_http_error_includes_body():
@@ -1201,7 +1198,7 @@ def test_empty_content_with_reasoning_stays_on_the_tier(monkeypatch):
         tf = [(url, asked) for url, asked in seen if "tokenfactory" in url]
         assert len(tf) == 1, tier
         assert tf[0][1] == model, tier
-        assert _tier_host_is(tf[0][0], tier), tier
+        assert _eu_tf_host_is(tf[0][0]), tier
         assert not any(
             _url_host_is(url, "nvidia.com")
             or _url_host_is(url, "openrouter.ai")
@@ -1631,15 +1628,14 @@ def test_reasoning_leak_is_a_labelled_nim_fallback(monkeypatch, tier, lang, reas
     assert err["provider"] == "tokenfactory"
     assert err["reason"].startswith("tokenfactory empty")
     tf = [url for url, _model in seen if "tokenfactory" in url]
-    assert any("nvidia.com" in url for url, _model in seen)
+    assert any(_url_host_is(url, "nvidia.com") for url, _model in seen)
     if tier == "fast":
         assert len(tf) == 2
-        assert _tier_host_is(tf[0], "fast")
-        assert _tier_host_is(tf[1], "write")
+        assert all(_eu_tf_host_is(url) for url in tf)
     elif tier == "deep":
-        assert len(tf) == 1 and _tier_host_is(tf[0], tier)
+        assert len(tf) == 1 and _eu_tf_host_is(tf[0])
     else:
-        assert len(tf) == 1 and _tier_host_is(tf[0], tier)
+        assert len(tf) == 1 and _eu_tf_host_is(tf[0])
 
 
 def test_lightning_reasoning_content_finish_length_stays_lightning(monkeypatch):
@@ -1689,7 +1685,7 @@ def test_lightning_reasoning_content_finish_length_stays_lightning(monkeypatch):
     assert result.tier == "fast"
     assert len(seen) == 1
     assert "Lightning" in seen[0][1]
-    assert _tier_host_is(seen[0][0], "fast")
+    assert _eu_tf_host_is(seen[0][0])
     st = llm_budget.status()
     assert st["retrySuper"] == 0
     assert st["fallback"] == {"nim": 0, "openrouter": 0, "claude": 0}
@@ -1739,7 +1735,7 @@ def test_write_deep_judge_call_planned_token_factory_models(monkeypatch):
         assert len(seen) == 1, tier
         url, asked, max_tokens = seen[0]
         assert asked == model, tier
-        assert _tier_host_is(url, tier), tier
+        assert _eu_tf_host_is(url), tier
         assert max_tokens == llm_budget.max_tokens_for(tier), tier
         st = llm_budget.status()
         assert st["lastSourceByTier"][tier] == source, tier
@@ -1783,9 +1779,9 @@ def test_write_story_calls_super_and_stop_calls_ultra(monkeypatch):
     assert stopped["model"] == "nvidia/Nemotron-3-Ultra-550b-a55b"
     assert len(seen) == 2
     assert seen[0][1] == "nvidia/Nemotron-3.5-Super-VL"
-    assert _tier_host_is(seen[0][0], "write")
+    assert _eu_tf_host_is(seen[0][0])
     assert seen[1][1] == "nvidia/Nemotron-3-Ultra-550b-a55b"
-    assert _tier_host_is(seen[1][0], "deep")
+    assert _eu_tf_host_is(seen[1][0])
 
 
 NANO_ID = "nvidia/Nemotron-3_5-Lightning"
@@ -1800,9 +1796,9 @@ def test_nano_call_stays_on_eu_host(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_TF_BASE_EU", "https://api.tokenfactory.nebius.com/v1")
     url = story_cascade._tf_url("nano")
     assert _url_host_is(url, "api.tokenfactory.nebius.com")
-    assert _tier_host_is(url, "nano")
+    assert _eu_tf_host_is(url)
     assert url.endswith("/chat/completions")
-    assert _tier_host_is(story_cascade._tf_url("deep"), "deep")
+    assert _eu_tf_host_is(story_cascade._tf_url("deep"))
 
     seen = []
 

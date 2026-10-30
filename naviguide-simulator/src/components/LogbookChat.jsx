@@ -42,10 +42,13 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
   const [aiNoticeArmed, setAiNoticeArmed] = useState(false);
   const showAiNotice = !aiNoticeOff && (aiNoticeArmed || messages.length > 0);
   const listRef = useRef(null);
+  const inputRef = useRef(null);
   const admin = hasAdminSecret();
 
   const dismissAiNotice = useCallback(() => {
     setAiNoticeOff(true);
+    // Le bouton qui a le focus disparaît : on rend le focus au champ (sinon il tombe sur body).
+    inputRef.current?.focus();
     try {
       localStorage.setItem(AI_CHAT_NOTICE_KEY, "1");
     } catch {
@@ -133,9 +136,9 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
         <div
           data-testid="logbook-chat-ai-notice"
           className="mt-1.5 rounded-md border border-violet-300/45 bg-violet-950 px-2 py-1.5 text-xs leading-snug text-violet-50"
-          role="note"
         >
-          <p>{t("aiActChatNotice")}</p>
+          {/* Région live autour du texte seul : la notice AI Act est annoncée, pas le bouton. */}
+          <p role="status" aria-live="polite" data-testid="logbook-chat-ai-notice-text">{t("aiActChatNotice")}</p>
           <button
             type="button"
             data-testid="logbook-chat-ai-notice-dismiss"
@@ -167,6 +170,7 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
       </div>
       <form onSubmit={submit} className="mt-1.5 flex items-center gap-1 flex-shrink-0">
         <input
+          ref={inputRef}
           type="text"
           aria-label={t("logbookChatInputLabel")}
           value={draft}
@@ -185,7 +189,7 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
           data-testid="logbook-chat-send"
           className="h-7 w-7 rounded-md bg-violet-600 hover:bg-violet-500 disabled:opacity-40 flex items-center justify-center text-white"
         >
-          <Send size={12} />
+          <Send size={12} aria-hidden="true" />
         </button>
       </form>
     </div>
