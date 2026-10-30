@@ -128,7 +128,7 @@ export default {
   storySourceUltra: "Nemotron 3 Ultra · Token Factory",
   storySourceOpenrouter: "OpenRouter",
   storySourceClaude: "Claude",
-  storySourceRules: "règles",
+  storySourceRules: "Formulé par les données brutes",
   storySourceBudget: "budget",
   storySourceCache: "cache",
   storySourceNim: "NVIDIA NIM (repli)",
@@ -314,6 +314,7 @@ export default {
   planReviewOk: "rien à signaler",
   planReviewEmpty: "Aucune jambe à revoir.",
   planReviewCommentTitle: "Ce que je changerais",
+  planReviewNoChange: "Aucun changement proposé pour l’instant.",
   planReviewLegAlerts: "alertes : {n}",
   planReviewApply: "Appliquer",
   planReviewLanes: "couloirs : {names}",
@@ -638,9 +639,8 @@ export default {
 
   // AI transparency
   aiActGeneratedLabel: "Contenu généré par IA (modèle : {model})",
-  aiActChatNotice: "Vous échangez avec une intelligence artificielle. Les réponses sont générées automatiquement et peuvent contenir des erreurs.",
+  aiActChatNotice: "Vous interagissez avec une intelligence artificielle. Les réponses sont générées automatiquement et peuvent contenir des erreurs.",
   aiActChatNoticeDismiss: "Compris",
-
   // Moment cards: fallback title and the stored entry alert
   momentFallbackTitle: "Position du bateau",
   momentKindGrib: "Prévision météo (GRIB)",
@@ -718,6 +718,8 @@ export default {
 
   // ED2
   ed2WritingNemotron: "Rédaction en cours…",
+  ed2WritingWait:    "Attente de la rédaction…",
+  ed2WriteFailed:    "Échec de la rédaction",
   ed2BrandLine: "NVIDIA · Nebius",
 
   // FM1

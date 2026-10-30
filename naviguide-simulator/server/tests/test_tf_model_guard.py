@@ -28,6 +28,14 @@ US_IDS = [
 ]
 
 
+def test_ultra_and_write_default_to_eu_token_factory(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_TF_BASE_ULTRA", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_TF_BASE_EU", raising=False)
+    assert story_cascade._tf_url("deep") == f"{EU}/chat/completions"
+    assert story_cascade._tf_url("judge") == f"{EU}/chat/completions"
+    assert story_cascade._tf_url("write") == f"{EU}/chat/completions"
+
+
 def _catalog(ids):
     return {"object": "list", "data": [{"id": i, "object": "model"} for i in ids]}
 
@@ -91,32 +99,29 @@ def test_all_present_keeps_tier_and_reads_catalog_once():
     assert st["catalogs"][EU]["ok"] is True and st["catalogs"][EU]["models"] == len(EU_IDS)
 
 
-def test_super_vl_missing_on_us_host_falls_to_lightning_labelled(monkeypatch):
-    # Cas réel : NAVIGUIDE_TF_BASE pointé sur us-central1, qui ne sert pas Super VL.
+def test_write_pinned_to_eu_host(monkeypatch):
+    """O4: write (Super-VL) est épinglé sur l'hôte UE, comme nano.
+    Même si TOKENFACTORY_URL pointe vers US, write utilise l'hôte UE."""
     monkeypatch.setattr(story_cascade, "TOKENFACTORY_URL", f"{US}/chat/completions")
     seen = []
     h = _handler(seen, {EU: EU_IDS, US: US_IDS})
     res = _run(h, tier="write")
     text, source = res
-    assert source == "nemotron-lightning", "repli étiqueté, jamais silencieux"
-    assert res.model == "nvidia/Nemotron-3_5-Lightning"
-    assert res.tier == "fast"
+    # write reste sur l'hôte UE et sert Super-VL (pas de repli silencieux)
+    assert source == "nemotron-super-vl", "write épinglé UE"
+    assert res.model == "nvidia/Nemotron-3.5-Super-VL"
+    assert res.tier == "write"
     posts = [u for m, u in seen if m == "POST"]
-    assert len(posts) == 1 and posts[0] == f"{US}/chat/completions"
+    assert len(posts) == 1 and posts[0] == f"{EU}/chat/completions"
     missing = llm_budget.status()["modelGuard"]["missing"]
-    assert missing["write"] == {
-        "model": "nvidia/Nemotron-3.5-Super-VL",
-        "substitute": "nvidia/Nemotron-3_5-Lightning",
-        "substituteTier": "fast",
-        "count": 1,
-    }
-    assert llm_budget.last_source_by_tier()["write"] == "nemotron-lightning"
+    assert missing == {}
 
 
 def test_ultra_missing_falls_to_super_vl_on_eu_host():
+    """Ultra absent de l'hôte EU → repli sur Super-VL sur le même hôte EU."""
     seen = []
-    us_without_ultra = [i for i in US_IDS if "Ultra" not in i]
-    h = _handler(seen, {EU: EU_IDS, US: us_without_ultra})
+    eu_without_ultra = [i for i in EU_IDS if "Ultra" not in i]
+    h = _handler(seen, {EU: eu_without_ultra})
     res = _run(h, tier="deep")
     assert res[1] == "nemotron-super-vl"
     assert res.model == "nvidia/Nemotron-3.5-Super-VL"

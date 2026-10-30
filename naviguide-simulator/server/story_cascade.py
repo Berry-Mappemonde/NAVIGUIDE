@@ -47,10 +47,10 @@ TOKENFACTORY_EU_BASE = (
     os.environ.get("NAVIGUIDE_TF_BASE_EU")
     or "https://api.tokenfactory.nebius.com/v1"
 ).rstrip("/")
-# Cookbook Ultra: https://api.tokenfactory.us-central1.nebius.com/v1/
+# Ultra default host is EU Token Factory: https://api.tokenfactory.nebius.com/v1/
 TOKENFACTORY_ULTRA_BASE = (
     os.environ.get("NAVIGUIDE_TF_BASE_ULTRA")
-    or "https://api.tokenfactory.us-central1.nebius.com/v1"
+    or "https://api.tokenfactory.nebius.com/v1"
 ).rstrip("/")
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -846,16 +846,17 @@ def tidy_story(
 
 
 def _tf_url(tier: str) -> str:
-    """Nano is pinned to the EU host. Lightning / Super stay on the default
-    TF host. Ultra uses us-central1 (Nebius cookbook) unless
-    NAVIGUIDE_TF_BASE_ULTRA is set."""
+    """Nano and write (Super-VL) are pinned to the EU host. Lightning stays on
+    the default TF host. Ultra uses EU host (Nebius Token Factory) unless
+    NAVIGUIDE_TF_BASE_ULTRA is set. NAVIGUIDE_TF_BASE_EU pins nano/write to
+    their host. NAVIGUIDE_PORT_WEB is a 0/1 flag for Tavily web context."""
     t = llm_budget.normalize_tier(tier)
     if t in {"deep", "judge"}:
         base = (
             _env("NAVIGUIDE_TF_BASE_ULTRA") or TOKENFACTORY_ULTRA_BASE
         ).rstrip("/")
         return f"{base}/chat/completions"
-    if t == "nano":
+    if t in {"nano", "write"}:
         base = (_env("NAVIGUIDE_TF_BASE_EU") or TOKENFACTORY_EU_BASE).rstrip("/")
         return f"{base}/chat/completions"
     return TOKENFACTORY_URL

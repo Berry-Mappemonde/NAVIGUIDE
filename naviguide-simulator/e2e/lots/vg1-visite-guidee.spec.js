@@ -286,6 +286,21 @@ test("VG1 — pas d'overlay driver.js aux étapes 1, 2, 8 (welcome, models, retu
   await expect(page.locator(".driver-active-element")).toHaveCount(0);
 });
 
+test("VG1 — étape 1 → 2 (welcome → models) < 2 s avec cache vide", async ({ page }) => {
+  // S'assurer qu'on part d'un cache vide (pas de tour au chargement)
+  await open(page);
+  const start = Date.now();
+  await startTour(page);
+  // Étape 1 : welcome
+  await expect(panel(page)).toHaveAttribute("data-step", "welcome");
+  await next(page, "models");
+  // Étape 2 : models - la transition ne doit pas bloquer sur l'appel réseau
+  await expect(panel(page)).toHaveAttribute("data-step", "models");
+  const elapsed = Date.now() - start;
+  expect(elapsed).toBeLessThan(2000);
+});
+
+
 test("VG1 — étape 5 (layers) : cible = summary [data-tour=layers] (pas le details entier)", async ({ page }) => {
   await open(page);
   await startTour(page);
@@ -339,6 +354,7 @@ test("VG1 — étape 7 (trace) : bouton Tracer visible, pulse, classe retirée �
   // Quitter la visite : la classe pulse doit être retirée
   await page.keyboard.press("Escape");
   await expect(traceBtn).not.toHaveClass("naviguide-tour-pulse");
+
 });
 
 test("VG1 — flèche bulle → élément : data-arrow up/down/left/right + ::before", async ({ page }) => {
@@ -366,4 +382,30 @@ test("VG1 — flèche bulle → élément : data-arrow up/down/left/right + ::be
   // return : target = null → pas de flèche
   await next(page, "return");
   await expect(panel(page)).not.toHaveAttribute("data-arrow");
+});
+
+// R44 : le bouton Tracer « monté tard » (cible absente à l'ouverture de l'étape 7) reçoit
+// quand même le pulse. Avant le correctif, le réessai comparait l'id rAF (> 30 à ce stade).
+test("R44 — étape 7 : pulse appliqué quand le bouton Tracer apparaît après l'ouverture", async ({ page }) => {
+  await open(page);
+  await startTour(page);
+  for (const id of ["models", "live", "briefing", "layers", "replay"]) await next(page, id);
+  const rafId = await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)).then(() => requestAnimationFrame(() => {})));
+  expect(rafId, "les ids rAF dépassent 30 avant l'étape 7").toBeGreaterThan(30);
+  // Retire la cible du sélecteur, puis la rend 150 ms après l'ouverture de l'étape.
+  await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="view-tracer"]');
+    el.setAttribute("data-testid", "view-tracer-later");
+    window.__r44Restore = () => el.setAttribute("data-testid", "view-tracer");
+  });
+  try {
+    await page.getByTestId("demo-walkthrough-next").click();
+    await expect(panel(page)).toHaveAttribute("data-step", "trace");
+    await page.waitForTimeout(150);
+  } finally {
+    // Rend toujours la cible, même si une étape a échoué (page partagée par les assertions suivantes).
+    await page.evaluate(() => window.__r44Restore?.()).catch(() => {});
+  }
+  const traceBtn = page.getByTestId("view-tracer").first();
+  await expect(traceBtn).toHaveClass(/naviguide-tour-pulse/, { timeout: 5000 });
 });

@@ -128,7 +128,7 @@ export default {
   storySourceUltra: "Nemotron 3 Ultra · Token Factory",
   storySourceOpenrouter: "OpenRouter",
   storySourceClaude: "Claude",
-  storySourceRules: "rules",
+  storySourceRules: "Written from raw data",
   storySourceBudget: "budget",
   storySourceCache: "cache",
   storySourceNim: "NVIDIA NIM (fallback)",
@@ -314,6 +314,7 @@ export default {
   planReviewOk: "nothing to report",
   planReviewEmpty: "No leg to review.",
   planReviewCommentTitle: "What I would change",
+  planReviewNoChange: "No change suggested for now.",
   planReviewLegAlerts: "alerts: {n}",
   planReviewApply: "Apply",
   planReviewLanes: "lanes: {names}",
@@ -718,6 +719,8 @@ export default {
 
   // ED2
   ed2WritingNemotron: "Writing…",
+  ed2WritingWait:    "Waiting for writing…",
+  ed2WriteFailed:    "Writing failed",
   ed2BrandLine: "NVIDIA · Nebius",
 
   // FM1
