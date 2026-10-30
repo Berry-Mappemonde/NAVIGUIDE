@@ -83,8 +83,10 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
 
   // L'avis reste hors du cadre à hauteur fixe pour préserver la place des réponses.
   return (
-    <>
-    <div data-testid="logbook-chat" data-tour="logbook" className="sim-box-chat rounded-lg border border-violet-500/25 bg-violet-950/25 p-2 min-w-0">
+    // Cible de la visite (étape 4) : le cadre ET l'avis AI Act, sinon l'overlay driver.js
+    // bloque le bouton « Compris » de l'avis qui s'affiche hors du cadre.
+    <div data-tour="logbook" className="min-w-0">
+    <div data-testid="logbook-chat" className="sim-box-chat rounded-lg border border-violet-500/25 bg-violet-950/25 p-2 min-w-0">
       <div className="flex items-center gap-1.5 mb-1 flex-shrink-0">
         <MessageSquare size={12} className="text-violet-200" />
         <div className="text-[10px] font-semibold uppercase tracking-wider text-violet-200 leading-snug">{t("logbookChatTitle")}</div>
@@ -195,6 +197,6 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
         </button>
       </div>
     ) : null}
-    </>
+    </div>
   );
 });
