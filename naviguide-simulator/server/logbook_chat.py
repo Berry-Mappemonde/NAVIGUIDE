@@ -1749,7 +1749,10 @@ async def answer_question(
                         "context": ctx,
                     }
                 raw, source = fact_text, "rules"
-            return _finish_answer(raw, ctx, lang, source, sentences=ULTRA_SENTENCES, chars=ULTRA_CHARS)
+            out = _finish_answer(raw, ctx, lang, source, sentences=ULTRA_SENTENCES, chars=ULTRA_CHARS)
+            if out.get("source") == "nemotron-ultra":
+                llm_budget.record_chat_ultra()
+            return out
         if fact_text is None:
             return {
                 "status": "failed",

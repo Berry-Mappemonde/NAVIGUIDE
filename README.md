@@ -36,6 +36,7 @@ Shortcut: [https://naviguide.fr/?tour=1](https://naviguide.fr/?tour=1) opens the
 3. When the film controls are up, **Raw** and **Edited** sit side by side. Click **Edited** to request the written narration. While the film plays, the pill is locked and its tooltip says **Stop the film to switch Raw/Edited**. If all providers fail, the page says **The edited film is temporarily unavailable.** For accessibility, the speaker button in the film bar (labelled **Listen**) reads the film aloud: during a replay, the browser’s own speech synthesis (`speechSynthesis`, `naviguide-simulator/src/utils/speak.js`) reads each paragraph as the film plays, in English or French, with no Nemotron call and no NAVIGUIDE server call.
 4. When the boat is at a stop, the panel is titled **Port of call sheet**. If that stop is inside the watch window and a watch was stored, a card is titled with the port name, the words **watch of**, and a date, plus one sentence. If no watch was stored, that card is absent. The sheet still lists the places it has.
 5. In the side panel, **Logbook — ask a question**. The field reads **Wind at the boat? Next stop?** Press the button whose tooltip is **Send**. Under **Try a question:**, three chips send a ready question in one click: **Why? · Ultra** (a why question, answered by Nemotron 3 Ultra), **Port news · Tavily** (how the web describes the port of the next stop: Ultra with Tavily web sources) and **Wind · Lightning** (Lightning reads the question, the facts answer).
+6. Click **Draw your own route** to plan a route yourself.
 
 A plain logbook question is answered from the facts already collected. A why, a how, or a long question is the one sent to Nemotron 3 Ultra when the budget allows. The chat then shows: **You are interacting with artificial intelligence. Replies are generated automatically and may contain errors.**
 
@@ -82,7 +83,7 @@ On the `fast` tier only, an empty Token Factory body, an HTTP status of 500 or h
 | `deep` | 150,000 |
 | `judge` | 250,000 |
 
-The written film’s edit and re-read go to Ultra by default, inside that `judge` budget (`film_ultra_open` in `naviguide-simulator/server/film_script.py`). Setting `NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE` to `0`, a negative or a non-numeric value switches Ultra off for the film, which then falls back to Super VL. Hard logbook questions are bounded by the same `judge` budget. A separate 10-per-day Ultra chat counter (`allow_chat_ultra` in `naviguide-simulator/server/llm_budget.py`) is reported in the budget status but is not checked before a logbook answer on this commit. There is no dollar cutoff unless `NAVIGUIDE_LLM_DAILY_USD` is set. The commented figures in `naviguide-simulator/server/.env.example` are not these defaults. Default mode is `on-demand` (a user action, not a background job). `off` never pays. `all` is explicit.
+The written film’s edit and re-read go to Ultra by default, inside that `judge` budget (`film_ultra_open` in `naviguide-simulator/server/film_script.py`). Setting `NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE` to `0`, a negative or a non-numeric value switches Ultra off for the film, which then falls back to Super VL. Hard logbook questions are bounded by the same `judge` budget. The separate 10-per-day Ultra chat counter (`record_chat_ultra` in `naviguide-simulator/server/llm_budget.py`) reports successful logbook answers actually served by Token Factory Nemotron Ultra in the budget status; it does not limit chat answers. There is no dollar cutoff unless `NAVIGUIDE_LLM_DAILY_USD` is set. The commented figures in `naviguide-simulator/server/.env.example` are not these defaults. Default mode is `on-demand` (a user action, not a background job). `off` never pays. `all` is explicit.
 
 **Public proof.** `GET /ici/warm/status` includes `llm`, and `llm.lastSourceByTier` when a tier has already answered. The value is the source that answered (`nemotron-lightning`, `nemotron-super-vl`, `nemotron-ultra`, or a fallback name), not a sentence from the model.
 
@@ -210,7 +211,7 @@ Policy: [SECURITY.md](SECURITY.md). Data sheet: [naviguide-simulator/DATA_SOURCE
 [![CodeQL](https://github.com/Berry-Mappemonde/NAVIGUIDE/actions/workflows/codeql.yml/badge.svg)](https://github.com/Berry-Mappemonde/NAVIGUIDE/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Berry-Mappemonde/NAVIGUIDE/badge)](https://scorecard.dev/viewer/?uri=github.com/Berry-Mappemonde/NAVIGUIDE)
 
-The badges point at [.github/workflows/codeql.yml](.github/workflows/codeql.yml) and [.github/workflows/scorecard.yml](.github/workflows/scorecard.yml). CodeQL is not a required check. [SECURITY.md](SECURITY.md) records that, as of 18 October 2026, this repository had no published CodeQL result yet.
+The badges point at [.github/workflows/codeql.yml](.github/workflows/codeql.yml) and [.github/workflows/scorecard.yml](.github/workflows/scorecard.yml). CodeQL analyzes pull requests; its findings are tracked in GitHub's Security tab. CodeQL is not a required check.
 
 ## License
 
