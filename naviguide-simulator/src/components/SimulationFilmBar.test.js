@@ -64,6 +64,18 @@ describe("barre film — vitesse cyclique", () => {
   });
 });
 
+describe("badge de modèle par chapitre", () => {
+  it("n'affiche le badge qu'avec une provenance explicite du chapitre actif", () => {
+    assert.match(bar, /replay\?\.chapterProvenance\?\.model && replay\?\.chapterProvenance\?\.source/);
+    assert.match(bar, /source=\{replay\.chapterProvenance\.source\}/);
+    assert.match(bar, /replay\.chapterProvenance\.model\)/);
+    assert.match(bar, /replay\.chapterProvenance\.tier/);
+    assert.ok(bar.includes("${replay.chapterProvenance.model} · ${replay.chapterProvenance.tier}"));
+    assert.match(bar, /testId="film-chapter-served-model"/);
+    assert.doesNotMatch(bar, /receipt\.models.*chapterProvenance/s);
+  });
+});
+
 describe("barre film — noms accessibles des commandes", () => {
   it("nomme les boutons de progression, événements et lecture/pause", () => {
     assert.match(bar, /aria-label=\{showPlaybackControls \? t\("filmScrub"\) : undefined\}/);

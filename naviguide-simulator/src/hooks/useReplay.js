@@ -2414,6 +2414,13 @@ export function useReplay({
     onSentenceEnd,
     isVoiceHeld,
     filmSource,
+    chapterProvenance: planRef.current?.chapters?.[chapterIdx]
+      ? {
+          model: planRef.current.chapters[chapterIdx].served_model || "",
+          source: planRef.current.chapters[chapterIdx].served_source || "",
+          tier: planRef.current.chapters[chapterIdx].served_tier || "",
+        }
+      : null,
     filmReviewedBy,
     filmModel,
     filmWebContext,
