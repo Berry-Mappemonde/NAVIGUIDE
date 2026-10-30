@@ -1332,6 +1332,8 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(hook, /if \(writeGen !== filmWritePollGenRef\.current\) return;/);
     assert.match(hook, /\.catch\(\(\) => \{\s+if \(writeGen !== filmWritePollGenRef\.current\) return;\s+setFilmWriteError\(true\);\s+setFilmWriting\(false\);\s+\}\)/);
     assert.match(hook, /\.finally\(\(\) => \{\s+if \(writeGen === filmWritePollGenRef\.current\) \{\s+filmWriteStartingRef\.current = false;\s+\}\s+\}\)/);
+    assert.match(hook, /finally \{\s+if \(gen === filmWritePollGenRef\.current\) \{\s+filmWriteStartingRef\.current = false;\s+\}\s+\}/);
+    assert.match(hook, /filmWritePollAbortRef\.current = null;\s+filmWriteStartingRef\.current = false;/);
     assert.match(hook, /resolveServedFilm/);
     assert.match(hook, /probeWritten/);
     assert.match(hook, /applyResolvedMeta/);

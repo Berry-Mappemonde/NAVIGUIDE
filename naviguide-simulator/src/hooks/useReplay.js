@@ -2377,7 +2377,8 @@ export function useReplay({
       );
     });
 
-    while (attempts < maxAttempts) {
+    try {
+      while (attempts < maxAttempts) {
       if (gen !== filmWritePollGenRef.current) return "stop";
       try {
         await sleep(4000);
@@ -2424,10 +2425,15 @@ export function useReplay({
         // ignore network errors, keep polling
       }
     }
-    if (gen !== filmWritePollGenRef.current) return "stop";
-    setFilmWriteError(true);
-    setFilmWriting(false);
-    return "stop";
+      if (gen !== filmWritePollGenRef.current) return "stop";
+      setFilmWriteError(true);
+      setFilmWriting(false);
+      return "stop";
+    } finally {
+      if (gen === filmWritePollGenRef.current) {
+        filmWriteStartingRef.current = false;
+      }
+    }
   }, [lang, targetSeconds, t0, voyageId]);
 
   filmWriteNextStepRef.current = filmWriteNextStep;
@@ -2439,6 +2445,7 @@ export function useReplay({
       filmWritePollGenRef.current += 1;
       filmWritePollAbortRef.current?.abort();
       filmWritePollAbortRef.current = null;
+      filmWriteStartingRef.current = false;
     };
   }, [voyageId, lang, targetSeconds, t0, filmStyle]);
 
