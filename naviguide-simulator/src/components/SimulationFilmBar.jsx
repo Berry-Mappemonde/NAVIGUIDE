@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Clapperboard, Maximize2, Minimize2, Pause, Play } from "lucide-react";
+import { Clapperboard, LoaderCircle, Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { filmBarEdgeStyle, readViewportWidth } from "../utils/filmBarLayout.js";
 import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
@@ -414,6 +414,22 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             />
             {replay && !replay.unavailable ? (
               <>
+                {replay.remoteStatus && replay.remoteStatus !== "ready" ? (
+                  <div
+                    data-testid="film-load-status"
+                    role={replay.writtenUnavailable ? undefined : "status"}
+                    aria-live="polite"
+                    className="flex min-w-0 max-w-full items-center gap-1 text-[10px] text-white/65"
+                  >
+                    {replay.remoteStatus === "pending" || replay.remoteStatus === "preparing" ? (
+                      <LoaderCircle size={11} className="animate-spin shrink-0" aria-hidden="true" />
+                    ) : null}
+                    <span className="min-w-0 truncate">{t({ pending: "filmLoadPending", preparing: "filmLoadPreparing", empty: "filmLoadEmpty", absent: "filmLoadError", timeout: "filmLoadTimeout", stale: "filmLoadStale" }[replay.remoteStatus] || "filmLoadPending")}</span>
+                    {["empty", "absent", "timeout", "stale"].includes(replay.remoteStatus) && replay.onRetryLoad ? (
+                      <button type="button" data-testid="film-load-retry" className="underline" onClick={replay.onRetryLoad}>{t("filmLoadRetry")}</button>
+                    ) : null}
+                  </div>
+                ) : null}
                 {replay.writing ? (
                   <div data-testid="film-source" className="min-w-0 max-w-full whitespace-normal break-words text-xs leading-snug text-white/90">
                     {t("ed2WritingNemotron")}
