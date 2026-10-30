@@ -14,6 +14,9 @@ a **right panel** (tools), and a **bar** at the bottom (time, playback).
 **Hide sidebar** / **Hide panel** folds the matching panel; click again
 to reopen it.
 
+Open the judges’ guided tour with [**?tour=1**](https://naviguide.fr/?tour=1)
+or the **Guided tour** button.
+
 ---
 
 ## 1. Follow expedition
@@ -143,8 +146,12 @@ Start it from **Follow expedition**.
 | **Stop** | Stops the film and returns to Follow. |
 | **Film fullscreen** | Hides the panels for the film. |
 | **Raw** | Shows the rules-written story (no model). Greyed out if missing. |
-| **Written** | Shows the drafted story (Nemotron). Greyed out if missing. |
+| **Edited** | Shows the written narration. If grey, its tooltip says **not yet written for this duration**. |
 | **2:30** / **3:00** | Sets the film length. |
+
+The **Raw** film is phrased by rules; **Edited** is the written narration.
+The Edited film can show up to three **Web sources (Tavily)** links beneath
+the film bar for its last port.
 
 During the film a **bubble** may leave the boat at an event
 (gale, harbour). **Close** dismisses it.
@@ -152,7 +159,16 @@ Harbour sheets do not open during the film.
 
 ---
 
-## 5. Right panel
+## 5. Logbook chat
+
+In **Logbook — ask a question**, type a question and press **Send**. The
+three **Try a question** buttons fill and send a ready question: **Why? ·
+Ultra**, **Port news · Tavily**, or **Wind · Lightning**. The Port news
+answer can include **Web sources (Tavily)** links below it. The chat displays
+this notice: **You are interacting with artificial intelligence. Replies
+are generated automatically and may contain errors.**
+
+## 6. Right panel
 
 The expedition and the tools. **Show panel** / **Hide panel**
 opens or folds it.

@@ -14,6 +14,9 @@ briefing), un **panneau droit** (outils), une **barre** en bas (temps,
 lecture). **Masquer le panneau** replie le panneau concerné ;
 recliquer le réouvre.
 
+Ouvrez la visite guidée des juges avec [**?tour=1**](https://naviguide.fr/?tour=1)
+ou le bouton **Guided tour**.
+
 ---
 
 ## 1. Suivre l’expédition
@@ -144,8 +147,12 @@ On le lance depuis **Suivre l’expédition**.
 | **Stop** | Arrête le film et revient à Suivre. |
 | **Plein écran film** | Cache les panneaux le temps du film. |
 | **Brut** | Montre le récit écrit par les règles (sans modèle). Grisé s’il n’est pas disponible. |
-| **Rédigé** | Montre le récit rédigé (Nemotron). Grisé s’il n’est pas disponible. |
+| **Rédigé** | Montre le récit écrit. S’il est grisé, l’infobulle indique **pas encore rédigé pour cette durée**. |
 | **2:30** / **3:00** | Choisit la durée du film. |
+
+Le film **Brut** formule le récit selon les règles ; **Rédigé** est le
+récit écrit. Le film Rédigé peut afficher sous la barre jusqu’à trois liens
+**Sources web (Tavily)** pour son dernier port.
 
 Pendant le film, une **bulle** peut sortir du bateau au moment d’un
 événement (coup de vent, escale). **Fermer** range la bulle.
@@ -153,7 +160,17 @@ Les fiches d’escale ne s’ouvrent pas pendant le film.
 
 ---
 
-## 5. Panneau droit
+## 5. Questions au journal de bord
+
+Dans **Journal de bord — posez une question**, écrivez votre question puis appuyez
+sur **Envoyer**. Les trois boutons **Essayez une question** préparent et
+envoient une question : **Pourquoi ? · Ultra**, **Actu du port ·
+Tavily** ou **Vent · Lightning**. La réponse Actualités du port peut
+afficher des liens **Sources web (Tavily)** dessous. Le journal affiche cet
+avertissement : **Vous échangez avec une intelligence artificielle.
+Les réponses sont générées automatiquement et peuvent contenir des erreurs.**
+
+## 6. Panneau droit
 
 L’expédition et les outils. **Afficher le panneau** / **Masquer le panneau**
 l’ouvre ou le replie.
