@@ -75,8 +75,10 @@ def _connect() -> sqlite3.Connection:
             return _conn
         close()
         p.parent.mkdir(parents=True, exist_ok=True)
+        initialize = not p.exists()
         conn = sqlite3.connect(str(p), check_same_thread=False, isolation_level=None, timeout=10.0)
-        conn.execute("PRAGMA journal_mode=WAL")
+        if initialize:
+            conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         for stmt in _SCHEMA:
             conn.execute(stmt)
@@ -430,6 +432,29 @@ def kv_put(ns: str, key: str, value: Any) -> bool:
     except Exception as exc:
         log.warning("store kv (écriture) : %s", exc)
         return False
+
+
+def kv_update(ns: str, key: str, update: Callable[[Any], Any]) -> Any:
+    """Atomically read, transform and write a KV value across processes."""
+    with _LOCK:
+        conn = _connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT value FROM kv WHERE ns = ? AND key = ?", (ns, key)).fetchone()
+            current = json.loads(row[0]) if row else None
+            value = update(current)
+            payload = json.dumps(value, ensure_ascii=False, default=str)
+            if len(payload.encode("utf-8")) > KV_MAX_BYTES:
+                raise ValueError("KV value too large")
+            conn.execute(
+                "INSERT OR REPLACE INTO kv (ns, key, value, ts) VALUES (?, ?, ?, ?)",
+                (ns, key, payload, time.time()),
+            )
+            conn.execute("COMMIT")
+            return value
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
 
 
 def kv_delete(ns: str, key: str) -> bool:
