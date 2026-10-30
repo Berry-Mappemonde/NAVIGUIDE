@@ -81,7 +81,7 @@ Exception écrite : `deferred_demand()` autorise le palier `write` en arrière-p
 
 Aucun fichier `src/**/*.jsx` ne contient « Tavily ». Le sac `ici` du client est décrit « No chat, no Tavily » (`src/hooks/useIciDossier.js:157`), couvert par `src/utils/recetteAg.test.js:108`.
 
-La veille est un travail serveur. Elle reste éteinte tant que `NAVIGUIDE_TAVILY_WATCH` n’est pas `1` ; le défaut est `0` (`server/escale_watch.py:7-8`, `server/escale_watch.py:94-102`). Ouverte, elle ne couvre que la fenêtre J−10 → J+2 (`server/escale_watch.py:32-33`), au plus deux tours, questions déjà écrites (`server/escale_watch.py:39-50`), résumé Lightning en une phrase (`server/escale_watch.py:54-58`). Plafonds : 6 recherches / jour (`server/escale_watch.py:50`), 80 crédits Tavily / jour (`server/llm_budget.py:539-548`). Conditions d’utilisation Tavily : **à vérifier** ([../DATA_SOURCES.md](../DATA_SOURCES.md)).
+La veille est un travail serveur, activé par défaut (`NAVIGUIDE_TAVILY_WATCH=1`) ; `NAVIGUIDE_TAVILY_WATCH=0` la désactive (`server/escale_watch.py:100-102`). Un réglage enregistré sur le serveur prend le dessus sur cette valeur par défaut. Elle ne couvre que la fenêtre J−10 → J+2 (`server/escale_watch.py:32-33`), au plus deux tours, questions déjà écrites (`server/escale_watch.py:39-50`), résumé Lightning en une phrase (`server/escale_watch.py:54-58`). Plafonds : 6 recherches / jour (`server/escale_watch.py:50`), 80 crédits Tavily / jour (`server/llm_budget.py:539-548`). Conditions d’utilisation Tavily : **à vérifier** ([../DATA_SOURCES.md](../DATA_SOURCES.md)).
 
 ## Données envoyées dans les prompts
 
@@ -123,7 +123,7 @@ Cascade: SQLite cache, then Token Factory, then a second Super call only after a
 
 Budgets (NB1): daily token caps in `server/llm_budget.py:32-37`. A missing `NAVIGUIDE_LLM_DAILY_USD` does not cut spending. Default mode is `on-demand`.
 
-Tavily runs at runtime from the logbook chat: each question sent with **Send** triggers one Tavily search about a port (`server/port_web_context.py`, on by default, `NAVIGUIDE_PORT_WEB=0` turns it off); links are shown under **Web sources (Tavily)**. The separate stop watch runs on the server only when `NAVIGUIDE_TAVILY_WATCH=1` (default 0), for stops from ten days before arrival to two days after, at most two rounds. Terms of use: **à vérifier**.
+Tavily runs at runtime from the logbook chat: each question sent with **Send** triggers one Tavily search about a port (`server/port_web_context.py`, on by default, `NAVIGUIDE_PORT_WEB=0` turns it off); links are shown under **Web sources (Tavily)**. The separate stop watch runs on the server by default (`NAVIGUIDE_TAVILY_WATCH=1`; set it to `0` to disable), for stops from ten days before arrival to two days after, at most two rounds. A saved server setting takes precedence over the environment default. Terms of use: **à vérifier**.
 
 Prompts cited here carry the typed logbook question plus expedition facts, or a port name and a date. Those builders do not add an account, an email, or a visitor name. A full caller inventory is **à vérifier**.
 

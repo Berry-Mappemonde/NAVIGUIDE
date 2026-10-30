@@ -13,7 +13,7 @@ viennent donc des perles — les mêmes pour tous les visiteurs. Ce module :
   MarineRegions et Overpass ne sont appelés qu'une fois par cellule.
 
 `NAVIGUIDE_ICI_WARM=0` désactive le chauffeur (tests, dev sans réseau).
-La veille Tavily part quand même si `NAVIGUIDE_TAVILY_WATCH=1` (défaut 0) :
+La veille Tavily est active par défaut ; `NAVIGUIDE_TAVILY_WATCH=0` la désactive :
 première passe 2 min après le démarrage, puis toutes les
 `NAVIGUIDE_TAVILY_WATCH_S` secondes (défaut 86 400). Une recherche par
 escale, fenêtre J-10 → J+2. Cette boucle ne parcourt pas les perles.
@@ -80,8 +80,7 @@ def stories_enabled() -> bool:
 
 
 def watch_enabled() -> bool:
-    """Veille Tavily. Défaut 0 : zéro recherche tant que le
-    drapeau n'est pas ouvert. `NAVIGUIDE_TAVILY_WATCH=1` l'allume (poste)."""
+    """Veille Tavily. Active par défaut ; `NAVIGUIDE_TAVILY_WATCH=0` la désactive."""
     import escale_watch  # noqa: PLC0415
 
     return escale_watch.watch_enabled()
