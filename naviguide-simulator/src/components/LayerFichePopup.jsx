@@ -105,7 +105,7 @@ export function LayerFichePopup({ popup, onClose }) {
       <button type="button" onClick={onClose} aria-label={t("layerFicheClose")} title={t("layerFicheClose")} className="absolute top-2 right-2 text-slate-400 hover:text-white">
         <X size={14} />
       </button>
-      <h3>{title}</h3>
+      <h3>{localizeStoredTitle(title, lang)}</h3>
       {subtitle ? <div className="muted">{subtitle}</div> : null}
       {extra}
     </div>

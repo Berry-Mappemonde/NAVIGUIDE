@@ -6897,3 +6897,31 @@ def test_bubble_payload_uses_localized_event_text_and_never_reuses_french_in_eng
 
     fr = fs._bubble_payload(ev, {"text": "Le 16 mai, le projet Aménagement côtier."}, "fr", previous)
     assert fr["card"]["text"] == previous["card"]["text"]
+
+
+def test_free_moments_require_geographic_evidence_in_known_window():
+    from film_script import _align_moments_to_window
+
+    t = "2026-10-15T12:00:00Z"
+    window = {
+        "fromName": "Papeete", "destName": "Mata-Utu",
+        "tA": _ms("2026-10-14T00:00:00Z"), "tB": _ms("2026-10-16T00:00:00Z"),
+        "clock": {"vertices": [
+            {"iso": t, "lat": -14, "lon": -171, "vehicle": "main"},
+            {"iso": "2026-09-01T00:00:00Z", "lat": 14.6, "lon": -61},
+            {"iso": t, "lat": 14.6, "lon": -61, "vehicle": "plane"},
+        ]},
+    }
+    samoa = {"t": t, "moment": {"here": {"at": {"lat": -14, "lon": -171}}}}
+    martinique = {"t": t, "lat": 14.6, "lon": -61}
+    unknown = {"t": t}
+    assigned = {**martinique, "moment": {"leg": {"from": "Papeete", "to": "Mata-Utu"}}}
+    kept = _align_moments_to_window([samoa, martinique, unknown, assigned], window, None)
+    assert samoa in kept
+    assert martinique not in kept
+    assert unknown not in kept
+    assert any((m.get("moment") or {}).get("leg") for m in kept)
+    endpoint_window = {"fromLat": -14, "fromLon": 179}
+    across = {"t": t, "pos": {"lat": -14, "lon": -179}}
+    assert _align_moments_to_window([across, martinique], endpoint_window, None) == [across]
+    assert _align_moments_to_window([unknown], {}, None) == [unknown]

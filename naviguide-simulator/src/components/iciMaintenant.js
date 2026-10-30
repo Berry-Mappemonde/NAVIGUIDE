@@ -4,6 +4,7 @@ import frDict from "../i18n/fr.js";
 import enDict from "../i18n/en.js";
 import { displayStopName } from "../utils/stopLabels.js";
 import { lookup as lookupToponym, sheetLabel } from "../engine/toponyms.js";
+import { localizePlaceName } from "../utils/placeNames.js";
 
 const MONTHS_SHORT = {
   fr: ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],
@@ -190,7 +191,7 @@ function inferKindFromTitle(title) {
 }
 
 export function localizeStoredTitle(title, lang) {
-  const raw = String(title || "").trim();
+  const raw = String(title || "").trim().replace(/\([^)]*\)/g, (part) => localizePlaceName(part, lang));
   if (!raw || lang !== "en") return raw;
   if (TITLE_EN[raw]) return TITLE_EN[raw];
   if (/^AMP\b/i.test(raw)) return raw.replace(/^AMP\b/i, "Marine protected area");
@@ -452,7 +453,7 @@ export function localizeSourceTag(tag, lang) {
 export function enDecimals(text, lang) {
   const raw = String(text ?? "");
   if (lang !== "en" || !raw) return raw;
-  return raw.replace(/(\d),(\d)(?!\d)(?=\s*(?:nm|kn|km|m|°C|%)(?![a-z]))/gi, "$1.$2");
+  return raw.replace(/(\d),(\d{1,2})(?!\d)(?=\s*(?:nm|kn|km|m|d|°C|%)(?![a-z]))/gi, "$1.$2");
 }
 
 export function localizeStoredFact(text, lang) {
