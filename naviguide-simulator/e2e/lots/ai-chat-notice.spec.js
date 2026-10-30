@@ -1,7 +1,7 @@
 // Avis du journal : il apparaît au premier échange, se ferme, et ne revient pas.
 // Fermer « Ne convient pas à la navigation » ne doit pas le fermer.
 import { expect, test } from "@playwright/test";
-import { dismissAiChatNotice, dismissNotForNav, showLeftPanel, showRightPanel } from "../helpers.js";
+import { dismissNotForNav, showLeftPanel, showRightPanel } from "../helpers.js";
 
 async function openChat(page) {
   await page.goto("/");
@@ -32,6 +32,14 @@ async function assertReadable(locator) {
   expect(size).toBeGreaterThanOrEqual(12);
 }
 
+async function dismissNoticeAndWait(page, dismiss) {
+  await dismiss.click();
+  await expect.poll(() => page.evaluate(() => (
+    localStorage.getItem("naviguide-ai-act-chat-notice-v1")
+  ))).toBe("1");
+  await expect(page.getByTestId("logbook-chat-ai-notice")).toHaveCount(0);
+}
+
 test("English: the AI notice appears at the first exchange and stays dismissed", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("naviguide_lang_v4", "en"));
   const notice = await openChat(page);
@@ -46,8 +54,7 @@ test("English: the AI notice appears at the first exchange and stays dismissed",
   await dismissNotForNav(page, { timeout: 3000 });
   await expect(modal).toHaveCount(0);
   await expect(notice).toBeVisible();
-  await dismissAiChatNotice(page);
-  await expect(notice).toHaveCount(0);
+  await dismissNoticeAndWait(page, dismiss);
   await page.reload();
   await dismissNotForNav(page);
   await showLeftPanel(page);
@@ -69,11 +76,25 @@ test("Français : l’avis apparaît au premier échange et « Compris » du mod
   await dismissNotForNav(page, { timeout: 3000 });
   await expect(modal).toHaveCount(0);
   await expect(notice).toBeVisible();
-  await dismiss.click();
-  await expect(notice).toHaveCount(0);
+  await dismissNoticeAndWait(page, dismiss);
   await page.reload();
   await dismissNotForNav(page);
   await showLeftPanel(page);
   await page.getByTestId("logbook-chat-input").focus();
   await expect(page.getByTestId("logbook-chat-ai-notice")).toHaveCount(0);
 });
+
+// R44 : notice AI Act annoncée (région live), noms accessibles, focus rendu au champ.
+for (const [lang, inputName, sendName] of [["fr", "Votre question au carnet de bord", "Envoyer"], ["en", "Ask the logbook", "Send"]]) {
+  test(`R44 ${lang} : notice en région live, noms accessibles, focus rendu au champ`, async ({ page }) => {
+    await page.addInitScript((l) => localStorage.setItem("naviguide_lang_v4", l), lang);
+    const notice = await openChat(page);
+    await expect(notice.getByRole("status")).toHaveAttribute("aria-live", "polite");
+    await expect(page.getByRole("textbox", { name: inputName })).toBeVisible();
+    await expect(page.getByRole("button", { name: sendName, exact: true })).toHaveAttribute("data-testid", "logbook-chat-send");
+    await notice.getByTestId("logbook-chat-ai-notice-dismiss").focus();
+    await page.keyboard.press("Enter");
+    await expect(notice).toHaveCount(0);
+    await expect(page.getByTestId("logbook-chat-input")).toBeFocused();
+  });
+}

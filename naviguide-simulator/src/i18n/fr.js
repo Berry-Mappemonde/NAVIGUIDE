@@ -128,7 +128,7 @@ export default {
   storySourceUltra: "Nemotron 3 Ultra · Token Factory",
   storySourceOpenrouter: "OpenRouter",
   storySourceClaude: "Claude",
-  storySourceRules: "règles",
+  storySourceRules: "Formulé par les données brutes",
   storySourceBudget: "budget",
   storySourceCache: "cache",
   storySourceNim: "NVIDIA NIM (repli)",
@@ -283,6 +283,13 @@ export default {
   replayStartTitle: "Rejouer la route de Saint-Maur à aujourd’hui, racontée jour par jour",
   replayBerryOnly: "Revoir : route Berry-Mappemonde seulement — bientôt pour votre route",
   replayPreparing: "en préparation",
+  filmLoadPending: "Chargement du film…",
+  filmLoadPreparing: "Le film est en préparation…",
+  filmLoadEmpty: "Aucun film reçu pour le moment.",
+  filmLoadError: "Impossible de charger le film.",
+  filmLoadTimeout: "Le chargement du film a expiré.",
+  filmLoadStale: "Le film reçu est incomplet ou ancien.",
+  filmLoadRetry: "Réessayer",
   replayStop: "Stop",
   replayStopTitle: "Arrêter le film et revenir à Suivre",
   replayProgress: "Replay : {pct} %",
@@ -314,6 +321,7 @@ export default {
   planReviewOk: "rien à signaler",
   planReviewEmpty: "Aucune jambe à revoir.",
   planReviewCommentTitle: "Ce que je changerais",
+  planReviewNoChange: "Aucun changement proposé pour l’instant.",
   planReviewLegAlerts: "alertes : {n}",
   planReviewApply: "Appliquer",
   planReviewLanes: "couloirs : {names}",
@@ -434,7 +442,7 @@ export default {
   polarFailed:            "Échec",
   polarUploadErrorPrefix: "Échec",
   polarDefaultUnavailable: "La polaire par défaut est momentanément indisponible.",
-  polarServiceUnavailable: "Service des polaires indisponible (HTTP {status}). Réessayez dans quelques instants.",
+  polarServiceUnavailable: "Le service des polaires est momentanément indisponible. Réessayez dans quelques instants.",
   polarFileTooLarge:      "Le fichier dépasse la taille maximale de 10 Mo.",
   polarNetworkError:      "Le service des polaires est inaccessible. Vérifiez la connexion puis réessayez.",
   polarUpwind:            "↑ Près",
@@ -638,9 +646,8 @@ export default {
 
   // AI transparency
   aiActGeneratedLabel: "Contenu généré par IA (modèle : {model})",
-  aiActChatNotice: "Vous échangez avec une intelligence artificielle. Les réponses sont générées automatiquement et peuvent contenir des erreurs.",
+  aiActChatNotice: "Vous interagissez avec une intelligence artificielle. Les réponses sont générées automatiquement et peuvent contenir des erreurs.",
   aiActChatNoticeDismiss: "Compris",
-
   // Moment cards: fallback title and the stored entry alert
   momentFallbackTitle: "Position du bateau",
   momentKindGrib: "Prévision météo (GRIB)",
@@ -686,6 +693,7 @@ export default {
 
   // LY1 — Clément Filisetti
   climatologyUnavailable: "atlas indisponible",
+  layerUnavailable: "données indisponibles",
   // SO1
   skipperCoastalRule: "Côtier conseillé pour < 12 m",
   exportNeedsRoute: "Aucune route à exporter",
@@ -718,6 +726,8 @@ export default {
 
   // ED2
   ed2WritingNemotron: "Rédaction en cours…",
+  ed2WritingWait:    "Attente de la rédaction…",
+  ed2WriteFailed:    "Échec de la rédaction",
   ed2BrandLine: "NVIDIA · Nebius",
 
   // FM1

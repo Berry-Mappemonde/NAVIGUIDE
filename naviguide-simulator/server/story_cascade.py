@@ -15,6 +15,10 @@ import math
 import os
 import re
 import time
+import random
+import weakref
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
@@ -43,15 +47,86 @@ TOKENFACTORY_EU_BASE = (
     os.environ.get("NAVIGUIDE_TF_BASE_EU")
     or "https://api.tokenfactory.nebius.com/v1"
 ).rstrip("/")
-# Cookbook Ultra: https://api.tokenfactory.us-central1.nebius.com/v1/
+# Ultra default host is EU Token Factory: https://api.tokenfactory.nebius.com/v1/
 TOKENFACTORY_ULTRA_BASE = (
     os.environ.get("NAVIGUIDE_TF_BASE_ULTRA")
-    or "https://api.tokenfactory.us-central1.nebius.com/v1"
+    or "https://api.tokenfactory.nebius.com/v1"
 ).rstrip("/")
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 NIM_MODEL = "openai/gpt-oss-20b"
+
+# NIM free-tier controls: concurrency (default 2, 1..16), max attempts
+# (default 3, 1..5), plus optional fast tiers/model overrides.
+_nim_loop_semaphores: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = weakref.WeakKeyDictionary()
+_nim_sleep = asyncio.sleep
+
+
+def _nim_int_env(name: str, default: int, low: int, high: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return min(high, max(low, value))
+
+
+def _nim_semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    semaphore = _nim_loop_semaphores.get(loop)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(_nim_int_env("NAVIGUIDE_NIM_CONCURRENCY", 2, 1, 16))
+        _nim_loop_semaphores[loop] = semaphore
+    return semaphore
+
+
+def _nim_float_env(name: str, default: float, low: float, high: float) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(value):
+        return default
+    return min(high, max(low, value))
+
+
+def _nim_retry_delay(response: httpx.Response, attempt: int) -> float:
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        try:
+            seconds = float(retry_after)
+            if math.isfinite(seconds) and seconds >= 0:
+                return min(20.0, seconds)
+        except ValueError:
+            pass
+        try:
+            when = parsedate_to_datetime(retry_after)
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            return min(20.0, max(0.0, (when - datetime.now(timezone.utc)).total_seconds()))
+        except (TypeError, ValueError, OverflowError):
+            pass
+    delay = min(8.0, 1.0 * (2 ** (attempt - 1)))
+    return random.uniform(0.0, delay)
+
+
+def nim_model(tier: str = "") -> str:
+    """Modèle NIM (build.nvidia.com, gratuit) : dev / tests sans Token Factory.
+
+    NAVIGUIDE_NIM_MODEL_<PALIER> (NANO, FAST, WRITE, DEEP, JUDGE), sinon
+    NAVIGUIDE_NIM_FAST_TIERS + NAVIGUIDE_NIM_FAST_MODEL, sinon
+    NAVIGUIDE_NIM_MODEL, sinon le défaut historique NIM_MODEL.
+    """
+    t = (tier or "").strip().upper()
+    if t:
+        per_tier = (os.environ.get(f"NAVIGUIDE_NIM_MODEL_{t}") or "").strip()
+        if per_tier:
+            return per_tier
+        fast_tiers = {x.strip().upper() for x in os.environ.get("NAVIGUIDE_NIM_FAST_TIERS", "").split(",") if x.strip()}
+        fast_model = (os.environ.get("NAVIGUIDE_NIM_FAST_MODEL") or "").strip()
+        if t in fast_tiers and fast_model:
+            return fast_model
+    return (os.environ.get("NAVIGUIDE_NIM_MODEL") or "").strip() or NIM_MODEL
 OR_MODEL = os.environ.get("OPENROUTER_MODEL") or "openai/gpt-4o-mini"
 CLAUDE_MODEL = "claude-haiku-4-5"
 MAX_TOKENS = 400
@@ -63,6 +138,7 @@ NON_NEMOTRON_PROVIDERS = frozenset({"nim", "openrouter", "claude"})
 CACHE_NS = "llm-cache"
 CACHE_TTL_S = 24 * 3600.0
 TF_PARALLEL_DEFAULT = 4
+TF_QUEUE_TIMEOUT_S = 10.0
 KNOWN_SOURCES = frozenset({
     "nemotron-nano", "nemotron-lightning", "nemotron-super", "nemotron-super-vl",
     "nemotron-ultra",
@@ -771,16 +847,17 @@ def tidy_story(
 
 
 def _tf_url(tier: str) -> str:
-    """Nano is pinned to the EU host. Lightning / Super stay on the default
-    TF host. Ultra uses us-central1 (Nebius cookbook) unless
-    NAVIGUIDE_TF_BASE_ULTRA is set."""
+    """Nano and write (Super-VL) are pinned to the EU host. Lightning stays on
+    the default TF host. Ultra uses EU host (Nebius Token Factory) unless
+    NAVIGUIDE_TF_BASE_ULTRA is set. NAVIGUIDE_TF_BASE_EU pins nano/write to
+    their host. NAVIGUIDE_PORT_WEB is a 0/1 flag for Tavily web context."""
     t = llm_budget.normalize_tier(tier)
     if t in {"deep", "judge"}:
         base = (
             _env("NAVIGUIDE_TF_BASE_ULTRA") or TOKENFACTORY_ULTRA_BASE
         ).rstrip("/")
         return f"{base}/chat/completions"
-    if t == "nano":
+    if t in {"nano", "write"}:
         base = (_env("NAVIGUIDE_TF_BASE_EU") or TOKENFACTORY_EU_BASE).rstrip("/")
         return f"{base}/chat/completions"
     return TOKENFACTORY_URL
@@ -1124,7 +1201,10 @@ async def _call_tokenfactory(
     if remaining <= 0:
         llm_budget.record_latency_timeout(t)
         raise TokenFactoryTimeout("tokenfactory cascade deadline exhausted")
-    queue_timeout = min(1.0, timeout.read, max(0.001, remaining - 0.005))
+    # Allow realistic judge bursts (8–10 calls): with four TF slots and
+    # configured 25 s per-call / total tier deadlines, a 10 s queue budget
+    # covers a second short generation wave while staying inside that deadline.
+    queue_timeout = min(TF_QUEUE_TIMEOUT_S, timeout.read, max(0.001, remaining - 0.005))
     started = time.monotonic()
     try:
         await asyncio.wait_for(sema.acquire(), timeout=queue_timeout)
@@ -1217,8 +1297,10 @@ async def _call_nim(
     key = nvidia_key()
     if not key:
         raise RuntimeError("NVIDIA_API_KEY missing")
+    nim = nim_model(tier)
+    log.info("cascade nim: modèle %s (palier %s)", nim, tier or "-")
     payload = {
-        "model": NIM_MODEL,
+        "model": nim,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -1230,19 +1312,49 @@ async def _call_nim(
         "reasoning_effort": "low",
         "chat_template_kwargs": {"thinking": False},
     }
-    r = await client.post(
-        NVIDIA_URL,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json=payload,
-    )
+    attempts = _nim_int_env("NAVIGUIDE_NIM_MAX_ATTEMPTS", 3, 1, 5)
+    deadline = _nim_float_env("NAVIGUIDE_NIM_DEADLINE_S", 30.0, 1.0, 300.0)
+
+    async def call_with_retries() -> httpx.Response:
+        for attempt in range(1, attempts + 1):
+            try:
+                async with _nim_semaphore():
+                    response = await client.post(
+                        NVIDIA_URL,
+                        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                        json=payload,
+                    )
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                if attempt >= attempts:
+                    raise
+                delay = min(8.0, 1.0 * (2 ** (attempt - 1)))
+                delay = random.uniform(0.0, delay)
+                log.info("cascade nim transport retry: attempt %d/%d in %.3fs", attempt + 1, attempts, delay)
+                await _nim_sleep(delay)
+                continue
+            except httpx.TransportError:
+                raise
+            if response.status_code not in (429, 503):
+                return response
+            if attempt >= attempts:
+                raise _http_error("nvidia", response)
+            delay = _nim_retry_delay(response, attempt)
+            log.info("cascade nim retry: attempt %d/%d in %.3fs", attempt + 1, attempts, delay)
+            await _nim_sleep(delay)
+        raise RuntimeError("nvidia attempts exhausted")
+
+    try:
+        r = await asyncio.wait_for(call_with_retries(), timeout=deadline)
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError(f"nvidia deadline exceeded after {deadline:g} s") from exc
     if r.status_code >= 400:
         raise _http_error("nvidia", r)
     data = r.json()
     text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
     if not text:
         raise RuntimeError("nvidia empty")
-    source = f"nvidia-{NIM_MODEL}"
-    model = _exact_model(source, str((data or {}).get("model") or ""), NIM_MODEL)
+    source = f"nvidia-{nim.split('/')[-1]}"
+    model = _exact_model(source, str((data or {}).get("model") or ""), nim)
     return _as_result(text, source, model=model, tier=tier)
 
 
@@ -1452,6 +1564,11 @@ async def _cascade_once(
     failures: list[dict[str, str]] = []
     tf_timed_out = False
     for name, step in hops:
+        # A local replay without Token Factory credentials must not even enter
+        # the TF hop. This also keeps the default provider list usable offline.
+        if name == "tokenfactory" and not nebius_key():
+            failures.append({"provider": name, "reason": "skipped: API key unavailable"})
+            continue
         if name == "tokenfactory" and llm_budget.tokenfactory_quota_paused():
             failures.append({"provider": name, "reason": "skipped: quota exhausted"})
             continue
@@ -1483,8 +1600,6 @@ async def _cascade_once(
                     llm_budget.remember_cascade_errors(failures, tier=norm_tier)
                 if name in llm_budget.FALLBACK_PROVIDERS:
                     llm_budget.record_fallback(name, norm_tier)
-                    # Status tracks the provider; the returned source retains
-                    # the precise NIM model label for honest fallback labelling.
                     llm_budget.remember_source(name, norm_tier)
                 public = source if source in KNOWN_SOURCES else (
                     "openrouter" if source.startswith("openrouter") else source

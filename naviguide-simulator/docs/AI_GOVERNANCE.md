@@ -12,16 +12,16 @@ Défauts de `server/llm_budget.py:116-137`, test `server/tests/test_llm_budget.p
 
 | Palier | Identifiant | Source UI | Hôte Token Factory dans ce dépôt |
 |---|---|---|---|
-| `fast` | `nvidia/Nemotron-3_5-Lightning` | `nemotron-lightning` | `https://api.tokenfactory.nebius.com/v1` (`server/story_cascade.py:37-40`, `server/story_cascade.py:773-786`) |
-| `write` | `nvidia/Nemotron-3.5-Super-VL` | `nemotron-super-vl` | même hôte que Lightning (`server/story_cascade.py:37-40`, `server/story_cascade.py:773-786`) |
-| `deep` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | `https://api.tokenfactory.us-central1.nebius.com/v1` (`server/story_cascade.py:46-50`, `server/story_cascade.py:773-782`) |
-| `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | même hôte que `deep` |
+| `fast` | `nvidia/Nemotron-3_5-Lightning` | `nemotron-lightning` | `https://api.tokenfactory.nebius.com/v1` (`server/story_cascade.py:33-36`, `server/story_cascade.py:581-590`) |
+| `write` | `nvidia/Nemotron-3.5-Super-VL` | `nemotron-super-vl` | `NAVIGUIDE_TF_BASE_EU` (UE par défaut ; `server/story_cascade.py:40-43`, `server/story_cascade.py:728-731`) |
+| `deep` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | `NAVIGUIDE_TF_BASE_ULTRA` (`https://api.tokenfactory.nebius.com/v1` par défaut ; `server/story_cascade.py:37-41`, `server/story_cascade.py:728-731`) |
+| `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | même hôte UE par défaut que `deep` |
 
-Le test `server/tests/test_story_cascade.py:1834-1835` interdit `us-central1` pour Nano ; `server/tests/test_tf_model_guard.py:116-124` vérifie que l’absence d’Ultra sur l’hôte US fait chercher le substitut sur l’hôte UE.
+Le test `test_ultra_payload_uses_cookbook_host_and_budget` (`server/tests/test_story_cascade.py`) exige l’hôte UE `api.tokenfactory.nebius.com` pour `deep`, `fast` et `write`.
 
-`eu-north1` n’apparaît pas dans le dépôt. `devpost/nebius_futur.md` n’y est pas. Placer Lightning en `eu-north1`, ou Super en `us-central1`, contredit ou dépasse ce checkout : **à vérifier**.
+`eu-north1` n’apparaît pas dans le dépôt. `devpost/nebius_futur.md` n’y est pas. Toute région autre que les hôtes par défaut listés ci-dessus est **à vérifier**.
 
-`eu-north1` does not appear in this checkout, nor does `devpost/nebius_futur.md`. Putting Lightning in `eu-north1`, or Super in `us-central1`, is **à vérifier**.
+`eu-north1` does not appear in this checkout, nor does `devpost/nebius_futur.md`. Any region other than the default hosts listed above is **à vérifier**.
 
 Autres identifiants, hors de ces quatre paliers :
 
@@ -117,7 +117,7 @@ Lien REDTEAM : aucun `evals/redteam/` ni `docs/security/REDTEAM_2026-10.md` sur 
 
 ## English
 
-The tables above are the evidence. The running Token Factory hosts are `api.tokenfactory.nebius.com` for Lightning and Super, and `api.tokenfactory.us-central1.nebius.com` for Ultra (`deep` and `judge`). `eu-north1` and `devpost/nebius_futur.md` are **à vérifier**.
+The tables above are the evidence. By default, Token Factory uses `api.tokenfactory.nebius.com` (EU) for Lightning (`fast`, overridden by `NAVIGUIDE_TF_BASE`), Nano and Super VL (`nano`/`write`, overridden by `NAVIGUIDE_TF_BASE_EU`), and Ultra (`deep`/`judge`, overridden by `NAVIGUIDE_TF_BASE_ULTRA`). `eu-north1` and `devpost/nebius_futur.md` are **à vérifier**.
 
 Cascade: SQLite cache, then Token Factory (on `fast`, an empty body, HTTP ≥ 500, or timeout gets one retry with Super; `nano` retries once with Lightning after any Token Factory failure), then NIM, OpenRouter, Claude, then `rules` if a fallback string was given. After a Token Factory timeout, non-Nemotron providers remain enabled by default; `NAVIGUIDE_LLM_TIMEOUT_FALLBACK=0` disables them. `filter_numbers` runs on each of those texts.
 

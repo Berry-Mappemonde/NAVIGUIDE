@@ -12,7 +12,7 @@ usages des LLM dans le code actuel et projeté, avec un budget de **60 $**.
   au moins un modèle open source NVIDIA. NIM (`integrate.api.nvidia.com`,
   utilisé aujourd'hui par `server/story_cascade.py`) **ne compte pas**.
 - **API** : OpenAI-compatible, `base_url = https://api.tokenfactory.nebius.com/v1`
-  (ou régionale `api.tokenfactory.us-central1.nebius.com/v1`), clé
+  (hôte UE par défaut ; les paliers Ultra et write restent sur cet hôte), clé
   `NEBIUS_API_KEY`. Le SDK `openai` suffit ; chez nous `httpx` comme pour NIM.
 - **Modèles Nemotron disponibles et prix (par million de tokens, entrée / sortie)** :
 
