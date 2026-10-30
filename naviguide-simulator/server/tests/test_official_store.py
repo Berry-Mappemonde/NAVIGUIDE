@@ -2090,27 +2090,32 @@ def test_rg11a_http_style_written(client, tmp_path, monkeypatch):
     assert raw.json()["hasWritten"] is False
 
 
-def test_ed1_get_does_not_write(client, tmp_path, monkeypatch):
+def test_written_get_does_not_run_on_demand_cascade(tmp_path, monkeypatch):
     store = OfficialStore(DiskBackend(tmp_path / "http-ed1"), now=lambda: NOW)
     voy = _rg11a_voy()
     official_store.reset_store()
     monkeypatch.setattr(official_store, "_INSTANCE", store)
     monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    async def no_web(*_a, **_k):
+        return None
+    monkeypatch.setattr(official_store, "attach_film_web_context", no_web)
     store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
     calls = {"n": 0}
 
-    async def boom(*_a, **_k):
+    async def fake_write(*_a, **_k):
         calls["n"] += 1
-        raise AssertionError("GET a lancé la chaîne")
+        return {"status": READY, "hasWritten": True, "source": official_store.WRITTEN_SOURCE,
+                "chapters": [{"text": "Rédigé", "anchors": [{"t": 0, "i": 0}]}]}
 
-    monkeypatch.setattr(official_store, "write_film_on_click", boom)
-    out = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
-    assert out.status_code == 200
-    assert out.json()["hasWritten"] is False
+    monkeypatch.setattr(official_store, "write_film_on_click", fake_write)
+    import asyncio
+    import main
+    out = asyncio.run(main.get_official_film(lang="fr", seconds=150, style="written"))
+    assert out["hasWritten"] is False
     assert calls["n"] == 0
 
 
-def test_ed1_write_query_runs_once_then_cache(client, tmp_path, monkeypatch):
+def test_ed1_write_query_runs_once_then_cache(tmp_path, monkeypatch):
     import film_script
 
     store = OfficialStore(DiskBackend(tmp_path / "http-ed1-write"), now=lambda: NOW)
@@ -2120,6 +2125,9 @@ def test_ed1_write_query_runs_once_then_cache(client, tmp_path, monkeypatch):
     monkeypatch.setattr(official_store, "_load_official", lambda: voy)
     monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
     monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")  # Ultra fermé : chemin Super seul
+    async def no_web(*_a, **_k):
+        return None
+    monkeypatch.setattr(official_store, "attach_film_web_context", no_web)
     store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
     calls = {"n": 0}
 
@@ -2138,17 +2146,46 @@ def test_ed1_write_query_runs_once_then_cache(client, tmp_path, monkeypatch):
         }
 
     monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
-    first = client.post("/voyage/official/film?lang=fr&seconds=150")
-    assert first.status_code == 200
-    assert first.json()["hasWritten"] is True
-    assert first.json()["source"] == official_store.WRITTEN_SOURCE
+    import asyncio
+    import main
+    first = asyncio.run(main.post_official_film_write(lang="fr", seconds=150))
+    assert first["hasWritten"] is True
+    assert first["source"] == official_store.WRITTEN_SOURCE
     assert calls["n"] == 1
-    second = client.post("/voyage/official/film?lang=fr&seconds=150")
-    assert second.json()["hasWritten"] is True
+    second = asyncio.run(main.post_official_film_write(lang="fr", seconds=150))
+    assert second["hasWritten"] is True
     assert calls["n"] == 1
-    get_only = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
-    assert get_only.json()["hasWritten"] is True
+    raw = asyncio.run(main.get_official_film(lang="fr", seconds=150, style="raw"))
+    assert raw["hasWritten"] is False
     assert calls["n"] == 1
+
+
+def test_written_all_providers_failed_returns_reason_and_raw_film(tmp_path, monkeypatch):
+    """Une cascade en échec laisse le brut utilisable et expose la raison au client."""
+    import asyncio
+    import main
+
+    store = OfficialStore(DiskBackend(tmp_path / "http-ed1-all-fail"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")
+    async def no_web(*_a, **_k):
+        return None
+    monkeypatch.setattr(official_store, "attach_film_web_context", no_web)
+    store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
+
+    async def fail_all(*_a, **_k):
+        return "", "rules"
+
+    out = asyncio.run(official_store.write_film_on_click(
+        lang="fr", seconds=150, cascade=fail_all, now=NOW,
+    ))
+    assert out["hasWritten"] is False
+    assert out["reason"] == "all-providers-failed"
+    assert out["chapters"]  # Le film brut reste exploitable.
 
 
 # Visiteur public (nginx pose X-Real-IP). Sans ces en-têtes, l'appel local
