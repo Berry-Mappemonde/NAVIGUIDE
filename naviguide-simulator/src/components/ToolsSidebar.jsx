@@ -246,7 +246,10 @@ function TavilyWatchToggle() {
   return (
     <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 px-3 py-2" data-testid="tavily-watch-setting">
       <div className="flex items-center justify-between gap-2">
-        <span id="tavily-watch-label" className="text-xs font-medium text-slate-200">{t("tavilyWatchLabel")}</span>
+        <span className="min-w-0">
+          <span id="tavily-watch-label" className="block text-xs font-medium text-slate-200">{t("tavilyWatchLabel")}</span>
+          <span id="tavily-watch-hint" className="block text-[10px] leading-snug text-slate-400">{t("tavilyWatchHint")}</span>
+        </span>
         <button
           type="button"
           role="switch"
@@ -262,7 +265,6 @@ function TavilyWatchToggle() {
           <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${on ? "left-5" : "left-0.5"}`} />
         </button>
       </div>
-      <p id="tavily-watch-hint" className="mt-1 text-[10px] leading-snug text-slate-400">{t("tavilyWatchHint")}</p>
       {note ? <p role="status" data-testid="tavily-watch-note" className="mt-1 text-[10px] leading-snug text-amber-300/90">{t(note)}</p> : null}
     </div>
   );

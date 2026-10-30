@@ -621,7 +621,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 @media (max-width: 599px) {
   .naviguide-sidebar-panel {
     height: auto !important;
-    max-height: calc(100% - var(--sim-inset-bottom, 120px));
+    max-height: calc(100% - var(--sim-inset-bottom, 120px) - 8px);
     overflow-y: auto;
     overscroll-behavior: contain;
   }
