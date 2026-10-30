@@ -21,13 +21,25 @@ export function shouldReloadAfterPreloadError(sessionStorage) {
   return true;
 }
 
+export function clearPreloadReloadFlag(sessionStorage) {
+  sessionStorage.removeItem("naviguide:preload-reload");
+}
+
 const centered = { minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, background: "#0f172a", color: "#f8fafc", fontFamily: "system-ui, sans-serif" };
 const panel = { maxWidth: 440, padding: 28, borderRadius: 16, background: "#1e293b", textAlign: "center", boxShadow: "0 20px 50px #0006" };
 
 export class RootErrorBoundary extends React.Component {
   state = { error: null };
-  componentDidMount() { window.addEventListener("naviguide:preload-fatal", this.onPreloadFatal); }
-  componentWillUnmount() { window.removeEventListener("naviguide:preload-fatal", this.onPreloadFatal); }
+  componentDidMount() {
+    window.addEventListener("naviguide:preload-fatal", this.onPreloadFatal);
+    this.preloadReloadTimer = window.setTimeout(() => {
+      try { clearPreloadReloadFlag(window.sessionStorage); } catch { /* storage unavailable */ }
+    }, 10_000);
+  }
+  componentWillUnmount() {
+    window.removeEventListener("naviguide:preload-fatal", this.onPreloadFatal);
+    window.clearTimeout(this.preloadReloadTimer);
+  }
   onPreloadFatal = () => this.setState({ error: new Error("NAVIGUIDE preload failed after retry") });
   static getDerivedStateFromError(error) { return { error }; }
   componentDidCatch(error, info) { console.error("NAVIGUIDE root render error:", error, info); }
@@ -50,7 +62,7 @@ export class PanelBoundary extends React.Component {
   render() {
     if (this.state.failed) {
       const lang = pickErrorLanguage(typeof localStorage === "undefined" ? null : localStorage, typeof navigator === "undefined" ? "" : navigator.language);
-      const copy = lang === "fr" ? ["Ce panneau a rencontré une erreur.", "Recharger le panneau"] : ["This panel hit an error.", "Reload panel"];
+      const copy = lang === "fr" ? ["Ce panneau a rencontré une erreur.", "Réessayer le panneau"] : ["This panel hit an error.", "Retry panel"];
       return React.createElement("div", { role: "alert", style: { padding: 8, color: "#fca5a5", fontSize: 12 }, lang }, copy[0], " ", React.createElement("button", { type: "button", onClick: () => this.setState({ failed: false }) }, copy[1]));
     }
     return this.props.children;

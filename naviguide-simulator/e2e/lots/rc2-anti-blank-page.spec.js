@@ -11,9 +11,10 @@ test("normal startup renders app content without the root fallback", async ({ pa
 
 async function openCrashProbeOrSkip(page, testInfo) {
   await page.goto("/?crashtest=root");
-  if (await page.getByTestId("root-error-fallback").count() === 0) {
+  if (await page.getByTestId("crash-probe-disabled").count() > 0) {
     test.skip(true, "Crash probe disabled; rebuild with VITE_NAVIGUIDE_CRASHTEST=1 npm run build.");
   }
+  await expect(page.getByTestId("root-error-fallback")).toBeVisible();
 }
 
 test("root error fallback is localized and reloadable when crash hooks are enabled", async ({ page }, testInfo) => {
@@ -32,4 +33,13 @@ test("root fallback follows the English app preference when crash hooks are enab
   await openCrashProbeOrSkip(page, testInfo);
   await expect(page.getByTestId("root-error-fallback")).toContainText("Something went wrong");
   await expect(page.getByTestId("root-error-reload")).toHaveText("Reload");
+});
+
+test("panel boundary contains a sidebar crash when crash hooks are enabled", async ({ page }) => {
+  await page.goto("/?crashtest=panel");
+  if (await page.getByTestId("crash-probe-disabled").count() > 0) {
+    test.skip(true, "Crash probe disabled; rebuild with VITE_NAVIGUIDE_CRASHTEST=1 npm run build.");
+  }
+  await expect(page.getByRole("alert")).toContainText("Ce panneau a rencontré une erreur");
+  await expect(page.getByRole("button", { name: "Réessayer le panneau" })).toBeVisible();
 });

@@ -19,7 +19,6 @@ captureAdminSecretFromUrl();
 
 createRoot(document.getElementById("root"), {
   onUncaughtError: (error, info) => console.error("NAVIGUIDE uncaught React error:", error, info),
-  onCaughtError: (error, info) => console.error("NAVIGUIDE caught React error:", error, info),
 }).render(
   <RootErrorBoundary>
     <StrictMode>
@@ -32,21 +31,23 @@ createRoot(document.getElementById("root"), {
 );
 
 function DevCrashProbe() {
-  if ((import.meta.env.DEV || import.meta.env.VITE_NAVIGUIDE_CRASHTEST === "1") && new URLSearchParams(window.location.search).get("crashtest") === "root") {
+  const enabled = import.meta.env.DEV || import.meta.env.VITE_NAVIGUIDE_CRASHTEST === "1";
+  if (enabled && new URLSearchParams(window.location.search).get("crashtest") === "root") {
     throw new Error("NAVIGUIDE root crash test");
   }
-  return null;
+  return enabled ? null : <span hidden data-testid="crash-probe-disabled" />;
 }
 
 window.addEventListener("vite:preloadError", (event) => {
+  event.preventDefault();
   try {
     if (shouldReloadAfterPreloadError(window.sessionStorage)) {
-      event.preventDefault();
       window.location.reload();
     } else {
       window.dispatchEvent(new Event("naviguide:preload-fatal"));
     }
   } catch (error) {
     console.error("NAVIGUIDE preload error recovery failed:", error);
+    window.dispatchEvent(new Event("naviguide:preload-fatal"));
   }
 });
