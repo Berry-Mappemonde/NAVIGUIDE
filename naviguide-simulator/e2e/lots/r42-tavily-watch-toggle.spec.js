@@ -11,24 +11,27 @@ for (const [lang, label] of [["fr", "Veille Tavily"], ["en", "Tavily watch"]]) {
     const api = await request.get(`${API}/escale/watch/settings`).catch(() => null);
     test.skip(!api?.ok(), "API hors ligne absente");
     const before = (await api.json()).enabled;
-    await page.addInitScript((l) => localStorage.setItem("naviguide_lang_v4", l), lang);
-    await page.goto("/");
-    await dismissNotForNav(page);
-    await showRightPanel(page);
-    const sw = page.getByRole("switch", { name: label });
-    await sw.scrollIntoViewIfNeeded();
-    await expect(sw).toHaveAttribute("data-testid", "tavily-watch-toggle");
-    await expect(sw).toHaveAttribute("aria-checked", String(before));
-    await sw.click();
-    await expect(sw).toHaveAttribute("aria-checked", String(!before));
-    const after = await (await request.get(`${API}/escale/watch/settings`)).json();
-    expect(after).toMatchObject({ enabled: !before, source: "setting" });
-    await page.reload();
-    await dismissNotForNav(page);
-    await showRightPanel(page);
-    await expect(page.getByTestId("tavily-watch-toggle")).toHaveAttribute("aria-checked", String(!before));
-    // Remet l'état de départ.
-    await page.getByTestId("tavily-watch-toggle").click();
-    await expect(page.getByTestId("tavily-watch-toggle")).toHaveAttribute("aria-checked", String(before));
+    try {
+      await page.addInitScript((l) => localStorage.setItem("naviguide_lang_v4", l), lang);
+      await page.goto("/");
+      await dismissNotForNav(page);
+      await showRightPanel(page);
+      const sw = page.getByRole("switch", { name: label });
+      await sw.scrollIntoViewIfNeeded();
+      await expect(sw).toHaveAttribute("data-testid", "tavily-watch-toggle");
+      await expect(sw).toHaveAttribute("aria-checked", String(before));
+      await sw.click();
+      await expect(sw).toHaveAttribute("aria-checked", String(!before));
+      const after = await (await request.get(`${API}/escale/watch/settings`)).json();
+      expect(after).toMatchObject({ enabled: !before, source: "setting" });
+      await page.reload();
+      await dismissNotForNav(page);
+      await showRightPanel(page);
+      await expect(page.getByTestId("tavily-watch-toggle")).toHaveAttribute("aria-checked", String(!before));
+    } finally {
+      // Remet le réglage serveur dans son état de départ, même si une assertion a échoué.
+      const res = await request.post(`${API}/escale/watch/settings`, { data: { enabled: before } });
+      expect(res.ok(), `restauration de la veille : HTTP ${res.status()}`).toBeTruthy();
+    }
   });
 }
