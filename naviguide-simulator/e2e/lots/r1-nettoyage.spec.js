@@ -98,9 +98,6 @@ test("Esri une fois, plus d'aide, remise du chiffre, pilules grisées", async ({
 
   const raw = page.getByTestId("film-style-raw");
   const written = page.getByTestId("film-style-written");
-  await expect(raw).toHaveClass(/disabled:opacity-30/);
-  await expect(written).toHaveClass(/disabled:opacity-30/);
-  await expect(raw).toHaveClass(/disabled:cursor-not-allowed/);
 
   const start = page.getByTestId("replay-start");
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
@@ -129,8 +126,9 @@ test("Esri une fois, plus d'aide, remise du chiffre, pilules grisées", async ({
     }
     throw new Error("Revoir n'a pas démarré alors que le film est prêt");
   }
-  await expect(raw).toBeDisabled();
-  await expect(written).toBeDisabled();
   await expect(raw).toHaveAttribute("aria-disabled", "true");
   await expect(written).toHaveAttribute("aria-disabled", "true");
+  await expect(raw).toHaveAttribute("title", /Arrêtez le film pour passer Brut\/Rédigé|Stop the film to switch Raw\/Edited/);
+  await expect(written).toHaveAttribute("title", /Arrêtez le film pour passer Brut\/Rédigé|Stop the film to switch Raw\/Edited/);
+  await expect(raw).toHaveClass(/cursor-not-allowed/);
 });

@@ -488,7 +488,13 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 {replay.writtenUnavailable ? (
                   <div className="basis-full flex items-center gap-2 text-[9px] leading-tight text-white/65">
                     <span role="status">{t("filmStoryWrittenUnavailable")}</span>
-                    <button type="button" className="underline" onClick={() => replay.onStyle?.("written")}>
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() => {
+                        if (!replay.active) replay.onStyle?.("written");
+                      }}
+                    >
                       {t("filmStoryWrittenRetry")}
                     </button>
                   </div>

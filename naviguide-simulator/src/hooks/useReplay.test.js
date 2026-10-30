@@ -1326,7 +1326,12 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(hook, /style=\$\{style\}/);
     assert.match(hook, /style=written/);
     assert.match(hook, /style=written/);
-    assert.match(hook, /fetch\(`\$\{API\}\$\{path\}\?\$\{q\}`\)/);
+    assert.match(hook, /fetch\(`\$\{API\}\$\{path\}\?\$\{q\}`, \{ method: "POST" \}\)/);
+    const chooseAt = hook.indexOf("const chooseFilmStyle");
+    const chooseBlock = hook.slice(chooseAt, hook.indexOf("return {\n    active", chooseAt));
+    assert.match(chooseBlock, /if \(active \|\| filmWritingRef\.current\) return/);
+    assert.match(chooseBlock, /filmWritingRef\.current = true/);
+    assert.match(chooseBlock, /filmWritingRef\.current = false/);
     assert.doesNotMatch(hook.slice(hook.indexOf("const chooseFilmStyle"), hook.indexOf("return {\n    active")), /if \(hasWritten\)\s*\{/);
     assert.match(hook, /chooseFilmStyle/);
     assert.match(hook, /resolveServedFilm/);
@@ -1357,12 +1362,14 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
   it("signale l’indisponibilité seulement après l’échec de toute la cascade", () => {
     assert.match(hook, /data\?\.reason === "all-providers-failed"/);
     assert.match(hook, /setWrittenUnavailable\("unavailable"\)/);
-    assert.match(hook, /\.catch\(\(\) => setWrittenUnavailable\(null\)\)/);
+    assert.match(hook, /\.catch\(\(\) => setWrittenUnavailable\("unavailable"\)\)/);
+    assert.match(hook, /if \(!data\) \{\s*setWrittenUnavailable\("unavailable"\)/);
     assert.match(hook, /writtenUnavailable,/);
     assert.match(app, /writtenUnavailable: replay\.writtenUnavailable/);
     assert.match(bar, /filmStoryWrittenUnavailable/);
     assert.match(bar, /role="status"/);
     assert.match(bar, /filmStoryWrittenRetry/);
+    assert.match(bar, /if \(!replay\.active\) replay\.onStyle\?\.\("written"\)/);
     assert.match(hook, /setWrittenUnavailable\("unavailable"\)/);
   });
 });

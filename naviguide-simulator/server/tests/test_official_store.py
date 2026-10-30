@@ -2090,7 +2090,7 @@ def test_rg11a_http_style_written(client, tmp_path, monkeypatch):
     assert raw.json()["hasWritten"] is False
 
 
-def test_written_get_runs_on_demand_cascade(tmp_path, monkeypatch):
+def test_written_get_does_not_run_on_demand_cascade(tmp_path, monkeypatch):
     store = OfficialStore(DiskBackend(tmp_path / "http-ed1"), now=lambda: NOW)
     voy = _rg11a_voy()
     official_store.reset_store()
@@ -2111,8 +2111,8 @@ def test_written_get_runs_on_demand_cascade(tmp_path, monkeypatch):
     import asyncio
     import main
     out = asyncio.run(main.get_official_film(lang="fr", seconds=150, style="written"))
-    assert out["hasWritten"] is True
-    assert calls["n"] == 1
+    assert out["hasWritten"] is False
+    assert calls["n"] == 0
 
 
 def test_ed1_write_query_runs_once_then_cache(tmp_path, monkeypatch):
@@ -2148,11 +2148,11 @@ def test_ed1_write_query_runs_once_then_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
     import asyncio
     import main
-    first = asyncio.run(main.get_official_film(lang="fr", seconds=150, style="written"))
+    first = asyncio.run(main.post_official_film_write(lang="fr", seconds=150))
     assert first["hasWritten"] is True
     assert first["source"] == official_store.WRITTEN_SOURCE
     assert calls["n"] == 1
-    second = asyncio.run(main.get_official_film(lang="fr", seconds=150, style="written"))
+    second = asyncio.run(main.post_official_film_write(lang="fr", seconds=150))
     assert second["hasWritten"] is True
     assert calls["n"] == 1
     raw = asyncio.run(main.get_official_film(lang="fr", seconds=150, style="raw"))

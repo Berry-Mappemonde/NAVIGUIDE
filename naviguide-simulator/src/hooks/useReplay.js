@@ -1142,6 +1142,7 @@ export function useReplay({
   const [filmWebContext, setFilmWebContext] = useState(null);
   const [filmReceipt, setFilmReceipt] = useState(null);
   const [filmWriting, setFilmWriting] = useState(false);
+  const filmWritingRef = useRef(false);
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
   const [writtenUnavailable, setWrittenUnavailable] = useState(null);
@@ -2284,15 +2285,17 @@ export function useReplay({
       setFilmStyle("raw");
       return;
     }
+    if (active || filmWritingRef.current) return;
+    filmWritingRef.current = true;
     const path = filmRequestPath(voyageId);
-    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=written&t0=${encodeURIComponent(t0)}`;
+    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
     setFilmWriting(true);
     setWrittenUnavailable(null);
-    fetch(`${API}${path}?${q}`)
+    fetch(`${API}${path}?${q}`, { method: "POST" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) {
-          setWrittenUnavailable(null);
+          setWrittenUnavailable("unavailable");
           return;
         }
         const resolved = resolveServedFilm(data, "written");
@@ -2308,9 +2311,12 @@ export function useReplay({
         } else if (data?.reason === "all-providers-failed") setWrittenUnavailable("unavailable");
         else setWrittenUnavailable(null);
       })
-      .catch(() => setWrittenUnavailable(null))
-      .finally(() => setFilmWriting(false));
-  }, [lang, targetSeconds, t0, voyageId]);
+      .catch(() => setWrittenUnavailable("unavailable"))
+      .finally(() => {
+        filmWritingRef.current = false;
+        setFilmWriting(false);
+      });
+  }, [active, lang, targetSeconds, t0, voyageId]);
 
   return {
     active,

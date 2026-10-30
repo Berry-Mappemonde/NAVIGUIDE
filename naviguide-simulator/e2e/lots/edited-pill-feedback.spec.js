@@ -8,21 +8,17 @@ for (const [lang, note, retry, playingTip] of [
   test(`Edited pill feedback (${lang})`, async ({ page }) => {
     let writtenRequests = 0;
     await page.route("**/voyage/official/film**", async (route) => {
-      const url = new URL(route.request().url());
-      if (url.searchParams.get("style") === "written") {
-        writtenRequests += 1;
-        const success = writtenRequests > 1;
-        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
-          status: "ready", lang, style: success ? "written" : "raw", source: success ? "nemotron-super-token-factory" : "rules",
-          hasWritten: success,
-          ...(!success ? { reason: "all-providers-failed" } : {}),
-          chapters: [{ text: "A short film for the tour.", anchors: [{ t: 0, i: 0 }] }],
-        }) });
+      if (route.request().method() !== "POST") {
+        await route.continue();
         return;
       }
+      writtenRequests += 1;
+      const success = writtenRequests > 1;
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
-        status: "ready", lang, style: "raw", hasWritten: false,
-        chapters: [{ text: "A short offline film is playing.", anchors: [{ t: 0, i: 0 }, { t: 10, i: 25 }] }],
+        status: "ready", lang, style: success ? "written" : "raw", source: success ? "nemotron-super-token-factory" : "rules",
+        hasWritten: success,
+        ...(!success ? { reason: "all-providers-failed" } : {}),
+        chapters: [{ text: "A short film for the tour.", anchors: [{ t: 0, i: 0 }] }],
       }) });
     });
     await page.goto(`/?lang=${lang}`);
