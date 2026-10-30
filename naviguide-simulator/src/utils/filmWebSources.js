@@ -15,18 +15,35 @@ function domainOf(url) {
   }
 }
 
+/** Clé de dédoublonnage (schéma/hôte minuscules, sans www., sans / final). */
+export function normalizeFilmWebSourceUrl(url) {
+  try {
+    const u = new URL(url);
+    let host = u.hostname.toLowerCase();
+    if (host.startsWith("www.")) host = host.slice(4);
+    if (!host) return "";
+    let path = u.pathname;
+    if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+    return `${u.protocol.toLowerCase()}//${host}${u.port ? `:${u.port}` : ""}${path}${u.search}`;
+  } catch {
+    return "";
+  }
+}
+
 export function publicFilmWebContext(data) {
   const ctx = data?.webContext;
   if (!ctx || typeof ctx !== "object" || ctx.basis !== "tavily") return null;
   const port = String(ctx.port || "").trim();
   const sources = [];
-  const seenUrls = new Set();
+  const seen = new Set();
   for (const row of Array.isArray(ctx.sources) ? ctx.sources : []) {
     const url = String(row?.url || "").trim();
-    if (!/^https?:\/\//i.test(url) || seenUrls.has(url)) continue;
+    if (!/^https?:\/\//i.test(url)) continue;
+    const key = normalizeFilmWebSourceUrl(url);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
     const domain = String(row?.domain || "").trim() || domainOf(url);
     if (!domain) continue;
-    seenUrls.add(url);
     sources.push({ url, domain, title: String(row?.title || "").trim() || domain });
     if (sources.length >= MAX_SOURCES) break;
   }

@@ -1154,7 +1154,12 @@ export function useReplay({
   const filmWriteGenerationRef = useRef(0);
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
+  const [filmWriteError, setFilmWriteError] = useState(false);
   const [writtenUnavailable, setWrittenUnavailable] = useState(null);
+  const filmWritePollGenRef = useRef(0);
+  const filmWritePollAbortRef = useRef(null);
+  const filmWriteStartingRef = useRef(false);
+  const filmWriteNextStepRef = useRef(async () => "stop");
   // Style du plan chargé (visite des juges, bouton Rédigé) : "written" / "raw" quand le serveur
   // a servi le style demandé, "mismatch" quand il a servi le Brut à une demande Rédigé.
   const [filmLoadedStyle, setFilmLoadedStyle] = useState("");
@@ -1455,7 +1460,7 @@ export function useReplay({
           setFilmSource(resolved.source);
           setFilmReviewedBy(resolved.reviewedBy || "");
           setFilmModel(resolved.model || "");
-          if (resolved.webContext) setFilmWebContext(resolved.webContext);
+          setFilmWebContext(resolved.webContext || null);
           setFilmReceipt(resolved.receipt || null);
         })
         .catch((err) => {
@@ -2318,10 +2323,16 @@ export function useReplay({
 
   const chooseFilmStyle = useCallback((next) => {
     if (next !== "written") {
+      // Switching back to Raw must stop an in-flight write poll even when
+      // filmStyle is already "raw" and the style effect cannot observe a change.
       filmWriteGenerationRef.current += 1;
       filmWriteRequestRef.current?.abort();
       filmWriteRequestRef.current = null;
       filmWritingRef.current = false;
+      filmWritePollGenRef.current += 1;
+      filmWritePollAbortRef.current?.abort();
+      filmWritePollAbortRef.current = null;
+      filmWriteStartingRef.current = false;
       setFilmWriting(false);
       setFilmStyle("raw");
       return;
@@ -2331,29 +2342,51 @@ export function useReplay({
       setFilmStyle("raw");
       return;
     }
+    if (hasWritten) {
+      setFilmWriting(false);
+      setFilmStyle("written");
+      return;
+    }
     if (filmWritingRef.current) return;
+    if (filmWriteStartingRef.current) return; // double-click guard
     if (active && !hasWritten) return;
     if (active) stop();
+    if (!isOfficialFilmVoyage(voyageId)) return;
+    const path = filmRequestPath(voyageId);
+    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
+    setFilmWriteError(false);
+    setWrittenUnavailable(null);
     filmWritingRef.current = true;
     const generation = ++filmWriteGenerationRef.current;
     const controller = new AbortController();
     filmWriteRequestRef.current = controller;
     const timeout = setTimeout(() => controller.abort(), 30_000);
-    const path = filmRequestPath(voyageId);
-    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=written&t0=${encodeURIComponent(t0)}`;
+    const writeGen = ++filmWritePollGenRef.current;
+    filmWriteStartingRef.current = true;
     setFilmWriting(true);
-    setWrittenUnavailable(null);
-    fetch(`${API}${path}?${q}`, { ...(hasWritten ? {} : { method: "POST" }), signal: controller.signal })
-      .then((r) => (r.ok ? r.json() : null))
+    fetch(`${API}${path}?${q}`, { method: "POST", signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error(`film write HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data) => {
         if (generation !== filmWriteGenerationRef.current) return;
+        if (writeGen !== filmWritePollGenRef.current) return;
         if (!data) {
+          // RL191: a network miss is not "unavailable"; only a cascade failure is.
           setWrittenUnavailable(null);
+          setFilmWriteError(true);
+          setFilmWriting(false);
+          return;
+        }
+        if (data?.reason === "all-providers-failed") setWrittenUnavailable("unavailable");
+        const status = String(data?.status || "").toLowerCase();
+        if (status === "writing" || data?.writing) {
+          void filmWriteNextStepRef.current();
           return;
         }
         const resolved = resolveServedFilm(data, "written");
         if (resolved.hasWritten) {
-          setWrittenUnavailable(null);
           setHasWritten(true);
           setFilmStyle("written");
           setFilmSource(resolved.source);
@@ -2361,10 +2394,22 @@ export function useReplay({
           setFilmModel(resolved.model || "");
           setFilmWebContext(resolved.webContext || null);
           setFilmReceipt(resolved.receipt || null);
-        } else if (data?.reason === "all-providers-failed") setWrittenUnavailable("unavailable");
-        else setWrittenUnavailable(null);
+          setWrittenUnavailable(null);
+          setFilmWriting(false);
+          return;
+        }
+        // A successful HTTP response can still mean that writing did not
+        // start (LLM disabled, budget exhausted, or no valid raw plan).
+        // RL191: "unavailable" only once the whole cascade failed.
+        setFilmWriteError(true);
+        setWrittenUnavailable(data?.reason === "all-providers-failed" ? "unavailable" : null);
+        setFilmWriting(false);
       })
       .catch(() => {
+        if (writeGen !== filmWritePollGenRef.current) return;
+        setFilmWriteError(true);
+        setFilmWriting(false);
+        // RL191: a network miss is not "unavailable"; only a cascade failure is.
         if (generation === filmWriteGenerationRef.current) setWrittenUnavailable(null);
       })
       .finally(() => {
@@ -2372,10 +2417,112 @@ export function useReplay({
         if (generation === filmWriteGenerationRef.current) {
           filmWriteRequestRef.current = null;
           filmWritingRef.current = false;
-          setFilmWriting(false);
+        }
+        if (writeGen === filmWritePollGenRef.current) {
+          filmWriteStartingRef.current = false;
         }
       });
   }, [active, hasWritten, lang, stop, targetSeconds, t0, voyageId]);
+
+  // filmWriteNextStep: polls GET /voyage/official/film?style=written every 4s, up to 10min
+  const filmWriteNextStep = useCallback(async () => {
+    if (!isOfficialFilmVoyage(voyageId)) return "stop";
+
+    const gen = ++filmWritePollGenRef.current;
+    filmWritePollAbortRef.current?.abort();
+    const ac = new AbortController();
+    filmWritePollAbortRef.current = ac;
+    const path = filmRequestPath(voyageId);
+    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=written&t0=${encodeURIComponent(t0)}`;
+    const maxAttempts = 150; // 4s * 150 = 600s = 10min
+    let attempts = 0;
+
+    const sleep = (ms) => new Promise((resolve, reject) => {
+      const id = setTimeout(resolve, ms);
+      ac.signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(id);
+          reject(new DOMException("aborted", "AbortError"));
+        },
+        { once: true },
+      );
+    });
+
+    try {
+      while (attempts < maxAttempts) {
+      if (gen !== filmWritePollGenRef.current) return "stop";
+      try {
+        await sleep(4000);
+      } catch (err) {
+        if (err?.name === "AbortError") return "stop";
+        throw err;
+      }
+      attempts++;
+      if (gen !== filmWritePollGenRef.current) return "stop";
+
+      try {
+        const res = await fetch(`${API}${path}?${q}`, { signal: ac.signal });
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (!data) continue;
+
+        const status = data?.status?.toLowerCase();
+        if (status === "preparing") continue;
+        if (status === "failed") {
+          setFilmWriteError(true);
+          setWrittenUnavailable("unavailable");
+          setFilmWriting(false);
+          return "stop";
+        }
+
+        const resolved = resolveServedFilm(data, "written");
+        if (resolved.hasWritten) {
+          setHasWritten(true);
+          setFilmStyle("written");
+          setFilmSource(resolved.source);
+          setFilmReviewedBy(resolved.reviewedBy || "");
+          setFilmModel(resolved.model || "");
+          setFilmWebContext(resolved.webContext || null);
+          setFilmReceipt(resolved.receipt || null);
+          setFilmWriteError(false);
+          setWrittenUnavailable(null);
+          setFilmWriting(false);
+          return "ready";
+        }
+        if (resolved.effectiveStyle === "raw" && data.hasWritten === false) {
+          // still writing
+          continue;
+        }
+      } catch (err) {
+        if (err?.name === "AbortError") return "stop";
+        // ignore network errors, keep polling
+      }
+    }
+      if (gen !== filmWritePollGenRef.current) return "stop";
+      setFilmWriteError(true);
+      setWrittenUnavailable("unavailable");
+      setFilmWriting(false);
+      return "stop";
+    } finally {
+      if (gen === filmWritePollGenRef.current) {
+        filmWriteStartingRef.current = false;
+      }
+    }
+  }, [lang, targetSeconds, t0, voyageId]);
+
+  filmWriteNextStepRef.current = filmWriteNextStep;
+
+  useEffect(() => {
+    filmWritePollGenRef.current += 1;
+    filmWritePollAbortRef.current?.abort();
+    return () => {
+      filmWritePollGenRef.current += 1;
+      filmWritePollAbortRef.current?.abort();
+      filmWritePollAbortRef.current = null;
+      filmWriteStartingRef.current = false;
+    };
+  }, [voyageId, lang, targetSeconds, t0, filmStyle]);
 
   return {
     active,
@@ -2426,8 +2573,10 @@ export function useReplay({
     filmWebContext,
     filmReceipt,
     filmWriting,
+    filmWriteError,
     filmStyle,
     setFilmStyle: chooseFilmStyle,
+    filmWriteNextStep,
     hasWritten,
     writtenUnavailable,
     filmLoadedStyle,

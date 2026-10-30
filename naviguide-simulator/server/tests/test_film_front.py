@@ -25,6 +25,17 @@ def test_film_returns_the_snapshot(monkeypatch):
     assert res.json()["lang"] == "en"
 
 
+def test_film_missing_lang_defaults_to_french(monkeypatch):
+    monkeypatch.setattr(
+        film_front.official_store,
+        "serve_film",
+        lambda **kwargs: {"status": "ready", "chapters": [], "lang": kwargs["lang"]},
+    )
+    res = TestClient(film_front.app).get("/voyage/official/film")
+    assert res.status_code == 200
+    assert res.json()["lang"] == "fr"
+
+
 def test_clock_returns_the_stored_bytes(monkeypatch):
     monkeypatch.setattr(film_front.official_store, "serve_clock_bytes", lambda: b'{"t":1}')
     client = TestClient(film_front.app)
@@ -94,7 +105,7 @@ def test_post_film_calls_the_chain_and_is_not_405(tmp_path, monkeypatch):
     store.put("film", _one_chapter_film(), store.family_key("film", voy, NOW))
     calls = {"n": 0}
 
-    async def fake_chain(plan, *, seconds=150, cascade=None):
+    async def fake_chain(plan, *, seconds=150, cascade=None, **kwargs):
         calls["n"] += 1
         written = {
             "chapters": list(plan.get("chapters") or []),
@@ -109,6 +120,11 @@ def test_post_film_calls_the_chain_and_is_not_405(tmp_path, monkeypatch):
         }
 
     monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
+
+    async def _noop_attach(**_kw):
+        return None
+
+    monkeypatch.setattr(official_store, "attach_film_web_context", _noop_attach)
     client = TestClient(film_front.app)
 
     denied = client.post("/voyage/official/film?lang=fr&seconds=101")
@@ -119,18 +135,26 @@ def test_post_film_calls_the_chain_and_is_not_405(tmp_path, monkeypatch):
     assert first.status_code != 405
     assert first.status_code == 200
     body = first.json()
-    assert body["hasWritten"] is True
-    assert body["source"] == official_store.WRITTEN_SOURCE
-    assert calls["n"] == 1
+    # Async contract: first POST returns writing=True, hasWritten=True immediately
+    # (In tests, the task runs synchronously, so calls["n"] becomes 1 immediately)
+    assert body["writing"] is True
+    assert body["hasWritten"] is False
+    assert body["status"] == "writing"
 
+    # Second POST: task completed (sync in test), so cached written film is served
     second = client.post("/voyage/official/film?lang=fr&seconds=150")
     assert second.status_code == 200
-    assert second.json()["hasWritten"] is True
+    second_body = second.json()
+    assert second_body["hasWritten"] is True
+    assert second_body["status"] == "ready"
+    # calls["n"] should not increase on second POST (no duplicate)
     assert calls["n"] == 1
 
+    # Poll GET — write has completed (sync in test)
     got = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
     assert got.status_code == 200
     assert got.json()["hasWritten"] is True
+    assert got.json()["source"] == official_store.WRITTEN_SOURCE
     assert calls["n"] == 1
 
 
@@ -165,7 +189,7 @@ def test_main_post_film_generation_exception_has_unavailable_reason(monkeypatch)
     async def fail_write(**_kwargs):
         raise RuntimeError("synthetic generation failure")
 
-    monkeypatch.setattr(main_official_store, "write_film_on_click", fail_write)
+    monkeypatch.setattr(main_official_store, "start_film_write", fail_write)
     monkeypatch.setattr(main_official_store, "kick_worker", lambda: None)
     response = asyncio.run(main.post_official_film_write(lang="fr", seconds=150))
     assert response["status"] == "preparing"

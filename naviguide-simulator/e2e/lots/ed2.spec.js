@@ -110,6 +110,7 @@ test("EN, Follow, Replay, Written: text label, no third-party logo", async ({ pa
   await expect(written).toBeEnabled({ timeout: 15_000 });
   await written.click();
   const source = page.getByTestId("film-source");
+  // Accept both "Writing…" (ed2WritingNemotron) and "Waiting for writing…" (ed2WritingWait)
   await expect(source).toContainText(/Writing…|Waiting for writing…/, { timeout: 2_000 });
   await expect(source).not.toContainText(/Nemotron|NIM|OpenRouter|Claude|Token Factory|Nebius/i);
   await expect(source).toContainText("AI-generated content", { timeout: 8_000 });

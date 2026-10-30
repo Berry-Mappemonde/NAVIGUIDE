@@ -1,8 +1,8 @@
 """Script du film 2:30 — brut (règles), sélection, version rédigée.
 
 Le LLM ne produit jamais un nombre : `filter_numbers` + balises `[[ev:id]]`.
-Rédigé **au clic** Rédigé : Super écrit le français ; Ultra édite
-puis juge si le plafond juge est ouvert ; Lightning traduit. GET et
+Rédigé **au clic** Rédigé : Super écrit le FR et l'EN en parallèle (brut
+de chaque langue) ; Ultra édite puis juge le FR si le plafond juge est ouvert. GET et
 `warm_film_story` ne lancent aucun modèle. Repli : le brut.
 
 Au recalcul du stock, VL propose des ids du sac ;
@@ -12,6 +12,7 @@ Suivre ne rappelle rien.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
@@ -12781,15 +12782,16 @@ def _plan_digits_for_speech(plan: dict, raw_plan: dict, lang: str = "fr") -> dic
     return {**plan, "chapters": chapters}
 
 
-async def write_film_chain(
+async def _write_film_single(
     plan: dict,
     *,
-    seconds: Any = 150,
-    cascade: Callable = cascade_text,
-) -> tuple[Optional[dict], Optional[dict], dict[str, Any]]:
-    """Au clic : Super FR, puis Ultra édite + juge si plafond ouvert, puis Lightning EN."""
+    lang: str,
+    seconds: Any,
+    cascade: Callable,
+) -> tuple[Optional[dict], dict[str, Any]]:
+    """Rédige un film dans une langue (Super, Ultra si FR, relecture). Sans traduction."""
     stats: dict[str, Any] = {
-        "super": 0, "ultra_edit": 0, "ultra_judge": 0, "lightning": 0,
+        "super": 0, "ultra_edit": 0, "ultra_judge": 0,
         "source": "rules", "reviewed": False,
     }
     raw = dict(plan)
@@ -12798,21 +12800,22 @@ async def write_film_chain(
     if secs == 150:
         full_raw = {**raw, "targetSeconds": 0}
         super_plan, super_stats = await write_stored_plan(
-            full_raw, lang="fr", cascade=cascade, seconds=0,
+            full_raw, lang=lang, cascade=cascade, seconds=0,
         )
     else:
+        full_raw = raw
         super_plan, super_stats = await write_stored_plan(
-            raw, lang="fr", cascade=cascade, seconds=seconds,
+            raw, lang=lang, cascade=cascade, seconds=seconds,
         )
-    # Reçu du film (idée n° 3) : phrases réécrites / retombées sur les règles, mesurées.
     stats["rewritten"] = int((super_stats or {}).get("rewritten") or 0)
     stats["fallen"] = int((super_stats or {}).get("fallen") or 0)
     if super_plan is None or int((super_stats or {}).get("rewritten") or 0) <= 0:
-        return None, None, stats
+        return None, stats
     stats["super"] = 1
-    super_plan = _plan_digits_for_speech(super_plan, full_raw if secs == 150 else raw)
+    ref_raw = full_raw if secs == 150 else raw
+    super_plan = _plan_digits_for_speech(super_plan, ref_raw, lang)
     if secs == 150:
-        super_plan = condense_written_plan(super_plan, 150, lang="fr")
+        super_plan = condense_written_plan(super_plan, 150, lang=lang)
     origin = public_written_source(super_plan.get("source") or (super_stats or {}).get("source"))
     if origin == WRITTEN_SOURCE:
         stats["source"] = WRITTEN_SOURCE
@@ -12825,21 +12828,16 @@ async def write_film_chain(
         model = nim_name if (origin or "") == nim_source else (origin or None)
         accepted = _stamp_written_plan(super_plan, origin or "rules", seconds, model=model)
 
-    ref_raw = full_raw if secs == 150 else raw
-    if film_ultra_open():
+    if _en(lang) is False and film_ultra_open():
         edited = await edit_written_once(accepted, ref_raw, cascade=cascade)
         stats["ultra_edit"] = 1
         if edited and secs == 150:
-            # Ultra relit contre l'intégral : il peut rallonger, on retient le débit mesuré.
-            edited = condense_written_plan(edited, 150, lang="fr")
-        edited = _dedupe_plan(edited, ref_raw, "fr")
+            edited = condense_written_plan(edited, 150, lang=lang)
+        edited = _dedupe_plan(edited, ref_raw, lang)
         if edited:
             failed = await judge_written_chapters(edited, cascade=cascade, raw_plan=ref_raw)
             stats["ultra_judge"] = 1
             if failed:
-                # Un seul chapitre refusé (« Text omits projects… ») laissait tout le
-                # film sans relecture : on reprend Super sur ces chapitres et Ultra
-                # les rejuge ; le film n'est relu que si tout passe.
                 stats["judge_failed"] = list(failed)
                 edited = _restore_chapters(edited, accepted, failed)
                 again = await judge_written_chapters(
@@ -12847,8 +12845,7 @@ async def write_film_chain(
                 )
                 failed = again if again is not None else None
                 if failed and secs != 150:
-                    # Super omettait aussi : le chapitre brut (la référence même du juge).
-                    raw_digits = _plan_digits_for_speech(ref_raw, ref_raw)
+                    raw_digits = _plan_digits_for_speech(ref_raw, ref_raw, lang)
                     edited = _restore_chapters(edited, raw_digits, failed)
                     again = await judge_written_chapters(
                         edited, cascade=cascade, raw_plan=ref_raw, only=set(failed),
@@ -12865,40 +12862,65 @@ async def write_film_chain(
                 stats["reviewed"] = True
                 stats["source"] = WRITTEN_SOURCE
 
-    accepted = _dedupe_plan(accepted, ref_raw, "fr")
-    accepted = _polish_written_plan(accepted, ref_raw, "fr")
+    accepted = _dedupe_plan(accepted, ref_raw, lang)
+    accepted = _polish_written_plan(accepted, ref_raw, lang)
     if secs == 150:
-        # Dernier passage au débit mesuré : rien ne doit rallonger le 2:30 après Ultra.
-        accepted = {**condense_written_plan(accepted, 150, lang="fr"), "targetSeconds": accepted.get("targetSeconds", 150)}
+        accepted = {
+            **condense_written_plan(accepted, 150, lang=lang),
+            "targetSeconds": accepted.get("targetSeconds", 150),
+        }
     stops = _route_stops_for_reread(raw)
-    ok_fr, review_fr = await reread_before_store(accepted, stops, cascade=cascade, lang="fr")
-    stats["reread"] = "pass" if ok_fr else "fail"
-    stats["rereadBy"] = str(review_fr.get("source") or "")
-    if not ok_fr:
-        stats["faults"] = review_fr.get("faults") or []
-        return None, None, stats
+    ok, review = await reread_before_store(accepted, stops, cascade=cascade, lang=lang)
+    stats["reread"] = "pass" if ok else "fail"
+    stats["rereadBy"] = str(review.get("source") or "")
+    if not ok:
+        stats["faults"] = review.get("faults") or []
+        return None, stats
+    return accepted, stats
 
-    en_plan = await translate_written_plan(accepted, ref_raw, cascade=cascade)
-    if en_plan and secs == 150:
-        # Lightning rallonge parfois : l'anglais tient lui aussi dans 2:30.
-        en_plan = condense_written_plan(en_plan, 150, lang="en")
-    if en_plan:
-        en_plan = _stamp_written_plan(
-            en_plan,
-            accepted.get("source") or WRITTEN_SOURCE,
-            seconds,
-            reviewed_by=accepted.get("reviewedBy"),
-            model=accepted.get("model"),
+
+async def write_film_chain(
+    plan: dict,
+    *,
+    seconds: Any = 150,
+    cascade: Callable = cascade_text,
+    lang: str = "fr",
+    en_raw: dict | None = None,
+) -> tuple[Optional[dict], Optional[dict], dict[str, Any]]:
+    """Au clic : rédaction directe FR et EN en parallèle (brut EN), jamais traduite du FR."""
+    stats: dict[str, Any] = {
+        "super": 0, "ultra_edit": 0, "ultra_judge": 0, "lightning": 0,
+        "source": "rules", "reviewed": False,
+    }
+    if _en(lang):
+        en_plan, en_stats = await _write_film_single(plan, lang="en", seconds=seconds, cascade=cascade)
+        stats.update(en_stats)
+        if en_plan:
+            stats["lightning"] = 1
+        return None, en_plan, stats
+
+    en_payload = en_raw if isinstance(en_raw, dict) and (en_raw.get("chapters") or []) else None
+    if en_payload:
+        en_payload = {
+            **en_payload,
+            "targetSeconds": _film_seconds(seconds if seconds is not None else plan.get("targetSeconds")),
+        }
+        (fr_plan, fr_stats), (en_plan, en_stats) = await asyncio.gather(
+            _write_film_single(plan, lang="fr", seconds=seconds, cascade=cascade),
+            _write_film_single(en_payload, lang="en", seconds=seconds, cascade=cascade),
         )
-        stats["lightning"] = 1
-        ok_en, review_en = await reread_before_store(en_plan, stops, cascade=cascade, lang="en")
-        stats["reread_en"] = "pass" if ok_en else "fail"
-        stats["rereadBy_en"] = str(review_en.get("source") or "")
-        if not ok_en:
-            stats["faults"] = review_en.get("faults") or []
-            stats["lightning"] = 0
-            en_plan = None
-    return accepted, en_plan, stats
+        stats.update(fr_stats)
+        if en_plan:
+            stats["lightning"] = 1
+            stats["reread_en"] = en_stats.get("reread")
+            stats["rereadBy_en"] = en_stats.get("rereadBy")
+        else:
+            stats["faults"] = en_stats.get("faults") or stats.get("faults")
+        return fr_plan, en_plan, stats
+
+    fr_plan, fr_stats = await _write_film_single(plan, lang="fr", seconds=seconds, cascade=cascade)
+    stats.update(fr_stats)
+    return fr_plan, None, stats
 
 
 def _public_plan(plan: dict, source: str) -> dict:

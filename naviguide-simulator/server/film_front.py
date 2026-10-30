@@ -77,7 +77,7 @@ async def post_official_film(
     if int(seconds) not in official_store.FILM_VARIANT_SECONDS:
         raise HTTPException(422, "unsupported film duration")
     try:
-        out = await official_store.write_film_on_click(lang=lang, seconds=seconds)
+        out = await official_store.start_film_write(lang=lang, seconds=seconds)
     except Exception as exc:
         log.exception("POST /voyage/official/film")
         official_store.nudge_fill_process()
