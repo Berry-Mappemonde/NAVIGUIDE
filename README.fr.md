@@ -118,7 +118,7 @@ Tavily est appelé à l’exécution à trois endroits qu’un visiteur atteint 
 
 La veille d’escale ci-dessous est un travail serveur distinct.
 
-La veille est un travail du serveur. Elle est **allumée par défaut** (`NAVIGUIDE_TAVILY_WATCH=1` si la variable est absente, `0` la coupe). L’interrupteur « Veille Tavily » des réglages, dans la barre de droite, l’allume ou la coupe sur le serveur (clé admin requise) ; ce choix est gardé et l’emporte sur la variable. Allumée, elle couvre une escale de 10 jours avant l’arrivée jusqu’à 2 jours après, au plus deux tours, une fois par escale. Lightning écrit une phrase à partir des extraits. S’il faut un second tour, le palier `nano` (Lightning) choisit un id restant dans une liste fixe. Il n’invente pas de question. Plafonds, sauf surcharge : 2 recherches par escale, 6 recherches par jour, 80 crédits Tavily par jour. La carte datée, quand une veille est gardée et pas expirée, s’intitule `{name} · veille du {date}`.
+La veille est un travail du serveur. Elle est **allumée par défaut** (`NAVIGUIDE_TAVILY_WATCH=1` si la variable est absente, `0` la coupe). Elle tourne aussi pendant le préchauffage du serveur (`ici_warm.py`). L’interrupteur « Veille Tavily » des réglages, dans la barre de droite, l’allume ou la coupe sur le serveur (clé admin requise) ; ce choix est gardé et l’emporte sur la variable. Allumée, elle couvre une escale de 10 jours avant l’arrivée jusqu’à 2 jours après, au plus deux tours, une fois par escale. Lightning écrit une phrase à partir des extraits. S’il faut un second tour, le palier `nano` (Lightning) choisit un id restant dans une liste fixe. Il n’invente pas de question. Plafonds, sauf surcharge : 2 recherches par escale, 6 recherches par jour, 80 crédits Tavily par jour. La carte datée, quand une veille est gardée et pas expirée, s’intitule `{name} · veille du {date}`.
 
 Le juge séparé « relire la page officielle du port » est éteint tant que `NAVIGUIDE_TRUTH_JUDGE` n’est pas `1`.
 
@@ -145,8 +145,6 @@ Gouvernance des modèles : [naviguide-simulator/docs/AI_GOVERNANCE.md](naviguide
 
 ## Lancer en local
 
-### Lancer en local
-
 Depuis la racine du dépôt, utilisez Node.js 24 et Python 3.12. Dans un premier terminal :
 
 ```bash
@@ -154,11 +152,12 @@ cd naviguide-simulator
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r server/requirements.txt
+export NEBIUS_API_KEY=votre_cle_token_factory
 export NVIDIA_API_KEY=votre_cle_nim
-env -u NEBIUS_API_KEY npm run server
+npm run server
 ```
 
-`NVIDIA_API_KEY` active NVIDIA NIM en développement. Il sert `openai/gpt-oss-20b` comme repli à `https://integrate.api.nvidia.com/v1` ; ce modèle n’est pas Nemotron. Token Factory (`NEBIUS_API_KEY`) est facultatif en production. Ses paliers utilisent Lightning pour `nano` et `fast`, Super VL pour `write`, et Ultra pour `deep` et `judge`. `TAVILY_API_KEY` est facultative ; sans elle, les sources web sont absentes.
+Token Factory (`NEBIUS_API_KEY`) est le premier fournisseur de la cascade par défaut : Token Factory → NVIDIA NIM → OpenRouter → Claude, avec le repli après expiration activé par défaut. `NVIDIA_API_KEY` active le repli NVIDIA NIM, qui sert `openai/gpt-oss-20b` à `https://integrate.api.nvidia.com/v1` ; ce modèle n’est pas Nemotron. Token Factory sert Lightning pour `nano` et `fast`, Super VL pour `write`, et Ultra pour `deep` et `judge`. `TAVILY_API_KEY` est facultative. La veille Tavily est activée par défaut, mais sans cette clé ses requêtes ne font aucun appel réseau et les sources web sont indisponibles.
 
 Pour lancer le stock figé sans clé de modèle ni clé web, omettez la ligne `export` et démarrez plutôt l’API ainsi :
 

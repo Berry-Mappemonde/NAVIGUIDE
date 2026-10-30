@@ -247,9 +247,8 @@ export function isReadyRemoteFilm(data, { official = true } = {}) {
   return String(data.status || "").toLowerCase() === "ready" && Boolean(data.chapters?.length);
 }
 
-/** preparing : relire toutes les 10 s, au plus 2 min, puis arrêt poli. */
+/** Tant que le serveur répond preparing, relire toutes les 10 s. */
 export const FILM_PREPARE_POLL_MS = 10_000;
-export const FILM_PREPARE_MAX_MS = 120_000;
 
 /**
  * Revoir en Suivre : horloge officielle + /film RE7 de ce checkout.
@@ -1165,6 +1164,7 @@ export function useReplay({
   // français (spec rb5 / ra2 en CI, 28 sept.).
   const remotePlanKeyRef = useRef("");
   const [remoteStatus, setRemoteStatus] = useState("pending");
+  const [filmLoadAttempt, setFilmLoadAttempt] = useState(0);
   const remoteStatusRef = useRef("pending");
   const setFilmStatus = useCallback((s) => {
     remoteStatusRef.current = s;
@@ -1341,11 +1341,12 @@ export function useReplay({
     let cancelled = false;
     let retryTimer = 0;
     const ac = new AbortController();
+    let requestTimer = 0;
+    let requestTimedOut = false;
     const official = isOfficialFilmVoyage(voyageId);
     const path = filmRequestPath(voyageId);
     const style = filmRequestStyle(filmStyle);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=${style}&t0=${encodeURIComponent(t0)}`;
-    let prepareStarted = 0;
 
     const applyEstimates = (data) => {
       const chapters = data?.chapters || [];
@@ -1473,6 +1474,7 @@ export function useReplay({
           return r.json().then((data) => ({ data })).catch(() => ({ fail: true }));
         })
         .then((pack) => {
+          clearTimeout(requestTimer);
           if (cancelled || ac.signal.aborted) return;
           if (!pack || pack.fail) {
             markAbsent();
@@ -1481,11 +1483,7 @@ export function useReplay({
           const applied = applyData(pack.data);
           if (applied === "over-budget") return;
           if (applied === "preparing") {
-            const now = Date.now();
-            if (!prepareStarted) prepareStarted = now;
-            if (now - prepareStarted < FILM_PREPARE_MAX_MS) {
-              retryTimer = setTimeout(load, FILM_PREPARE_POLL_MS);
-            }
+            retryTimer = setTimeout(load, FILM_PREPARE_POLL_MS);
             return;
           }
           if (applied) {
@@ -1496,9 +1494,20 @@ export function useReplay({
           retryTimer = setTimeout(load, 2000);
         })
         .catch((err) => {
-          if (err?.name === "AbortError" || cancelled || ac.signal.aborted) return;
+          clearTimeout(requestTimer);
+          if (cancelled) return;
+          if (requestTimedOut) {
+            setFilmStatus("timeout");
+            return;
+          }
+          if (err?.name === "AbortError" || ac.signal.aborted) return;
           markAbsent();
         });
+      requestTimedOut = false;
+      requestTimer = setTimeout(() => {
+        requestTimedOut = true;
+        ac.abort();
+      }, 30_000);
     };
 
     load();
@@ -1506,8 +1515,11 @@ export function useReplay({
       cancelled = true;
       ac.abort();
       clearTimeout(retryTimer);
+      clearTimeout(requestTimer);
     };
-  }, [enabled, lang, targetSeconds, filmStyle, t0, voyageId, setFilmStatus]);
+  }, [enabled, lang, targetSeconds, filmStyle, t0, voyageId, setFilmStatus, filmLoadAttempt]);
+
+  const retryFilmLoad = useCallback(() => setFilmLoadAttempt((n) => n + 1), []);
 
   const canStart = canStartOfficialReplay({
     requireOfficialFilm,
@@ -2344,7 +2356,8 @@ export function useReplay({
         if (generation !== filmWriteGenerationRef.current) return;
         if (writeGen !== filmWritePollGenRef.current) return;
         if (!data) {
-          setWrittenUnavailable("unavailable");
+          // RL191: a network miss is not "unavailable"; only a cascade failure is.
+          setWrittenUnavailable(null);
           setFilmWriteError(true);
           setFilmWriting(false);
           return;
@@ -2370,15 +2383,17 @@ export function useReplay({
         }
         // A successful HTTP response can still mean that writing did not
         // start (LLM disabled, budget exhausted, or no valid raw plan).
+        // RL191: "unavailable" only once the whole cascade failed.
         setFilmWriteError(true);
-        setWrittenUnavailable("unavailable");
+        setWrittenUnavailable(data?.reason === "all-providers-failed" ? "unavailable" : null);
         setFilmWriting(false);
       })
       .catch(() => {
         if (writeGen !== filmWritePollGenRef.current) return;
         setFilmWriteError(true);
         setFilmWriting(false);
-        if (generation === filmWriteGenerationRef.current) setWrittenUnavailable("unavailable");
+        // RL191: a network miss is not "unavailable"; only a cascade failure is.
+        if (generation === filmWriteGenerationRef.current) setWrittenUnavailable(null);
       })
       .finally(() => {
         clearTimeout(timeout);
@@ -2544,6 +2559,7 @@ export function useReplay({
     canStart,
     seekChapter,
     remoteStatus,
+    retryFilmLoad,
     estimatedSeconds,
     variantEstimates,
     filmParagraphs,

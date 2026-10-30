@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Clapperboard, Maximize2, Minimize2, Pause, Play } from "lucide-react";
+import { Clapperboard, LoaderCircle, Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { filmBarEdgeStyle, readViewportWidth } from "../utils/filmBarLayout.js";
 import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
@@ -183,6 +183,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
           type="button"
           data-testid="show-film-bar"
           onClick={() => onHideBar?.(false)}
+          aria-label={t("showFilmBar")}
           className="mx-auto block px-2 py-1 rounded-md text-[10px] font-semibold bg-slate-950/80 border border-white/15 text-white/80"
         >
           {t("showFilmBar")}
@@ -293,6 +294,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             type="button"
             onClick={onBarClick}
             disabled={!showPlaybackControls}
+            aria-label={showPlaybackControls ? t("filmScrub") : undefined}
             className="absolute inset-0 w-full h-full rounded-full"
             title={showPlaybackControls ? t("filmScrub") : undefined}
           >
@@ -321,6 +323,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     : "bg-transparent border-cyan-200"
                 }`}
                 style={{ left: `${left}%` }}
+                aria-label={ev.phrase || ev.type}
                 title={ev.phrase || ev.type}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -412,6 +415,22 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             />
             {replay && !replay.unavailable ? (
               <>
+                {replay.remoteStatus && replay.remoteStatus !== "ready" ? (
+                  <div
+                    data-testid="film-load-status"
+                    role={replay.writtenUnavailable ? undefined : "status"}
+                    aria-live="polite"
+                    className="flex min-w-0 max-w-full items-center gap-1 text-[10px] text-white/65"
+                  >
+                    {replay.remoteStatus === "pending" || replay.remoteStatus === "preparing" ? (
+                      <LoaderCircle size={11} className="animate-spin shrink-0" aria-hidden="true" />
+                    ) : null}
+                    <span className="min-w-0 truncate">{t({ pending: "filmLoadPending", preparing: "filmLoadPreparing", empty: "filmLoadEmpty", absent: "filmLoadError", timeout: "filmLoadTimeout", stale: "filmLoadStale" }[replay.remoteStatus] || "filmLoadPending")}</span>
+                    {["empty", "absent", "timeout", "stale"].includes(replay.remoteStatus) && replay.onRetryLoad ? (
+                      <button type="button" data-testid="film-load-retry" className="underline" onClick={replay.onRetryLoad}>{t("filmLoadRetry")}</button>
+                    ) : null}
+                  </div>
+                ) : null}
                 {replay.writing ? (
                   <div
                     data-testid="film-source"
@@ -641,6 +660,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 <button
                   type="button"
                   onClick={onTogglePlay}
+                  aria-label={playing ? t("pause") : t("play")}
                   className="w-7 h-6 rounded-md bg-cyan-600 hover:bg-cyan-500 flex items-center justify-center"
                   title={playing ? t("pause") : t("play")}
                 >
