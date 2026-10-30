@@ -35,7 +35,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from admin_guard import rate_limited
+from admin_guard import rate_limited, require_admin
 from ici_engine import fill_dossier, haversine_nm
 from ici_layers import _overpass_elements, _overpass_latlon
 from ai_transparency import with_ai_transparency
@@ -522,6 +522,32 @@ def _schedule_escale_watch(name: str, lat: float, lon: float) -> None:
     except RuntimeError:
         _INFLIGHT.discard(key)
         log.debug("veille non planifiée : %s", key)
+
+
+@router.get("/escale/watch/settings")
+async def get_watch_settings():
+    """R42 : état de la veille Tavily (interrupteur des réglages) et défaut du poste."""
+    import escale_watch  # noqa: PLC0415
+    return escale_watch.watch_settings()
+
+
+@router.post("/escale/watch/settings", dependencies=[Depends(require_admin)])
+async def post_watch_settings(body: dict[str, Any]):
+    """R42 : allume ou coupe la veille Tavily côté serveur (gardé dans pearl_store)."""
+    import escale_watch  # noqa: PLC0415
+    enabled = (body or {}).get("enabled")
+    if enabled is not None and not isinstance(enabled, bool):
+        raise HTTPException(400, "enabled (booléen ou null) requis")
+    escale_watch.set_watch_override(enabled)
+    try:
+        import ici_warm  # noqa: PLC0415
+        if escale_watch.watch_enabled():
+            ici_warm.ensure_watch_loop()
+        else:
+            ici_warm.cancel_watch_loop()
+    except Exception as exc:
+        log.debug("boucle veille : %s", exc)
+    return escale_watch.watch_settings()
 
 
 @router.get("/escale", dependencies=[Depends(_escale_limited)])

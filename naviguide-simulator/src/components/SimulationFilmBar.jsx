@@ -13,7 +13,7 @@ import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
 import { isKeyboardClick, scrubKeyTarget } from "./filmScrub.js";
 import { filmDurationClass, filmDurationPill } from "../engine/playSpeeds.js";
-import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle, writtenPillEnabled } from "../hooks/useReplay.js";
+import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle } from "../hooks/useReplay.js";
 
 function filmPill(replay, sec) {
   return filmDurationPill({ seconds: sec, active: replay?.active, estimates: replay?.variantEstimates });
@@ -207,6 +207,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     <div
       ref={rootRef}
       data-testid="film-bar"
+      data-tour="film"
       data-drawing={drawing ? "1" : undefined}
       className="absolute bottom-5 z-[2020] pointer-events-auto"
       style={edge}
@@ -470,21 +471,18 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 {replay.receipt && !replay.writing && (replay.style || "raw") === "written" && replay.hasWritten ? (
                   <FilmReceipt
                     receipt={replay.receipt}
-                    webSourceCount={replay.webContext?.sources?.length || 0}
+                    webSourceCount={replay.receipt.webSourceCount ?? (replay.webContext?.sources?.length || 0)}
                     t={t}
                     lang={lang}
                   />
                 ) : null}
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
                   {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => {
-                    const filmReady = replay.remoteStatus === "ready" || replay.remoteStatus === "stale";
-                    const canWrite = writtenPillEnabled({
-                      hasWritten: replay.hasWritten,
-                      filmReady,
-                      customFilm: replay.customFilm,
-                    });
-                    const writtenSoon = id === "written" && !canWrite;
-                    const locked = Boolean(replay.active) || writtenSoon;
+                    const locked = Boolean(replay.active);
+                    const lockTitle = replay.active
+                      ? t("filmStoryLockedPlaying")
+                      : id === "written" && replay.writtenUnavailable
+                        ? t("filmStoryWrittenUnavailable") : undefined;
                     return (
                     <button
                       key={id}
@@ -492,13 +490,12 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                       data-testid={`film-style-${id}`}
                       aria-pressed={(replay.style || "raw") === id}
                       aria-disabled={locked}
-                      disabled={locked}
-                      title={writtenSoon ? t("filmStoryWrittenSoon") : undefined}
+                      title={lockTitle}
                       onClick={() => {
-                        if (writtenSoon) return;
+                        if (locked) return;
                         replay.onStyle?.(id);
                       }}
-                      className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed ${
+                      className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${locked ? "opacity-40 cursor-not-allowed" : ""} ${
                         (replay.style || "raw") === id
                           ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
                           : "text-white/70 hover:text-white border border-transparent"
@@ -509,6 +506,20 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     );
                   })}
                 </div>
+                {replay.writtenUnavailable ? (
+                  <div className="basis-full flex items-center gap-2 text-[9px] leading-tight text-white/65">
+                    <span role="status">{t("filmStoryWrittenUnavailable")}</span>
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() => {
+                        if (!replay.active) replay.onStyle?.("written");
+                      }}
+                    >
+                      {t("filmStoryWrittenRetry")}
+                    </button>
+                  </div>
+                ) : null}
               </>
             ) : null}
             {onView ? (
