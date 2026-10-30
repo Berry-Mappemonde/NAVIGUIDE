@@ -574,6 +574,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
           rounded-full w-9 h-9 flex items-center justify-center shadow-lg
           border border-slate-700
           hover:bg-slate-800 transition-all duration-300 ${open ? "right-[322px]" : "right-4"}`}
+        aria-label={open ? t("hideToolsPanel") : t("showToolsPanel")}
         title={open ? t("hideToolsPanel") : t("showToolsPanel")}
       >
         {open ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
