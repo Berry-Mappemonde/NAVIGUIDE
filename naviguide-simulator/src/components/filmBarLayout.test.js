@@ -65,6 +65,13 @@ describe("film bar layout", () => {
     assert.match(bar, /rounded-md text-\[9px\] font-semibold border whitespace-nowrap/);
   });
 
+  it("garde Revoir au-dessus des commandes de lecture quand leurs zones se chevauchent", () => {
+    const startAt = firstIndex(bar, /data-testid="replay-start"/);
+    const startButton = bar.slice(bar.lastIndexOf("<button", startAt), bar.indexOf(">", startAt));
+    assert.match(startButton, /className="relative z-10 /);
+    assert.match(bar, /data-testid="prev-stop"/);
+  });
+
   it("garde les commandes existantes hors le doublon son", () => {
     assert.match(bar, /t\("cinema"\)/);
     assert.match(bar, /t\("hideFilmBar"\)/);

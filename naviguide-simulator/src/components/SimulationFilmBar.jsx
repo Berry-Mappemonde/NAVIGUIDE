@@ -581,7 +581,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                       disabled={!replay.canStart}
                       aria-disabled={!replay.canStart}
                       data-testid="replay-start"
-                      className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 hover:bg-sky-600/70 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed disabled:pointer-events-none"
+                      className="relative z-10 h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 hover:bg-sky-600/70 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed disabled:pointer-events-none"
                       title={replay.canStart ? t("replayStartTitle") : t("replayPreparing")}
                     >
                       ↺ {t("replayStart")}
