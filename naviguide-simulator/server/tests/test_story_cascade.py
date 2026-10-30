@@ -1,6 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
+import time
 from urllib.parse import urlparse
 
 import httpx
@@ -369,6 +370,15 @@ def test_filter_numbers_drops_invented_figures():
     assert "5677" in text and "30" not in text and dropped == 1
 
 
+def test_filter_numbers_preserves_sentence_and_number_behavior():
+    text, dropped = filter_numbers(
+        "Port 5677 est calme. 30 kn demain ! Latitude 48,5 au nord?",
+        {"port": 5677, "latitude": 48.5},
+    )
+    assert text == "Port 5677 est calme. Latitude 48,5 au nord?"
+    assert dropped == 1
+
+
 def test_write_story_tokenfactory_first_without_page(monkeypatch):
     seen = []
 
@@ -715,6 +725,19 @@ def test_clean_text_strips_analyze_preamble():
         "Saint-Maur is a quiet harbor on the Marne."
     )
     assert _clean_text(raw) == "Saint-Maur is a quiet harbor on the Marne."
+
+
+def test_clean_text_removes_opening_and_closing_fences():
+    assert _clean_text("```text\nA quiet harbor.\n```") == "A quiet harbor."
+    assert _clean_text("Before.\n```json\nAfter.\n```") == "Before.\nAfter."
+
+
+def test_long_whitespace_inputs_are_processed_quickly():
+    spaces = " " * 50_000
+    started = time.perf_counter()
+    assert filter_numbers(spaces, {}) == ("", 0)
+    assert _clean_text(spaces) == ""
+    assert time.perf_counter() - started < 1.0
 
 
 def test_clean_text_prompt_leak_is_empty():
