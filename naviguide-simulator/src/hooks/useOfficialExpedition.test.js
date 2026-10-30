@@ -29,9 +29,18 @@ describe("useOfficialExpedition — position officielle", () => {
   });
 
   it("lit l’horloge serveur même quand le PUT officiel est refusé", () => {
-    // L'horloge part avant / avec le PUT (pas après lui) ; 29 sept. : une seule fois par tentative.
-    assert.match(source, /Promise\.all\(\[haveClock \? null : readClock\(\), putOfficial\(\)\.catch\(\(\) => null\)\]\)/);
+    // L'horloge part avant le PUT (jamais après lui) ; 29 sept. : une seule fois par tentative.
+    assert.match(source, /const ck = haveClock \? null : await readClock\(\);/);
     assert.match(source, /gotClock = haveClock \|\| Boolean\(ck\) \|\| Boolean\(data\?\.clock\?\.t0\);/);
+  });
+
+  it("PUT seulement pour réparer (pas d'horloge) ou avec la clé admin — plus de deuxième horloge à chaque visite (#100)", () => {
+    assert.doesNotMatch(source, /Promise\.all\(\[haveClock \? null : readClock\(\), putOfficial\(\)/);
+    assert.match(source, /const needPut = hasAdminSecret\(\) \|\| \(!haveClock && !ck\);/);
+    assert.match(source, /const data = needPut \? await putOfficial\(\)\.catch\(\(\) => null\) : null;/);
+    const read = source.indexOf("await readClock()");
+    const put = source.indexOf("await putOfficial()");
+    assert.ok(read > 0 && put > read, "la lecture de l'horloge passe avant le PUT");
   });
 
   it("une seule lecture de l’horloge à la fois, relance espacée — jamais une pile de requêtes (29 sept.)", () => {
