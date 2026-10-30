@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 
 import httpx
 import pytest
+import story_cascade
 
 from story_cascade import (
     CACHE_NS,
@@ -50,7 +51,7 @@ def test_story_tier_ultra_for_escales_and_alerts():
 def test_default_cascade_is_token_factory_not_tavily():
     src = Path(__file__).resolve().parents[1].joinpath("story_cascade.py").read_text()
     assert "api.tokenfactory.nebius.com" in src
-    assert "api.tokenfactory.nebius.com" in src
+    assert _url_host_is(story_cascade._tf_url("deep"), "api.tokenfactory.nebius.com")
     assert "NAVIGUIDE_LLM_PROVIDERS" in src
     assert "integrate.api.nvidia.com" in src  # NIM : 2e maillon
     assert "openrouter.ai" in src
