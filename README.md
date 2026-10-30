@@ -33,7 +33,7 @@ Shortcut: [https://naviguide.fr/?tour=1](https://naviguide.fr/?tour=1) opens the
 
 1. Click **Follow expedition**.
 2. Click **Replay the expedition**. If it is grey, the tooltip says **preparing**.
-3. When the film controls are up, **Raw** and **Edited** sit side by side. **Edited** is the written narration. If **Edited** is grey, the tooltip says **not yet written for this duration**. For accessibility, the speaker button in the film bar (labelled **Listen**) reads the film aloud: during a replay, the browser’s own speech synthesis (`speechSynthesis`, `naviguide-simulator/src/utils/speak.js`) reads each paragraph as the film plays, in English or French, with no Nemotron call and no NAVIGUIDE server call.
+3. When the film controls are up, **Raw** and **Edited** sit side by side. Click **Edited** to request the written narration. While the film plays, the pill is locked and its tooltip says **Stop the film to switch Raw/Edited**. If all providers fail, the page says **The edited film is temporarily unavailable.** For accessibility, the speaker button in the film bar (labelled **Listen**) reads the film aloud: during a replay, the browser’s own speech synthesis (`speechSynthesis`, `naviguide-simulator/src/utils/speak.js`) reads each paragraph as the film plays, in English or French, with no Nemotron call and no NAVIGUIDE server call.
 4. When the boat is at a stop, the panel is titled **Port of call sheet**. If that stop is inside the watch window and a watch was stored, a card is titled with the port name, the words **watch of**, and a date, plus one sentence. If no watch was stored, that card is absent. The sheet still lists the places it has.
 5. In the side panel, **Logbook — ask a question**. The field reads **Wind at the boat? Next stop?** Press the button whose tooltip is **Send**. Under **Try a question:**, three chips send a ready question in one click: **Why? · Ultra** (a why question, answered by Nemotron 3 Ultra), **Port news · Tavily** (how the web describes the port of the next stop: Ultra with Tavily web sources) and **Wind · Lightning** (Lightning reads the question, the facts answer).
 
@@ -193,7 +193,7 @@ In numbers (from git, code files only): on August 26, 2026 the repository held 0
 - **The official-port judge is off by default.** It runs only when `NAVIGUIDE_TRUTH_JUDGE=1`.
 - **No dollar cap by default.** Daily token budgets apply per tier, but there is no dollar cutoff unless `NAVIGUIDE_LLM_DAILY_USD` is set.
 - **Cached answers can be up to a day old.** The cascade cache lives 24 hours; a written film is cached for one day, a written story for seven days.
-- **Edited is not always available.** If no written film exists for the chosen duration, the **Edited** button is grey.
+- **The first written film for a duration takes time.** It is requested through Token Factory, then NIM, OpenRouter and Claude; a fallback model may write it.
 - **No red-team evaluation.** This repository has no red-team eval directory or report, and was not adversarially tested with NVIDIA garak or promptfoo.
 - **Not for navigation.** Maps and figures come from public sources and calculations; this is not an official chart.
 
