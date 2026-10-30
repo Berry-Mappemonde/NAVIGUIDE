@@ -145,8 +145,6 @@ Gouvernance des modèles : [naviguide-simulator/docs/AI_GOVERNANCE.md](naviguide
 
 ## Lancer en local
 
-### Lancer en local
-
 Depuis la racine du dépôt, utilisez Node.js 24 et Python 3.12. Dans un premier terminal :
 
 ```bash
@@ -154,11 +152,12 @@ cd naviguide-simulator
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r server/requirements.txt
+export NEBIUS_API_KEY=votre_cle_token_factory
 export NVIDIA_API_KEY=votre_cle_nim
-env -u NEBIUS_API_KEY npm run server
+npm run server
 ```
 
-`NVIDIA_API_KEY` active NVIDIA NIM en développement. Il sert `openai/gpt-oss-20b` comme repli à `https://integrate.api.nvidia.com/v1` ; ce modèle n’est pas Nemotron. Token Factory (`NEBIUS_API_KEY`) est facultatif en production. Ses paliers utilisent Lightning pour `nano` et `fast`, Super VL pour `write`, et Ultra pour `deep` et `judge`. `TAVILY_API_KEY` est facultative ; sans elle, les sources web sont absentes.
+Token Factory (`NEBIUS_API_KEY`) est le premier fournisseur de la cascade par défaut : Token Factory → NVIDIA NIM → OpenRouter → Claude, avec le repli après expiration activé par défaut. `NVIDIA_API_KEY` active le repli NVIDIA NIM, qui sert `openai/gpt-oss-20b` à `https://integrate.api.nvidia.com/v1` ; ce modèle n’est pas Nemotron. Token Factory sert Lightning pour `nano` et `fast`, Super VL pour `write`, et Ultra pour `deep` et `judge`. `TAVILY_API_KEY` est facultative. La veille Tavily est activée par défaut, mais sans cette clé ses requêtes ne font aucun appel réseau et les sources web sont indisponibles.
 
 Pour lancer le stock figé sans clé de modèle ni clé web, omettez la ligne `export` et démarrez plutôt l’API ainsi :
 
