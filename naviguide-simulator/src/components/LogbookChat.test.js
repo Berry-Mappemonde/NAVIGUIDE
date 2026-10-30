@@ -25,7 +25,7 @@ describe("LogbookChat contract", () => {
     const boxEnd = src.indexOf("</div>", formEnd);
     const noticeAt = src.indexOf('data-testid="logbook-chat-ai-notice"');
     assert.ok(formEnd > 0 && noticeAt > boxEnd, "l’avis suit la fermeture du cadre sim-box-chat");
-    assert.match(src, /<>\s*<div data-testid="logbook-chat" className="sim-box-chat/);
+    assert.match(src, /<>\s*<div data-testid="logbook-chat"(?: data-tour="logbook")? className="sim-box-chat/);
   });
   it("lives in the left sidebar, in both views, and says whether exchanges are logged", () => {
     assert.match(sidebar, /<LogbookChat messages=\{chat\.messages\}/);
