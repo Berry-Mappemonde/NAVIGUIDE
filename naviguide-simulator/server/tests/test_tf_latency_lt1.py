@@ -1,7 +1,7 @@
 """Non-régression garde de latence TF (contre-revue PR #153, P1-1, P1-2, P2).
 
 R1 : un timeout Lightning relance Super VL (LT1).
-R2 : providers par défaut + timeout TF → pas de repli hors Nemotron (sauf opt-in).
+R2 : providers par défaut + timeout TF → repli NIM par défaut.
 R3 : le délai TF est une échéance totale, pas un délai entre deux lectures.
 R4 : nano, file pleine → pas de second passage dans la même file.
 R5 : un timeout HTTP est compté au budget du jour (estimation prudente).
@@ -57,6 +57,23 @@ def test_R1b_queue_timeout_does_not_retry_super(monkeypatch):
         story_cascade.TokenFactoryTimeout("tokenfactory timeout after 25 s")) is True
 
 
+@pytest.mark.parametrize("failure", ["5xx", "timeout"])
+def test_R1c_selected_write_is_not_retried_as_super(monkeypatch, failure):
+    """Fast routed to write must not issue the LT1 write call a second time."""
+    monkeypatch.setenv("NAVIGUIDE_LLM_PROVIDERS", "tokenfactory")
+    async def selected_write(_tier, _client):
+        return "write"
+    monkeypatch.setattr(story_cascade, "_guarded_tier", selected_write)
+    seen = []
+    def h(req):
+        seen.append(json.loads(req.read().decode())["model"])
+        if failure == "timeout":
+            raise httpx.ReadTimeout("slow", request=req)
+        return httpx.Response(503, json={"error": "busy"})
+    _run(h, tier="fast")
+    assert seen == [llm_budget.model_for("write")]
+
+
 def _r2_handler(seen):
     def h(req):
         seen.append(str(req.url))
@@ -101,6 +118,71 @@ def test_R2c_non_timeout_failure_keeps_default_cascade(monkeypatch):
         return httpx.Response(200, json=_ok(body["model"]))
     res = _run(h, tier="write")
     assert res[1].startswith("nvidia-")
+
+
+def test_P2_402_pauses_tokenfactory_and_resumes(monkeypatch):
+    """Quota 402 serves via NIM; TF is skipped briefly and retried after expiry."""
+    import offline
+    monkeypatch.setattr(offline, "enabled", lambda: False)
+    monkeypatch.setattr(llm_budget, "llm_allowed_here", lambda _tier=None: True)
+    monkeypatch.setattr(llm_budget, "allow", lambda _tier: True)
+    monkeypatch.setenv("NAVIGUIDE_LLM_PROVIDERS", "tokenfactory,nim,openrouter,claude")
+    monkeypatch.setenv("NAVIGUIDE_TF_QUOTA_PAUSE_S", "0.15")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nv-test")
+    monkeypatch.setattr(llm_budget, "_tf_quota_until", 0.0)
+    calls = {"tf": 0, "nim": 0}
+
+    def handler(req):
+        if "tokenfactory" in str(req.url):
+            calls["tf"] += 1
+            if calls["tf"] == 1:
+                return httpx.Response(402, json={"error": {"type": "insufficient_quota", "message": "quota"}})
+            body = json.loads(req.read().decode())
+            return httpx.Response(200, json=_ok(body["model"]))
+        if "nvidia" in str(req.url):
+            calls["nim"] += 1
+            body = json.loads(req.read().decode())
+            return httpx.Response(200, json=_ok(body["model"]))
+        return httpx.Response(503, json={"error": "unexpected"})
+
+    first = _run(handler, user="quota first", tier="write")
+    assert first[1].startswith("nvidia-")
+    assert calls == {"tf": 1, "nim": 1}
+    assert llm_budget.status()["tfQuota"]["state"] == "exhausted"
+    import ici_warm
+    assert ici_warm.status()["tfQuota"]["state"] == "exhausted"
+
+    second = _run(handler, user="quota paused", tier="write")
+    assert second[1].startswith("nvidia-")
+    assert calls == {"tf": 1, "nim": 2}
+
+    time.sleep(0.2)
+    third = _run(handler, user="quota resumed", tier="write")
+    assert third[1] == "nemotron-super-vl"
+    assert calls == {"tf": 2, "nim": 2}
+    assert llm_budget.status()["tfQuota"] == {"state": "ok", "until": None}
+
+
+def test_I5_catalogue_deadline_still_reaches_nim(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_LLM_PROVIDERS", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_TIMEOUT_FALLBACK", "1")
+    monkeypatch.setenv("NAVIGUIDE_TF_MODEL_GUARD", "1")
+    monkeypatch.setenv("NAVIGUIDE_TF_TIMEOUT_S", "0.03")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nv-test")
+    seen = []
+
+    async def handler(req):
+        seen.append(str(req.url))
+        if "tokenfactory" in str(req.url):
+            await asyncio.sleep(0.08)  # catalogue GET expires within the shared TF budget
+            return httpx.Response(200, json={"data": []})
+        body = json.loads(req.read().decode())
+        return httpx.Response(200, json=_ok(body.get("model", "nim")))
+
+    res = _run(handler, tier="write")
+    assert res[1].startswith("nvidia-")
+    assert any("tokenfactory" in url for url in seen)
+    assert any("nvidia" in url for url in seen)
 
 
 def test_R3_timeout_is_a_total_deadline(monkeypatch):
