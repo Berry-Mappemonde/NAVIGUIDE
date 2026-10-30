@@ -425,7 +425,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     className="min-w-0 max-w-full whitespace-normal break-words [&_span]:text-xs [&_span]:text-white/90"
                   />
                 )}
-                {replay.webContext?.sources?.length && !replay.writing ? (
+                {replay.webContext?.sources?.length && !replay.writing && (replay.style || "raw") === "written" && replay.hasWritten ? (
                   <div
                     data-testid="film-web-sources"
                     className="min-w-0 max-w-full whitespace-normal break-words text-[10px] leading-snug text-violet-200/90"
@@ -450,7 +450,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 {replay.receipt && !replay.writing && (replay.style || "raw") === "written" && replay.hasWritten ? (
                   <FilmReceipt
                     receipt={replay.receipt}
-                    webSourceCount={replay.receipt.webSourceCount ?? (replay.webContext?.sources?.length || 0)}
+                    webSourceCount={replay.webContext?.sources?.length || 0}
                     t={t}
                     lang={lang}
                   />

@@ -15,16 +15,32 @@ function domainOf(url) {
   }
 }
 
+/** Clé de dédoublonnage : schéma et hôte en minuscules, sans www., sans fragment ni « / » final. */
+export function normalizeSourceUrl(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase().replace(/^www\./, "");
+    const path = u.pathname.replace(/\/+$/, "");
+    return `${u.protocol.toLowerCase()}//${host}${u.port ? `:${u.port}` : ""}${path}${u.search}`;
+  } catch {
+    return String(url || "").trim();
+  }
+}
+
 export function publicFilmWebContext(data) {
   const ctx = data?.webContext;
   if (!ctx || typeof ctx !== "object" || ctx.basis !== "tavily") return null;
   const port = String(ctx.port || "").trim();
   const sources = [];
+  const seen = new Set();
   for (const row of Array.isArray(ctx.sources) ? ctx.sources : []) {
     const url = String(row?.url || "").trim();
     if (!/^https?:\/\//i.test(url)) continue;
     const domain = String(row?.domain || "").trim() || domainOf(url);
     if (!domain) continue;
+    const key = normalizeSourceUrl(url);
+    if (seen.has(key)) continue;
+    seen.add(key);
     sources.push({ url, domain, title: String(row?.title || "").trim() || domain });
     if (sources.length >= MAX_SOURCES) break;
   }
