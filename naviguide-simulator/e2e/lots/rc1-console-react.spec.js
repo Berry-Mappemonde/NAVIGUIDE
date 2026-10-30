@@ -42,3 +42,36 @@ test("RC1 ?tour=1 : visite complète sans erreur React", async ({ page }) => {
   await page.waitForTimeout(1000);
   expect(bad, bad.join("\n")).toEqual([]);
 });
+
+test("RC1 bulles : EventBubble et EscalePopup ouvertes puis détruites sans erreur React", async ({ page }) => {
+  test.setTimeout(90_000);
+  const bad = watch(page);
+  await page.goto(`${ORIGIN}/`);
+  await dismissNotForNav(page);
+  await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
+  await page.waitForFunction(() => window.__naviguideScene?.mainBoatMarker?.(), null, { timeout: 30_000 });
+  // Bulle d'événement (racine React n° 1).
+  await page.evaluate(() => window.__naviguideScene.eventBubble.setCard({
+    id: "rc1", kind: "wx", at: "2026-05-27T12:00:00Z", title: "Coup de vent",
+  }));
+  await expect(page.getByTestId("event-bubble")).toBeVisible({ timeout: 10_000 });
+  // Fiche d'escale (racine React n° 2) : un drapeau cliqué en Tracer (il faut l'API).
+  await page.getByTestId("view-tracer").click();
+  await page.evaluate(() => {
+    for (const m of window.__naviguideScene?.waypointMarkers?.values() || []) {
+      if (/Ajaccio/i.test(m._naviguideWaypoint?.name || "")) { m.fire("click"); return; }
+    }
+  });
+  const escale = page.getByTestId("escale-popup");
+  const escaleOpen = await escale.waitFor({ state: "attached", timeout: 10_000 }).then(() => true).catch(() => false);
+  if (!escaleOpen) {
+    expect(process.env.PW_WITH_API !== "1", "avec l'API, la fiche d'Ajaccio doit s'ouvrir").toBe(true);
+    test.info().annotations.push({ type: "sans API", description: "fiche d'escale non ouverte : seule la bulle est vérifiée" });
+  }
+  // Détruit la scène (même chemin que le nettoyage d'effet de MapScene).
+  await page.evaluate(() => window.__naviguideScene.dispose());
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId("event-bubble")).toHaveCount(0);
+  await expect(escale).toHaveCount(0);
+  expect(bad, bad.join("\n")).toEqual([]);
+});
