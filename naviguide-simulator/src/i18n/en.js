@@ -304,6 +304,7 @@ export default {
   filmStorySource: "Story: {source}",
   filmStoryRaw: "Raw",
   filmStoryWritten: "Edited",
+  filmStoryWrittenCustomUnavailable: "The edited film is unavailable on a custom route.",
   filmStoryLockedPlaying: "Stop the film to switch Raw/Edited",
   filmStoryWrittenUnavailable: "The edited film is temporarily unavailable.",
   filmStoryWrittenRetry: "Retry",
