@@ -1362,9 +1362,9 @@ async def _cascade_once(
                     llm_budget.remember_cascade_errors(failures, tier=norm_tier)
                 if name in llm_budget.FALLBACK_PROVIDERS:
                     llm_budget.record_fallback(name, norm_tier)
-                    # Keep the precise NIM model label (GPT-OSS today) in
-                    # status; provider counters still use the stable `nim` key.
-                    llm_budget.remember_source(source if name == "nim" else name, norm_tier)
+                    # Status tracks the provider; the returned source retains
+                    # the precise NIM model label for honest fallback labelling.
+                    llm_budget.remember_source(name, norm_tier)
                 public = source if source in KNOWN_SOURCES else (
                     "openrouter" if source.startswith("openrouter") else source
                 )

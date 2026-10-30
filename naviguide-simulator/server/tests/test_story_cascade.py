@@ -1880,7 +1880,7 @@ def test_nano_then_lightning_then_nim_keeps_nim_label(monkeypatch):
     assert any(_url_host_is(url, "integrate.api.nvidia.com") for url, _m in seen)
     assert not any("openrouter" in url or "anthropic" in url for url, _m in seen)
     import llm_budget
-    assert llm_budget.status()["lastSourceByTier"]["nano"] == "nvidia-openai/gpt-oss-20b"
+    assert llm_budget.status()["lastSourceByTier"]["nano"] == "nim"
 
 
 def test_timeout_tf_nim_called_openrouter_claude_skipped(monkeypatch):
