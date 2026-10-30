@@ -188,10 +188,6 @@ Ce checkout ne contient pas de répertoire d’évaluation adverse ni de rapport
 
 Politique : [SECURITY.md](SECURITY.md). Fiche des sources : [naviguide-simulator/DATA_SOURCES.md](naviguide-simulator/DATA_SOURCES.md).
 
-## Limites connues
-
-- **Le premier film rédigé pour une durée prend du temps.** Il est demandé à Token Factory, puis à NIM, OpenRouter et Claude ; un autre modèle peut prendre le relais.
-
 [![CodeQL](https://github.com/Berry-Mappemonde/NAVIGUIDE/actions/workflows/codeql.yml/badge.svg)](https://github.com/Berry-Mappemonde/NAVIGUIDE/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Berry-Mappemonde/NAVIGUIDE/badge)](https://scorecard.dev/viewer/?uri=github.com/Berry-Mappemonde/NAVIGUIDE)
 
