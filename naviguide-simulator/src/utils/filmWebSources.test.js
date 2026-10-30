@@ -23,6 +23,17 @@ test("publicFilmWebContext garde port, domaines et liens http(s)", () => {
   assert.equal(out.sources[1].title, "example.org");
 });
 
+test("publicFilmWebContext déduplique avant de limiter les sources affichées", () => {
+  const duplicate = CTX.sources[0];
+  const out = publicFilmWebContext({
+    webContext: {
+      ...CTX,
+      sources: [duplicate, duplicate, ...CTX.sources.slice(1)],
+    },
+  });
+  assert.deepEqual(out.sources.map((s) => s.url), [duplicate.url, CTX.sources[1].url]);
+});
+
 test("publicFilmWebContext : rien sans provenance Tavily réelle", () => {
   assert.equal(publicFilmWebContext(null), null);
   assert.equal(publicFilmWebContext({}), null);

@@ -44,7 +44,7 @@ export default function FilmReceipt({ receipt, webSourceCount = 0, t, lang = "fr
         </ul>
         <ul data-testid="film-receipt-steps" className="list-disc pl-4">
           {lines.map((l) => (
-            <li key={l.key} data-testid={`film-receipt-${l.key}`}>{t(l.key, l.vars)}</li>
+            <li key={l.key} data-testid={l.key === "filmReceiptTavily" ? "film-receipt-tavily" : `film-receipt-${l.key}`}>{t(l.key, l.vars)}</li>
           ))}
         </ul>
         {at ? <div className="text-white/60">{t("filmReceiptAt", { at })}</div> : null}
