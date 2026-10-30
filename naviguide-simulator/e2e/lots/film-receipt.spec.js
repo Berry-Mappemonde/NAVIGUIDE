@@ -31,6 +31,7 @@ function filmPayload({ written, seconds = 150, lang = "fr", receipt, webContext 
 }
 
 async function openWritten(page, lang, receipt, webContext = null) {
+
   await page.addInitScript((l) => localStorage.setItem("naviguide_lang_v4", l), lang);
   const cached = new Set();
   await page.route("**/voyage/**/film**", async (route) => {
@@ -86,6 +87,36 @@ test("sans reçu servi, aucun reçu affiché", async ({ page }) => {
   await openWritten(page, "fr", null);
   await expect(page.getByTestId("film-receipt")).toHaveCount(0);
 });
+
+const webContext = {
+  basis: "tavily",
+  port: "La Rochelle",
+  fetchedAt: "2026-10-17T10:00:00Z",
+  sources: [
+    { title: "Port news", domain: "news.com", url: "https://news.com/port" },
+    { title: "Marine forecast", domain: "weather.org", url: "https://weather.org/marine" },
+    { title: "Tide tables", domain: "tides.net", url: "https://tides.net/rochelle" },
+  ],
+};
+
+
+for (const [lang, tavilyTitle] of [
+  ["fr", "Sources web Tavily affichées avec le film : 3"],
+  ["en", "Web sources from Tavily shown with the film: 3"],
+]) {
+  test(`${lang} : le reçu affiche le nombre de sources Tavily (webContext.sources)`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await openWritten(page, lang, RECEIPT, webContext);
+
+    const receipt = page.getByTestId("film-receipt");
+    await expect(receipt).toBeVisible();
+    await expect(receipt.locator("summary")).toHaveText(
+      lang === "fr" ? "Comment ce film a été fait" : "How this film was made"
+    );
+    await receipt.locator("summary").click();
+    await expect(page.getByTestId("film-receipt-filmReceiptTavily")).toHaveText(tavilyTitle);
+  });
+}
 
 // R45 : le reçu compte les sources AFFICHÉES (dédoublonnées, 3 au plus), jamais un
 // webSourceCount serveur. Quatre lignes servies dont deux URL en double → 2 liens, « 2 ».

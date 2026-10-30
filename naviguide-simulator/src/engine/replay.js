@@ -900,7 +900,16 @@ export function chapterAnchors(ch) {
   const tB = Number(ch?.tB);
   const chars = Math.max(1, Number(ch?.chars) || String(ch?.text || "").length || 1);
   if (!Number.isFinite(tA) || !Number.isFinite(tB)) return [];
-  const raw = (ch?.anchors || [])
+  const source = ch?.anchors || [];
+  const stale = source.some((a) => Number(a?.charIdx) > chars);
+  const raw = stale
+    ? sentenceStartsFromText(ch?.text).map((charIdx, i, starts) => ({
+      charIdx,
+      t: starts.length <= 1
+        ? tA
+        : tA + ((tB - tA) * i) / (starts.length - 1),
+    }))
+    : source
     .map((a) => ({ charIdx: Number(a?.charIdx), t: ms(a?.t) }))
     .filter((a) => Number.isFinite(a.charIdx) && a.t != null && a.charIdx >= 0 && a.charIdx <= chars)
     .sort((a, b) => a.charIdx - b.charIdx);

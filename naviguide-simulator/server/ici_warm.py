@@ -13,7 +13,7 @@ viennent donc des perles — les mêmes pour tous les visiteurs. Ce module :
   MarineRegions et Overpass ne sont appelés qu'une fois par cellule.
 
 `NAVIGUIDE_ICI_WARM=0` désactive le chauffeur (tests, dev sans réseau).
-La veille Tavily part quand même si `NAVIGUIDE_TAVILY_WATCH=1` (défaut 0) :
+La veille Tavily est active par défaut ; `NAVIGUIDE_TAVILY_WATCH=0` la désactive :
 première passe 2 min après le démarrage, puis toutes les
 `NAVIGUIDE_TAVILY_WATCH_S` secondes (défaut 86 400). Une recherche par
 escale, fenêtre J-10 → J+2. Cette boucle ne parcourt pas les perles.
@@ -80,8 +80,7 @@ def stories_enabled() -> bool:
 
 
 def watch_enabled() -> bool:
-    """Veille Tavily. Défaut 0 : zéro recherche tant que le
-    drapeau n'est pas ouvert. `NAVIGUIDE_TAVILY_WATCH=1` l'allume (poste)."""
+    """Veille Tavily. Active par défaut ; `NAVIGUIDE_TAVILY_WATCH=0` la désactive."""
     import escale_watch  # noqa: PLC0415
 
     return escale_watch.watch_enabled()
@@ -940,12 +939,7 @@ def start_background(loop: asyncio.AbstractEventLoop | None = None) -> bool:
     except Exception as exc:
         log.warning("rechargement du cache perles : %s", exc)
     if watch_enabled():
-        try:
-            loop = loop or asyncio.get_event_loop()
-            loop.create_task(_watch_loop())
-            _state["watch"] = {"status": "scheduled"}
-        except Exception as exc:
-            log.warning("veille Tavily non lancée : %s", exc)
+        ensure_watch_loop(loop)
     if not warm_enabled():
         _state["status"] = "disabled"
         return False
@@ -957,6 +951,53 @@ def start_background(loop: asyncio.AbstractEventLoop | None = None) -> bool:
         _state["status"] = "error"
         log.warning("chauffeur de perles non lancé : %s", exc)
         return False
+
+
+_WATCH_LOOP_TASK: "asyncio.Task | None" = None
+_WATCH_LOOP_RESTART = False
+
+
+def ensure_watch_loop(loop=None) -> bool:
+    """Lance la boucle de veille une seule fois (démarrage, ou interrupteur R42 allumé)."""
+    global _WATCH_LOOP_TASK, _WATCH_LOOP_RESTART
+    if _WATCH_LOOP_TASK is not None and not _WATCH_LOOP_TASK.done():
+        if watch_enabled() and _WATCH_LOOP_TASK.cancelling():
+            _WATCH_LOOP_RESTART = True
+        return False
+    try:
+        loop = loop or asyncio.get_event_loop()
+        _WATCH_LOOP_TASK = loop.create_task(_watch_loop())
+        add_done = getattr(_WATCH_LOOP_TASK, "add_done_callback", None)
+        if add_done is not None:
+            add_done(_watch_loop_done)
+        _state["watch"] = {"status": "scheduled"}
+        return True
+    except Exception as exc:
+        log.warning("veille Tavily non lancée : %s", exc)
+        return False
+
+
+def cancel_watch_loop() -> bool:
+    """Arrête la veille périodique dès que le réglage la désactive."""
+    global _WATCH_LOOP_RESTART
+    task = _WATCH_LOOP_TASK
+    if task is None or task.done():
+        return False
+    _WATCH_LOOP_RESTART = False
+    task.cancel()
+    _state["watch"] = {"status": "disabled"}
+    return True
+
+
+def _watch_loop_done(task: asyncio.Task) -> None:
+    """Libère la référence et honore un ON arrivé pendant l'annulation."""
+    global _WATCH_LOOP_TASK, _WATCH_LOOP_RESTART
+    if _WATCH_LOOP_TASK is task:
+        _WATCH_LOOP_TASK = None
+        restart = _WATCH_LOOP_RESTART
+        _WATCH_LOOP_RESTART = False
+        if restart and watch_enabled():
+            ensure_watch_loop()
 
 
 async def _watch_loop(pause_s: float | None = None) -> None:

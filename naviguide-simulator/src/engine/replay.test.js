@@ -1,9 +1,33 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-  advance, calibrateRate, cardDwellMs, measuredCps, voiceLedStep, cardFromJournalEntry, cardsBetween, chapterAtElapsed, chapterAnchors, filmChaptersFromStory, filmPlan, FILM_RATE_MAX, FILM_RATE_MIN, FILM_VOICE_LOOKAHEAD_CHARS, FILM_V_MAX_PX_S, FILM_V_MIN_PX_S, journalTimeline, positionAt, replayProgress, replaySample, replayScale, replayWindow, stepFilmTime, trimQueue, voiceShouldWait, windFromJournalAt,
+  advance, calibrateRate, cardDwellMs, measuredCps, voiceLedStep, cardFromJournalEntry, cardsBetween, chapterAtElapsed, chapterAnchors, filmChaptersFromStory, filmPlan, FILM_RATE_MAX, FILM_RATE_MIN, FILM_VOICE_LOOKAHEAD_CHARS, FILM_V_MAX_PX_S, FILM_V_MIN_PX_S, journalTimeline, positionAt, replayProgress, replaySample, replayScale, replayWindow, sentenceStartsFromText, stepFilmTime, trimQueue, voiceShouldWait, windFromJournalAt,
 } from "./replay.js";
 const T0 = "2026-05-15T08:00:00.000Z";
+
+it("rebuilds sentence anchors for the stale frozen English rules chapter", () => {
+  const text = "On 15 May, Berry-Mappemonde leaves La Rochelle, heading southwest for Ajaccio (Corse). 1,820 miles, about twenty days at sea. Then, the boat passes near the marine protected area Lilleau-des-Niges, at five miles. Then, six miles away, project Côte À Côte. On 19 May, the boat skirts Galicia — Camariñas, Muxía. Then, the Strait of Gibraltar between Tanger and Algeciras. The next day, sardinia — Porto Torres. Arrival at Ajaccio (Corse) on 1 June.";
+  const stale = [
+    [0, "2026-05-15T08:00:01Z"], [96, "2026-05-15T11:00:00Z"], [180, "2026-05-15T11:00:00Z"],
+    [279, "2026-05-15T11:00:00Z"], [303, "2026-05-15T11:00:00Z"], [370, "2026-05-15T11:00:00Z"],
+    [418, "2026-05-15T11:00:00Z"], [499, "2026-05-15T11:00:00Z"], [561, "2026-05-19T00:00:00Z"],
+    [649, "2026-05-24T00:00:00Z"], [661, "2026-05-24T00:00:00Z"], [663, "2026-05-24T00:00:00Z"],
+    [679, "2026-05-26T00:00:00Z"], [688, "2026-06-01T00:00:00Z"], [738, "2026-06-01T22:13:28Z"],
+    [746, "2026-06-01T22:13:28Z"], [756, "2026-06-01T22:13:28Z"],
+  ].map(([charIdx, t]) => ({ charIdx, t }));
+  const tA = Date.parse("2026-05-15T08:00:01Z");
+  const tB = Date.parse("2026-06-01T22:13:28Z");
+  const points = chapterAnchors({ tA, tB, text, anchors: stale });
+  assert.deepEqual(points.map((p) => p.charIdx), [0, ...sentenceStartsFromText(text).slice(1), text.length]);
+  assert.ok(points.every((p) => p.charIdx <= text.length));
+  assert.ok(points.at(-1).t > points[0].t);
+  let sameInstantRun = 1;
+  const sentencePoints = points.slice(0, -1);
+  for (let i = 1; i < sentencePoints.length; i += 1) {
+    sameInstantRun = sentencePoints[i].t === sentencePoints[i - 1].t ? sameInstantRun + 1 : 1;
+    assert.ok(sameInstantRun < 3, "no three sentence starts share one instant");
+  }
+});
 
 /** A hand-made official clock: La Rochelle → 230 nm SW in 29 h → Ajaccio at 125 h, 3 days alongside. */
 function clock() {

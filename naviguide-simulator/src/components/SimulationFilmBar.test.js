@@ -155,6 +155,13 @@ describe("barre film — sous-titre = phrase en cours", () => {
 });
 
 describe("barre film — pilules et durée estimée", () => {
+  it("garde les pilules focusables pendant la lecture et explique le verrou", () => {
+    assert.match(bar, /aria-disabled=\{locked\}/);
+    assert.match(bar, /filmStoryLockedPlaying/);
+    assert.match(bar, /if \(locked\) return/);
+    assert.doesNotMatch(bar, /\sdisabled=\{locked\}/);
+  });
+
   it("garde 2:30 / 3:00 et l'estimée hors film, aucune cochée par défaut", () => {
     assert.match(bar, /data-testid="film-duration"/);
     assert.match(bar, /filmDuration150/);

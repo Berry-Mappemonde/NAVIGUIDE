@@ -69,7 +69,8 @@ test("Une seule plume, Rédigé seulement sur geste", async ({ page }) => {
   await shot(page, "01-fiche-brut");
 
   const written = page.getByTestId("film-style-written");
-  const enabled = await written.isEnabled().catch(() => false);
+  const ariaDisabled = await written.getAttribute("aria-disabled").catch(() => "true");
+  const enabled = ariaDisabled !== "true";
   if (!enabled) {
     test.info().annotations.push({
       type: "Rédigé",
