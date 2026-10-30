@@ -2,6 +2,11 @@
  * NAVIGUIDE — French translations
  */
 export default {
+  chatErrTimeout: "Le chat n'a pas répondu à temps. Réessayez.",
+  chatErrNetwork: "Impossible de joindre le chat. Vérifiez votre connexion et réessayez.",
+  chatErrEmpty: "Veuillez saisir une question.",
+  chatErrTooLong: "Votre question est trop longue. Raccourcissez-la puis réessayez.",
+  chatErrServer: "Le chat a rencontré une erreur. Réessayez plus tard.",
   // ── Drawing mode ────────────────────────────────────────────────────────────
   drawStart:      "Choisissez votre point de départ",
   drawFirstStop:  "Choisissez votre première escale",
@@ -253,6 +258,8 @@ export default {
   tavilyWatchHint: "Recherche web côté serveur sur les escales proches (de 10 jours avant à 2 jours après)",
   tavilyWatchAdmin: "Clé admin requise pour changer la veille",
   tavilyWatchError: "Veille : serveur injoignable",
+  logbookChatInputLabel: "Votre question au carnet de bord",
+
   logbookChatSend: "Envoyer",
   logbookExamplesTitle: "Essayez une question :",
   logbookExampleDeepQ: "Pourquoi le bateau vise-t-il sa prochaine escale, et quel est le principal risque ?",

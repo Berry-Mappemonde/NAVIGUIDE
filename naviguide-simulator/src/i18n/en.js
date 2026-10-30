@@ -2,6 +2,11 @@
  * NAVIGUIDE — English translations (default)
  */
 export default {
+  chatErrTimeout: "The chat did not answer in time. Please try again.",
+  chatErrNetwork: "Could not reach the chat. Check your connection and try again.",
+  chatErrEmpty: "Please enter a question.",
+  chatErrTooLong: "Your question is too long. Shorten it and try again.",
+  chatErrServer: "The chat encountered an error. Please try again later.",
   // ── Drawing mode ───────────────────────────────────────────────────────────
   drawStart:      "Choose your starting point",
   drawFirstStop:  "Choose your first stop",
@@ -253,6 +258,8 @@ export default {
   tavilyWatchHint: "Server-side web search on upcoming stops (10 days before to 2 days after)",
   tavilyWatchAdmin: "An admin key is needed to change the watch",
   tavilyWatchError: "Watch: server unreachable",
+  logbookChatInputLabel: "Ask the logbook",
+
   logbookChatSend: "Send",
   logbookExamplesTitle: "Try a question:",
   logbookExampleDeepQ: "Why is the boat heading for its next stop, and what is the main risk?",
