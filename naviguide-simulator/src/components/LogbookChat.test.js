@@ -10,6 +10,17 @@ const hook = readFileSync(join(here, "..", "hooks", "useLogbookChat.js"), "utf8"
 const sidebar = readFileSync(join(here, "Sidebar.jsx"), "utf8");
 
 describe("LogbookChat contract", () => {
+  it("announces new messages and errors, and labels the chat controls", () => {
+    assert.match(src, /data-testid="logbook-chat-list"[^>]*role="log"[^>]*aria-live="polite"/);
+    assert.match(src, /role="alert"[^>]*data-testid="logbook-chat-error"/);
+    assert.match(src, /aria-label=\{t\("logbookChatInputLabel"\)\}/);
+    assert.match(src, /aria-label=\{t\("logbookChatSend"\)\}/);
+    const en = readFileSync(join(here, "..", "i18n", "en.js"), "utf8");
+    const fr = readFileSync(join(here, "..", "i18n", "fr.js"), "utf8");
+    assert.match(en, /logbookChatInputLabel: "Ask the logbook"/);
+    assert.match(fr, /logbookChatInputLabel: "Votre question au carnet de bord"/);
+  });
+
   it("affiche l’avis au premier échange et s’en souvient", () => {
     assert.match(src, /data-testid="logbook-chat-ai-notice"/);
     assert.match(src, /data-testid="logbook-chat-ai-notice-dismiss"/);
