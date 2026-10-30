@@ -11,10 +11,12 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import time
 import random
+import weakref
 from email.utils import parsedate_to_datetime
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,7 +58,7 @@ NIM_MODEL = "openai/gpt-oss-20b"
 
 # NIM free-tier controls: concurrency (default 2, 1..16), max attempts
 # (default 3, 1..5), plus optional fast tiers/model overrides.
-_nim_loop_semaphores: dict[asyncio.AbstractEventLoop, asyncio.Semaphore] = {}
+_nim_loop_semaphores: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = weakref.WeakKeyDictionary()
 _nim_sleep = asyncio.sleep
 
 
@@ -77,11 +79,21 @@ def _nim_semaphore() -> asyncio.Semaphore:
     return semaphore
 
 
+def _nim_float_env(name: str, default: float, low: float, high: float) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(value):
+        return default
+    return min(high, max(low, value))
+
+
 def _nim_retry_delay(response: httpx.Response, attempt: int) -> float:
     retry_after = response.headers.get("Retry-After")
     if retry_after:
         try:
-            return min(20.0, max(0.0, float(int(retry_after))))
+            return min(20.0, max(0.0, float(retry_after)))
         except ValueError:
             try:
                 when = parsedate_to_datetime(retry_after)
@@ -1195,20 +1207,42 @@ async def _call_nim(
         "chat_template_kwargs": {"thinking": False},
     }
     attempts = _nim_int_env("NAVIGUIDE_NIM_MAX_ATTEMPTS", 3, 1, 5)
-    for attempt in range(1, attempts + 1):
-        async with _nim_semaphore():
-            r = await client.post(
-                NVIDIA_URL,
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                json=payload,
-            )
-        if r.status_code not in (429, 503):
-            break
-        if attempt >= attempts:
-            raise _http_error("nvidia", r)
-        delay = _nim_retry_delay(r, attempt)
-        log.info("cascade nim retry: attempt %d/%d in %.3fs", attempt + 1, attempts, delay)
-        await _nim_sleep(delay)
+    deadline = _nim_float_env("NAVIGUIDE_NIM_DEADLINE_S", 30.0, 1.0, 300.0)
+
+    async def call_with_retries() -> httpx.Response:
+        last_transport_error: httpx.TransportError | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                async with _nim_semaphore():
+                    response = await client.post(
+                        NVIDIA_URL,
+                        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                        json=payload,
+                    )
+            except httpx.TransportError as exc:
+                last_transport_error = exc
+                if attempt >= attempts:
+                    raise
+                delay = min(8.0, 1.0 * (2 ** (attempt - 1)))
+                delay = random.uniform(0.0, delay)
+                log.info("cascade nim transport retry: attempt %d/%d in %.3fs", attempt + 1, attempts, delay)
+                await _nim_sleep(delay)
+                continue
+            if response.status_code not in (429, 503):
+                return response
+            if attempt >= attempts:
+                raise _http_error("nvidia", response)
+            delay = _nim_retry_delay(response, attempt)
+            log.info("cascade nim retry: attempt %d/%d in %.3fs", attempt + 1, attempts, delay)
+            await _nim_sleep(delay)
+        if last_transport_error is not None:
+            raise last_transport_error
+        raise RuntimeError("nvidia attempts exhausted")
+
+    try:
+        r = await asyncio.wait_for(call_with_retries(), timeout=deadline)
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError(f"nvidia deadline exceeded after {deadline:g} s") from exc
     if r.status_code >= 400:
         raise _http_error("nvidia", r)
     data = r.json()

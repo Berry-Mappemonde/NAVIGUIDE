@@ -1,5 +1,7 @@
 """NIM gratuit en dev / tests : modèle choisi par variable, jamais compté en USD Token Factory."""
 import asyncio
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 
 import httpx
 import pytest
@@ -14,6 +16,7 @@ def _clean_env(monkeypatch):
               "NAVIGUIDE_NIM_FAST_TIERS", "NAVIGUIDE_NIM_FAST_MODEL",
               "NAVIGUIDE_NIM_CONCURRENCY", "NAVIGUIDE_NIM_MAX_ATTEMPTS"):
         monkeypatch.delenv(k, raising=False)
+    monkeypatch.delenv("NAVIGUIDE_NIM_DEADLINE_S", raising=False)
 
 
 def test_default_model_unchanged():
@@ -130,6 +133,84 @@ def test_nim_three_429_raise_after_three(monkeypatch):
     with pytest.raises(RuntimeError):
         asyncio.run(run())
     assert len(calls) == 3
+
+
+def test_nim_max_attempts_two(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+    monkeypatch.setenv("NAVIGUIDE_NIM_MAX_ATTEMPTS", "2")
+    monkeypatch.setattr(sc, "_nim_sleep", lambda _delay: asyncio.sleep(0))
+    calls = []
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(429, text="limited")
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await sc._call_nim("sys", "user", client)
+    with pytest.raises(RuntimeError):
+        asyncio.run(run())
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize(("retry_after", "expected"), [
+    (lambda: format_datetime(datetime.now(timezone.utc) + timedelta(seconds=60), usegmt=True), 20.0),
+    (lambda: "30", 20.0),
+    (lambda: "1.5", 1.5),
+])
+def test_nim_retry_after_formats_and_cap(monkeypatch, retry_after, expected):
+    value = retry_after()
+    response = httpx.Response(429, headers={"Retry-After": value})
+    assert sc._nim_retry_delay(response, 1) == pytest.approx(expected, abs=0.001)
+
+
+def test_nim_retries_503_then_succeeds(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+    monkeypatch.setattr(sc, "_nim_sleep", lambda _delay: asyncio.sleep(0))
+    calls = []
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(503) if len(calls) == 1 else _nim_response()
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await sc._call_nim("sys", "user", client)
+    asyncio.run(run())
+    assert len(calls) == 2
+
+
+def test_nim_transport_error_retries_then_succeeds(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+    monkeypatch.setattr(sc, "_nim_sleep", lambda _delay: asyncio.sleep(0))
+    calls = []
+    def handler(request):
+        calls.append(request)
+        if len(calls) == 1:
+            raise httpx.ConnectError("connect failed", request=request)
+        return _nim_response()
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await sc._call_nim("sys", "user", client)
+    asyncio.run(run())
+    assert len(calls) == 2
+
+
+def test_nim_deadline_exceeded(monkeypatch):
+    import time
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+    monkeypatch.setenv("NAVIGUIDE_NIM_DEADLINE_S", "1")
+    async def handler(_request):
+        await asyncio.sleep(2)
+        return _nim_response()
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await sc._call_nim("sys", "user", client)
+    started = time.monotonic()
+    with pytest.raises(RuntimeError, match=r"nvidia deadline exceeded after 1 s"):
+        asyncio.run(run())
+    assert time.monotonic() - started < 1.8
+
+
+def test_nim_loop_semaphores_is_weak_key_dictionary():
+    import weakref
+    assert isinstance(sc._nim_loop_semaphores, weakref.WeakKeyDictionary)
 
 
 def test_nim_does_not_retry_400(monkeypatch):
