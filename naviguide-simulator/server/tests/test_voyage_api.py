@@ -179,6 +179,8 @@ def test_route_delta_is_rules_only():
     assert d["distance_delta_nm"] == 50  # |1500 − 1450|
     assert d["max_deviation_nm"] >= 0
     assert d["avoided_points"] >= 0
+
+
     facts = voyage_api.advice_facts(d, {"source": "skipper", "windMaxKt": 30, "hsMaxM": 3.5})
     phrase = voyage_api.advice_fallback(facts)
     assert "30" in phrase
@@ -186,6 +188,23 @@ def test_route_delta_is_rules_only():
     for token in ("1450", "1500", "50", str(d["max_deviation_nm"]), str(d["avoided_points"])):
         if token in phrase:
             assert token in {str(facts[k]) for k in facts if facts[k] is not None}
+
+
+def test_official_moments_passes_english_language_to_journal_builder(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(voyage_api.official_store, "serve_moments", lambda **_kw: {
+        "status": "ready", "count": 1, "moments": [{"signature": "fr"}],
+    })
+    monkeypatch.setattr(voyage_api, "load_voyage", lambda _voyage_id: {"voyageId": "official"})
+
+    def build(_voyage_id, _voy, lang="fr"):
+        seen["lang"] = lang
+        return [{"signature": lang}]
+
+    monkeypatch.setattr("moment_journal.rows_from_voyage", build)
+    response = voyage_api.get_official_moments(lang="en")
+    assert seen["lang"] == "en"
+    assert response["moments"] == [{"signature": "en"}]
 
 
 def test_explain_recompute_fast_tier_filters_invented_numbers(monkeypatch):

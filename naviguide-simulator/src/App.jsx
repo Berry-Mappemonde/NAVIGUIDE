@@ -679,6 +679,7 @@ export default function App() {
     incomingMoment: iciMoment.moment,
     until: momentIso,
     suivreCustom,
+    lang,
     enabled: sceneReady && !(suivreCustom && !customVoyageId),
   });
   const displayKnots = isSuivre
