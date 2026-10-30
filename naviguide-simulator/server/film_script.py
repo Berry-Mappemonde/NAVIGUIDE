@@ -11769,6 +11769,17 @@ def _pad_tagged(text: str, budget: int) -> str:
     return body
 
 
+def _chapter_provenance(result: Any) -> dict[str, str]:
+    """Exact metadata for accepted chapter text; judges/reviews never call this.
+
+    Rules/budget fallbacks and validation-only calls have no chapter attribution.
+    """
+    model = str(getattr(result, "model", "") or "").strip()
+    source = str(result[1] or "").strip() if isinstance(result, (tuple, list)) and len(result) > 1 else ""
+    tier = str(getattr(result, "tier", "") or "").strip()
+    return {"served_model": model, "served_source": source, "served_tier": tier} if model and source else {}
+
+
 async def write_stored_plan(
     plan: dict,
     *,
@@ -11823,7 +11834,7 @@ async def write_stored_plan(
                 fb += extra_fb
                 rw = max(0, rw - extra_fb)
         anchors = reanchor_written_chapter(ch, guarded, lang)
-        chapters_out.append({**ch, "text": guarded, "anchors": anchors})
+        chapters_out.append({**ch, **_chapter_provenance(result), "text": guarded, "anchors": anchors})
         stats["rewritten"] += rw
         stats["fallen"] += fb
     stats["source"] = source_last
@@ -12012,9 +12023,10 @@ async def edit_written_once(
         # (« Arrivée à Ajaccio… » dite deux fois, les alizés perdus). Le garde-fou
         # vérifie les nombres, épelés compris.
         from story_cascade import NO_NUMBER_FILTER  # noqa: PLC0415
-        text, source = await cascade(
+        result = await cascade(
             EDIT_SYSTEM, user, tier="judge", fallback="", facts=NO_NUMBER_FILTER, max_tokens=max_tok,
         )
+        text, source = result
         if not str(source).endswith("-ultra") or _looks_cut(src, text):
             out.append(ch)
             continue
@@ -12040,7 +12052,7 @@ async def edit_written_once(
         if rw <= 0:
             out.append(ch)
             continue
-        out.append({**ch, "text": guarded, "anchors": reanchor_written_chapter(raw_ch, guarded, "fr")})
+        out.append({**ch, **_chapter_provenance(result), "text": guarded, "anchors": reanchor_written_chapter(raw_ch, guarded, "fr")})
         rewritten += 1
     if rewritten <= 0:
         return None
@@ -12521,7 +12533,7 @@ async def translate_written_plan(
             # Lightning rend parfois le français tel quel : nouvelles demandes, chacune
             # avec une autre consigne, sinon le cache rend la même réponse. Un seul
             # chapitre raté faisait tomber tout l'anglais du film intégral.
-            text, source = await cascade(
+            result = await cascade(
                 TRANSLATE_SYSTEM,
                 (_TRANSLATE_LEADS[_attempt] + src) + keep,
                 tier="fast",
@@ -12531,6 +12543,7 @@ async def translate_written_plan(
                 facts=NO_NUMBER_FILTER,
                 max_tokens=min(1200, max(256, (len(src) // 2) + 80)),
             )
+            text, source = result
             if not (text or "").strip() or source in {"rules", "budget"}:
                 return None
             # Date et durée remises d'aplomb AVANT le garde-fou (il les compare au
@@ -12585,7 +12598,8 @@ async def translate_written_plan(
             r"\1 sails past", guarded,
         )
         anchors = reanchor_written_chapter(ch, guarded, "en")
-        out.append({**ch, "text": guarded, "anchors": anchors})
+        provenance = _chapter_provenance(result)
+        out.append({**{k: v for k, v in ch.items() if k not in {"served_model", "served_source", "served_tier"}}, **provenance, "text": guarded, "anchors": anchors})
     if not any_ok:
         return None
     stamped = _stamp_written_plan(
@@ -12917,6 +12931,7 @@ def _public_plan(plan: dict, source: str) -> dict:
             "tA": c.get("tA"),
             "tB": c.get("tB"),
             "text": fix_en_waters_casing(c.get("text") or ""),
+            **({key: c[key] for key in ("served_model", "served_source", "served_tier") if c.get(key)}),
             "anchors": [
                 {"charIdx": a.get("charIdx"), "t": a.get("t")}
                 for a in (c.get("anchors") or [])

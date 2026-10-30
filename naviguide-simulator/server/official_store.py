@@ -501,6 +501,10 @@ def reset_store() -> None:
     """Tests : oublier le singleton (nouveau répertoire / faux client)."""
     global _INSTANCE
     _INSTANCE = None
+    # Les états du job Rédigé async sont au niveau module : un test ne doit
+    # pas hériter de l'échec ou de la tâche d'un test précédent.
+    _FILM_WRITE_FAILED.clear()
+    _FILM_WRITE_TASKS.clear()
 
 
 def get(family: str, key: Optional[str] = None) -> Optional[dict]:

@@ -42,6 +42,10 @@ def test_receipt_counts_only_real_calls(tmp_path, monkeypatch):
     written = official_store.serve_film("fr", 150, style="written")
     assert written["hasWritten"] is True
     rc = written["receipt"]
+    assert written["chapters"]
+    assert all(ch.get("served_model") and ch.get("served_source") and ch.get("served_tier") for ch in written["chapters"])
+    assert {ch["served_model"] for ch in written["chapters"]} <= {m["model"] for m in rc["models"]}
+    assert all("served_model" not in ch for ch in official_store.serve_film("fr", 150, style="raw")["chapters"])
     # Chaque appel de la cascade est compté une fois, ni plus ni moins.
     assert rc["llmCalls"] == len(log) and rc["llmCalls"] > 0
     assert sum(m["calls"] for m in rc["models"]) == len(log)
