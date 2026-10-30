@@ -58,21 +58,23 @@ test("RC1 bulles : EventBubble et EscalePopup ouvertes puis détruites sans erre
   // Fiche d'escale (racine React n° 2) : un drapeau cliqué en Tracer (il faut l'API).
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
-  // Le changement de vue déclenche le chargement asynchrone des marqueurs.
-  // Ne pas laisser l'évaluation ci-dessous réussir à vide avant Ajaccio.
-  await page.waitForFunction(() => {
-    for (const m of window.__naviguideScene?.waypointMarkers?.values() || []) {
-      if (/Ajaccio/i.test(m._naviguideWaypoint?.name || "")) return true;
-    }
-    return false;
-  }, null, { timeout: 15_000 });
-  const clickedAjaccio = await page.evaluate(() => {
-    for (const m of window.__naviguideScene?.waypointMarkers?.values() || []) {
-      if (/Ajaccio/i.test(m._naviguideWaypoint?.name || "")) { m.fire("click"); return true; }
-    }
-    return false;
-  });
-  expect(clickedAjaccio, "marqueur Ajaccio trouvé au moment du clic").toBe(true);
+  if (process.env.PW_WITH_API === "1") {
+    // Le changement de vue déclenche le chargement asynchrone des marqueurs.
+    // Ne pas laisser l'évaluation ci-dessous réussir à vide avant Ajaccio.
+    await page.waitForFunction(() => {
+      for (const m of window.__naviguideScene?.waypointMarkers?.values() || []) {
+        if (/Ajaccio/i.test(m._naviguideWaypoint?.name || "")) return true;
+      }
+      return false;
+    }, null, { timeout: 15_000 });
+    const clickedAjaccio = await page.evaluate(() => {
+      for (const m of window.__naviguideScene?.waypointMarkers?.values() || []) {
+        if (/Ajaccio/i.test(m._naviguideWaypoint?.name || "")) { m.fire("click"); return true; }
+      }
+      return false;
+    });
+    expect(clickedAjaccio, "marqueur Ajaccio trouvé au moment du clic").toBe(true);
+  }
   // Hors film, la fiche d'escale est rendue dans le panneau ; la popup Leaflet
   // reste neutralisée pour éviter de masquer les drapeaux et les autres fiches.
   const escale = page.getByTestId("escale-sheet").filter({ hasText: /Ajaccio/i });
@@ -83,8 +85,7 @@ test("RC1 bulles : EventBubble et EscalePopup ouvertes puis détruites sans erre
   }
   // Détruit la scène (même chemin que le nettoyage d'effet de MapScene).
   await page.evaluate(() => window.__naviguideScene.dispose());
-  await page.waitForTimeout(300);
   await expect(page.getByTestId("event-bubble")).toHaveCount(0);
-  await expect(page.getByTestId("escale-popup")).toHaveCount(0);
+  if (escaleOpen) await expect(escale).toHaveCount(0);
   expect(bad, bad.join("\n")).toEqual([]);
 });
