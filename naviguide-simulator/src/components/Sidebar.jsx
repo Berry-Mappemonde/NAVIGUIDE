@@ -435,7 +435,7 @@ export const Sidebar = memo(function Sidebar({
 
           {!drawingHidesBerry && chat ? (
             <div className="mt-1.5">
-              <LogbookChat messages={chat.messages} pending={chat.pending} error={chat.error} onAsk={onChatAsk} />
+              <LogbookChat messages={chat.messages} pending={chat.pending} error={chat.error} onAsk={onChatAsk} onRetry={chat.retry} />
             </div>
           ) : null}
         </div>
