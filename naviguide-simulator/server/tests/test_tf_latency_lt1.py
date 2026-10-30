@@ -68,7 +68,7 @@ def _r2_handler(seen):
 
 
 def test_R2_timeout_default_providers_stays_nemotron(monkeypatch):
-    """Providers par défaut + clé NVIDIA : un timeout TF ne bascule pas sur gpt-oss-20b."""
+    """Timeout TF : NIM GPT-OSS est sauté tant que le fallback externe est opt-in."""
     monkeypatch.delenv("NAVIGUIDE_LLM_PROVIDERS", raising=False)
     monkeypatch.delenv("NAVIGUIDE_LLM_TIMEOUT_FALLBACK", raising=False)
     monkeypatch.setenv("NVIDIA_API_KEY", "nv-test")

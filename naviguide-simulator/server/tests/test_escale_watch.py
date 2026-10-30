@@ -94,6 +94,26 @@ def test_watch_query_and_window():
     assert escale_watch.stops_in_window(clock, late) == []
 
 
+def test_search_watch_keeps_http_error_distinct_from_empty(monkeypatch):
+    _keys(monkeypatch)
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(503, json={"results": []})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await escale_watch.search_watch("Nouméa", client=client, now=NOW)
+
+    result = asyncio.run(run())
+    assert result["reason"] == "http-error"
+    assert result["status"] == 503
+    assert result["results"] == []
+    assert calls == 1
+
+
 def test_one_watch_writes_news_with_url(monkeypatch):
     _keys(monkeypatch)
     journal.reset()

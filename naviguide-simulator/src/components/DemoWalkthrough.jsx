@@ -189,7 +189,14 @@ export function DemoWalkthrough({
       if (tries < 600) raf = window.requestAnimationFrame(track);
     };
     raf = window.requestAnimationFrame(track);
-    const onResize = () => { shown = ""; };
+    const onResize = () => {
+      shown = "";
+      last = "";
+      stable = 0;
+      tries = 0;
+      window.cancelAnimationFrame(raf);
+      raf = window.requestAnimationFrame(track);
+    };
     window.addEventListener("resize", onResize);
     return () => {
       window.cancelAnimationFrame(raf);
@@ -203,11 +210,12 @@ export function DemoWalkthrough({
     if (step.id !== "trace" || !target) return;
     let el = document.querySelector(target);
     let checkRaf = 0;
+    let attempts = 0;
     const tryAdd = () => {
       el = document.querySelector(target);
       if (el) {
         el.classList.add("naviguide-tour-pulse");
-      } else if (checkRaf < 30) {
+      } else if (++attempts < 30) {
         checkRaf = window.requestAnimationFrame(tryAdd);
       }
     };

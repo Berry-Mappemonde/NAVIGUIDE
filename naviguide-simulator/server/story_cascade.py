@@ -57,7 +57,7 @@ TIMEOUT = httpx.Timeout(25.0, connect=8.0)
 DEFAULT_PROVIDERS = ("tokenfactory", "nim", "openrouter", "claude")
 # Maillons hors Nemotron : après un timeout Token Factory, on ne les appelle
 # que si NAVIGUIDE_LLM_TIMEOUT_FALLBACK=1 (P1-2, règle « Nemotron obligatoire »).
-NON_NEMOTRON_PROVIDERS = frozenset({"openrouter", "claude"})
+NON_NEMOTRON_PROVIDERS = frozenset({"nim", "openrouter", "claude"})
 CACHE_NS = "llm-cache"
 CACHE_TTL_S = 24 * 3600.0
 TF_PARALLEL_DEFAULT = 4
@@ -1142,7 +1142,7 @@ async def _call_nim(
     text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
     if not text:
         raise RuntimeError("nvidia empty")
-    source = f"nvidia-{NIM_MODEL.split('/')[-1]}"
+    source = f"nvidia-{NIM_MODEL}"
     model = _exact_model(source, str((data or {}).get("model") or ""), NIM_MODEL)
     return _as_result(text, source, model=model, tier=tier)
 
@@ -1362,7 +1362,9 @@ async def _cascade_once(
                     llm_budget.remember_cascade_errors(failures, tier=norm_tier)
                 if name in llm_budget.FALLBACK_PROVIDERS:
                     llm_budget.record_fallback(name, norm_tier)
-                    llm_budget.remember_source(name, norm_tier)
+                    # Keep the precise NIM model label (GPT-OSS today) in
+                    # status; provider counters still use the stable `nim` key.
+                    llm_budget.remember_source(source if name == "nim" else name, norm_tier)
                 public = source if source in KNOWN_SOURCES else (
                     "openrouter" if source.startswith("openrouter") else source
                 )

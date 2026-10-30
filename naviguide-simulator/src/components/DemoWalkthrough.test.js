@@ -179,6 +179,17 @@ describe("visite guidée des juges", () => {
     assert.equal(tourEditedStep(), "idle");
     assert.ok(TOUR_EDITED_WAIT_MS >= 30_000 && TOUR_EDITED_WAIT_MS <= 60_000);
   });
+
+  it("R41b/c/f : retries use an attempt count, resize restarts tracking, and panel controls are keyboard operable", () => {
+    const jsx = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
+    assert.match(jsx, /let attempts = 0;[\s\S]*?\+\+attempts < 30/);
+    assert.match(jsx, /const onResize = \(\) => \{[\s\S]*?tries = 0;[\s\S]*?requestAnimationFrame\(track\)/);
+    assert.match(jsx, /allowKeyboardControl: false/);
+    assert.match(jsx, /headingRef\.current\?\.focus/);
+    assert.match(jsx, /demo-walkthrough-prev[\s\S]*?onClick=\{\(\) => goTo\(index - 1\)\}/);
+    assert.match(jsx, /demo-walkthrough-next[\s\S]*?onClick=\{\(\) => goTo\(index \+ 1\)\}/);
+    assert.match(jsx, /window\.addEventListener\("keydown", onEsc, true\)/);
+  });
 });
 
 it("driver.js : chaque étape a un élément réel ou aucun (pas de cible inventée)", () => {

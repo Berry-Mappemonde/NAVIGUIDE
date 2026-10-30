@@ -1884,12 +1884,10 @@ def test_nano_then_lightning_then_nim_keeps_nim_label(monkeypatch):
 
 
 def test_timeout_tf_nim_called_openrouter_claude_skipped(monkeypatch):
-    """R36 (P0): après timeout TF, NIM est appelé (Nemotron), OpenRouter/Claude sautés.
-    
-    NIM sert désormais nemotron-3.5-lightning, donc il NE DOIT PAS être dans
-    NON_NEMOTRON_PROVIDERS. Après un timeout TF, la cascade doit :
-    1. Appeler NIM (provider Nemotron)
-    2. NE PAS appeler OpenRouter ni Claude (providers non-Nemotron)
+    """R36: GPT-OSS via NIM n'est pas un modèle Nemotron et est sauté après timeout.
+
+    Sans opt-in, après timeout TF la cascade ne peut pas traiter NIM comme
+    Nemotron : elle retourne la phrase locale sans appeler NIM, OpenRouter ou Claude.
     """
     import llm_budget
     
@@ -1917,8 +1915,8 @@ def test_timeout_tf_nim_called_openrouter_claude_skipped(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_TF_BASE_EU", "https://api.tokenfactory.nebius.com/v1")
     monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
     monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ant-test")
     monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
     monkeypatch.setenv("NAVIGUIDE_LLM_TIMEOUT_FALLBACK", "0")  # Désactive le fallback hors Nemotron
 
@@ -1931,10 +1929,9 @@ def test_timeout_tf_nim_called_openrouter_claude_skipped(monkeypatch):
     result = asyncio.run(run())
     text, source = result
     
-    # Vérifications
-    assert "port" in text
-    assert source.startswith("nvidia-"), f"Expected NIM source, got {source}"
-    assert nim_called, "NIM devrait être appelé car il sert Nemotron"
+    assert text == "Phrase locale."
+    assert source == "rules"
+    assert not nim_called, "NIM GPT-OSS n'est pas un repli Nemotron"
     assert tf_timeout_count == 1, f"Expected 1 TF call, got {tf_timeout_count}"
     
     # OpenRouter et Claude ne doivent PAS être appelés
@@ -1943,12 +1940,6 @@ def test_timeout_tf_nim_called_openrouter_claude_skipped(monkeypatch):
     assert not openrouter_called, "OpenRouter ne doit pas être appelé après timeout TF"
     assert not claude_called, "Claude ne doit pas être appelé après timeout TF"
     
-    # Vérifier le suivi des erreurs
-    # Le source retourné est "nim" mais last_source_by_tier normalise à "nvidia-<model>"
-    # Vérifier que NIM a été utilisé
-    assert nim_called, "NIM devrait être appelé"
-    assert source.startswith("nvidia-"), f"Expected NIM source, got {source}"
     errors = llm_budget.last_errors()
     assert any(e.get("provider") == "tokenfactory" for e in errors)
-    # NIM doit être compté comme fallback (Nemotron)
-    assert "nim" in llm_budget.fallback_usage()
+    assert llm_budget.fallback_usage().get("nim", 0) == 0

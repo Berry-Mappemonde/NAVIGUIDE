@@ -130,10 +130,9 @@ def watch_settings() -> dict[str, Any]:
 
 
 def watch_enabled() -> bool:
-    """Zéro recherche tant que la veille n'est pas allumée.
+    """Retourne le choix persistant, ou le défaut `NAVIGUIDE_TAVILY_WATCH` (1 par défaut).
 
-    L'interrupteur « Veille Tavily » (R42) l'emporte ; sans choix, défaut du poste
-    `NAVIGUIDE_TAVILY_WATCH` (1 si absent, 0 la coupe). Les tests forcent 0.
+    L'interrupteur « Veille Tavily » (R42) l'emporte sur cette variable.
     """
     return bool(watch_settings()["enabled"])
 
@@ -574,6 +573,10 @@ async def search_watch(
         "qid": qid,
         "day": _day(when),
     }
+    status = data.get("status") if isinstance(data, dict) else None
+    if isinstance(status, int) and status >= 400:
+        stored["reason"] = "http-error"
+        stored["status"] = status
     _cache_put(WATCH_NS, key, stored)
     return {**stored, "cached": False}
 
@@ -729,7 +732,7 @@ async def _watch_stop_locked(
         )
         used.append(qid)
         last_qid = qid
-        if found.get("reason") in {"off", "no-key", "budget", "cap", "bad-question"}:
+        if found.get("reason") in {"off", "no-key", "budget", "cap", "bad-question", "http-error"}:
             break
         completed_round = True
         all_results.extend(found.get("results") or [])
