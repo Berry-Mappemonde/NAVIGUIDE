@@ -4,8 +4,8 @@ Liste pré-écrite (avis, travaux, fermeture), nom du port et date
 substitués. Au plus deux tours par escale : Lightning lit le 1er, et s'il
 manque une réponse il choisit une question de la même liste — il n'en
 invente pas. Une phrase, une URL, `filter_numbers`. Prochaines escales
-seulement (fenêtre J-10 → J+2). Éteint tant que `NAVIGUIDE_TAVILY_WATCH`
-n'est pas ouvert. Jamais d'appel depuis le navigateur.
+seulement (fenêtre J-10 → J+2). Active par défaut (`NAVIGUIDE_TAVILY_WATCH=1`), coupée par l'interrupteur « Veille Tavily » ;
+`NAVIGUIDE_TAVILY_WATCH=0` la coupe. Jamais d'appel depuis le navigateur.
 """
 from __future__ import annotations
 
@@ -91,15 +91,54 @@ def slug(name: str) -> str:
     return _SLUG_RE.sub("-", folded).strip("-") or "escale"
 
 
-def watch_enabled() -> bool:
-    """Zéro recherche tant que le drapeau n'est pas ouvert.
+WATCH_SETTINGS_NS = "watch_settings"
+_WATCH_SETTINGS_KEY = "enabled"
+_WATCH_SETTINGS_UNAVAILABLE = object()
+_TRUE = ("1", "true", "yes", "on")
 
-    Défaut 0 (PR #401). Le 15 oct. `ici_warm` lisait 1 ; le poste
-    ouvre `NAVIGUIDE_TAVILY_WATCH=1`. Les tests forcent 0.
+
+def watch_env_default() -> bool:
+    """Défaut du poste : `NAVIGUIDE_TAVILY_WATCH`, active si absent (U0 / PR #159)."""
+    return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "1").strip().lower() in _TRUE
+
+
+def watch_override() -> bool | None | object:
+    """Choix fait dans l'interrupteur « Veille Tavily » (R42), gardé dans pearl_store.
+
+    None : aucun choix, le défaut du poste s'applique. Une erreur de stockage
+    renvoie un marqueur distinct afin que le réglage ne puisse pas se rallumer.
     """
-    return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "0").strip().lower() in (
-        "1", "true", "yes", "on",
-    )
+    try:
+        hit = _cache_get(WATCH_SETTINGS_NS, _WATCH_SETTINGS_KEY)
+    except Exception as exc:  # store illisible : fail closed
+        log.debug("réglage veille illisible : %s", exc)
+        return _WATCH_SETTINGS_UNAVAILABLE
+    val = (hit or {}).get("enabled")
+    return val if isinstance(val, bool) else None
+
+
+def set_watch_override(enabled: bool | None) -> None:
+    _cache_put(WATCH_SETTINGS_NS, _WATCH_SETTINGS_KEY, {"enabled": enabled, "at": to_iso(datetime.now(timezone.utc))})
+
+
+def watch_settings() -> dict[str, Any]:
+    override = watch_override()
+    default = watch_env_default()
+    if override is _WATCH_SETTINGS_UNAVAILABLE:
+        return {"enabled": False, "default": default, "source": "error"}
+    return {
+        "enabled": default if override is None else override,
+        "default": default,
+        "source": "env" if override is None else "setting",
+    }
+
+
+def watch_enabled() -> bool:
+    """Retourne le choix persistant, ou le défaut `NAVIGUIDE_TAVILY_WATCH` (1 par défaut).
+
+    L'interrupteur « Veille Tavily » (R42) l'emporte sur cette variable.
+    """
+    return bool(watch_settings()["enabled"])
 
 
 def watch_daily_search_cap() -> int:
@@ -538,6 +577,13 @@ async def search_watch(
         "qid": qid,
         "day": _day(when),
     }
+    status = data.get("status") if isinstance(data, dict) else None
+    if isinstance(status, int) and status >= 400:
+        stored["reason"] = "http-error"
+        stored["status"] = status
+        # Une panne temporaire ne doit pas empêcher une nouvelle tentative
+        # pour cette question pendant le reste de la journée.
+        return {**stored, "cached": False}
     _cache_put(WATCH_NS, key, stored)
     return {**stored, "cached": False}
 
@@ -693,7 +739,7 @@ async def _watch_stop_locked(
         )
         used.append(qid)
         last_qid = qid
-        if found.get("reason") in {"off", "no-key", "budget", "cap", "bad-question"}:
+        if found.get("reason") in {"off", "no-key", "budget", "cap", "bad-question", "http-error"}:
             break
         completed_round = True
         all_results.extend(found.get("results") or [])

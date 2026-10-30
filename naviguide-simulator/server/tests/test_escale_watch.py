@@ -94,6 +94,29 @@ def test_watch_query_and_window():
     assert escale_watch.stops_in_window(clock, late) == []
 
 
+def test_search_watch_does_not_cache_http_error(monkeypatch):
+    _keys(monkeypatch)
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(503, json={"results": []})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await escale_watch.search_watch("Nouméa", client=client, now=NOW)
+
+    first = asyncio.run(run())
+    second = asyncio.run(run())
+    for result in (first, second):
+        assert result["reason"] == "http-error"
+        assert result["status"] == 503
+        assert result["results"] == []
+        assert result["cached"] is False
+    assert calls == 2
+
+
 def test_one_watch_writes_news_with_url(monkeypatch):
     _keys(monkeypatch)
     journal.reset()
@@ -246,6 +269,14 @@ def test_flag_closed_zero_tavily_search(monkeypatch):
     assert asyncio.run(run()) is None
     assert [u for u in seen if u.endswith("/search")] == []
     assert not escale_watch.watch_done("Nouméa")
+
+
+def test_default_watch_enabled(monkeypatch):
+    """Défaut actif : sans variable d'env, watch_enabled() est True (PR #401)."""
+    _keys(monkeypatch)
+    # Ne pas forcer NAVIGUIDE_TAVILY_WATCH — on teste le défaut
+    monkeypatch.delenv("NAVIGUIDE_TAVILY_WATCH", raising=False)
+    assert escale_watch.watch_enabled() is True
 
 
 def test_two_rounds_max_lightning_picks_from_list(monkeypatch):
@@ -436,3 +467,13 @@ def test_run_daily_without_enrich_skips_pearls(monkeypatch):
     assert called == []
     assert out["enrich"]["skipped"] is True
     assert out["enrich"]["reason"] == "watch-only"
+
+
+def test_watch_enabled_by_default(monkeypatch):
+    """Default is now 1 (watch enabled) — no env var means watch runs."""
+    monkeypatch.delenv("NAVIGUIDE_TAVILY_WATCH", raising=False)
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert escale_watch.watch_enabled() is True
