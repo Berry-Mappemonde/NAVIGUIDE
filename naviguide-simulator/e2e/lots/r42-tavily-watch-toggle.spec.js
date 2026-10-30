@@ -10,7 +10,10 @@ for (const [lang, label] of [["fr", "Veille Tavily"], ["en", "Tavily watch"]]) {
     test.setTimeout(90_000);
     const api = await request.get(`${API}/escale/watch/settings`).catch(() => null);
     test.skip(!api?.ok(), "API hors ligne absente");
-    const before = (await api.json()).enabled;
+    const initial = await api.json();
+    const before = initial.enabled;
+    const adminSecret = (process.env.NAVIGUIDE_ADMIN_SECRET || "").trim();
+    if (adminSecret) await page.addInitScript((secret) => localStorage.setItem("ng.sim.adminSecret", secret), adminSecret);
     try {
       await page.addInitScript((l) => localStorage.setItem("naviguide_lang_v4", l), lang);
       await page.goto("/");
@@ -30,9 +33,9 @@ for (const [lang, label] of [["fr", "Veille Tavily"], ["en", "Tavily watch"]]) {
       await expect(page.getByTestId("tavily-watch-toggle")).toHaveAttribute("aria-checked", String(!before));
     } finally {
       // Remet le réglage serveur dans son état de départ, sans masquer l'erreur d'origine.
-      const secret = (process.env.NAVIGUIDE_ADMIN_SECRET || "").trim();
-      const headers = secret ? { "X-Naviguide-Admin": secret } : {};
-      const res = await request.post(`${API}/escale/watch/settings`, { data: { enabled: before }, headers })
+      const headers = adminSecret ? { "X-Naviguide-Admin": adminSecret } : {};
+      const restore = initial.source === "setting" ? before : null;
+      const res = await request.post(`${API}/escale/watch/settings`, { data: { enabled: restore }, headers })
         .catch((err) => ({ ok: () => false, status: () => String(err) }));
       if (!res.ok()) console.warn(`R42 : restauration de la veille impossible (HTTP ${res.status()})`);
     }

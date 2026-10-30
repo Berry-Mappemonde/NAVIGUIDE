@@ -189,6 +189,8 @@ describe("visite guidée des juges", () => {
     assert.match(jsx, /demo-walkthrough-prev[\s\S]*?onClick=\{\(\) => goTo\(index - 1\)\}/);
     assert.match(jsx, /demo-walkthrough-next[\s\S]*?onClick=\{\(\) => goTo\(index \+ 1\)\}/);
     assert.match(jsx, /window\.addEventListener\("keydown", onEsc, true\)/);
+    assert.doesNotMatch(jsx, /tries < 600/);
+    assert.match(jsx, /className="min-h-0 flex-1 overflow-y-auto"/);
   });
 });
 

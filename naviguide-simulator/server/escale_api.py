@@ -536,8 +536,8 @@ async def post_watch_settings(body: dict[str, Any]):
     """R42 : allume ou coupe la veille Tavily côté serveur (gardé dans pearl_store)."""
     import escale_watch  # noqa: PLC0415
     enabled = (body or {}).get("enabled")
-    if not isinstance(enabled, bool):
-        raise HTTPException(400, "enabled (booléen) requis")
+    if enabled is not None and not isinstance(enabled, bool):
+        raise HTTPException(400, "enabled (booléen ou null) requis")
     escale_watch.set_watch_override(enabled)
     if enabled:
         try:

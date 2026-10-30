@@ -16,6 +16,13 @@ def test_default_follows_env(monkeypatch):
     assert escale_watch.watch_enabled() is False
 
 
+def test_storage_error_fails_closed_even_when_default_is_on(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_TAVILY_WATCH", "1")
+    monkeypatch.setattr(escale_watch, "_cache_get", lambda *a, **k: (_ for _ in ()).throw(OSError("store unavailable")))
+    assert escale_watch.watch_settings() == {"enabled": False, "default": True, "source": "error"}
+    assert escale_watch.watch_enabled() is False
+
+
 def test_toggle_persists_and_drives_watch_enabled(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_TAVILY_WATCH", "1")
     c = _client()
@@ -47,3 +54,5 @@ def test_post_rejects_non_bool_and_requires_admin(monkeypatch):
     assert c.post("/escale/watch/settings", json={"enabled": False}).status_code == 401
     ok = c.post("/escale/watch/settings", json={"enabled": False}, headers={"X-Naviguide-Admin": "s3"})
     assert ok.status_code == 200
+    reset = c.post("/escale/watch/settings", json={"enabled": None}, headers={"X-Naviguide-Admin": "s3"})
+    assert reset.status_code == 200 and reset.json()["source"] == "env"

@@ -184,9 +184,14 @@ export function DemoWalkthrough({
         stable = key === last ? stable + 1 : 0;
         last = key;
         if (stable >= 3 && key !== shown) { shown = key; show(el); }
+      } else if (driverRef.current) {
+        driverRef.current.destroy();
+        driverRef.current = null;
+        shown = "";
+        setAnchor(null);
       }
       tries += 1;
-      if (tries < 600) raf = window.requestAnimationFrame(track);
+      raf = window.requestAnimationFrame(track);
     };
     raf = window.requestAnimationFrame(track);
     const onResize = () => {
@@ -301,8 +306,9 @@ export function DemoWalkthrough({
       data-spot={anchor ? "on" : "off"}
       {...(arrowDir ? { "data-arrow": arrowDir } : {})}
       style={panelStyle}
-      className={`naviguide-demo-panel fixed z-[2300] flex flex-col overflow-y-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-md inset-x-2 bottom-2 max-h-[45dvh] md:inset-x-auto md:bottom-auto md:top-14 md:w-[min(23rem,calc(100vw-1.5rem))] md:max-h-[calc(100dvh-5rem)] ${side} ${surface}`}
+      className={`naviguide-demo-panel fixed z-[2300] flex flex-col rounded-2xl border p-4 shadow-2xl backdrop-blur-md inset-x-2 bottom-2 max-h-[45dvh] md:inset-x-auto md:bottom-auto md:top-14 md:w-[min(23rem,calc(100vw-1.5rem))] md:max-h-[calc(100dvh-5rem)] ${side} ${surface}`}
     >
+      <div className="min-h-0 flex-1 overflow-y-auto">
       <p className="sr-only" aria-live="polite" data-testid="demo-walkthrough-live">
         {t("demoStepLive", { n: index + 1, total, title: step.title })}
       </p>
@@ -449,6 +455,7 @@ export function DemoWalkthrough({
       >
         {t("demoExit")}
       </button>
+      </div>
     </aside>
   );
 }

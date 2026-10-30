@@ -93,6 +93,7 @@ def slug(name: str) -> str:
 
 WATCH_SETTINGS_NS = "watch_settings"
 _WATCH_SETTINGS_KEY = "enabled"
+_WATCH_SETTINGS_UNAVAILABLE = object()
 _TRUE = ("1", "true", "yes", "on")
 
 
@@ -101,27 +102,30 @@ def watch_env_default() -> bool:
     return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "1").strip().lower() in _TRUE
 
 
-def watch_override() -> bool | None:
+def watch_override() -> bool | None | object:
     """Choix fait dans l'interrupteur « Veille Tavily » (R42), gardé dans pearl_store.
 
-    None : aucun choix, le défaut du poste s'applique.
+    None : aucun choix, le défaut du poste s'applique. Une erreur de stockage
+    renvoie un marqueur distinct afin que le réglage ne puisse pas se rallumer.
     """
     try:
         hit = _cache_get(WATCH_SETTINGS_NS, _WATCH_SETTINGS_KEY)
-    except Exception as exc:  # store illisible : on retombe sur le défaut du poste
+    except Exception as exc:  # store illisible : fail closed
         log.debug("réglage veille illisible : %s", exc)
-        return None
+        return _WATCH_SETTINGS_UNAVAILABLE
     val = (hit or {}).get("enabled")
     return val if isinstance(val, bool) else None
 
 
-def set_watch_override(enabled: bool) -> None:
-    _cache_put(WATCH_SETTINGS_NS, _WATCH_SETTINGS_KEY, {"enabled": bool(enabled), "at": to_iso(datetime.now(timezone.utc))})
+def set_watch_override(enabled: bool | None) -> None:
+    _cache_put(WATCH_SETTINGS_NS, _WATCH_SETTINGS_KEY, {"enabled": enabled, "at": to_iso(datetime.now(timezone.utc))})
 
 
 def watch_settings() -> dict[str, Any]:
     override = watch_override()
     default = watch_env_default()
+    if override is _WATCH_SETTINGS_UNAVAILABLE:
+        return {"enabled": False, "default": default, "source": "error"}
     return {
         "enabled": default if override is None else override,
         "default": default,

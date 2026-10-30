@@ -27,7 +27,7 @@ export async function saveWatchSettings(enabled, fetchImpl = fetch, base = API_U
       headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify({ enabled: Boolean(enabled) }),
     });
-    if (res.status === 401 || res.status === 403 || res.status === 503) return { ok: false, reason: "admin" };
+    if (res.status === 401 || res.status === 403) return { ok: false, reason: "admin" };
     if (!res.ok) return { ok: false, reason: "error" };
     const settings = parseWatchSettings(await res.json());
     return settings ? { ok: true, settings } : { ok: false, reason: "error" };

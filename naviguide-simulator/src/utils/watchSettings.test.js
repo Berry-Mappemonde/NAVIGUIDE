@@ -26,6 +26,7 @@ test("R42 : lecture et écriture passent par /escale/watch/settings avec la clé
 
 test("R42 : refus admin et panne réseau distingués", async () => {
   assert.deepEqual(await saveWatchSettings(true, async () => res(401, {}), ""), { ok: false, reason: "admin" });
+  assert.deepEqual(await saveWatchSettings(true, async () => res(503, {}), ""), { ok: false, reason: "error" });
   assert.deepEqual(await saveWatchSettings(true, async () => { throw new Error("x"); }, ""), { ok: false, reason: "error" });
 });
 
