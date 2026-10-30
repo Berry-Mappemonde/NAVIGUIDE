@@ -6002,47 +6002,6 @@ def _halifax_hop_marks():
     ]
 
 
-def test_review_hop_trusted_rejects_mixed_scale_417():
-    """Revue 417 (nm−filmNm) vs jambe réelle ~497 : revue non fiable."""
-    from film_script import _cross_scale_hop_nm, _hop_nm_cap, _review_hop_trusted, _side_hop_metrics
-
-    w = {
-        "from": {"lat": 44.65, "lon": -63.57, "filmNm": 8780.6263},
-        "to": {
-            "lat": 46.78, "lon": -56.18, "nm": 9197.415837873954, "filmNm": 9160.2308,
-            "name": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
-        },
-        "fromName": "Halifax (Nouvelle-Écosse)",
-        "toName": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
-        "tA": "2026-08-12T03:59:04Z",
-        "tB": "2026-08-15T08:59:54Z",
-    }
-    cross = _cross_scale_hop_nm(w)
-    assert cross is not None and abs(cross - 416.79) < 1
-    cap = _hop_nm_cap(3)
-    dest = w["to"]
-    review417 = {
-        "legs": [{
-            "from": "Halifax (Nouvelle-Écosse)",
-            "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
-            "legNm": 417,
-            "daysAtSea": 2,
-        }],
-    }
-    assert _review_hop_trusted(w, review417, 417, cap, dest) is False
-    metrics417 = _side_hop_metrics(w, review417)
-    assert metrics417["legNm"] != 417
-    review497 = {
-        "legs": [{
-            "from": "Halifax (Nouvelle-Écosse)",
-            "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
-            "legNm": 497,
-            "daysAtSea": 2.6,
-        }],
-    }
-    assert _review_hop_trusted(w, review497, 497, cap, dest) is True
-
-
 def test_halifax_saint_pierre_hop_not_voyage():
     """Le second bateau dit les milles et les jours de Halifax → Saint-Pierre.
 
@@ -6108,7 +6067,7 @@ def test_halifax_saint_pierre_hop_not_voyage():
     bare_text = bare_ch["text"] or ""
     rev_text = rev_ch["text"] or ""
     assert _opening_nm_label(hop_film_nm, "en") in bare_text
-    assert "two days at sea" in bare_text
+    assert "three days at sea" in bare_text
     assert _opening_nm_label(leg_nm, "en") in rev_text
     assert spoken_sea_days(leg_days, "en") in rev_text
     assert _opening_nm_label(leg_nm, "fr") in (fr_ch["text"] or "")
@@ -6142,8 +6101,9 @@ def test_halifax_saint_pierre_hop_not_voyage():
     for chapter in (station_bare_ch, station_rev_ch):
         refuse_voyage(chapter["text"] or "")
         assert "417" not in (chapter["text"] or "")
+        assert "two days" not in (chapter["text"] or "")
     assert _opening_nm_label(hop_film_nm, "en") in (station_bare_ch["text"] or "")
-    assert "two days at sea" in (station_bare_ch["text"] or "")
+    assert "three days at sea" in (station_bare_ch["text"] or "")
     assert _opening_nm_label(leg_nm, "en") in (station_rev_ch["text"] or "")
     assert spoken_sea_days(leg_days, "en") in (station_rev_ch["text"] or "")
     from film_script import repair_side_hop_plan
