@@ -13,6 +13,7 @@ export default {
   drawNextStop:   "Choose your next stop",
   undoLastPoint:  "Undo last point",
   redo:           "Redo",
+  satellitePopupClose: "Close satellite data",
   copied:         "copied",
   calculatingRoutes: "Calculating routes…",
   positioningExpedition: "Locating the expedition…",

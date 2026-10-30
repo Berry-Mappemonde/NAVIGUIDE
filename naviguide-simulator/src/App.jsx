@@ -2413,7 +2413,7 @@ export default function App() {
 
       {selectedSatellite && (
         <div data-testid="satellite-popup" className="naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2100] w-[360px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl bottom-52">
-          <button type="button" data-testid="satellite-popup-close" className="absolute top-2 right-2 text-slate-400" onClick={closeSatellite}><X size={14} /></button>
+          <button type="button" data-testid="satellite-popup-close" className="absolute top-2 right-2 text-slate-400" aria-label={t("satellitePopupClose")} onClick={closeSatellite}><X size={14} /></button>
           <div className="font-semibold mb-2">{t("satelliteData")}</div>
           <div className="flex gap-1 mb-2">
             {["wind", "waves", "currents"].map((tab) => (

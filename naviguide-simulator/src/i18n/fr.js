@@ -13,6 +13,7 @@ export default {
   drawNextStop:   "Choisissez votre prochaine escale",
   undoLastPoint:  "Annuler le dernier point",
   redo:           "Rétablir",
+  satellitePopupClose: "Fermer les données satellite",
   copied:         "copié",
   calculatingRoutes: "Calcul des routes…",
   positioningExpedition: "Position de l’expédition…",
