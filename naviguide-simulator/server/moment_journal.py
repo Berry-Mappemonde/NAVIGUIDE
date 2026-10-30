@@ -32,6 +32,7 @@ APPROACH_NM_FLOOR = 80.0
 APPROACH_FRAC = 0.10
 _GENERIC_TITLES = frozenset({
     "station croisée", "station", "stations", "croisée", "croisee",
+    "station passed", "passed",
     "marina croisée", "marina", "marinas",
     "aire marine protégée", "amp", "mpa",
     "formalités d'entrée", "ports d'entrée", "port d'entrée",
@@ -677,7 +678,7 @@ def _pearls_in_route_order(voy: dict) -> list[dict]:
     return out
 
 
-def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
+def _build_rows(voyage_id: str, voy: dict, lang: str = "fr") -> list[dict]:
     pearls = _pearls_in_route_order(voy)
     vertices = (voy.get("clock") or {}).get("vertices") or []
     if not isinstance(vertices, list):
@@ -716,7 +717,7 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
         leg_idx, jambe = _leg_at(
             legs, sail if sail is not None else 0.0, pos=pos, marks=marks,
         )
-        cur = build_moment(pearl, clock, jambe, thresholds, lang="fr")
+        cur = build_moment(pearl, clock, jambe, thresholds, lang=lang)
         sig = cur.get("signature") or signature(cur)
         to_nm = _as_float(jambe.get("toNm"))
         from_nm = _as_float(jambe.get("fromNm"))
@@ -848,9 +849,9 @@ def _with_clock(voy: dict) -> dict:
     return {**voy, "clock": clock} if clock else voy
 
 
-def rows_from_voyage(voyage_id: str, voy: dict) -> list[dict]:
+def rows_from_voyage(voyage_id: str, voy: dict, lang: str = "fr") -> list[dict]:
     """Moments datés, même forme que le journal officiel. `voy['pearls']` si déjà chargées."""
-    return _build_rows(voyage_id, voy)
+    return _build_rows(voyage_id, voy, lang=lang)
 
 
 def moment_row_key(row: dict) -> str:

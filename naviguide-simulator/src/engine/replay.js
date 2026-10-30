@@ -9,7 +9,7 @@
 import { DEFAULT_T0_ISO, sampleClockAtTime } from "./voyageClock.js";
 import { expeditionStory, officialDatedStops } from "./expeditionStory.js";
 import { cardFromJournalEntry, JOURNAL_CARD_KINDS } from "./momentCard.js";
-import { haversineNm, unwrapLon } from "../utils/geo.js";
+import { haversineNm, unwrapLon, wrapLon } from "../utils/geo.js";
 
 export { cardFromJournalEntry };
 export const CARD_KINDS = JOURNAL_CARD_KINDS;
@@ -621,16 +621,37 @@ export function replaySample(clock, tMs, timeline = []) {
 }
 
 /**
+ * Écart maximal (milles) entre la position d'une ligne du journal et le bateau
+ * du film à la même date. Au-delà, la ligne a été datée sur un autre planning
+ * (stock figé, ETA recalculée) : l'entrée en ZEE Nouvelle-Calédonie du 14 oct.
+ * s'affichait quand le film passait Papeete. Une carte fausse ne vaut pas mieux
+ * que pas de carte.
+ */
+export const FILM_CARD_MAX_NM = 60;
+
+/** True when the journal line sits where the film boat is at its date (or has no position). */
+export function journalEventOnFilm(e, clock, tMs = ms(e?.t), maxNm = FILM_CARD_MAX_NM) {
+  if (!clock || !e) return true;
+  const lat = Number(e.lat);
+  const lon = Number(e.lon);
+  if (e.lat == null || e.lon == null || !Number.isFinite(lat) || !Number.isFinite(lon)) return true;
+  const pos = positionAt(clock, tMs);
+  if (!pos || !Number.isFinite(pos.lat) || !Number.isFinite(pos.lon)) return true;
+  return haversineNm(lat, wrapLon(lon), pos.lat, wrapLon(pos.lon)) <= maxNm;
+}
+
+/**
  * Journal lines that fall in (fromMs, toMs], as cards, in order. A ZEE
  * *exit* is not a card: entering the next zone (or nothing, high seas) says
  * it, and a replay has one second per day to spend.
  */
-export function cardsBetween(timeline, fromMs, toMs, lang = "fr") {
+export function cardsBetween(timeline, fromMs, toMs, lang = "fr", clock = null) {
   const out = [];
   for (const e of timeline) {
     const t = ms(e.t);
     if (t == null || t <= fromMs || t > toMs) continue;
     if (e.kind === "zee" && e.event === "exit") continue;
+    if (!journalEventOnFilm(e, clock, t)) continue;
     const card = cardFromJournalEntry(e, lang);
     if (card) out.push(card);
   }

@@ -179,6 +179,8 @@ def test_route_delta_is_rules_only():
     assert d["distance_delta_nm"] == 50  # |1500 − 1450|
     assert d["max_deviation_nm"] >= 0
     assert d["avoided_points"] >= 0
+
+
     facts = voyage_api.advice_facts(d, {"source": "skipper", "windMaxKt": 30, "hsMaxM": 3.5})
     phrase = voyage_api.advice_fallback(facts)
     assert "30" in phrase
@@ -186,6 +188,50 @@ def test_route_delta_is_rules_only():
     for token in ("1450", "1500", "50", str(d["max_deviation_nm"]), str(d["avoided_points"])):
         if token in phrase:
             assert token in {str(facts[k]) for k in facts if facts[k] is not None}
+
+
+def test_official_moments_passes_english_language_to_journal_builder(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(voyage_api.official_store, "serve_moments", lambda **_kw: {
+        "status": "ready", "count": 1, "moments": [{"signature": "fr"}],
+    })
+    monkeypatch.setattr(voyage_api, "load_voyage", lambda _voyage_id: {"voyageId": "official"})
+
+    def build(_voyage_id, _voy, lang="fr"):
+        seen["lang"] = lang
+        return [{"signature": lang}]
+
+    monkeypatch.setattr("moment_journal.rows_from_voyage", build)
+    response = voyage_api.get_official_moments(lang="en")
+    assert seen["lang"] == "en"
+    assert response["moments"] == [{"signature": "en"}]
+
+
+def test_official_moments_english_keeps_frozen_rows_when_rebuild_is_empty(monkeypatch):
+    import json
+    import tarfile
+    from pathlib import Path
+
+    archive = Path(__file__).resolve().parent / "fixtures" / "official_store.tar.gz"
+    with tarfile.open(archive, "r:gz") as tf:
+        member = next(m for m in tf.getmembers() if m.name.endswith("/moments.json"))
+        stored = json.load(tf.extractfile(member))["payload"]["moments"]
+
+    monkeypatch.setattr(voyage_api.official_store, "serve_moments", lambda **_kw: {
+        "status": "ready", "count": len(stored), "moments": stored,
+    })
+    monkeypatch.setattr(voyage_api, "load_voyage", lambda _voyage_id: {"voyageId": "official"})
+    # Frozen data has no pearl history for this English rebuild.
+    monkeypatch.setattr("moment_journal.rows_from_voyage", lambda *_a, **_kw: [])
+
+    fr = voyage_api.get_official_moments(lang="fr")
+    en = voyage_api.get_official_moments(lang="en")
+    assert en["count"] == fr["count"] > 0
+    assert [row["pos"] for row in en["moments"]] == [row["pos"] for row in fr["moments"]]
+    for key in ("around", "alerts"):
+        assert sum(len((row.get("moment") or {}).get(key) or []) for row in en["moments"]) == sum(
+            len((row.get("moment") or {}).get(key) or []) for row in fr["moments"]
+        )
 
 
 def test_explain_recompute_fast_tier_filters_invented_numbers(monkeypatch):

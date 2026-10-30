@@ -105,9 +105,10 @@ describe("useMomentJournal — : repli localStorage, plafond 2 000", () => {
 
   it("GET /voyage/{id}/moments pour ma route, officiel inchangé", () => {
     assert.equal(momentsRequestPath("official"), "/voyage/official/moments");
+    assert.equal(momentsRequestPath("official", "en"), "/voyage/official/moments?lang=en");
     assert.equal(momentsRequestPath(""), "/voyage/official/moments");
     assert.equal(momentsRequestPath("abc-123"), "/voyage/abc-123/moments");
-    assert.match(src, /momentsRequestPath\(voyageId\)/);
+    assert.match(src, /momentsRequestPath\(voyageId, lang\)/);
     assert.match(src, /voyageId: routeId/);
   });
 });

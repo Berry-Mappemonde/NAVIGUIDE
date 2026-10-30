@@ -38,6 +38,8 @@ export function publicFilmReceipt(data) {
   }
   if (typeof r.reviewed === "boolean") out.reviewed = r.reviewed;
   if (typeof r.at === "string") out.at = r.at;
+  // R45 : pas de webSourceCount serveur. Le compteur Tavily du reçu est celui des
+  // sources affichées (publicFilmWebContext, dédoublonnées, 3 au plus).
   return out;
 }
 

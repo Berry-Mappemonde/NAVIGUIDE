@@ -679,6 +679,7 @@ export default function App() {
     incomingMoment: iciMoment.moment,
     until: momentIso,
     suivreCustom,
+    lang,
     enabled: sceneReady && !(suivreCustom && !customVoyageId),
   });
   const displayKnots = isSuivre
@@ -2117,7 +2118,7 @@ export default function App() {
         momentNow={replay.active ? replay.card : (sceneReady ? moments.now : null)}
         momentNowLeft={replay.active ? 0 : moments.nowLeft}
         onMomentDismiss={replay.active ? replay.dismissCard : moments.dismiss}
-        momentFree={sceneReady ? moments.free : null}
+        momentFree={sceneReady && !replay.active ? moments.free : null}
         momentFreeLeft={moments.freeLeft}
         onMomentNext={moments.next}
         chat={chat}

@@ -151,6 +151,16 @@ def test_localized_zee_names_on_fixture_no_double_parens():
     assert localize_zee_name(pearl["zee"], "fr") == fr["here"]["zee"]["name"]
 
 
+def test_around_facts_use_requested_language_and_decimal_separator():
+    pearl, clock, leg, thresholds, _ = _inputs(extra_pearl={
+        "science": {"nearby": [{"name": "Buoy A", "nm": 2.7}]},
+    })
+    fr = build_moment(pearl, clock, leg, thresholds, lang="fr")
+    en = build_moment(pearl, clock, leg, thresholds, lang="en")
+    assert any(item["fact"] == "Buoy A (2,7 nm)" for item in fr["around"])
+    assert any(item["fact"] == "Buoy A (2.7 nm)" for item in en["around"])
+
+
 def test_rc32_saint_martin_sheet_distinguished():
     name = localize_zee_name(
         {"name": "Saint-Martin Exclusive Economic Zone", "mrgid": 8495, "territory": "saint_martin"},

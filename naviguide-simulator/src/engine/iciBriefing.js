@@ -486,6 +486,7 @@ export function replayHereFrame({
     zee: named,
     statusText,
     leg: from || to ? { from, to } : null,
+    at: { lat: Number(lat), lon: Number(lon) },
   };
 }
 

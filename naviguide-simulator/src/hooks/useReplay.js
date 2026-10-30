@@ -16,7 +16,7 @@ import { isAirLegNames } from "../utils/berryLegs.js";
 import { filmShownEstimateSeconds, filmVariantAbsent } from "../engine/playSpeeds.js";
 import { exitDocumentFullscreen } from "../utils/cinemaHotkey.js";
 import { restoreFollowView } from "./useFilmCamera.js";
-import { publicFilmWebContext } from "../utils/filmWebSources.js";
+import { nextFilmWebContext, publicFilmWebContext } from "../utils/filmWebSources.js";
 import { publicFilmReceipt } from "../utils/filmReceipt.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
@@ -1390,7 +1390,7 @@ export function useReplay({
       setFilmSource(resolved.source);
       setFilmReviewedBy(resolved.reviewedBy || "");
       setFilmModel(resolved.model || "");
-      setFilmWebContext(resolved.webContext || null);
+      setFilmWebContext((prev) => nextFilmWebContext(prev, resolved));
       setFilmReceipt(resolved.receipt || null);
       applyEstimates(data);
       applyStory(data);
@@ -1460,7 +1460,7 @@ export function useReplay({
           setFilmSource(resolved.source);
           setFilmReviewedBy(resolved.reviewedBy || "");
           setFilmModel(resolved.model || "");
-          setFilmWebContext(resolved.webContext || null);
+          setFilmWebContext((prev) => nextFilmWebContext(prev, resolved));
           setFilmReceipt(resolved.receipt || null);
         })
         .catch((err) => {
@@ -1951,7 +1951,7 @@ export function useReplay({
       const ingest = (next) => {
         if (next == null) return;
         const from = lastTRef.current ?? next;
-        const fresh = cardsBetween(timelineRef.current, from, next, lang);
+        const fresh = cardsBetween(timelineRef.current, from, next, lang, clockRef.current);
         if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);
         lastTRef.current = next;
         tMsRef.current = next;
@@ -2392,7 +2392,7 @@ export function useReplay({
           setFilmSource(resolved.source);
           setFilmReviewedBy(resolved.reviewedBy || "");
           setFilmModel(resolved.model || "");
-          setFilmWebContext(resolved.webContext || null);
+          setFilmWebContext((prev) => nextFilmWebContext(prev, resolved));
           setFilmReceipt(resolved.receipt || null);
           setWrittenUnavailable(null);
           setFilmWriting(false);

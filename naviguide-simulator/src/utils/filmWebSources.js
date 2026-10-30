@@ -15,6 +15,18 @@ function domainOf(url) {
   }
 }
 
+/** Clé de dédoublonnage : schéma et hôte en minuscules, sans www., sans fragment ni « / » final. */
+export function normalizeSourceUrl(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase().replace(/^www\./, "");
+    const path = u.pathname.replace(/\/+$/, "");
+    return `${u.protocol.toLowerCase()}//${host}${u.port ? `:${u.port}` : ""}${path}${u.search}`;
+  } catch {
+    return String(url || "").trim();
+  }
+}
+
 /** Clé de dédoublonnage (schéma/hôte minuscules, sans www., sans / final). */
 export function normalizeFilmWebSourceUrl(url) {
   try {
@@ -49,4 +61,12 @@ export function publicFilmWebContext(data) {
   }
   if (!port || !sources.length) return null;
   return { port, fetchedAt: ctx.fetchedAt || null, sources };
+}
+
+/**
+ * Contexte web à garder quand un nouveau film est servi : toujours celui du
+ * film servi, jamais celui du précédent (film B sans Tavily → null).
+ */
+export function nextFilmWebContext(_previous, resolved) {
+  return resolved?.webContext || null;
 }

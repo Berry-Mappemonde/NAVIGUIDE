@@ -1386,10 +1386,27 @@ class JournalNoteIn(BaseModel):
 @router.get("/voyage/official/moments")
 def get_official_moments(
     until: str | None = Query(None, description="ISO : ne garder que les lignes t ≤ until"),
+    lang: str = Query("fr"),
 ):
     """Journal des moments — lu du stock RF2, jamais un warm sur la requête."""
     try:
         out = official_store.serve_moments(until=until)
+        if lang.lower().startswith("en") and out.get("status") != official_store.PREPARING:
+            voy = load_voyage(OFFICIAL_VOYAGE_ID)
+            if voy is not None:
+                from moment_journal import _with_clock, rows_from_voyage  # noqa: PLC0415
+
+                rows = rows_from_voyage(OFFICIAL_VOYAGE_ID, _with_clock(voy), lang="en")
+                # The frozen/offline voyage may not contain the pearl history
+                # needed to rebuild the localized view. Keep the stored journal
+                # in that case instead of replacing it with an empty response.
+                if not rows:
+                    rows = out.get("moments") or []
+                if until:
+                    from moment_journal import _iso_le  # noqa: PLC0415
+
+                    rows = [row for row in rows if _iso_le(row.get("t"), until)]
+                out = {**out, "count": len(rows), "moments": rows}
     except Exception as exc:
         log.exception("GET /voyage/official/moments")
         official_store.kick_worker()

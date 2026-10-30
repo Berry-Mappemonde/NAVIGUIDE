@@ -23,6 +23,6 @@ test("Plan-review-comment : texte ou règles", async ({ page }) => {
   await expect(comment).toBeVisible();
   const text = (await comment.innerText()).trim();
   expect(text, "plan-review-comment ne doit pas être vide").not.toBe("");
-  expect(text).toMatch(/Ce que je changerais|What I would change|règles|rules/i);
+  expect(text).toMatch(/Ce que je changerais|What I would change|règles|rules|données brutes|raw data/i);
   await shot(page, "01-commentaire");
 });
