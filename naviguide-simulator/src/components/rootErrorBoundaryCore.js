@@ -21,8 +21,10 @@ export function shouldReloadAfterPreloadError(sessionStorage) {
   return true;
 }
 
-export function clearPreloadReloadFlag(sessionStorage) {
-  sessionStorage.removeItem("naviguide:preload-reload");
+export function claimPreloadReload(state) {
+  if (state.inProgress) return false;
+  state.inProgress = true;
+  return true;
 }
 
 const centered = { minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, background: "#0f172a", color: "#f8fafc", fontFamily: "system-ui, sans-serif" };
@@ -32,13 +34,9 @@ export class RootErrorBoundary extends React.Component {
   state = { error: null };
   componentDidMount() {
     window.addEventListener("naviguide:preload-fatal", this.onPreloadFatal);
-    this.preloadReloadTimer = window.setTimeout(() => {
-      try { clearPreloadReloadFlag(window.sessionStorage); } catch { /* storage unavailable */ }
-    }, 10_000);
   }
   componentWillUnmount() {
     window.removeEventListener("naviguide:preload-fatal", this.onPreloadFatal);
-    window.clearTimeout(this.preloadReloadTimer);
   }
   onPreloadFatal = () => this.setState({ error: new Error("NAVIGUIDE preload failed after retry") });
   static getDerivedStateFromError(error) { return { error }; }

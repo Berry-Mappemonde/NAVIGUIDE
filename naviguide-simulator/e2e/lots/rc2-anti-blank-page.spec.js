@@ -36,6 +36,7 @@ test("root fallback follows the English app preference when crash hooks are enab
 });
 
 test("panel boundary contains a sidebar crash when crash hooks are enabled", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("naviguide_lang_v4", "fr"));
   await page.goto("/?crashtest=panel");
   if (await page.getByTestId("crash-probe-disabled").count() > 0) {
     test.skip(true, "Crash probe disabled; rebuild with VITE_NAVIGUIDE_CRASHTEST=1 npm run build.");

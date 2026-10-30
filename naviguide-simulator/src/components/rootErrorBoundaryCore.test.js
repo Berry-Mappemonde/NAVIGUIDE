@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { RootErrorBoundary, ROOT_ERROR_COPY, pickErrorLanguage, shouldReloadAfterPreloadError, clearPreloadReloadFlag } from "./rootErrorBoundaryCore.js";
+import { RootErrorBoundary, ROOT_ERROR_COPY, pickErrorLanguage, shouldReloadAfterPreloadError, claimPreloadReload } from "./rootErrorBoundaryCore.js";
 
 describe("root error boundary recovery", () => {
   it("getDerivedStateFromError stores the render error", () => {
@@ -19,7 +19,12 @@ describe("root error boundary recovery", () => {
     const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
     assert.equal(shouldReloadAfterPreloadError(storage), true);
     assert.equal(shouldReloadAfterPreloadError(storage), false);
-    clearPreloadReloadFlag(storage);
-    assert.equal(shouldReloadAfterPreloadError(storage), true);
+    assert.equal(shouldReloadAfterPreloadError(storage), false);
+  });
+
+  it("claims only one in-progress preload reload", () => {
+    const state = { inProgress: false };
+    assert.equal(claimPreloadReload(state), true);
+    assert.equal(claimPreloadReload(state), false);
   });
 });

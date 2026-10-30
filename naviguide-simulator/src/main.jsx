@@ -9,7 +9,7 @@ import "./index.css";
 import App from "./App.jsx";
 import { LangProvider } from "./i18n/LangContext.jsx";
 import { captureAdminSecretFromUrl } from "./utils/adminSecret.js";
-import { RootErrorBoundary, shouldReloadAfterPreloadError } from "./components/RootErrorBoundary.jsx";
+import { RootErrorBoundary, claimPreloadReload, shouldReloadAfterPreloadError } from "./components/RootErrorBoundary.jsx";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({ iconRetinaUrl, iconUrl, shadowUrl });
@@ -38,10 +38,13 @@ function DevCrashProbe() {
   return enabled ? null : <span hidden data-testid="crash-probe-disabled" />;
 }
 
+const preloadReloadState = { inProgress: false };
 window.addEventListener("vite:preloadError", (event) => {
   event.preventDefault();
+  if (preloadReloadState.inProgress) return;
   try {
     if (shouldReloadAfterPreloadError(window.sessionStorage)) {
+      claimPreloadReload(preloadReloadState);
       window.location.reload();
     } else {
       window.dispatchEvent(new Event("naviguide:preload-fatal"));
