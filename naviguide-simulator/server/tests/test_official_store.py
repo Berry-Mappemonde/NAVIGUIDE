@@ -2410,17 +2410,32 @@ def test_replay_local_without_token_factory_serves_raw_and_labels_written_failur
 
     monkeypatch.setattr(story_cascade, "_call_tokenfactory", forbidden_tf)
 
-    for lang in ("fr", "en"):
-        raw = asyncio.run(main.get_official_film(lang=lang, seconds=150, style="raw"))
-        assert raw["status"] == READY
-        assert raw["chapters"]
-        written = asyncio.run(main.post_official_film_write(lang=lang, seconds=150))
-        assert written["status"] == READY
-        assert written["hasWritten"] is False
-        assert written["reason"] == "all-providers-failed"
-        assert written["chapters"]
-        assert "NEBIUS_API_KEY" not in json.dumps(written)
-        assert "RuntimeError" not in json.dumps(written)
+    async def replay_both_languages():
+        for lang in ("fr", "en"):
+            raw = await main.get_official_film(lang=lang, seconds=150, style="raw")
+            assert raw["status"] == READY
+            assert raw["chapters"]
+
+        # The async POST acknowledges the job. Await that same job in this
+        # direct-call test so asyncio.run does not cancel it while closing its loop.
+        started = await main.post_official_film_write(lang="fr", seconds=150)
+        assert started["status"] == "writing"
+        task = official_store._FILM_WRITE_TASKS[("pair", 150)]
+        await task
+
+        for lang in ("fr", "en"):
+            raw = await main.get_official_film(lang=lang, seconds=150, style="raw")
+            assert raw["status"] == READY
+            assert raw["chapters"]
+            # The completed job records the written failure for both languages;
+            # raw remains playable and the client maps this state to its failure label.
+            written = await main.get_official_film(lang=lang, seconds=150, style="written")
+            assert written["status"] == "failed"
+            assert written["hasWritten"] is False
+            assert "NEBIUS_API_KEY" not in json.dumps(written)
+            assert "RuntimeError" not in json.dumps(written)
+
+    asyncio.run(replay_both_languages())
 
     assert calls["tf"] == 0
 
