@@ -3,6 +3,10 @@
 
 html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 
+/* #105 : 100vh compte la zone sous la barre d'adresse (iOS Safari, Chrome Android) — la barre du
+   film, ancrée en bas, passait dessous. dvh = la hauteur réellement visible ; 100vh reste le repli. */
+.naviguide-root { height: 100vh; height: 100dvh; }
+
 .leaflet-container { background: #0f172a; font: inherit; z-index: 0; --map-control-h: 20px; }
 /* Zoom rapide : une tuile pas encore là reste couleur mer, pas un carré blanc. */
 .leaflet-container .leaflet-tile-pane,
@@ -688,20 +692,27 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   .naviguide-film-bar [data-testid="replay-stop"] {
     order: 3;
   }
+  /* #105 : plus de 7 px (illisible) — 11 px au moins, et la rangée passe à la ligne plutôt que de
+     rapetisser. Cibles de 24 × 24 px au moins (WCAG 2.5.8), sauf les points de la piste du film. */
   .naviguide-film-bar button,
   .naviguide-film-bar [data-testid="film-style"],
   .naviguide-film-bar [data-testid="film-view-switch"],
   .naviguide-film-bar [data-testid="film-duration"],
+  .naviguide-film-bar [data-testid="film-duration-estimate"],
   .naviguide-film-bar [data-testid="replay-departure-field"] {
-    font-size: 7px;
+    font-size: 11px;
     flex-shrink: 0;
   }
   .naviguide-film-bar button {
-    padding-left: 2px;
-    padding-right: 2px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .naviguide-film-bar button:not(.h-2 *) {
+    min-height: 24px;
+    min-width: 24px;
   }
   .naviguide-film-bar [data-testid="replay-departure-field"] input {
-    font-size: 8px;
+    font-size: 11px;
   }
   .naviguide-sidebar-toggle:focus-visible,
   .naviguide-film-bar button:focus-visible,
