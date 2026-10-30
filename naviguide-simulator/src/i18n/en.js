@@ -435,7 +435,7 @@ export default {
   polarFailed:            "Failed",
   polarUploadErrorPrefix: "Failed",
   polarDefaultUnavailable: "The default polar is temporarily unavailable.",
-  polarServiceUnavailable: "Polar service unavailable (HTTP {status}). Please try again shortly.",
+  polarServiceUnavailable: "The polar service is temporarily unavailable. Please try again shortly.",
   polarFileTooLarge:      "The file exceeds the 10 MB size limit.",
   polarNetworkError:      "The polar service is unreachable. Check your connection and try again.",
   polarUpwind:            "↑ Upwind",
@@ -687,6 +687,7 @@ export default {
 
   // LY1 — Clément Filisetti
   climatologyUnavailable: "atlas unavailable",
+  layerUnavailable: "data unavailable",
   // SO1
   skipperCoastalRule: "Coastal advised for < 12 m",
   exportNeedsRoute: "No route to export",
