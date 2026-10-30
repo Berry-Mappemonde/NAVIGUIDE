@@ -41,6 +41,13 @@ describe("LogbookChat contract", () => {
     assert.match(hook, /err\?\.code === "aborted"/);
   });
 
+  it("does not update hook state after unmount while an aborted request settles", () => {
+    assert.match(hook, /mounted\.current = false;\s*requestController\.current\?\.abort\(\)/);
+    assert.match(hook, /if \(mounted\.current\) setMessages\(\(prev\) => \[\.\.\.prev, reply\]/);
+    assert.match(hook, /if \(mounted\.current\) setError\(/);
+    assert.match(hook, /if \(mounted\.current\) setPending\(false\)/);
+  });
+
   it("keeps the translator callable when recording the question timestamp", () => {
     assert.match(hook, /const \{ t: tr \} = useLang\(\)/);
     assert.match(hook, /setError\(tr\(chatErrorKey\(err\?\.code\)\)\)/);

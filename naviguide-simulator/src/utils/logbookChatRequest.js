@@ -20,6 +20,12 @@ export async function postLogbookChat({ url, body, fetchImpl = fetch, timeoutMs 
   const abortFromExternalSignal = () => controller.abort(signal?.reason);
   if (signal?.aborted) abortFromExternalSignal();
   else signal?.addEventListener("abort", abortFromExternalSignal, { once: true });
+  let rejectAborted;
+  const aborted = new Promise((_, reject) => { rejectAborted = reject; });
+  const abortError = Object.assign(new Error("Request aborted"), { code: "aborted", detail: null, status: null });
+  const rejectAbortedRequest = () => rejectAborted(abortError);
+  if (signal?.aborted) rejectAbortedRequest();
+  else signal?.addEventListener("abort", rejectAbortedRequest, { once: true });
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
@@ -60,10 +66,11 @@ export async function postLogbookChat({ url, body, fetchImpl = fetch, timeoutMs 
       const code = errorCode(response.status, detail);
       throw Object.assign(new Error(detailText(detail) || `HTTP ${response.status}`), { code, detail, status: response.status });
     })();
-    return await Promise.race([request, timeout]);
+    return await Promise.race([request, timeout, aborted]);
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", abortFromExternalSignal);
+    signal?.removeEventListener("abort", rejectAbortedRequest);
   }
 }
 

@@ -54,6 +54,18 @@ describe("postLogbookChat", () => {
     await assert.rejects(request, { code: "aborted" });
   });
 
+  it("rejects promptly on external abort when fetch ignores abort", async () => {
+    const controller = new AbortController();
+    const started = Date.now();
+    const request = postLogbookChat({
+      url: "/chat", body: {}, signal: controller.signal, timeoutMs: 5000,
+      fetchImpl: () => new Promise(() => {}),
+    });
+    controller.abort();
+    await assert.rejects(request, { code: "aborted" });
+    assert.ok(Date.now() - started < 500, "external abort should win without waiting for the 5 s timeout");
+  });
+
   it("classifies network failures", async () => {
     await assert.rejects(postLogbookChat({ url: "/chat", body: {}, fetchImpl: async () => { throw new TypeError("Failed to fetch"); } }), { code: "network" });
   });
