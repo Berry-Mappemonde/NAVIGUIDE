@@ -1330,7 +1330,8 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(hook, /filmWritePollGenRef\.current \+= 1;\s+filmWritePollAbortRef\.current\?\.abort\(\);\s+filmWritePollAbortRef\.current = null;/);
     assert.match(hook, /const writeGen = \+\+filmWritePollGenRef\.current;/);
     assert.match(hook, /if \(writeGen !== filmWritePollGenRef\.current\) return;/);
-    assert.match(hook, /setFilmWriteError\(true\);\s+setFilmWriting\(false\);\s+\}\)\s+\.catch/);
+    assert.match(hook, /\.catch\(\(\) => \{\s+if \(writeGen !== filmWritePollGenRef\.current\) return;\s+setFilmWriteError\(true\);\s+setFilmWriting\(false\);\s+\}\)/);
+    assert.match(hook, /\.finally\(\(\) => \{\s+if \(writeGen === filmWritePollGenRef\.current\) \{\s+filmWriteStartingRef\.current = false;\s+\}\s+\}\)/);
     assert.match(hook, /resolveServedFilm/);
     assert.match(hook, /probeWritten/);
     assert.match(hook, /applyResolvedMeta/);

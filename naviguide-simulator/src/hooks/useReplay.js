@@ -2341,11 +2341,14 @@ export function useReplay({
         setFilmWriting(false);
       })
       .catch(() => {
+        if (writeGen !== filmWritePollGenRef.current) return;
         setFilmWriteError(true);
         setFilmWriting(false);
       })
       .finally(() => {
-        filmWriteStartingRef.current = false;
+        if (writeGen === filmWritePollGenRef.current) {
+          filmWriteStartingRef.current = false;
+        }
       });
   }, [hasWritten, lang, targetSeconds, t0, voyageId]);
 
