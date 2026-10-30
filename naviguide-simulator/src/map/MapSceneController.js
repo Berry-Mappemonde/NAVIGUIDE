@@ -381,6 +381,12 @@ export class MapSceneController {
     this.applyZoomFloor();
     this.eventBubble = attachEventBubble(this, L);
     this.escalePopup = attachEscalePopup(this, L);
+    if (this.escalePopup) {
+      this.escalePopup.setSheet?.(null);
+      this.escalePopup.setSheet = () => {};
+      this.escalePopup.sync = () => {};
+      this.escalePopup.hide?.();
+    }
   }
 
   /** Marqueur du bateau « à l'écran » (copie monde 0) — ancre de la bulle F4. */

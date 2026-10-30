@@ -73,8 +73,10 @@ test("RC1 bulles : EventBubble et EscalePopup ouvertes puis détruites sans erre
     return false;
   });
   expect(clickedAjaccio, "marqueur Ajaccio trouvé au moment du clic").toBe(true);
-  const escale = page.getByTestId("escale-popup");
-  const escaleOpen = await escale.waitFor({ state: "attached", timeout: 10_000 }).then(() => true).catch(() => false);
+  // Hors film, la fiche d'escale est rendue dans le panneau ; la popup Leaflet
+  // reste neutralisée pour éviter de masquer les drapeaux et les autres fiches.
+  const escale = page.getByTestId("escale-sheet").filter({ hasText: /Ajaccio/i });
+  const escaleOpen = await escale.waitFor({ state: "visible", timeout: 10_000 }).then(() => true).catch(() => false);
   if (!escaleOpen) {
     expect(process.env.PW_WITH_API !== "1", "avec l'API, la fiche d'Ajaccio doit s'ouvrir").toBe(true);
     test.info().annotations.push({ type: "sans API", description: "fiche d'escale non ouverte : seule la bulle est vérifiée" });
@@ -83,6 +85,6 @@ test("RC1 bulles : EventBubble et EscalePopup ouvertes puis détruites sans erre
   await page.evaluate(() => window.__naviguideScene.dispose());
   await page.waitForTimeout(300);
   await expect(page.getByTestId("event-bubble")).toHaveCount(0);
-  await expect(escale).toHaveCount(0);
+  await expect(page.getByTestId("escale-popup")).toHaveCount(0);
   expect(bad, bad.join("\n")).toEqual([]);
 });
