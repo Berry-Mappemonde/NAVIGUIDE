@@ -1331,7 +1331,12 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(chooseBlock, /if \(filmWritingRef\.current\) return/);
     assert.match(chooseBlock, /if \(active && !hasWritten\) return/);
     assert.match(chooseBlock, /if \(active\) stop\(\)/);
-    assert.match(chooseBlock, /fetch\(`\$\{API\}\$\{path\}\?\$\{q\}`, hasWritten \? undefined : \{ method: "POST" \}\)/);
+    assert.match(chooseBlock, /filmWriteGenerationRef\.current/);
+    assert.match(chooseBlock, /generation !== filmWriteGenerationRef\.current/);
+    assert.match(chooseBlock, /filmWriteRequestRef\.current\?\.abort\(\)/);
+    assert.match(chooseBlock, /setTimeout\(\(\) => controller\.abort\(\), 30_000\)/);
+    assert.match(chooseBlock, /signal: controller\.signal/);
+    assert.match(chooseBlock, /if \(generation === filmWriteGenerationRef\.current\)[\s\S]*filmWritingRef\.current = false/);
     assert.match(chooseBlock, /filmWritingRef\.current = true/);
     assert.match(chooseBlock, /filmWritingRef\.current = false/);
     assert.match(chooseBlock, /style=written/);
@@ -1364,7 +1369,7 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
   it("signale l’indisponibilité seulement après l’échec de toute la cascade", () => {
     assert.match(hook, /data\?\.reason === "all-providers-failed"/);
     assert.match(hook, /setWrittenUnavailable\("unavailable"\)/);
-    assert.match(hook, /\.catch\(\(\) => setWrittenUnavailable\("unavailable"\)\)/);
+    assert.match(hook, /\.catch\(\(\) => \{\s*if \(generation === filmWriteGenerationRef\.current\) setWrittenUnavailable\("unavailable"\);/);
     assert.match(hook, /if \(!data\) \{\s*setWrittenUnavailable\("unavailable"\)/);
     assert.match(hook, /writtenUnavailable,/);
     assert.match(app, /writtenUnavailable: replay\.writtenUnavailable/);

@@ -346,7 +346,7 @@ async def post_official_film_write(
         return official_store.preparing_payload("film", {
             "chapters": [], "source": "rules", "chars": 0,
             "targetSeconds": seconds, "hasWritten": False,
-            **_dated_ici(f"film indisponible: {exc}", "preparing"),
+            **_dated_ici("all-providers-failed", "preparing"),
         })
     if out.get("status") == official_store.PREPARING:
         official_store.kick_worker()

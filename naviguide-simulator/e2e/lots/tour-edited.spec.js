@@ -22,9 +22,10 @@ async function stubFilm(page, written) {
     let res;
     try {
       res = await route.fetch();
-    } catch {
+    } catch (error) {
       // Playwright peut fermer la route si le sondage survit à la fin du test.
-      return;
+      if (/test ended|target page, context or browser has been closed|route.*closed/i.test(String(error?.message || error))) return;
+      throw error;
     }
     const data = await res.json().catch(() => null);
     if (!data || style !== "written") {

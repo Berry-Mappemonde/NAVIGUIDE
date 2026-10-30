@@ -1143,6 +1143,8 @@ export function useReplay({
   const [filmReceipt, setFilmReceipt] = useState(null);
   const [filmWriting, setFilmWriting] = useState(false);
   const filmWritingRef = useRef(false);
+  const filmWriteRequestRef = useRef(null);
+  const filmWriteGenerationRef = useRef(0);
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
   const [writtenUnavailable, setWrittenUnavailable] = useState(null);
@@ -1727,6 +1729,17 @@ export function useReplay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voyageId]);
 
+  useEffect(() => {
+    filmWritingRef.current = false;
+    setFilmWriting(false);
+    return () => {
+      filmWriteGenerationRef.current += 1;
+      filmWriteRequestRef.current?.abort();
+      filmWriteRequestRef.current = null;
+      filmWritingRef.current = false;
+    };
+  }, [voyageId]);
+
   const onVoiceBoundary = useCallback((charIdx) => {
     const plan = planRef.current;
     if (!plan || finishedRef.current) return;
@@ -2281,6 +2294,10 @@ export function useReplay({
 
   const chooseFilmStyle = useCallback((next) => {
     if (next !== "written") {
+      filmWriteGenerationRef.current += 1;
+      filmWriteRequestRef.current?.abort();
+      filmWriteRequestRef.current = null;
+      filmWritingRef.current = false;
       setFilmWriting(false);
       setFilmStyle("raw");
       return;
@@ -2289,13 +2306,18 @@ export function useReplay({
     if (active && !hasWritten) return;
     if (active) stop();
     filmWritingRef.current = true;
+    const generation = ++filmWriteGenerationRef.current;
+    const controller = new AbortController();
+    filmWriteRequestRef.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 30_000);
     const path = filmRequestPath(voyageId);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=written&t0=${encodeURIComponent(t0)}`;
     setFilmWriting(true);
     setWrittenUnavailable(null);
-    fetch(`${API}${path}?${q}`, hasWritten ? undefined : { method: "POST" })
+    fetch(`${API}${path}?${q}`, { ...(hasWritten ? {} : { method: "POST" }), signal: controller.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
+        if (generation !== filmWriteGenerationRef.current) return;
         if (!data) {
           setWrittenUnavailable("unavailable");
           return;
@@ -2313,10 +2335,16 @@ export function useReplay({
         } else if (data?.reason === "all-providers-failed") setWrittenUnavailable("unavailable");
         else setWrittenUnavailable(null);
       })
-      .catch(() => setWrittenUnavailable("unavailable"))
+      .catch(() => {
+        if (generation === filmWriteGenerationRef.current) setWrittenUnavailable("unavailable");
+      })
       .finally(() => {
-        filmWritingRef.current = false;
-        setFilmWriting(false);
+        clearTimeout(timeout);
+        if (generation === filmWriteGenerationRef.current) {
+          filmWriteRequestRef.current = null;
+          filmWritingRef.current = false;
+          setFilmWriting(false);
+        }
       });
   }, [active, hasWritten, lang, stop, targetSeconds, t0, voyageId]);
 

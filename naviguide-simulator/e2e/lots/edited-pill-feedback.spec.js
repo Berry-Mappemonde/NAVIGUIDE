@@ -15,7 +15,7 @@ for (const [lang, note, retry, playingTip] of [
       writtenRequests += 1;
       const success = writtenRequests > 1;
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
-        status: "ready", lang, style: success ? "written" : "raw", source: success ? "nemotron-super-token-factory" : "rules",
+        status: success ? "ready" : "preparing", lang, style: success ? "written" : "raw", source: success ? "nemotron-super-token-factory" : "rules",
         hasWritten: success,
         ...(!success ? { reason: "all-providers-failed" } : {}),
         chapters: [{ text: "A short film for the tour.", anchors: [{ t: 0, i: 0 }] }],
