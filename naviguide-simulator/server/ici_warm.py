@@ -940,12 +940,7 @@ def start_background(loop: asyncio.AbstractEventLoop | None = None) -> bool:
     except Exception as exc:
         log.warning("rechargement du cache perles : %s", exc)
     if watch_enabled():
-        try:
-            loop = loop or asyncio.get_event_loop()
-            loop.create_task(_watch_loop())
-            _state["watch"] = {"status": "scheduled"}
-        except Exception as exc:
-            log.warning("veille Tavily non lancée : %s", exc)
+        ensure_watch_loop(loop)
     if not warm_enabled():
         _state["status"] = "disabled"
         return False
@@ -956,6 +951,24 @@ def start_background(loop: asyncio.AbstractEventLoop | None = None) -> bool:
     except Exception as exc:
         _state["status"] = "error"
         log.warning("chauffeur de perles non lancé : %s", exc)
+        return False
+
+
+_WATCH_LOOP_TASK: "asyncio.Task | None" = None
+
+
+def ensure_watch_loop(loop=None) -> bool:
+    """Lance la boucle de veille une seule fois (démarrage, ou interrupteur R42 allumé)."""
+    global _WATCH_LOOP_TASK
+    if _WATCH_LOOP_TASK is not None and not _WATCH_LOOP_TASK.done():
+        return False
+    try:
+        loop = loop or asyncio.get_event_loop()
+        _WATCH_LOOP_TASK = loop.create_task(_watch_loop())
+        _state["watch"] = {"status": "scheduled"}
+        return True
+    except Exception as exc:
+        log.warning("veille Tavily non lancée : %s", exc)
         return False
 
 

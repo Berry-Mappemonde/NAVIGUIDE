@@ -4,7 +4,7 @@ Liste pré-écrite (avis, travaux, fermeture), nom du port et date
 substitués. Au plus deux tours par escale : Lightning lit le 1er, et s'il
 manque une réponse il choisit une question de la même liste — il n'en
 invente pas. Une phrase, une URL, `filter_numbers`. Prochaines escales
-seulement (fenêtre J-10 → J+2). Active par défaut (`NAVIGUIDE_TAVILY_WATCH=1`) ;
+seulement (fenêtre J-10 → J+2). Active par défaut (`NAVIGUIDE_TAVILY_WATCH=1`), coupée par l'interrupteur « Veille Tavily » ;
 `NAVIGUIDE_TAVILY_WATCH=0` la coupe. Jamais d'appel depuis le navigateur.
 """
 from __future__ import annotations
@@ -91,15 +91,51 @@ def slug(name: str) -> str:
     return _SLUG_RE.sub("-", folded).strip("-") or "escale"
 
 
-def watch_enabled() -> bool:
-    """Zéro recherche tant que le drapeau n'est pas ouvert.
+WATCH_SETTINGS_NS = "watch_settings"
+_WATCH_SETTINGS_KEY = "enabled"
+_TRUE = ("1", "true", "yes", "on")
 
-    Défaut 1 (U0 / PR #159). La veille est active par défaut ;
-    NAVIGUIDE_TAVILY_WATCH=0 la coupe. Les tests forcent 0.
+
+def watch_env_default() -> bool:
+    """Défaut du poste : `NAVIGUIDE_TAVILY_WATCH`, active si absent (U0 / PR #159)."""
+    return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "1").strip().lower() in _TRUE
+
+
+def watch_override() -> bool | None:
+    """Choix fait dans l'interrupteur « Veille Tavily » (R42), gardé dans pearl_store.
+
+    None : aucun choix, le défaut du poste s'applique.
     """
-    return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "1").strip().lower() in (
-        "1", "true", "yes", "on",
-    )
+    try:
+        hit = _cache_get(WATCH_SETTINGS_NS, _WATCH_SETTINGS_KEY)
+    except Exception as exc:  # store illisible : on retombe sur le défaut du poste
+        log.debug("réglage veille illisible : %s", exc)
+        return None
+    val = (hit or {}).get("enabled")
+    return val if isinstance(val, bool) else None
+
+
+def set_watch_override(enabled: bool) -> None:
+    _cache_put(WATCH_SETTINGS_NS, _WATCH_SETTINGS_KEY, {"enabled": bool(enabled), "at": to_iso(datetime.now(timezone.utc))})
+
+
+def watch_settings() -> dict[str, Any]:
+    override = watch_override()
+    default = watch_env_default()
+    return {
+        "enabled": default if override is None else override,
+        "default": default,
+        "source": "env" if override is None else "setting",
+    }
+
+
+def watch_enabled() -> bool:
+    """Zéro recherche tant que la veille n'est pas allumée.
+
+    L'interrupteur « Veille Tavily » (R42) l'emporte ; sans choix, défaut du poste
+    `NAVIGUIDE_TAVILY_WATCH` (1 si absent, 0 la coupe). Les tests forcent 0.
+    """
+    return bool(watch_settings()["enabled"])
 
 
 def watch_daily_search_cap() -> int:
