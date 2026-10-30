@@ -39,6 +39,7 @@ function filmPayload({ written, seconds = 150, lang = "fr", receipt, webContext 
     chapters: [{ text: "Le 15 mai, Berry-Mappemonde quitte La Rochelle.", anchors: [{ t: 0, i: 0 }] }],
     ...(webContext ? { webContext } : {}),
     ...(written && receipt ? { receipt } : {}),
+    ...(webContext ? { webContext } : {}),
   };
 }
 

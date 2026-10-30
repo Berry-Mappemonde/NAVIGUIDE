@@ -28,7 +28,13 @@ test("NAV-C follow : preparing → ready sans rechargement", async ({ page }) =>
   });
   await page.route(/\/voyage\/official(\?.*)?$/, async (route) => {
     if (route.request().method() !== "PUT") return route.continue();
-    const res = await route.fetch();
+    let res;
+    try {
+      res = await route.fetch();
+    } catch {
+      // La requête peut encore être en vol lorsque le test se termine.
+      return;
+    }
     let body = {};
     try { body = await res.json(); } catch { body = {}; }
     delete body.clock;

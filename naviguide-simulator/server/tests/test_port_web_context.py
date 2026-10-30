@@ -60,6 +60,25 @@ def test_fetch_search_cached(monkeypatch):
     assert llm_budget.tavily_usage()["calls"] == 1
 
 
+def test_fetch_distinguishes_http_error_from_empty_results(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "HTTP-error" in request.content.decode():
+            return httpx.Response(503, json={"results": []})
+        return httpx.Response(200, json={"results": []})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            failed = await port_web_context.fetch_port_web("HTTP-error-port", client=client)
+            empty = await port_web_context.fetch_port_web("Empty-port", client=client)
+            return failed, empty
+
+    failed, empty = asyncio.run(run())
+    assert failed["status"] == "unavailable" and failed["reason"] == "http-error"
+    assert empty["status"] == "unavailable" and empty["reason"] == "empty"
+
+
 def test_attach_puts_port_web_on_context(monkeypatch):
     monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
 
