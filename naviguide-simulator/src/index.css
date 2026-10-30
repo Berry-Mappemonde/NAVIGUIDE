@@ -621,7 +621,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 @media (max-width: 599px) {
   .naviguide-sidebar-panel {
     height: auto !important;
-    max-height: calc(100% - var(--sim-inset-bottom, 120px));
+    max-height: calc(100% - var(--sim-inset-bottom, 120px) - 8px);
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -772,7 +772,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 /* Arrow on the demo walkthrough panel (data-arrow) */
 .naviguide-demo-panel {
   position: fixed;
-  overflow: visible; /* Allow arrow to show outside panel bounds */
+  overflow: visible; /* The inner content scrolls; the arrow remains visible. */
 }
 .naviguide-demo-panel::before {
   content: "";

@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import { describe, it, test } from "node:test";
 import assert from "node:assert/strict";
 import fr from "../i18n/fr.js";
 import en from "../i18n/en.js";
@@ -71,4 +71,20 @@ describe("reçu « Comment ce film a été fait » (idée n° 3)", () => {
     assert.equal(resolveServedFilm(served, "written").receipt.llmCalls, 9);
     assert.equal(resolveServedFilm(served, "raw").receipt, undefined);
   });
+});
+
+test("R45 : publicFilmReceipt ignore un webSourceCount serveur (avec ou sans)", () => {
+  const base = { hasWritten: true, receipt: { llmCalls: 2 } };
+  const without = publicFilmReceipt(base);
+  const withCount = publicFilmReceipt({ hasWritten: true, receipt: { llmCalls: 2, webSourceCount: 10 } });
+  assert.equal(without.webSourceCount, undefined);
+  assert.equal(withCount.webSourceCount, undefined);
+  assert.deepEqual(withCount, without);
+});
+
+test("R45 : la ligne Tavily du reçu suit le nombre de sources affichées", () => {
+  const r = publicFilmReceipt({ hasWritten: true, receipt: { llmCalls: 2 } });
+  assert.equal(receiptLines(r, 0).some((l) => l.key === "filmReceiptTavily"), false);
+  const line = receiptLines(r, 2).find((l) => l.key === "filmReceiptTavily");
+  assert.deepEqual(line.vars, { n: 2 });
 });

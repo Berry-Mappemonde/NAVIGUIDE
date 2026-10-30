@@ -16,7 +16,7 @@ import { isAirLegNames } from "../utils/berryLegs.js";
 import { filmShownEstimateSeconds, filmVariantAbsent } from "../engine/playSpeeds.js";
 import { exitDocumentFullscreen } from "../utils/cinemaHotkey.js";
 import { restoreFollowView } from "./useFilmCamera.js";
-import { publicFilmWebContext } from "../utils/filmWebSources.js";
+import { nextFilmWebContext, publicFilmWebContext } from "../utils/filmWebSources.js";
 import { publicFilmReceipt } from "../utils/filmReceipt.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
@@ -225,10 +225,15 @@ export function resolveServedFilm(data, requestedStyle) {
 }
 
 export function writtenPillEnabled(hasWritten, opts) {
-  const flags = hasWritten && typeof hasWritten === "object" ? hasWritten : { ...(opts || {}), hasWritten };
-  if (flags.customFilm) return Boolean(flags.hasWritten);
-  if (flags.filmReady) return true;
-  return Boolean(flags.hasWritten);
+  const flags = hasWritten && typeof hasWritten === "object"
+    ? hasWritten
+    : opts;
+  if (flags?.customFilm) return false;
+  return true;
+}
+
+export function filmResponseShouldRetry(status) {
+  return Number(status) !== 405;
 }
 
 export function isOfficialFilmVoyage(voyageId) {
@@ -250,9 +255,8 @@ export function isReadyRemoteFilm(data, { official = true } = {}) {
   return String(data.status || "").toLowerCase() === "ready" && Boolean(data.chapters?.length);
 }
 
-/** preparing : relire toutes les 10 s, au plus 2 min, puis arrêt poli. */
+/** Tant que le serveur répond preparing, relire toutes les 10 s. */
 export const FILM_PREPARE_POLL_MS = 10_000;
-export const FILM_PREPARE_MAX_MS = 120_000;
 
 /**
  * Revoir en Suivre : horloge officielle + /film RE7 de ce checkout.
@@ -1145,8 +1149,17 @@ export function useReplay({
   const [filmWebContext, setFilmWebContext] = useState(null);
   const [filmReceipt, setFilmReceipt] = useState(null);
   const [filmWriting, setFilmWriting] = useState(false);
+  const filmWritingRef = useRef(false);
+  const filmWriteRequestRef = useRef(null);
+  const filmWriteGenerationRef = useRef(0);
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
+  const [filmWriteError, setFilmWriteError] = useState(false);
+  const [writtenUnavailable, setWrittenUnavailable] = useState(null);
+  const filmWritePollGenRef = useRef(0);
+  const filmWritePollAbortRef = useRef(null);
+  const filmWriteStartingRef = useRef(false);
+  const filmWriteNextStepRef = useRef(async () => "stop");
   // Style du plan chargé (visite des juges, bouton Rédigé) : "written" / "raw" quand le serveur
   // a servi le style demandé, "mismatch" quand il a servi le Brut à une demande Rédigé.
   const [filmLoadedStyle, setFilmLoadedStyle] = useState("");
@@ -1159,6 +1172,7 @@ export function useReplay({
   // français (spec rb5 / ra2 en CI, 28 sept.).
   const remotePlanKeyRef = useRef("");
   const [remoteStatus, setRemoteStatus] = useState("pending");
+  const [filmLoadAttempt, setFilmLoadAttempt] = useState(0);
   const remoteStatusRef = useRef("pending");
   const setFilmStatus = useCallback((s) => {
     remoteStatusRef.current = s;
@@ -1335,11 +1349,12 @@ export function useReplay({
     let cancelled = false;
     let retryTimer = 0;
     const ac = new AbortController();
+    let requestTimer = 0;
+    let requestTimedOut = false;
     const official = isOfficialFilmVoyage(voyageId);
     const path = filmRequestPath(voyageId);
     const style = filmRequestStyle(filmStyle);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=${style}&t0=${encodeURIComponent(t0)}`;
-    let prepareStarted = 0;
 
     const applyEstimates = (data) => {
       const chapters = data?.chapters || [];
@@ -1375,7 +1390,7 @@ export function useReplay({
       setFilmSource(resolved.source);
       setFilmReviewedBy(resolved.reviewedBy || "");
       setFilmModel(resolved.model || "");
-      setFilmWebContext(resolved.webContext || null);
+      setFilmWebContext((prev) => nextFilmWebContext(prev, resolved));
       setFilmReceipt(resolved.receipt || null);
       applyEstimates(data);
       applyStory(data);
@@ -1434,7 +1449,7 @@ export function useReplay({
     };
 
     const probeWritten = () => {
-      if (style !== "raw") return;
+      if (style !== "raw" || !official) return;
       const pq = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=written&t0=${encodeURIComponent(t0)}`;
       fetch(`${API}${path}?${pq}`, { signal: ac.signal })
         .then((r) => (r.ok ? r.json() : null))
@@ -1445,7 +1460,7 @@ export function useReplay({
           setFilmSource(resolved.source);
           setFilmReviewedBy(resolved.reviewedBy || "");
           setFilmModel(resolved.model || "");
-          if (resolved.webContext) setFilmWebContext(resolved.webContext);
+          setFilmWebContext((prev) => nextFilmWebContext(prev, resolved));
           setFilmReceipt(resolved.receipt || null);
         })
         .catch((err) => {
@@ -1463,23 +1478,24 @@ export function useReplay({
       }
       fetch(`${API}${path}?${q}`, { signal: ac.signal })
         .then((r) => {
-          if (!r.ok) return { fail: true };
+          if (!r.ok) return { fail: true, status: r.status };
           return r.json().then((data) => ({ data })).catch(() => ({ fail: true }));
         })
         .then((pack) => {
+          clearTimeout(requestTimer);
           if (cancelled || ac.signal.aborted) return;
           if (!pack || pack.fail) {
+            if (!filmResponseShouldRetry(pack?.status)) {
+              markAbsent();
+              return;
+            }
             markAbsent();
             return;
           }
           const applied = applyData(pack.data);
           if (applied === "over-budget") return;
           if (applied === "preparing") {
-            const now = Date.now();
-            if (!prepareStarted) prepareStarted = now;
-            if (now - prepareStarted < FILM_PREPARE_MAX_MS) {
-              retryTimer = setTimeout(load, FILM_PREPARE_POLL_MS);
-            }
+            retryTimer = setTimeout(load, FILM_PREPARE_POLL_MS);
             return;
           }
           if (applied) {
@@ -1490,9 +1506,20 @@ export function useReplay({
           retryTimer = setTimeout(load, 2000);
         })
         .catch((err) => {
-          if (err?.name === "AbortError" || cancelled || ac.signal.aborted) return;
+          clearTimeout(requestTimer);
+          if (cancelled) return;
+          if (requestTimedOut) {
+            setFilmStatus("timeout");
+            return;
+          }
+          if (err?.name === "AbortError" || ac.signal.aborted) return;
           markAbsent();
         });
+      requestTimedOut = false;
+      requestTimer = setTimeout(() => {
+        requestTimedOut = true;
+        ac.abort();
+      }, 30_000);
     };
 
     load();
@@ -1500,8 +1527,11 @@ export function useReplay({
       cancelled = true;
       ac.abort();
       clearTimeout(retryTimer);
+      clearTimeout(requestTimer);
     };
-  }, [enabled, lang, targetSeconds, filmStyle, t0, voyageId, setFilmStatus]);
+  }, [enabled, lang, targetSeconds, filmStyle, t0, voyageId, setFilmStatus, filmLoadAttempt]);
+
+  const retryFilmLoad = useCallback(() => setFilmLoadAttempt((n) => n + 1), []);
 
   const canStart = canStartOfficialReplay({
     requireOfficialFilm,
@@ -1728,6 +1758,17 @@ export function useReplay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voyageId]);
 
+  useEffect(() => {
+    filmWritingRef.current = false;
+    setFilmWriting(false);
+    return () => {
+      filmWriteGenerationRef.current += 1;
+      filmWriteRequestRef.current?.abort();
+      filmWriteRequestRef.current = null;
+      filmWritingRef.current = false;
+    };
+  }, [voyageId]);
+
   const onVoiceBoundary = useCallback((charIdx) => {
     const plan = planRef.current;
     if (!plan || finishedRef.current) return;
@@ -1910,7 +1951,7 @@ export function useReplay({
       const ingest = (next) => {
         if (next == null) return;
         const from = lastTRef.current ?? next;
-        const fresh = cardsBetween(timelineRef.current, from, next, lang);
+        const fresh = cardsBetween(timelineRef.current, from, next, lang, clockRef.current);
         if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);
         lastTRef.current = next;
         tMsRef.current = next;
@@ -2160,11 +2201,11 @@ export function useReplay({
         plan,
       }) || approachStopEvent(chapter, { frac: approachFrac });
       const destName = chapter?.toName || "";
-      const fittingEv = filmEv && arrivalBubbleFitsDestination(filmEventCard(filmEv), destName)
+      const fittingEv = filmEv && arrivalBubbleFitsDestination(filmEventCard(filmEv, lang), destName)
         ? filmEv
         : null;
       const accepted = filmScoreRef.current.accept(fittingEv);
-      let shown = filmBubbleRef.current.propose(filmEventCard(accepted));
+      let shown = filmBubbleRef.current.propose(filmEventCard(accepted, lang));
       if (shown && !arrivalBubbleFitsDestination(shown, destName)) {
         filmBubbleRef.current.dismiss();
         shown = null;
@@ -2282,7 +2323,22 @@ export function useReplay({
 
   const chooseFilmStyle = useCallback((next) => {
     if (next !== "written") {
+      // Switching back to Raw must stop an in-flight write poll even when
+      // filmStyle is already "raw" and the style effect cannot observe a change.
+      filmWriteGenerationRef.current += 1;
+      filmWriteRequestRef.current?.abort();
+      filmWriteRequestRef.current = null;
+      filmWritingRef.current = false;
+      filmWritePollGenRef.current += 1;
+      filmWritePollAbortRef.current?.abort();
+      filmWritePollAbortRef.current = null;
+      filmWriteStartingRef.current = false;
       setFilmWriting(false);
+      setFilmStyle("raw");
+      return;
+    }
+    // Les films personnalisés n'ont pas de variante Rédigé.
+    if (!isOfficialFilmVoyage(voyageId)) {
       setFilmStyle("raw");
       return;
     }
@@ -2291,14 +2347,135 @@ export function useReplay({
       setFilmStyle("written");
       return;
     }
+    if (filmWritingRef.current) return;
+    if (filmWriteStartingRef.current) return; // double-click guard
+    if (active && !hasWritten) return;
+    if (active) stop();
     if (!isOfficialFilmVoyage(voyageId)) return;
     const path = filmRequestPath(voyageId);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
+    setFilmWriteError(false);
+    setWrittenUnavailable(null);
+    filmWritingRef.current = true;
+    const generation = ++filmWriteGenerationRef.current;
+    const controller = new AbortController();
+    filmWriteRequestRef.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 30_000);
+    const writeGen = ++filmWritePollGenRef.current;
+    filmWriteStartingRef.current = true;
     setFilmWriting(true);
-    fetch(`${API}${path}?${q}`, { method: "POST" })
-      .then((r) => (r.ok ? r.json() : null))
+    fetch(`${API}${path}?${q}`, { method: "POST", signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error(`film write HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data) => {
-        if (!data) return;
+        if (generation !== filmWriteGenerationRef.current) return;
+        if (writeGen !== filmWritePollGenRef.current) return;
+        if (!data) {
+          // RL191: a network miss is not "unavailable"; only a cascade failure is.
+          setWrittenUnavailable(null);
+          setFilmWriteError(true);
+          setFilmWriting(false);
+          return;
+        }
+        if (data?.reason === "all-providers-failed") setWrittenUnavailable("unavailable");
+        const status = String(data?.status || "").toLowerCase();
+        if (status === "writing" || data?.writing) {
+          void filmWriteNextStepRef.current();
+          return;
+        }
+        const resolved = resolveServedFilm(data, "written");
+        if (resolved.hasWritten) {
+          setHasWritten(true);
+          setFilmStyle("written");
+          setFilmSource(resolved.source);
+          setFilmReviewedBy(resolved.reviewedBy || "");
+          setFilmModel(resolved.model || "");
+          setFilmWebContext((prev) => nextFilmWebContext(prev, resolved));
+          setFilmReceipt(resolved.receipt || null);
+          setWrittenUnavailable(null);
+          setFilmWriting(false);
+          return;
+        }
+        // A successful HTTP response can still mean that writing did not
+        // start (LLM disabled, budget exhausted, or no valid raw plan).
+        // RL191: "unavailable" only once the whole cascade failed.
+        setFilmWriteError(true);
+        setWrittenUnavailable(data?.reason === "all-providers-failed" ? "unavailable" : null);
+        setFilmWriting(false);
+      })
+      .catch(() => {
+        if (writeGen !== filmWritePollGenRef.current) return;
+        setFilmWriteError(true);
+        setFilmWriting(false);
+        // RL191: a network miss is not "unavailable"; only a cascade failure is.
+        if (generation === filmWriteGenerationRef.current) setWrittenUnavailable(null);
+      })
+      .finally(() => {
+        clearTimeout(timeout);
+        if (generation === filmWriteGenerationRef.current) {
+          filmWriteRequestRef.current = null;
+          filmWritingRef.current = false;
+        }
+        if (writeGen === filmWritePollGenRef.current) {
+          filmWriteStartingRef.current = false;
+        }
+      });
+  }, [active, hasWritten, lang, stop, targetSeconds, t0, voyageId]);
+
+  // filmWriteNextStep: polls GET /voyage/official/film?style=written every 4s, up to 10min
+  const filmWriteNextStep = useCallback(async () => {
+    if (!isOfficialFilmVoyage(voyageId)) return "stop";
+
+    const gen = ++filmWritePollGenRef.current;
+    filmWritePollAbortRef.current?.abort();
+    const ac = new AbortController();
+    filmWritePollAbortRef.current = ac;
+    const path = filmRequestPath(voyageId);
+    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=written&t0=${encodeURIComponent(t0)}`;
+    const maxAttempts = 150; // 4s * 150 = 600s = 10min
+    let attempts = 0;
+
+    const sleep = (ms) => new Promise((resolve, reject) => {
+      const id = setTimeout(resolve, ms);
+      ac.signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(id);
+          reject(new DOMException("aborted", "AbortError"));
+        },
+        { once: true },
+      );
+    });
+
+    try {
+      while (attempts < maxAttempts) {
+      if (gen !== filmWritePollGenRef.current) return "stop";
+      try {
+        await sleep(4000);
+      } catch (err) {
+        if (err?.name === "AbortError") return "stop";
+        throw err;
+      }
+      attempts++;
+      if (gen !== filmWritePollGenRef.current) return "stop";
+
+      try {
+        const res = await fetch(`${API}${path}?${q}`, { signal: ac.signal });
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (!data) continue;
+
+        const status = data?.status?.toLowerCase();
+        if (status === "preparing") continue;
+        if (status === "failed") {
+          setFilmWriteError(true);
+          setWrittenUnavailable("unavailable");
+          setFilmWriting(false);
+          return "stop";
+        }
+
         const resolved = resolveServedFilm(data, "written");
         if (resolved.hasWritten) {
           setHasWritten(true);
@@ -2308,11 +2485,44 @@ export function useReplay({
           setFilmModel(resolved.model || "");
           setFilmWebContext(resolved.webContext || null);
           setFilmReceipt(resolved.receipt || null);
+          setFilmWriteError(false);
+          setWrittenUnavailable(null);
+          setFilmWriting(false);
+          return "ready";
         }
-      })
-      .catch(() => {})
-      .finally(() => setFilmWriting(false));
-  }, [hasWritten, lang, targetSeconds, t0, voyageId]);
+        if (resolved.effectiveStyle === "raw" && data.hasWritten === false) {
+          // still writing
+          continue;
+        }
+      } catch (err) {
+        if (err?.name === "AbortError") return "stop";
+        // ignore network errors, keep polling
+      }
+    }
+      if (gen !== filmWritePollGenRef.current) return "stop";
+      setFilmWriteError(true);
+      setWrittenUnavailable("unavailable");
+      setFilmWriting(false);
+      return "stop";
+    } finally {
+      if (gen === filmWritePollGenRef.current) {
+        filmWriteStartingRef.current = false;
+      }
+    }
+  }, [lang, targetSeconds, t0, voyageId]);
+
+  filmWriteNextStepRef.current = filmWriteNextStep;
+
+  useEffect(() => {
+    filmWritePollGenRef.current += 1;
+    filmWritePollAbortRef.current?.abort();
+    return () => {
+      filmWritePollGenRef.current += 1;
+      filmWritePollAbortRef.current?.abort();
+      filmWritePollAbortRef.current = null;
+      filmWriteStartingRef.current = false;
+    };
+  }, [voyageId, lang, targetSeconds, t0, filmStyle]);
 
   return {
     active,
@@ -2351,18 +2561,29 @@ export function useReplay({
     onSentenceEnd,
     isVoiceHeld,
     filmSource,
+    chapterProvenance: planRef.current?.chapters?.[chapterIdx]
+      ? {
+          model: planRef.current.chapters[chapterIdx].served_model || "",
+          source: planRef.current.chapters[chapterIdx].served_source || "",
+          tier: planRef.current.chapters[chapterIdx].served_tier || "",
+        }
+      : null,
     filmReviewedBy,
     filmModel,
     filmWebContext,
     filmReceipt,
     filmWriting,
+    filmWriteError,
     filmStyle,
     setFilmStyle: chooseFilmStyle,
+    filmWriteNextStep,
     hasWritten,
+    writtenUnavailable,
     filmLoadedStyle,
     canStart,
     seekChapter,
     remoteStatus,
+    retryFilmLoad,
     estimatedSeconds,
     variantEstimates,
     filmParagraphs,

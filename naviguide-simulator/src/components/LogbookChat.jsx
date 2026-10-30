@@ -42,10 +42,13 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
   const [aiNoticeArmed, setAiNoticeArmed] = useState(false);
   const showAiNotice = !aiNoticeOff && (aiNoticeArmed || messages.length > 0);
   const listRef = useRef(null);
+  const inputRef = useRef(null);
   const admin = hasAdminSecret();
 
   const dismissAiNotice = useCallback(() => {
     setAiNoticeOff(true);
+    // Le bouton qui a le focus disparaît : on rend le focus au champ (sinon il tombe sur body).
+    inputRef.current?.focus();
     try {
       localStorage.setItem(AI_CHAT_NOTICE_KEY, "1");
     } catch {
@@ -78,7 +81,9 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
     onAsk?.(q);
   };
 
+  // L'avis reste hors du cadre à hauteur fixe pour préserver la place des réponses.
   return (
+    <>
     <div data-testid="logbook-chat" data-tour="logbook" className="sim-box-chat rounded-lg border border-violet-500/25 bg-violet-950/25 p-2 min-w-0">
       <div className="flex items-center gap-1.5 mb-1 flex-shrink-0">
         <MessageSquare size={12} className="text-violet-200" />
@@ -89,7 +94,7 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
         data-testid="logbook-chat-reply"
         className="flex-1 min-h-0 rounded-md border border-violet-300/30 bg-slate-950/55 px-1.5 py-1"
       >
-        <div ref={listRef} className="h-full overflow-y-auto sidebar-scroll space-y-1 min-w-0" data-testid="logbook-chat-list">
+        <div ref={listRef} className="h-full overflow-y-auto sidebar-scroll space-y-1 min-w-0" data-testid="logbook-chat-list" role="log" aria-live="polite">
           {messages.map((m, i) => (
             <div key={`${m.t}-${i}`} className={`text-[11px] leading-snug break-words [overflow-wrap:anywhere] ${m.role === "skipper" ? "text-slate-100" : "text-violet-100"}`}>
               <span className="text-[9px] text-slate-500 mr-1">{formatTimeUtc(m.t)}</span>
@@ -126,26 +131,9 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
             </div>
           ))}
           {pending ? <p className="text-[10px] text-slate-400 leading-snug">{t("logbookChatPending")}</p> : null}
-          {error ? <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p> : null}
+          {error ? <p className="text-[10px] text-amber-300/90 leading-snug" role="alert" data-testid="logbook-chat-error">{error}</p> : null}
         </div>
       </div>
-      {showAiNotice ? (
-        <div
-          data-testid="logbook-chat-ai-notice"
-          className="mt-1.5 rounded-md border border-violet-300/45 bg-violet-950 px-2 py-1.5 text-xs leading-snug text-violet-50"
-          role="note"
-        >
-          <p>{t("aiActChatNotice")}</p>
-          <button
-            type="button"
-            data-testid="logbook-chat-ai-notice-dismiss"
-            onClick={dismissAiNotice}
-            className="mt-1 text-xs font-semibold text-white underline underline-offset-2 hover:text-violet-100"
-          >
-            {t("aiActChatNoticeDismiss")}
-          </button>
-        </div>
-      ) : null}
       <div
         data-testid="logbook-chat-examples"
         className="mt-1 flex flex-nowrap items-center gap-0.5 flex-shrink-0 min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
@@ -167,7 +155,9 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
       </div>
       <form onSubmit={submit} className="mt-1.5 flex items-center gap-1 flex-shrink-0">
         <input
+          ref={inputRef}
           type="text"
+          aria-label={t("logbookChatInputLabel")}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onFocus={onChatFocus}
@@ -180,12 +170,31 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
           type="submit"
           disabled={pending || !draft.trim()}
           title={t("logbookChatSend")}
+          aria-label={t("logbookChatSend")}
           data-testid="logbook-chat-send"
           className="h-7 w-7 rounded-md bg-violet-600 hover:bg-violet-500 disabled:opacity-40 flex items-center justify-center text-white"
         >
-          <Send size={12} />
+          <Send size={12} aria-hidden="true" />
         </button>
       </form>
     </div>
+    {showAiNotice ? (
+      <div
+        data-testid="logbook-chat-ai-notice"
+        className="mt-1.5 rounded-md border border-violet-300/45 bg-violet-950 px-2 py-1.5 text-xs leading-snug text-violet-50"
+      >
+        {/* Région live autour du texte seul : la notice AI Act est annoncée, pas le bouton. */}
+        <p role="status" aria-live="polite" data-testid="logbook-chat-ai-notice-text">{t("aiActChatNotice")}</p>
+        <button
+          type="button"
+          data-testid="logbook-chat-ai-notice-dismiss"
+          onClick={dismissAiNotice}
+          className="mt-1 text-xs font-semibold text-white underline underline-offset-2 hover:text-violet-100"
+        >
+          {t("aiActChatNoticeDismiss")}
+        </button>
+      </div>
+    ) : null}
+    </>
   );
 });

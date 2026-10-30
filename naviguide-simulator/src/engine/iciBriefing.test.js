@@ -14,12 +14,18 @@ const FORBIDDEN = /Ports\s*\/\s*Sécurité|AgentPanel|\/agents\/|Cruisers|Nemotr
 describe("formatIciReason", () => {
   it("ne laisse pas passer overpass_unavailable en brut", () => {
     assert.match(formatIciReason("overpass_unavailable", "fr"), /Overpass/i);
-    assert.match(formatIciReason("outside_us_enc;overpass_unavailable", "en"), /Outside US EEZ/i);
+    assert.match(formatIciReason("outside_us_enc;overpass_unavailable", "en"), /Outside NOAA ENC/i);
     assert.doesNotMatch(formatIciReason("overpass_unavailable", "fr"), /overpass_unavailable/);
   });
 });
 
 describe("narrateIci", () => {
+  it("describes outside_us_enc as missing NOAA ENC coverage in both languages", () => {
+    const dossier = { aton: { reason: "outside_us_enc" } };
+    assert.match(narrateIci(dossier, "en"), /Outside NOAA ENC \(US charts\) coverage/);
+    assert.match(narrateIci(dossier, "fr"), /Hors couverture des cartes NOAA \(ENC US\)/);
+  });
+
   it("tells the bag at La Rochelle, not the whole map", () => {
     const text = narrateIci({
       zee: {

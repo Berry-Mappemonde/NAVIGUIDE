@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Clapperboard, Maximize2, Minimize2, Pause, Play } from "lucide-react";
+import { Clapperboard, LoaderCircle, Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { filmBarEdgeStyle, readViewportWidth } from "../utils/filmBarLayout.js";
 import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
@@ -11,8 +11,10 @@ import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 import FilmReceipt from "./FilmReceipt.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
+import { isKeyboardClick, scrubKeyTarget } from "./filmScrub.js";
 import { filmDurationClass, filmDurationPill } from "../engine/playSpeeds.js";
 import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle, writtenPillEnabled } from "../hooks/useReplay.js";
+import { normalizeFilmWebSourceUrl } from "../utils/filmWebSources.js";
 
 function filmPill(replay, sec) {
   return filmDurationPill({ seconds: sec, active: replay?.active, estimates: replay?.variantEstimates });
@@ -160,10 +162,23 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
         : "";
   const onBarClick = (e) => {
     if (!showPlaybackControls) return;
+    if (isKeyboardClick(e)) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const t0 = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     onSeekNm(t0 * barTotal);
   };
+  const onBarKeyDown = (e) => {
+    if (!showPlaybackControls) return;
+    const target = scrubKeyTarget(e.key, e.shiftKey, barNm, barTotal);
+    if (target == null) return;
+    e.preventDefault();
+    onSeekNm(target);
+  };
+  const nmLocale = lang === "en" ? "en-US" : "fr-FR";
+  const scrubValueText = t("filmScrubValue", {
+    at: Math.round(barNm || 0).toLocaleString(nmLocale),
+    total: Math.round(barTotal || 0).toLocaleString(nmLocale),
+  });
   const filmSubtitle = visibleFilmSubtitle(replay?.subtitle || "", {
     fromName: replay?.fromName || fromName,
     toName: replay?.toName || toName,
@@ -182,6 +197,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
           type="button"
           data-testid="show-film-bar"
           onClick={() => onHideBar?.(false)}
+          aria-label={t("showFilmBar")}
           className="mx-auto block px-2 py-1 rounded-md text-[10px] font-semibold bg-slate-950/80 border border-white/15 text-white/80"
         >
           {t("showFilmBar")}
@@ -201,7 +217,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
       className="absolute bottom-5 z-[2020] pointer-events-auto"
       style={edge}
     >
-        <div className={`naviguide-film-bar overflow-hidden rounded-xl border ${drawing ? "border-emerald-400/30" : "border-white/15"} bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm`}>
+        <div className={`naviguide-film-bar relative overflow-visible rounded-xl border ${drawing ? "border-emerald-400/30" : "border-white/15"} bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm`}>
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 font-semibold leading-tight text-[12px] truncate">
             {drawing ? (
@@ -290,9 +306,19 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
         <div className="relative w-full h-2 rounded-full bg-white/10 mt-1">
           <button
             type="button"
+            data-testid="film-scrub"
+            role="slider"
+            aria-label={t("filmScrub")}
+            aria-valuemin={0}
+            aria-valuemax={Math.round(barTotal || 0)}
+            aria-valuenow={Math.round(barNm || 0)}
+            aria-valuetext={scrubValueText}
+            aria-orientation="horizontal"
             onClick={onBarClick}
+            onKeyDown={onBarKeyDown}
             disabled={!showPlaybackControls}
-            className="absolute inset-0 w-full h-full rounded-full"
+            aria-label={showPlaybackControls ? t("filmScrub") : undefined}
+            className="absolute inset-0 w-full h-full rounded-full before:absolute before:-inset-y-2 before:inset-x-0 before:content-['']"
             title={showPlaybackControls ? t("filmScrub") : undefined}
           >
             <span className="absolute inset-y-0 left-0 rounded-full bg-cyan-400/80" style={{ width: `${pct}%` }} />
@@ -320,6 +346,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     : "bg-transparent border-cyan-200"
                 }`}
                 style={{ left: `${left}%` }}
+                aria-label={ev.phrase || ev.type}
                 title={ev.phrase || ev.type}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -347,6 +374,15 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             ) : filmSubtitle}
           </div>
         ) : null}
+        {replay?.chapterProvenance?.model && replay?.chapterProvenance?.source ? (
+          <LlmSourceBadge
+            source={replay.chapterProvenance.source}
+            label={`${filmSourceLabel(replay.chapterProvenance.source, "", t, replay.chapterProvenance.model)} · ${replay.chapterProvenance.model} · ${replay.chapterProvenance.tier}`}
+            testId="film-chapter-served-model"
+            textOnly
+            className="mt-0.5 [&_span]:text-[9px] [&_span]:text-white/65"
+          />
+        ) : null}
         {storiesPending > 0 ? (
           <div data-testid="stories-pending" className="text-[10px] text-white/55 leading-tight mt-0.5">
             {t("storiesPending", { n: storiesPending })}
@@ -364,8 +400,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               {t("hideFilmBar")}
             </button>
           ) : null}
-          <div data-testid="film-commands" className="flex items-start gap-1 min-w-0 flex-1">
-          <div className="flex items-center gap-1 flex-wrap min-w-0 flex-1">
+          <div data-testid="film-commands" className="flex flex-wrap items-start gap-1 min-w-0 flex-1">
+          <div className="flex items-center gap-1 flex-wrap flex-1">
             {onCinema ? (
               <button
                 type="button"
@@ -411,9 +447,37 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             />
             {replay && !replay.unavailable ? (
               <>
+                {replay.remoteStatus && replay.remoteStatus !== "ready" ? (
+                  <div
+                    data-testid="film-load-status"
+                    role={replay.writtenUnavailable ? undefined : "status"}
+                    aria-live="polite"
+                    className="flex min-w-0 max-w-full items-center gap-1 text-[10px] text-white/65"
+                  >
+                    {replay.remoteStatus === "pending" || replay.remoteStatus === "preparing" ? (
+                      <LoaderCircle size={11} className="animate-spin shrink-0" aria-hidden="true" />
+                    ) : null}
+                    <span className="min-w-0 truncate">{t({ pending: "filmLoadPending", preparing: "filmLoadPreparing", empty: "filmLoadEmpty", absent: "filmLoadError", timeout: "filmLoadTimeout", stale: "filmLoadStale" }[replay.remoteStatus] || "filmLoadPending")}</span>
+                    {["empty", "absent", "timeout", "stale"].includes(replay.remoteStatus) && replay.onRetryLoad ? (
+                      <button type="button" data-testid="film-load-retry" className="underline" onClick={replay.onRetryLoad}>{t("filmLoadRetry")}</button>
+                    ) : null}
+                  </div>
+                ) : null}
                 {replay.writing ? (
-                  <div data-testid="film-source" className="min-w-0 max-w-full whitespace-normal break-words text-xs leading-snug text-white/90">
-                    {t("ed2WritingNemotron")}
+                  <div
+                    data-testid="film-source"
+                    className="min-w-0 max-w-full whitespace-normal break-words text-xs leading-snug text-white/90"
+                  >
+                    <LlmSourceBadge
+                      source={replay.source}
+                      reviewedBy={replay.reviewedBy}
+                      label={filmSourceLabel(replay.source, replay.reviewedBy, t, replay.model)}
+                      textOnly
+                      className="min-w-0 max-w-full whitespace-normal break-words [&_span]:text-xs [&_span]:text-white/90"
+                    />
+                    <p className="mt-0.5 text-white/80">
+                      {replay.filmWriteError ? t("ed2WriteFailed") : t("ed2WritingNemotron")}
+                    </p>
                   </div>
                 ) : (
                   <LlmSourceBadge
@@ -426,14 +490,17 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     className="min-w-0 max-w-full whitespace-normal break-words [&_span]:text-xs [&_span]:text-white/90"
                   />
                 )}
-                {replay.webContext?.sources?.length && !replay.writing ? (
+                {replay.webContext?.sources?.length
+                && !replay.writing
+                && (replay.style || "raw") === "written"
+                && replay.hasWritten ? (
                   <div
                     data-testid="film-web-sources"
                     className="min-w-0 max-w-full whitespace-normal break-words text-[10px] leading-snug text-violet-200/90"
                   >
                     <span>{t("filmWebSourcesTitle", { port: replay.webContext.port })}</span>{" "}
                     {replay.webContext.sources.map((s, i) => (
-                      <span key={s.url}>
+                      <span key={normalizeFilmWebSourceUrl(s.url) || s.url}>
                         {i ? " · " : ""}
                         <a
                           href={s.url}
@@ -451,21 +518,20 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 {replay.receipt && !replay.writing && (replay.style || "raw") === "written" && replay.hasWritten ? (
                   <FilmReceipt
                     receipt={replay.receipt}
-                    webSourceCount={replay.webContext?.sources?.length || 0}
+                    webSourceCount={replay.receipt.webSourceCount ?? (replay.webContext?.sources?.length || 0)}
                     t={t}
                     lang={lang}
                   />
                 ) : null}
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
                   {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => {
-                    const filmReady = replay.remoteStatus === "ready" || replay.remoteStatus === "stale";
-                    const canWrite = writtenPillEnabled({
-                      hasWritten: replay.hasWritten,
-                      filmReady,
-                      customFilm: replay.customFilm,
-                    });
-                    const writtenSoon = id === "written" && !canWrite;
-                    const locked = Boolean(replay.active) || writtenSoon;
+                    const locked = Boolean(replay.active) || (id === "written" && !writtenPillEnabled({ customFilm: replay.customFilm }));
+                    const lockTitle = replay.active
+                      ? t("filmStoryLockedPlaying")
+                      : id === "written" && !writtenPillEnabled({ customFilm: replay.customFilm })
+                        ? t("filmStoryWrittenCustomUnavailable")
+                      : id === "written" && replay.writtenUnavailable
+                        ? t("filmStoryWrittenUnavailable") : undefined;
                     return (
                     <button
                       key={id}
@@ -473,13 +539,13 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                       data-testid={`film-style-${id}`}
                       aria-pressed={(replay.style || "raw") === id}
                       aria-disabled={locked}
-                      disabled={locked}
-                      title={writtenSoon ? t("filmStoryWrittenSoon") : undefined}
+                      disabled={id === "written" && !writtenPillEnabled({ customFilm: replay.customFilm })}
+                      title={lockTitle}
                       onClick={() => {
-                        if (writtenSoon) return;
+                        if (locked) return;
                         replay.onStyle?.(id);
                       }}
-                      className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed ${
+                      className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${locked ? "opacity-40 cursor-not-allowed" : ""} ${
                         (replay.style || "raw") === id
                           ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
                           : "text-white/70 hover:text-white border border-transparent"
@@ -490,6 +556,20 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     );
                   })}
                 </div>
+                {replay.writtenUnavailable ? (
+                  <div className="basis-full flex items-center gap-2 text-[9px] leading-tight text-white/65">
+                    <span role="status">{t("filmStoryWrittenUnavailable")}</span>
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() => {
+                        if (!replay.active) replay.onStyle?.("written");
+                      }}
+                    >
+                      {t("filmStoryWrittenRetry")}
+                    </button>
+                  </div>
+                ) : null}
               </>
             ) : null}
             {onView ? (
@@ -552,7 +632,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                       disabled={!replay.canStart}
                       aria-disabled={!replay.canStart}
                       data-testid="replay-start"
-                      className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 hover:bg-sky-600/70 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed disabled:pointer-events-none"
+                      className="relative z-10 h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 hover:bg-sky-600/70 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed disabled:pointer-events-none"
                       title={replay.canStart ? t("replayStartTitle") : t("replayPreparing")}
                     >
                       ↺ {t("replayStart")}
@@ -600,12 +680,16 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                   type="button"
                   disabled
                   aria-disabled="true"
+                  aria-label={`${t("replayStart")}: ${t("replayUnavailable")}`}
                   data-testid="replay-start"
                   className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed disabled:pointer-events-none"
-                  title={t("replayPreparing")}
+                  title={t("replayUnavailable")}
                 >
                   ↺ {t("replayStart")}
                 </button>
+                <span role="status" className="min-w-0 text-[9px] leading-tight text-sky-100/90">
+                  {t("replayUnavailable")}
+                </span>
               </div>
             ) : null}
           </div>
@@ -615,7 +699,9 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 <button
                   type="button"
                   onClick={onTogglePlay}
+                  aria-label={playing ? t("pause") : t("play")}
                   className="w-7 h-6 rounded-md bg-cyan-600 hover:bg-cyan-500 flex items-center justify-center"
+                  aria-label={playing ? t("pause") : t("play")}
                   title={playing ? t("pause") : t("play")}
                 >
                   {playing ? <Pause size={12} /> : <Play size={12} className="ml-0.5" />}

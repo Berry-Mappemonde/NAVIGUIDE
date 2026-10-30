@@ -11,7 +11,7 @@ export const NARROW_LAYOUT_MAX_PX = 599;
 export const FILM_BAR_BOTTOM_GAP_PX = 20;
 
 /** Espace entre le bas des crédits Leaflet et le haut de la barre film. */
-export const ATTRIBUTION_FILM_GAP_PX = 4;
+export const ATTRIBUTION_FILM_GAP_PX = 10;
 
 /**
  * La barre du bas occupe l’espace entre les deux sidebars ouvertes.
@@ -103,7 +103,7 @@ export function measureFilmBarOccupiedPx(el, viewportBottom) {
 /**
  * Variables CSS posées sur la racine : les crédits Leaflet (bas droite)
  * restent dans la carte visible — à gauche du panneau Outils, juste au-dessus
- * de la barre film (mesure + 4 px), pas sous un panneau translucide.
+ * de la barre film (mesure + 10 px), pas sous un panneau translucide.
  */
 export function mapInsetVars({
   sidebarOpen = true,

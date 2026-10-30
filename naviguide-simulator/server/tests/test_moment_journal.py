@@ -596,3 +596,31 @@ def test_rows_from_voyage_halifax_line_uses_mark_date():
     assert "Halifax" in titles
     assert "Cayenne" not in titles
     assert escale_at_hfx[0]["t"].startswith("2026-07-22")
+
+
+def test_rows_from_voyage_localizes_english_station_name_and_distance_without_changing_french():
+    voy = load_official_mini()
+    fr_rows = rows_from_voyage(voy["voyageId"], voy, lang="fr")
+    en_rows = rows_from_voyage(voy["voyageId"], voy, lang="en")
+
+    fr_station = next(
+        c for row in fr_rows for c in row["changes"]
+        if c.get("kind") == "station" and "CORIOLIS" in c.get("fact", "")
+    )
+    en_station = next(
+        c for row in en_rows for c in row["changes"]
+        if c.get("kind") == "station" and "CORIOLIS" in c.get("fact", "")
+    )
+
+    assert fr_station["title"] == "CORIOLIS-Guadeloupe"
+    assert "7,5 nm" in fr_station["fact"]
+    assert en_station["title"] == "CORIOLIS-Guadeloupe"
+    assert "7.5 nm" in en_station["fact"]
+    assert any(
+        item.get("title") == "Station croisée"
+        for row in fr_rows for item in (row.get("moment", {}).get("around") or [])
+    )
+    assert any(
+        item.get("title") == "Station passed"
+        for row in en_rows for item in (row.get("moment", {}).get("around") or [])
+    )

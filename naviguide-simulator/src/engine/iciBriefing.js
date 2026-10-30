@@ -132,11 +132,7 @@ function why(code, lang) {
   if (row) return row[isEn(lang) ? 1 : 0];
   if (/^openmeteo_unavailable/.test(key)) return isEn(lang) ? "Open-Meteo did not answer" : "Open-Meteo n’a pas répondu";
   if (/^rtofs_unavailable/.test(key)) return isEn(lang) ? "RTOFS did not answer" : "RTOFS n’a pas répondu";
-  if (/^outside_us_enc/.test(key)) {
-    return isEn(lang)
-      ? "Outside US EEZ: US entry formalities not available"
-      : "Hors ZEE américaine : formalités US non disponibles";
-  }
+  if (/^outside_us_enc/.test(key)) return isEn(lang) ? "Outside NOAA ENC (US charts) coverage" : "Hors couverture des cartes NOAA (ENC US)";
   if (/overpass_unavailable/.test(key)) return REASONS.overpass_unavailable[isEn(lang) ? 1 : 0];
   return key;
 }
@@ -496,6 +492,7 @@ export function replayHereFrame({
     zee: named,
     statusText,
     leg: from || to ? { from, to } : null,
+    at: { lat: Number(lat), lon: Number(lon) },
   };
 }
 

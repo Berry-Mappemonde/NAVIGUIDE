@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Redo2, Undo2, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar.jsx";
+import { PanelBoundary, ReplayErrorBoundary } from "./components/RootErrorBoundary.jsx";
 import { CarnetDeBord, mapPageHref, useCarnetPage } from "./components/CarnetDeBord.jsx";
 import { ToolsSidebar } from "./components/ToolsSidebar.jsx";
 import { LayerFichePopup } from "./components/LayerFichePopup.jsx";
@@ -128,6 +129,13 @@ const EMPTY_MARITIME_LAYERS = Object.freeze({
   showClimoWind: false, setShowClimoWind: NOOP, showClimoWave: false, setShowClimoWave: NOOP,
   showClimoCurrent: false, setShowClimoCurrent: NOOP, showClimoCyclones: false, setShowClimoCyclones: NOOP,
 });
+
+function PanelCrashProbe({ panel }) {
+  if ((import.meta.env.DEV || import.meta.env.VITE_NAVIGUIDE_CRASHTEST === "1") && new URLSearchParams(window.location.search).get("crashtest") === "panel" && panel === "sidebar") {
+    throw new Error("NAVIGUIDE panel crash test");
+  }
+  return null;
+}
 
 function planCacheKey(lang) { return `naviguide_sim_plan_v1_${lang}`; }
 function getCachedPlan(lang) {
@@ -671,6 +679,7 @@ export default function App() {
     incomingMoment: iciMoment.moment,
     until: momentIso,
     suivreCustom,
+    lang,
     enabled: sceneReady && !(suivreCustom && !customVoyageId),
   });
   const displayKnots = isSuivre
@@ -1094,12 +1103,14 @@ export default function App() {
     writing: replay.filmWriting,
     style: replay.filmStyle,
     hasWritten: replay.hasWritten,
+    writtenUnavailable: replay.writtenUnavailable,
     onStyle: replay.setFilmStyle,
     t0: suivreBerry ? replayT0 : voyage.t0,
     onT0: suivreBerry ? setReplayT0 : voyage.setT0,
     remoteStatus: replay.remoteStatus,
+    onRetryLoad: replay.retryFilmLoad,
     customFilm: suivreCustom,
-  } : null), [isSuivre, officialClock, suivreBerry, suivreCustom, view, closeEscaleSheet, maritimeLayers, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.fromName, replay.toName, replay.subtitle, replay.subtitlePlace, replay.targetSeconds, replay.estimatedSeconds, replay.variantEstimates, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmReviewedBy, replay.filmModel, replay.filmWebContext, replay.filmReceipt, replay.filmWriting, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replay.remoteStatus, replayT0, voyage.t0, voyage.setT0]);
+  } : null), [isSuivre, officialClock, suivreBerry, suivreCustom, view, closeEscaleSheet, maritimeLayers, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.fromName, replay.toName, replay.subtitle, replay.subtitlePlace, replay.targetSeconds, replay.estimatedSeconds, replay.variantEstimates, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmReviewedBy, replay.filmModel, replay.filmWebContext, replay.filmReceipt, replay.filmWriting, replay.filmStyle, replay.hasWritten, replay.writtenUnavailable, replay.setFilmStyle, replay.remoteStatus, replay.retryFilmLoad, replayT0, voyage.t0, voyage.setT0]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
@@ -1292,6 +1303,7 @@ export default function App() {
     const onKey = (e) => {
       if (e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
       if (e.target?.closest?.("button") && e.code === "Space") return;
+      if (e.target?.closest?.("[role='slider']") && /^(Arrow|Home$|End$|Page)/.test(e.code)) return;
       if (isTracer && e.code === "Space") {
         e.preventDefault();
         sceneApiRef.current?.playback.toggle();
@@ -1444,7 +1456,7 @@ export default function App() {
   // Un clic : choisir Rédigé (sans appel Nemotron, le rédigé existe déjà : hasWritten),
   // puis lancer le film dès que le plan rédigé est chargé (effet ci-dessous).
   const startDemoEditedReplay = useCallback(() => {
-    if (replay.active || !replayControls) return;
+    if (!replayControls) return;
     setDemoEditedFellBack(false);
     if (!replay.hasWritten) {
       // Repli annoncé dans la visite : le Brut joue.
@@ -2050,6 +2062,8 @@ export default function App() {
           pendingLayerRef.current = null;
         }}
       />
+      <PanelBoundary>
+      <PanelCrashProbe panel="sidebar" />
       <Sidebar
         plan={expeditionPlan}
         open={sidebarOpen}
@@ -2104,7 +2118,7 @@ export default function App() {
         momentNow={replay.active ? replay.card : (sceneReady ? moments.now : null)}
         momentNowLeft={replay.active ? 0 : moments.nowLeft}
         onMomentDismiss={replay.active ? replay.dismissCard : moments.dismiss}
-        momentFree={sceneReady ? moments.free : null}
+        momentFree={sceneReady && !replay.active ? moments.free : null}
         momentFreeLeft={moments.freeLeft}
         onMomentNext={moments.next}
         chat={chat}
@@ -2122,7 +2136,9 @@ export default function App() {
         escaleError={escaleSheet?.error}
         onEscaleClose={closeEscaleSheet}
       />
+      </PanelBoundary>
 
+      <PanelBoundary>
       <ToolsSidebar
         segments={statsSegs}
         points={statsPoints}
@@ -2170,6 +2186,7 @@ export default function App() {
         tracerLayout={!isSuivre}
         ampNearby={iciPack.dossier?.amp || []}
       />
+      </PanelBoundary>
 
       {!sceneReady && !drawingMode && (
         <div data-testid="scene-load-mask" className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-[1500] pointer-events-none">
@@ -2266,6 +2283,7 @@ export default function App() {
         </div>
       )}
 
+      <ReplayErrorBoundary>
       <SimulationFilmBar
         ref={filmBarRef}
         barRef={filmBarRef}
@@ -2360,6 +2378,7 @@ export default function App() {
         } : null}
         disclaimer={t("creditsLine")}
       />
+      </ReplayErrorBoundary>
 
       <RecomputeDialog
         draft={vessel.draft}
@@ -2397,7 +2416,7 @@ export default function App() {
 
       {selectedSatellite && (
         <div data-testid="satellite-popup" className="naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2100] w-[360px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl bottom-52">
-          <button type="button" data-testid="satellite-popup-close" className="absolute top-2 right-2 text-slate-400" onClick={closeSatellite}><X size={14} /></button>
+          <button type="button" data-testid="satellite-popup-close" className="absolute top-2 right-2 text-slate-400" aria-label={t("satellitePopupClose")} onClick={closeSatellite}><X size={14} /></button>
           <div className="font-semibold mb-2">{t("satelliteData")}</div>
           <div className="flex gap-1 mb-2">
             {["wind", "waves", "currents"].map((tab) => (

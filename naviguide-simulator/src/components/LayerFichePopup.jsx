@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { scienceKindLabel } from "../layers/scienceLabels.js";
+import { localizeStoredTitle } from "./iciMaintenant.js";
 
 function hostLabel(url) {
   try {
@@ -21,7 +22,7 @@ function Row({ label, children }) {
 }
 
 export function LayerFichePopup({ popup, onClose }) {
-  const { t } = useLang();
+  const { lang, t } = useLang();
   if (!popup) return null;
   const { kind, props = {} } = popup;
   const clusterCount = Number(props.clusterCount) || 1;
@@ -30,7 +31,7 @@ export function LayerFichePopup({ popup, onClose }) {
   let extra = null;
 
   if (kind === "zee") {
-    title = props.GEONAME || props.geoname || props.name || t("layerFicheEez");
+    title = localizeStoredTitle(props.GEONAME || props.geoname || props.name || "", lang) || t("layerFicheEez");
     subtitle = [props.TERRITORY1 || props.territory1, props.POL_TYPE || props.pol_type, props.ISO_TER1].filter(Boolean).join(" · ");
   } else if (kind === "marina") {
     subtitle = props.country || "";
@@ -41,7 +42,8 @@ export function LayerFichePopup({ popup, onClose }) {
       </>
     );
   } else if (kind === "project") {
-    title = props.title || props.name || t("layerFicheProject");
+    const name = props.title || props.name;
+    title = name ? (lang.startsWith("en") ? `Project: ${name}` : name) : t("layerFicheProject");
     subtitle = [props.funder, props.category_group].filter(Boolean).join(" · ");
     extra = (
       <>
@@ -103,7 +105,7 @@ export function LayerFichePopup({ popup, onClose }) {
       <button type="button" onClick={onClose} aria-label={t("layerFicheClose")} title={t("layerFicheClose")} className="absolute top-2 right-2 text-slate-400 hover:text-white">
         <X size={14} />
       </button>
-      <h3>{title}</h3>
+      <h3>{localizeStoredTitle(title, lang)}</h3>
       {subtitle ? <div className="muted">{subtitle}</div> : null}
       {extra}
     </div>

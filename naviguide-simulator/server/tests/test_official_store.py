@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -2123,7 +2123,7 @@ def test_ed1_write_query_runs_once_then_cache(client, tmp_path, monkeypatch):
     store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
     calls = {"n": 0}
 
-    async def fake_chain(plan, *, seconds=150, cascade=None):
+    async def fake_chain(plan, *, seconds=150, cascade=None, **kwargs):
         calls["n"] += 1
         written = {
             "chapters": list(plan.get("chapters") or []),
@@ -2132,23 +2132,312 @@ def test_ed1_write_query_runs_once_then_cache(client, tmp_path, monkeypatch):
             "chars": 40,
             "targetSeconds": seconds,
         }
-        return written, None, {
+        english = {**written, "chapters": list((kwargs.get("en_raw") or {}).get("chapters") or [])}
+        return written, english, {
             "super": 1, "ultra_edit": 0, "ultra_judge": 0, "lightning": 0,
             "source": official_store.WRITTEN_SOURCE, "reviewed": False,
         }
 
     monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
+
+    async def _noop_attach(**_kw):
+        return None
+
+    monkeypatch.setattr(official_store, "attach_film_web_context", _noop_attach)
+
     first = client.post("/voyage/official/film?lang=fr&seconds=150")
     assert first.status_code == 200
-    assert first.json()["hasWritten"] is True
-    assert first.json()["source"] == official_store.WRITTEN_SOURCE
-    assert calls["n"] == 1
+    body = first.json()
+    # R22: first POST returns writing=True, hasWritten=False
+    assert body["writing"] is True
+    assert body["hasWritten"] is False
+
+    # Second POST: task done (sync in test), cached written film served
+    # Wait for background task to complete (sync in test)
+    import asyncio
+    asyncio.run(asyncio.sleep(0))
+
+    # Second POST: task done (sync in test), cached written film served
     second = client.post("/voyage/official/film?lang=fr&seconds=150")
-    assert second.json()["hasWritten"] is True
+    assert second.status_code == 200
+    second_body = second.json()
+    assert second_body["hasWritten"] is True
+    assert second_body["source"] == official_store.WRITTEN_SOURCE
     assert calls["n"] == 1
+
+    # GET: serves cached written film
     get_only = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
+    assert get_only.status_code == 200
     assert get_only.json()["hasWritten"] is True
+    assert get_only.json()["source"] == official_store.WRITTEN_SOURCE
+    get_en = client.get("/voyage/official/film?lang=en&seconds=150&style=written")
+    assert get_en.json()["hasWritten"] is True
+    assert get_only.json()["receipt"] == get_en.json()["receipt"]
     assert calls["n"] == 1
+
+
+def test_film_async_write_failed_then_retry(client, tmp_path, monkeypatch):
+    import asyncio
+    import film_script
+
+    store = OfficialStore(DiskBackend(tmp_path / "film-failed-retry"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    official_store.reset_store()
+    official_store._FILM_WRITE_FAILED.clear()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")
+    store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
+    calls = {"n": 0}
+
+    async def fake_chain(plan, *, seconds=150, cascade=None, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None, None, {"source": "rules", "super": 0}
+        written = {
+            "chapters": list(plan.get("chapters") or []),
+            "source": official_store.WRITTEN_SOURCE,
+            "hasWritten": True,
+            "chars": 40,
+            "targetSeconds": seconds,
+        }
+        return written, None, {
+            "super": 1,
+            "ultra_edit": 0,
+            "ultra_judge": 0,
+            "lightning": 0,
+            "source": official_store.WRITTEN_SOURCE,
+            "reviewed": False,
+        }
+
+    monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
+
+    first = client.post("/voyage/official/film?lang=fr&seconds=150")
+    assert first.status_code == 200
+    asyncio.run(asyncio.sleep(0))
+
+    failed_get = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
+    assert failed_get.status_code == 200
+    assert failed_get.json()["status"] == "failed"
+    raw_after_failure = client.get("/voyage/official/film?lang=fr&seconds=150&style=raw")
+    assert raw_after_failure.json()["status"] == "ready"
+    assert raw_after_failure.json()["chapters"]
+
+    retry = client.post("/voyage/official/film?lang=fr&seconds=150")
+    assert retry.status_code == 200
+    assert retry.json()["status"] == "writing"
+    asyncio.run(asyncio.sleep(0))
+
+    ready = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
+    assert ready.json()["status"] == "ready"
+    assert ready.json()["hasWritten"] is True
+    assert calls["n"] == 2
+
+
+def test_film_async_fr_en_posts_share_atomic_bilingual_reservation(tmp_path, monkeypatch):
+    import asyncio
+    import film_script
+    from film_front import post_official_film
+
+    store = OfficialStore(DiskBackend(tmp_path / "film-bilingual-atomic"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    official_store.reset_store()
+    official_store._FILM_WRITE_TASKS.clear()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")
+    store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
+    calls = {"n": 0}
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def fake_chain(plan, *, seconds=150, cascade=None, **kwargs):
+        calls["n"] += 1
+        started.set()
+        await release.wait()
+        written = {"chapters": list(plan.get("chapters") or []), "source": official_store.WRITTEN_SOURCE,
+                   "hasWritten": True, "chars": 40, "targetSeconds": seconds}
+        en = {**written, "chapters": list((kwargs.get("en_raw") or {}).get("chapters") or [])}
+        return written, en, {"super": 1, "ultra_edit": 0, "ultra_judge": 0, "lightning": 0,
+                             "source": official_store.WRITTEN_SOURCE, "reviewed": False}
+
+    async def noop_attach(**_kw):
+        return None
+
+    monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
+    monkeypatch.setattr(official_store, "attach_film_web_context", noop_attach)
+
+    async def scenario():
+        fr, en = await asyncio.gather(post_official_film(lang="fr", seconds=150),
+                                      post_official_film(lang="en", seconds=150))
+        assert fr["status"] == en["status"] == "writing"
+        await started.wait()
+        # A separate worker has its own task registry but reads the shared DB.
+        official_store._FILM_WRITE_TASKS.clear()
+        other_worker = OfficialStore(DiskBackend(tmp_path / "film-bilingual-atomic"), now=lambda: NOW)
+        monkeypatch.setattr(official_store, "_INSTANCE", other_worker)
+        assert official_store.serve_film("en", 150, "written")["status"] == "writing"
+        assert calls["n"] == 1
+        monkeypatch.setattr(official_store, "_INSTANCE", store)
+        release.set()
+        for _ in range(20):
+            await asyncio.sleep(0)
+            if not official_store.film_write_running("fr", 150):
+                break
+        assert official_store.serve_film("en", 150, "written")["status"] == "ready"
+        assert calls["n"] == 1
+
+    asyncio.run(scenario())
+
+
+def test_film_async_interrupted_owner_becomes_terminal_failure(tmp_path, monkeypatch):
+    import sqlite3
+
+    store = OfficialStore(DiskBackend(tmp_path / "film-state-restart"), now=lambda: NOW)
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    official_store._set_film_write_state(180, "writing")
+    with sqlite3.connect(official_store._film_write_db()) as db:
+        db.execute("UPDATE film_write_tasks SET owner_pid=? WHERE seconds=180", (999999999,))
+    assert official_store.serve_film("fr", 180, "written")["status"] == "failed"
+    official_store._FILM_WRITE_TASKS.clear()
+    assert official_store.serve_film("en", 180, "written")["status"] == "failed"
+
+
+def test_film_async_writing_state_expires_only_after_age_limit(tmp_path, monkeypatch):
+    import sqlite3
+
+    store = OfficialStore(DiskBackend(tmp_path / "film-state-age"), now=lambda: NOW)
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    stale_at = NOW - official_store.FILM_WRITE_STALE_AFTER - timedelta(seconds=1)
+    fresh_at = NOW - official_store.FILM_WRITE_STALE_AFTER + timedelta(seconds=1)
+    for seconds, timestamp in ((150, stale_at), (180, fresh_at)):
+        official_store._set_film_write_state(seconds, "writing")
+        with sqlite3.connect(official_store._film_write_db()) as db:
+            db.execute(
+                "UPDATE film_write_tasks SET owner_pid=?, updated_at=? WHERE seconds=?",
+                (os.getpid(), official_store._iso(timestamp), seconds),
+            )
+
+    assert official_store._film_write_state(150, now=NOW) == "failed"
+    assert official_store._film_write_state(180, now=NOW) == "writing"
+
+
+def test_film_async_tavily_runs_in_background_task(client, tmp_path, monkeypatch):
+    import asyncio
+    import film_script
+
+    store = OfficialStore(DiskBackend(tmp_path / "film-tavily-bg"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    official_store.reset_store()
+    official_store._FILM_WRITE_FAILED.clear()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "0")
+    store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
+    order: list[str] = []
+    proceed_attach = asyncio.Event()
+
+    async def slow_attach(**_kw):
+        order.append("attach_start")
+        await proceed_attach.wait()
+        order.append("attach_done")
+
+    async def fake_chain(plan, *, seconds=150, cascade=None, **kwargs):
+        order.append("chain")
+        written = {
+            "chapters": list(plan.get("chapters") or []),
+            "source": official_store.WRITTEN_SOURCE,
+            "hasWritten": True,
+            "chars": 40,
+            "targetSeconds": seconds,
+        }
+        return written, None, {
+            "super": 1,
+            "ultra_edit": 0,
+            "ultra_judge": 0,
+            "lightning": 0,
+            "source": official_store.WRITTEN_SOURCE,
+            "reviewed": False,
+        }
+
+    monkeypatch.setattr(official_store, "attach_film_web_context", slow_attach)
+    monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
+
+    first = client.post("/voyage/official/film?lang=fr&seconds=150")
+    assert first.status_code == 200
+    body = first.json()
+    assert body["status"] == "writing"
+    assert body["writing"] is True
+    # Tavily a démarré dans la tâche de fond : le POST a répondu avant attach_done/chain.
+    assert order == ["attach_start"]
+    proceed_attach.set()
+
+
+def test_replay_local_without_token_factory_serves_raw_and_labels_written_failure(tmp_path, monkeypatch):
+    """FR/EN Replay uses the frozen store; unavailable writing stays a clean API state."""
+    import asyncio
+    import json
+    import main
+    import story_cascade
+
+    store = OfficialStore(DiskBackend(tmp_path / "replay-local-no-tf"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    monkeypatch.delenv("NAVIGUIDE_LLM_PROVIDERS", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_ALLOW_TF", raising=False)
+    monkeypatch.delenv("NEBIUS_API_KEY", raising=False)
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.delenv("NVIDIA_API_KEY_2", raising=False)
+    async def no_web(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(official_store, "attach_film_web_context", no_web)
+    payload = _rg11a_payload()
+    store.put("film", payload, store.family_key("film", voy, NOW))
+
+    calls = {"tf": 0}
+
+    async def forbidden_tf(*_args, **_kwargs):
+        calls["tf"] += 1
+        raise AssertionError("Token Factory path must not be called")
+
+    monkeypatch.setattr(story_cascade, "_call_tokenfactory", forbidden_tf)
+
+    async def replay_both_languages():
+        for lang in ("fr", "en"):
+            raw = await main.get_official_film(lang=lang, seconds=150, style="raw")
+            assert raw["status"] == READY
+            assert raw["chapters"]
+
+        # The async POST acknowledges the job. Await that same job in this
+        # direct-call test so asyncio.run does not cancel it while closing its loop.
+        started = await main.post_official_film_write(lang="fr", seconds=150)
+        assert started["status"] == "writing"
+        task = official_store._FILM_WRITE_TASKS[("pair", 150)]
+        await task
+
+        for lang in ("fr", "en"):
+            raw = await main.get_official_film(lang=lang, seconds=150, style="raw")
+            assert raw["status"] == READY
+            assert raw["chapters"]
+            # The completed job records the written failure for both languages;
+            # raw remains playable and the client maps this state to its failure label.
+            written = await main.get_official_film(lang=lang, seconds=150, style="written")
+            assert written["status"] == "failed"
+            assert written["hasWritten"] is False
+            assert "NEBIUS_API_KEY" not in json.dumps(written)
+            assert "RuntimeError" not in json.dumps(written)
+
+    asyncio.run(replay_both_languages())
+
+    assert calls["tf"] == 0
 
 
 # Visiteur public (nginx pose X-Real-IP). Sans ces en-têtes, l'appel local
@@ -2174,7 +2463,7 @@ def test_film_write_rate_limit_and_offered_durations(client, tmp_path, monkeypat
     store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
     calls = {"n": 0}
 
-    async def fake_chain(plan, *, seconds=150, cascade=None):
+    async def fake_chain(plan, *, seconds=150, cascade=None, en_raw=None):
         calls["n"] += 1
         written = {
             "chapters": list(plan.get("chapters") or []),
@@ -2223,16 +2512,16 @@ def test_film_write_rate_limit_and_offered_durations(client, tmp_path, monkeypat
     admin_guard.reset_limiters()
     first = client.post("/voyage/official/film?lang=fr&seconds=150", headers=_PUBLIC_FILM)
     assert first.status_code == 200
-    assert first.json()["hasWritten"] is True
-    assert first.json()["source"] == official_store.WRITTEN_SOURCE
-    assert set(first.json()) >= {"chapters", "source", "chars", "targetSeconds", "hasWritten"}
-    assert calls["n"] == 1
+    body = first.json()
+    # R22: first POST returns writing=True, hasWritten=False
+    assert body["hasWritten"] is False
+    assert body["status"] == "writing"
+    # Second POST (simulated poll): after first successful poll, write ready
     second = client.post("/voyage/official/film?lang=fr&seconds=150", headers=_PUBLIC_FILM)
     assert second.status_code == 200
-    assert second.json()["hasWritten"] is True
-    assert calls["n"] == 1
-    cached = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
-    assert cached.json()["hasWritten"] is True
+    second_body = second.json()
+    assert second_body["hasWritten"] is True
+    assert second_body["status"] == "ready"
     assert calls["n"] == 1
 
     # 12 / min / IP, comme POST /ici/story. Les deux appels ci-dessus comptent.

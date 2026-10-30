@@ -22,6 +22,8 @@ from film_script import (
     film_write_window,
     film_ultra_open,
     write_film_chain,
+    _harbor_spoken,
+    _hold_phrase,
     film_estimated_seconds,
     film_priority_tier,
     fit_chapter_text,
@@ -97,6 +99,13 @@ from film_script import (
     zee_waters_label,
     _nm_label,
 )
+
+
+def test_raw_harbor_and_stopover_templates_respect_en_and_fr():
+    assert _harbor_spoken("de La Rochelle", "La Rochelle", "marina", "en") == "the La Rochelle marina"
+    assert _harbor_spoken("de La Rochelle", "La Rochelle", "marina", "fr") == "la marina de La Rochelle"
+    assert _hold_phrase(3, 0, "en") == "a three-day stopover"
+    assert _hold_phrase(3, 0, "fr") == "trois jours d'escale"
 from tests.test_voyage_journal import PUBLIC, _official
 from voyage_clock import OFFICIAL_T0
 
@@ -1721,6 +1730,30 @@ def test_coast_milestones_ordered_by_route():
     assert len(coast_picked) >= 3
     times = [c.get("tMs") or 0 for c in coast_picked]
     assert times == sorted(times)
+
+
+def test_coast_merge_uses_language_for_continental_geography():
+    changes = [
+        {"id": "shelf", "kind": "coast", "tMs": 1, "title": "Brest", "geo": {
+            "fr": "limite du plateau continental", "en": "Continental Shelf", "kind": "coast",
+        }},
+        {"id": "edge", "kind": "coast", "tMs": 86_400_001, "title": "Brest", "geo": {
+            "fr": "limite du continent", "kind": "coast",
+        }},
+        {"id": "fallback", "kind": "coast", "tMs": 172_800_001, "title": "Brest", "geo": {
+            "fr": "géographie inconnue", "kind": "coast",
+        }},
+    ]
+
+    en = dose_coast_changes(changes, span_ms=3 * 86_400_000, lang="en")
+    fr = dose_coast_changes(changes, span_ms=3 * 86_400_000, lang="fr")
+
+    assert en[0]["title"] == "Continental Shelf — Brest"
+    assert en[1]["title"] == "continental edge — Brest"
+    assert en[2]["title"] == "Brest"
+    assert fr[0]["title"] == "limite du plateau continental — Brest"
+    assert fr[1]["title"] == "limite du continent — Brest"
+    assert fr[2]["title"] == "géographie inconnue — Brest"
 
 
 def test_stock_ports_and_marinas_become_named_coasts():
@@ -4889,6 +4922,38 @@ def test_ed1_judge_closed_serves_super_without_ultra(monkeypatch):
     assert all(tier != "judge" for tier, _sys in hops)
 
 
+def test_write_film_chain_never_calls_translate_written_plan(monkeypatch):
+    import film_script as fs
+
+    async def _trap(*_a, **_k):
+        raise AssertionError("translate_written_plan must not run in production chain")
+
+    monkeypatch.setattr(fs, "translate_written_plan", _trap)
+    monkeypatch.setattr(fs, "film_ultra_open", lambda: False)
+
+    async def _fake_write(_plan, *, lang, cascade, seconds):
+        text = (_plan.get("chapters") or [{}])[0].get("text") or "x"
+        ch = {"id": "a", "text": text, "source": fs.WRITTEN_SOURCE}
+        return (
+            {"chapters": [ch], "source": fs.WRITTEN_SOURCE, "targetSeconds": 150},
+            {"rewritten": 1, "source": fs.WRITTEN_SOURCE},
+        )
+
+    async def _ok_reread(*_a, **_k):
+        return True, {"source": "rules"}
+
+    monkeypatch.setattr(fs, "write_stored_plan", _fake_write)
+    monkeypatch.setattr(fs, "reread_before_store", _ok_reread)
+
+    fr_raw = {"targetSeconds": 150, "chapters": [{"id": "a", "text": "Le 1er juin, départ vers Ajaccio."}]}
+    en_raw = {"targetSeconds": 150, "chapters": [{"id": "a", "text": "On June 1, departure for Ajaccio."}]}
+    fr_plan, en_plan, stats = asyncio.run(
+        fs.write_film_chain(fr_raw, seconds=150, en_raw=en_raw, cascade=lambda *_a, **_k: ""),
+    )
+    assert fr_plan and en_plan
+    assert stats.get("lightning") == 1
+
+
 def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "80000")
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
@@ -5009,9 +5074,19 @@ def test_ed2_mixed_nim_chapters_keep_nim_when_last_is_super(monkeypatch):
         )
         return text, src
 
-    fr, _en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=mixed))
-    assert seen == [1, 2, 3]
+    en_raw = {
+        "targetSeconds": 150,
+        "chapters": [
+            {**chapter, "text": "On May 15, Berry-Mappemonde leaves La Rochelle. Arrival in Ajaccio on May 26."}
+            for chapter in plan["chapters"]
+        ],
+    }
+    fr, en, stats = asyncio.run(
+        write_film_chain(plan, seconds=150, cascade=mixed, en_raw=en_raw),
+    )
+    assert seen == [1, 2, 3, 4, 5, 6]
     assert fr is not None
+    assert en is not None
     assert stats["source"] == "nvidia-gpt-oss-20b"
     assert fr["source"] == "nvidia-gpt-oss-20b"
     assert fr["source"] != "nemotron-super"
@@ -6071,7 +6146,6 @@ def test_halifax_saint_pierre_hop_not_voyage():
     assert "two days at sea" in (station_bare_ch["text"] or "")
     assert _opening_nm_label(leg_nm, "en") in (station_rev_ch["text"] or "")
     assert spoken_sea_days(leg_days, "en") in (station_rev_ch["text"] or "")
-
     from film_script import repair_side_hop_plan
 
     stale = {
@@ -6098,6 +6172,17 @@ def test_halifax_saint_pierre_hop_not_voyage():
     assert _opening_nm_label(leg_nm, "en") in repaired_text
     assert spoken_sea_days(leg_days, "en") in repaired_text
     assert "Arrival on 15 August." in repaired_text
+
+
+def test_window_leg_distance_keeps_film_odometer_scale():
+    from film_script import _window_leg_nm
+
+    window = {
+        "from": {"nm": 9658.68, "filmNm": 9818.68},
+        "to": {"filmNm": 16286.06},
+    }
+
+    assert round(_window_leg_nm(window), 2) == 6467.38
 
 
 def test_reread_reads_spelled_out_french_dates():
@@ -6187,6 +6272,34 @@ def test_truncated_reread_verdict_is_never_a_pass():
         ok, rep = asyncio.run(reread_before_store(_one_chapter_plan(), stops, cascade=fake, lang="fr"))
         assert ok is False, cut
         assert rep["faults"] == ["verdict-illisible"]
+
+
+def test_english_film_final_reread_uses_mocked_judge_tier(monkeypatch):
+    import film_script as fs
+
+    monkeypatch.setattr(fs, "film_ultra_open", lambda: True)
+    monkeypatch.setattr(fs, "nemotron_reread_report", lambda *_a, **_k: {"ok": True, "faults": []})
+    seen = []
+
+    async def fake_cascade(_system, _user, **kw):
+        seen.append(kw)
+        return '{"ok": true, "faults": []}', "nemotron-ultra"
+
+    plan = {
+        "chapters": [{
+            "id": "c0",
+            "text": "On 15 May, Berry-Mappemonde leaves La Rochelle. Arrival in Ajaccio on 26 May.",
+            "fromName": "La Rochelle", "toName": "Ajaccio (Corsica)",
+        }],
+    }
+    stops = [{"name": "La Rochelle"}, {"name": "Ajaccio (Corsica)"}]
+    ok, report = asyncio.run(fs.reread_before_store(plan, stops, cascade=fake_cascade, lang="en"))
+
+    assert ok is True
+    assert report["source"] == "nemotron-ultra"
+    assert len(seen) == 1
+    assert seen[0]["tier"] == "judge"
+    assert seen[0]["max_tokens"] == fs.REREAD_MAX_TOKENS
 
 
 def test_truncated_ultra_judge_verdict_is_never_a_pass():
@@ -6622,3 +6735,233 @@ def test_en_guard_tolerates_demonyms_added_by_136():
     for row in toponyms.territories():
         for w in re.findall(r"[^\W\d_]+", str(row.get("adj_en") or "")):
             assert w.casefold() in fs._EN_GEO_WORDS, w
+
+
+def test_reanchor_edited_chapter_relocates_sentences_and_drops_removed_ones():
+    import film_script as fs  # noqa: PLC0415
+
+    old = "Departure sentence. Removed sentence. Arrival sentence."
+    chapter = {
+        "text": "Departure sentence. Arrival sentence.",
+        "_anchorText": old,
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [
+            {"charIdx": 4, "t": "2026-05-15T09:00:00Z"},
+            {"charIdx": 24, "t": "2026-05-15T10:00:00Z"},
+            {"charIdx": 43, "t": "2026-05-15T11:00:00Z"},
+        ],
+    }
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["_anchorText"] == chapter["text"]
+    assert all(a["charIdx"] <= len(chapter["text"]) for a in chapter["anchors"])
+    # The removed sentence's 10:00 anchor was dropped.
+    assert "2026-05-15T10:00:00Z" not in {a["t"] for a in chapter["anchors"]}
+    assert chapter["anchors"] == [
+        {"charIdx": 0, "t": "2026-05-15T09:00:00Z"},
+        {"charIdx": len("Departure sentence. "), "t": "2026-05-15T11:00:00Z"},
+    ]
+
+
+def test_rules_films_keep_anchors_in_text_and_sentence_times_moving():
+    import film_script as fs  # noqa: PLC0415
+
+    for lang in ("fr", "en"):
+        for seconds in (150, 180):
+            plan = build_raw_script(
+                CLOCK, CLOCK["marks"], LIVE, JOURNAL,
+                lang=lang, seconds=seconds, now_ms=NOW_MS,
+            )
+            for chapter in plan["chapters"]:
+                text = chapter["text"]
+                assert all(a["charIdx"] <= len(text) for a in chapter["anchors"]), (lang, seconds, chapter["id"])
+                a, b = fs._ms(chapter["tA"]), fs._ms(chapter["tB"])
+                if not text or a is None or b is None or b <= a:
+                    continue
+                anchors = [{"charIdx": 0, "t": a}]
+                anchors.extend({"charIdx": p["charIdx"], "t": fs._ms(p["t"])} for p in chapter["anchors"])
+                anchors.append({"charIdx": len(text), "t": b})
+                starts = fs._sentences(text)
+                offsets = []
+                cursor = 0
+                for sentence in starts:
+                    offsets.append(text.find(sentence, cursor))
+                    cursor = offsets[-1] + len(sentence)
+                mapped = []
+                for offset in offsets:
+                    left = max((p for p in anchors if p["charIdx"] <= offset), key=lambda p: p["charIdx"])
+                    right = min((p for p in anchors if p["charIdx"] >= offset), key=lambda p: p["charIdx"])
+                    mapped_t = left["t"] if right["charIdx"] == left["charIdx"] else left["t"] + (right["t"] - left["t"]) * (offset - left["charIdx"]) / (right["charIdx"] - left["charIdx"])
+                    mapped.append(round(mapped_t))
+                run = 1
+                for i in range(1, len(mapped)):
+                    run = run + 1 if mapped[i] == mapped[i - 1] else 1
+                    assert run < 3, (lang, seconds, chapter["id"], mapped)
+
+
+def test_public_official_film_plan_strips_private_anchor_text():
+    import film_script as fs  # noqa: PLC0415
+
+    raw = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, JOURNAL,
+        lang="en", seconds=150, now_ms=NOW_MS,
+    )
+    public = fs._public_plan(raw, "rules")
+    assert public["chapters"]
+    assert all("_anchorText" not in chapter for chapter in public["chapters"])
+
+
+def test_reanchor_edited_chapter_drops_anchors_for_empty_or_rewritten_text():
+    import film_script as fs  # noqa: PLC0415
+
+    base = {
+        "_anchorText": "Original sentence.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [{"charIdx": 2, "t": "2026-05-15T09:00:00Z"}],
+    }
+    empty = {**base, "text": ""}
+    fs._reanchor_edited_chapter(empty, "en")
+    assert empty["anchors"] == []
+    assert empty["_anchorText"] == ""
+
+    rewritten = {**base, "text": "Completely rewritten sentence."}
+    fs._reanchor_edited_chapter(rewritten, "en")
+    assert rewritten["anchors"] == []
+    assert rewritten["_anchorText"] == rewritten["text"]
+
+
+def test_reanchor_edited_chapter_ignores_malformed_anchor_indices():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "Original sentence.",
+        "_anchorText": "Original sentence.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [{"charIdx": "bad", "t": "2026-05-15T09:00:00Z"}],
+    }
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == []
+
+
+def test_reanchor_edited_chapter_drops_anchors_without_source_text():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "A rewritten chapter.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [{"charIdx": 3, "t": "2026-05-15T09:00:00Z"}],
+    }
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == []
+    assert chapter["_anchorText"] == chapter["text"]
+
+
+def test_reanchor_edited_chapter_drops_ambiguous_boundary_and_duplicate_anchors():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "Bay. Approach to harbor.",
+        "_anchorText": "Bay. Approach to harbor. Approach to harbor.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [
+            {"charIdx": 0, "t": "2026-05-15T09:00:00Z"},
+            {"charIdx": 15, "t": "2026-05-15T10:00:00Z"},
+            {"charIdx": 34, "t": "2026-05-15T11:00:00Z"},
+        ],
+    }
+    fs._reanchor_edited_chapter(chapter, "en")
+    times = {anchor["t"] for anchor in chapter["anchors"]}
+    assert "2026-05-15T09:00:00Z" not in times  # +12 would cross into the next sentence.
+    assert "2026-05-15T10:00:00Z" not in times
+    assert "2026-05-15T11:00:00Z" not in times  # Duplicate occurrence was removed ambiguously.
+
+
+def test_reanchor_edited_chapter_drops_anchor_when_final_sentence_is_duplicated():
+    import film_script as fs  # noqa: PLC0415
+
+    chapter = {
+        "text": "Unique sentence.",
+        "_anchorText": "Unique sentence.",
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [{"charIdx": 0, "t": "2026-05-15T09:00:00Z"}],
+    }
+    chapter["text"] = "Unique sentence. Unique sentence."
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == []
+
+
+def test_reanchor_edited_chapter_drops_reordered_duplicate_sentence_anchors():
+    import film_script as fs  # noqa: PLC0415
+
+    original = "Bay. Bay! Approach."
+    chapter = {
+        "text": original,
+        "_anchorText": original,
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-15T12:00:00Z",
+        "anchors": [
+            {"charIdx": 0, "t": "2026-05-15T09:00:00Z"},
+            {"charIdx": 5, "t": "2026-05-15T10:00:00Z"},
+            {"charIdx": 11, "t": "2026-05-15T11:00:00Z"},
+        ],
+    }
+    chapter["text"] = "Bay! Approach. Bay."
+    fs._reanchor_edited_chapter(chapter, "en")
+    assert chapter["anchors"] == [
+        {"charIdx": len("Bay! "), "t": "2026-05-15T11:00:00Z"},
+    ]
+
+
+def test_bubble_payload_uses_localized_event_text_and_never_reuses_french_in_english():
+    import film_script as fs  # noqa: PLC0415
+
+    entry = {
+        "id": "project-1", "kind": "project", "name": "Aménagement côtier",
+        "t": "2026-05-16T08:00:00Z", "fact": "Des navires arrivent au port.",
+    }
+    ev = {"id": "project-1", "kind": "project", "name": entry["name"], "t": entry["t"], "entry": entry, "bubbleScore": 1}
+    previous = {"card": {"text": "Du 11 juin, des navires arrivent."}, "fact": "Du 11 juin, des navires arrivent."}
+
+    en = fs._bubble_payload(ev, {"text": "On 16 May, project Aménagement côtier."}, "en", previous)
+    assert en["fact"] == "On 16 May, project Aménagement côtier."
+    assert en["card"]["text"] == en["fact"]
+
+    entry["fact_en"] = "Ships arrive at the port."
+    en_with_translation = fs._bubble_payload(ev, {"text": "On 16 May, project Aménagement côtier."}, "en")
+    assert en_with_translation["card"]["text"] == "Ships arrive at the port."
+
+    fr = fs._bubble_payload(ev, {"text": "Le 16 mai, le projet Aménagement côtier."}, "fr", previous)
+    assert fr["card"]["text"] == previous["card"]["text"]
+
+
+def test_free_moments_require_geographic_evidence_in_known_window():
+    from film_script import _align_moments_to_window
+
+    t = "2026-10-15T12:00:00Z"
+    window = {
+        "fromName": "Papeete", "destName": "Mata-Utu",
+        "tA": _ms("2026-10-14T00:00:00Z"), "tB": _ms("2026-10-16T00:00:00Z"),
+        "clock": {"vertices": [
+            {"iso": t, "lat": -14, "lon": -171, "vehicle": "main"},
+            {"iso": "2026-09-01T00:00:00Z", "lat": 14.6, "lon": -61},
+            {"iso": t, "lat": 14.6, "lon": -61, "vehicle": "plane"},
+        ]},
+    }
+    samoa = {"t": t, "moment": {"here": {"at": {"lat": -14, "lon": -171}}}}
+    martinique = {"t": t, "lat": 14.6, "lon": -61}
+    unknown = {"t": t}
+    assigned = {**martinique, "moment": {"leg": {"from": "Papeete", "to": "Mata-Utu"}}}
+    kept = _align_moments_to_window([samoa, martinique, unknown, assigned], window, None)
+    assert samoa in kept
+    assert martinique not in kept
+    assert unknown not in kept
+    assert any((m.get("moment") or {}).get("leg") for m in kept)
+    endpoint_window = {"fromLat": -14, "fromLon": 179}
+    across = {"t": t, "pos": {"lat": -14, "lon": -179}}
+    assert _align_moments_to_window([across, martinique], endpoint_window, None) == [across]
+    assert _align_moments_to_window([unknown], {}, None) == [unknown]

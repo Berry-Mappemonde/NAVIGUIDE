@@ -10,6 +10,17 @@ const hook = readFileSync(join(here, "..", "hooks", "useLogbookChat.js"), "utf8"
 const sidebar = readFileSync(join(here, "Sidebar.jsx"), "utf8");
 
 describe("LogbookChat contract", () => {
+  it("announces new messages and errors, and labels the chat controls", () => {
+    assert.match(src, /data-testid="logbook-chat-list"[^>]*role="log"[^>]*aria-live="polite"/);
+    assert.match(src, /role="alert"[^>]*data-testid="logbook-chat-error"/);
+    assert.match(src, /aria-label=\{t\("logbookChatInputLabel"\)\}/);
+    assert.match(src, /aria-label=\{t\("logbookChatSend"\)\}/);
+    const en = readFileSync(join(here, "..", "i18n", "en.js"), "utf8");
+    const fr = readFileSync(join(here, "..", "i18n", "fr.js"), "utf8");
+    assert.match(en, /logbookChatInputLabel: "Ask the logbook"/);
+    assert.match(fr, /logbookChatInputLabel: "Votre question au carnet de bord"/);
+  });
+
   it("affiche l’avis au premier échange et s’en souvient", () => {
     assert.match(src, /data-testid="logbook-chat-ai-notice"/);
     assert.match(src, /data-testid="logbook-chat-ai-notice-dismiss"/);
@@ -20,6 +31,13 @@ describe("LogbookChat contract", () => {
     assert.match(src, /text-xs/);
     assert.doesNotMatch(src, /logbook-chat-ai-notice[\s\S]{0,400}text-\[9px\]/);
   });
+  it("l’avis reste sous le cadre à hauteur fixe et ne comprime pas la liste", () => {
+    const formEnd = src.indexOf("</form>");
+    const boxEnd = src.indexOf("</div>", formEnd);
+    const noticeAt = src.indexOf('data-testid="logbook-chat-ai-notice"');
+    assert.ok(formEnd > 0 && noticeAt > boxEnd, "l’avis suit la fermeture du cadre sim-box-chat");
+    assert.match(src, /<>\s*<div data-testid="logbook-chat"(?: data-tour="logbook")? className="sim-box-chat/);
+  });
   it("lives in the left sidebar, in both views, and says whether exchanges are logged", () => {
     assert.match(sidebar, /<LogbookChat messages=\{chat\.messages\}/);
     assert.match(sidebar, /\{!drawingHidesBerry && chat \? \(/, "any view, not once a drawn point hides Berry");
@@ -28,14 +46,30 @@ describe("LogbookChat contract", () => {
   });
 
   it("the hook posts one question at a time to /logbook/chat with the admin header and the client facts", () => {
-    assert.match(hook, /fetch\(`\$\{API_URL\}\/logbook\/chat`/);
+    assert.match(hook, /postLogbookChat\(\{/);
+    assert.match(hook, /url:\s*`\$\{API_URL\}\/logbook\/chat`/);
     assert.match(hook, /\.\.\.adminHeaders\(\)/);
     assert.match(hook, /inFlight\.current/);
     assert.match(hook, /contextFn\(\)/);
     assert.match(hook, /source: body\.source \|\| body\.engine \|\| null/);
     assert.match(hook, /reason/);
     assert.doesNotMatch(hook, /Nemotron|Tavily|Nebius/i);
-    assert.doesNotMatch(hook, /useEffect/);
+    assert.match(hook, /signal:\s*controller\.signal/);
+    assert.match(hook, /requestController\.current\?\.abort\(\)/);
+    assert.match(hook, /err\?\.code === "aborted"/);
+  });
+
+  it("does not update hook state after unmount while an aborted request settles", () => {
+    assert.match(hook, /mounted\.current = false;\s*requestController\.current\?\.abort\(\)/);
+    assert.match(hook, /if \(mounted\.current\) setMessages\(\(prev\) => \[\.\.\.prev, reply\]/);
+    assert.match(hook, /if \(mounted\.current\) setError\(/);
+    assert.match(hook, /if \(mounted\.current\) setPending\(false\)/);
+  });
+
+  it("keeps the translator callable when recording the question timestamp", () => {
+    assert.match(hook, /const \{ t: tr \} = useLang\(\)/);
+    assert.match(hook, /setError\(tr\(chatErrorKey\(err\?\.code\)\)\)/);
+    assert.doesNotMatch(hook, /const t\s*=/);
   });
 
   it("shows the cascade source under the answer and does not fetch on render", () => {
@@ -123,5 +157,24 @@ describe("LogbookChat example questions (one click, three real paths)", () => {
       assert.match(val(file, "logbookExampleWebLabel"), /Tavily$/);
       assert.match(val(file, "logbookExampleFastLabel"), /Lightning$/);
     }
+  });
+});
+
+describe("R44 : accessibilité du chat et de la notice AI Act", () => {
+  it("la notice est une région live (role=status, aria-live=polite) autour du texte seul", () => {
+    assert.match(src, /<p role="status" aria-live="polite" data-testid="logbook-chat-ai-notice-text">\{t\("aiActChatNotice"\)\}<\/p>/);
+    assert.doesNotMatch(src, /role="note"/);
+  });
+  it("champ et bouton Envoyer ont un nom accessible i18n ; le focus revient au champ", () => {
+    assert.match(src, /aria-label=\{t\("logbookChatInputLabel"\)\}/);
+    assert.match(src, /aria-label=\{t\("logbookChatSend"\)\}/);
+    assert.match(src, /ref=\{inputRef\}/);
+    assert.match(src, /dismissAiNotice = useCallback\(\(\) => \{[\s\S]{0,200}inputRef\.current\?\.focus\(\)/);
+  });
+  it("libellés FR et EN présents et distincts", async () => {
+    const fr = (await import("../i18n/fr.js")).default;
+    const en = (await import("../i18n/en.js")).default;
+    assert.ok(fr.logbookChatInputLabel && en.logbookChatInputLabel);
+    assert.notEqual(fr.logbookChatInputLabel, en.logbookChatInputLabel);
   });
 });

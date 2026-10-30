@@ -204,6 +204,9 @@ test("Now tab EN: deduplicated cards, translated entry alert, no hash", async ({
       return json(route, { voyageId: "official", status: "ready", count: 0, days: [], latest: [], events: [] });
     }
     if (path.includes("/voyage/official/moments")) {
+      // Before the Follow PUT the boat position is unknown: answer "building" so
+      // the client polls again instead of keeping a moment far from the boat.
+      if (!built?.from) return json(route, { voyageId: "official", status: "building", count: 0, moments: [] });
       const lat = built?.from?.lat ?? -22.2;
       const lon = built?.from?.lon ?? 166.4;
       const bathy = { kind: "layer", layer: "bathymetry", title: "Bathymétrie – Nouvelle-Calédonie", fact: "GEBCO", lat, lon };
@@ -244,6 +247,9 @@ test("Now tab EN: deduplicated cards, translated entry alert, no hash", async ({
 
   await page.goto("/");
   await dismissNotForNav(page);
+  // The moments feed belongs to Suivre; Tracer intentionally hides the Now tab.
+  await page.getByTestId("view-suivre").click();
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
   await showLeftPanel(page);
 
   const nowCard = page.getByTestId("moment-now");

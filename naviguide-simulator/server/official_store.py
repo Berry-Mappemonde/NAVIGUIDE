@@ -18,7 +18,9 @@ import os
 import tempfile
 import threading
 import time
-from datetime import datetime, timezone
+import asyncio
+import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -499,6 +501,10 @@ def reset_store() -> None:
     """Tests : oublier le singleton (nouveau répertoire / faux client)."""
     global _INSTANCE
     _INSTANCE = None
+    # Les états du job Rédigé async sont au niveau module : un test ne doit
+    # pas hériter de l'échec ou de la tâche d'un test précédent.
+    _FILM_WRITE_FAILED.clear()
+    _FILM_WRITE_TASKS.clear()
 
 
 def get(family: str, key: Optional[str] = None) -> Optional[dict]:
@@ -2973,6 +2979,226 @@ def film_receipt(calls: list[dict], stats: Optional[dict], when: datetime, base:
     return out
 
 
+# One bilingual film write per duration. SQLite shares reservations and state
+# between API workers using the same official store directory.
+_FILM_WRITE_TASKS: dict[tuple[str, int], asyncio.Task] = {}
+_FILM_WRITE_FAILED: set[tuple[str, int]] = set()
+# A write normally completes well before this; older reservations are assumed
+# abandoned after a process restart and become eligible for retry.
+FILM_WRITE_STALE_AFTER = timedelta(minutes=15)
+
+
+def _film_write_db() -> Path:
+    store = get_store()
+    backend = getattr(store, "backend", None)
+    root = getattr(backend, "root", None) or disk_root()
+    path = Path(root) / "film-write-tasks.sqlite3"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(path, timeout=10) as db:
+        db.execute("CREATE TABLE IF NOT EXISTS film_write_tasks (seconds INTEGER PRIMARY KEY, status TEXT NOT NULL, owner_pid INTEGER, updated_at TEXT NOT NULL)")
+    return path
+
+
+def _film_write_state(seconds: int, *, now: datetime | None = None) -> str | None:
+    with sqlite3.connect(_film_write_db(), timeout=10) as db:
+        row = db.execute("SELECT status, owner_pid, updated_at FROM film_write_tasks WHERE seconds=?", (seconds,)).fetchone()
+        if not row:
+            return None
+        status, owner_pid, updated_at = row
+        if status == "writing":
+            try:
+                written_at = datetime.fromisoformat(str(updated_at).replace("Z", "+00:00"))
+                if written_at.tzinfo is None:
+                    written_at = written_at.replace(tzinfo=timezone.utc)
+                current = now or _utc_now()
+                if current.tzinfo is None:
+                    current = current.replace(tzinfo=timezone.utc)
+                if current.astimezone(timezone.utc) - written_at.astimezone(timezone.utc) >= FILM_WRITE_STALE_AFTER:
+                    db.execute("UPDATE film_write_tasks SET status='failed', owner_pid=NULL, updated_at=? WHERE seconds=? AND status='writing'", (_iso(current), seconds))
+                    return "failed"
+            except (TypeError, ValueError, OverflowError):
+                # An unreadable timestamp cannot establish that a write is fresh.
+                db.execute("UPDATE film_write_tasks SET status='failed', owner_pid=NULL, updated_at=? WHERE seconds=? AND status='writing'", (_iso(now), seconds))
+                return "failed"
+        if status == "writing" and owner_pid != os.getpid():
+            try:
+                os.kill(int(owner_pid), 0)
+            except (OSError, TypeError, ValueError):
+                db.execute("UPDATE film_write_tasks SET status='failed', owner_pid=NULL, updated_at=? WHERE seconds=? AND status='writing'", (_iso(), seconds))
+                return "failed"
+        return status
+
+
+def _set_film_write_state(seconds: int, status: str) -> None:
+    with sqlite3.connect(_film_write_db(), timeout=10) as db:
+        db.execute(
+            "INSERT INTO film_write_tasks(seconds,status,owner_pid,updated_at) VALUES(?,?,?,?) "
+            "ON CONFLICT(seconds) DO UPDATE SET status=excluded.status, owner_pid=excluded.owner_pid, updated_at=excluded.updated_at",
+            (seconds, status, os.getpid() if status == "writing" else None, _iso()),
+        )
+
+
+def film_write_running(lang: str, seconds: int) -> bool:
+    """Check if a film write task is running for the given key."""
+    key = ("pair", int(seconds or 0))
+    task = _FILM_WRITE_TASKS.get(key)
+    return (task is not None and not task.done()) or _film_write_state(seconds) == "writing"
+
+
+async def start_film_write(
+    lang: str = "fr",
+    seconds: int = 150,
+    *,
+    cascade=None,
+    now: Optional[datetime] = None,
+) -> dict:
+    """Start async film write, return cache immediately if ready, else launch background task.
+    
+    Returns: {...cached, status:"writing", writing:true, hasWritten:false, targetSeconds}
+    """
+    import llm_budget  # noqa: PLC0415
+    from film_script import write_film_chain  # noqa: PLC0415
+
+    lg = (lang or "fr")[:2].lower()
+    secs = int(seconds or 0)
+    key = (lg, secs)
+    task_key = ("pair", secs)
+
+    # Check cache first — if written film ready, serve it immediately
+    cached = serve_film(lang=lg, seconds=secs, style="written")
+    if cached.get("hasWritten") and cached.get("status") == READY:
+        return cached
+
+    # If a task is already running for this key, return writing status
+    existing_task = _FILM_WRITE_TASKS.get(task_key)
+    if existing_task and not existing_task.done():
+        return {
+            **cached,
+            "status": "writing",
+            "writing": True,
+            "hasWritten": False,
+            "targetSeconds": secs,
+        }
+    if _film_write_state(secs) == "writing":
+        return {**cached, "status": "writing", "writing": True, "hasWritten": False, "targetSeconds": secs}
+
+    if llm_budget.mode() == "off":
+        _log_fill_written(f"written clic {lg} {secs}s : mode off — brut servi")
+        return serve_film(lang=lg, seconds=secs, style="written")
+
+    hit = get("film")
+    body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+    if not isinstance(body, dict):
+        return serve_film(lang=lg, seconds=secs, style="written")
+
+    when = now or _utc_now()
+    last_stop = _stored_last_stop()
+    fr_raw = _raw_plan_for(body, "fr", secs)
+    if not isinstance(fr_raw, dict) or not (fr_raw.get("chapters") or []):
+        return serve_film(lang=lg, seconds=secs, style="written")
+    en_raw = _raw_plan_for(body, "en", secs)
+
+    cascade_fn = cascade
+    if cascade_fn is None:
+        from story_cascade import cascade_text  # noqa: PLC0415
+        cascade_fn = cascade_text
+    cascade_fn, receipt_calls = _receipt_recorder(cascade_fn)
+
+    if not llm_budget.allow("write"):
+        _log_fill_written(f"written clic {lg} {secs}s : plafond write — brut")
+        return serve_film(lang=lg, seconds=secs, style="written")
+
+    # Reserve synchronously before creating/yielding to the background task.
+    # BEGIN IMMEDIATE serializes competing processes; the duration is the key
+    # because each job generates FR and EN together.
+    db = sqlite3.connect(_film_write_db(), timeout=10, isolation_level=None)
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT status, updated_at FROM film_write_tasks WHERE seconds=?", (secs,)).fetchone()
+        if row and row[0] == "writing":
+            try:
+                reserved_at = datetime.fromisoformat(str(row[1]).replace("Z", "+00:00"))
+                if reserved_at.tzinfo is None:
+                    reserved_at = reserved_at.replace(tzinfo=timezone.utc)
+                current = _utc_now()
+                if current - reserved_at.astimezone(timezone.utc) < FILM_WRITE_STALE_AFTER:
+                    db.execute("ROLLBACK")
+                    return {**cached, "status": "writing", "writing": True, "hasWritten": False, "targetSeconds": secs}
+            except (TypeError, ValueError, OverflowError):
+                db.execute("ROLLBACK")
+                return {**cached, "status": "writing", "writing": True, "hasWritten": False, "targetSeconds": secs}
+        db.execute("INSERT INTO film_write_tasks(seconds,status,owner_pid,updated_at) VALUES(?,?,?,?) ON CONFLICT(seconds) DO UPDATE SET status=excluded.status, owner_pid=excluded.owner_pid, updated_at=excluded.updated_at", (secs, "writing", os.getpid(), _iso()))
+        db.execute("COMMIT")
+    finally:
+        db.close()
+
+    _FILM_WRITE_FAILED.discard(("fr", secs))
+    _FILM_WRITE_FAILED.discard(("en", secs))
+
+    # Launch background task
+    async def _write_task():
+        try:
+            # Tavily au clic Rédigé : dans la tâche de fond pour ne pas bloquer le POST.
+            await attach_film_web_context(now=when)
+            fr_plan, en_plan, stats = await write_film_chain(
+                fr_raw, seconds=secs, cascade=cascade_fn, en_raw=en_raw,
+            )
+            fr_ok = isinstance(fr_plan, dict) and bool(fr_plan.get("chapters") or [])
+            en_ok = isinstance(en_plan, dict) and bool(en_plan.get("chapters") or [])
+            if not fr_ok and not en_ok:
+                _log_fill_written(f"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})")
+                _FILM_WRITE_FAILED.add(key)
+                _FILM_WRITE_FAILED.add(("en", secs))
+                _set_film_write_state(secs, "failed")
+                return
+            receipt = film_receipt(receipt_calls, stats, when)
+            if fr_ok:
+                fr_plan = {**fr_plan, "receipt": receipt}
+            # Re-fetch hit and body to avoid UnboundLocalError from closure rebinding
+            hit = get("film")
+            body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+            if not isinstance(body, dict):
+                _set_film_write_state(secs, "failed")
+                return
+            if fr_ok:
+                body = _put_written_variant(body, "fr", secs, fr_plan, when, last_stop)
+            if en_ok:
+                en_plan = {**en_plan, "receipt": receipt}
+                body = _put_written_variant(body, "en", secs, en_plan, when, last_stop)
+            put("film", body, hit.get("key"))
+            for language, succeeded in (("fr", fr_ok), ("en", en_ok)):
+                result_key = (language, secs)
+                if succeeded:
+                    _FILM_WRITE_FAILED.discard(result_key)
+                else:
+                    _FILM_WRITE_FAILED.add(result_key)
+            _set_film_write_state(secs, "ready" if fr_ok or en_ok else "failed")
+            _log_fill_written(
+                f"written clic {lg} {secs}s : source={stats.get('source')} "
+                f"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} lightning={stats.get('lightning')}"
+            )
+        except Exception as exc:
+            log.exception("Film write task failed for %s %ds", lg, secs)
+            _FILM_WRITE_FAILED.add(key)
+            _FILM_WRITE_FAILED.add(("en", secs))
+            _set_film_write_state(secs, "failed")
+        finally:
+            # Clean up task reference
+            _FILM_WRITE_TASKS.pop(task_key, None)
+
+    task = asyncio.create_task(_write_task())
+    _FILM_WRITE_TASKS[task_key] = task
+
+    # Return immediately with writing status; hasWritten=False until 1st successful poll (docstring l. 2997)
+    return {
+        **cached,
+        "status": "writing",
+        "writing": True,
+        "hasWritten": False,
+        "targetSeconds": secs,
+    }
+
+
 async def write_film_on_click(
     lang: str = "fr",
     seconds: int = 150,
@@ -2982,7 +3208,7 @@ async def write_film_on_click(
 ) -> dict:
     """Chaîne Super → Ultra? → Lightning, une fois par (langue, durée). Au clic seulement."""
     import llm_budget  # noqa: PLC0415
-    from film_script import translate_written_plan, write_film_chain  # noqa: PLC0415
+    from film_script import write_film_chain  # noqa: PLC0415
 
     lg = (lang or "fr")[:2].lower()
     secs = int(seconds or 0)
@@ -3006,6 +3232,7 @@ async def write_film_on_click(
     fr_raw = _raw_plan_for(body, "fr", secs)
     if not isinstance(fr_raw, dict) or not (fr_raw.get("chapters") or []):
         return serve_film(lang=lg, seconds=secs, style="written")
+    en_raw = _raw_plan_for(body, "en", secs)
 
     cascade_fn = cascade
     if cascade_fn is None:
@@ -3013,29 +3240,19 @@ async def write_film_on_click(
         cascade_fn = cascade_text
     cascade_fn, receipt_calls = _receipt_recorder(cascade_fn)
 
-    existing_fr = _pick_written_plan(body, "fr", secs)
-    if existing_fr and lg == "en":
-        if not llm_budget.allow("fast"):
-            return serve_film(lang=lg, seconds=secs, style="written")
-        en_raw = _raw_plan_for(body, "en", secs) or fr_raw
-        en_plan = await translate_written_plan(existing_fr, en_raw, cascade=cascade_fn)
-        if not en_plan:
-            return serve_film(lang=lg, seconds=secs, style="written")
-        en_plan = {**en_plan, "receipt": film_receipt(
-            receipt_calls, {"lightning": 1}, when, base=existing_fr.get("receipt"),
-        )}
-        body = _put_written_variant(body, "en", secs, en_plan, when, last_stop)
-        put("film", body, hit.get("key"))
-        return serve_film(lang=lg, seconds=secs, style="written")
-
     if not llm_budget.allow("write"):
         _log_fill_written(f"written clic {lg} {secs}s : plafond write — brut")
         return serve_film(lang=lg, seconds=secs, style="written")
 
-    fr_plan, en_plan, stats = await write_film_chain(fr_raw, seconds=secs, cascade=cascade_fn)
+    fr_plan, en_plan, stats = await write_film_chain(
+        fr_raw, seconds=secs, cascade=cascade_fn, en_raw=en_raw,
+    )
     if not isinstance(fr_plan, dict) or not (fr_plan.get("chapters") or []):
         _log_fill_written(f"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})")
-        return serve_film(lang=lg, seconds=secs, style="written")
+        unavailable = serve_film(lang=lg, seconds=secs, style="written")
+        if stats.get("super", 0) == 0 and stats.get("source") == "rules":
+            unavailable["reason"] = "all-providers-failed"
+        return unavailable
     receipt = film_receipt(receipt_calls, stats, when)
     fr_plan = {**fr_plan, "receipt": receipt}
     body = _put_written_variant(body, "fr", secs, fr_plan, when, last_stop)
@@ -3066,6 +3283,20 @@ def _repair_served_hop(plan: Optional[dict], lang: str, voy: Optional[dict]) -> 
 
 
 def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
+    # Check if a write task failed for this key
+    lg = (lang or "fr")[:2].lower()
+    secs = int(seconds or 0)
+    # A failed written pass must never hide the already available raw film.
+    state = _film_write_state(secs) if _is_written_style(style) else None
+    if _is_written_style(style) and (state == "failed" or (lg, secs) in _FILM_WRITE_FAILED):
+        return {
+            "status": "failed",
+            "hasWritten": False,
+            "style": "written",
+        }
+    if _is_written_style(style) and state == "writing":
+        return {"status": "writing", "writing": True, "hasWritten": False, "style": "written", "targetSeconds": secs}
+
     extra = {
         "chapters": [], "source": "rules", "chars": 0,
         "targetSeconds": seconds, "hasWritten": False,

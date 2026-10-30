@@ -2,12 +2,18 @@
  * NAVIGUIDE — English translations (default)
  */
 export default {
+  chatErrTimeout: "The chat did not answer in time. Please try again.",
+  chatErrNetwork: "Could not reach the chat. Check your connection and try again.",
+  chatErrEmpty: "Please enter a question.",
+  chatErrTooLong: "Your question is too long. Shorten it and try again.",
+  chatErrServer: "The chat encountered an error. Please try again later.",
   // ── Drawing mode ───────────────────────────────────────────────────────────
   drawStart:      "Choose your starting point",
   drawFirstStop:  "Choose your first stop",
   drawNextStop:   "Choose your next stop",
   undoLastPoint:  "Undo last point",
   redo:           "Redo",
+  satellitePopupClose: "Close satellite data",
   copied:         "copied",
   calculatingRoutes: "Calculating routes…",
   positioningExpedition: "Locating the expedition…",
@@ -123,7 +129,7 @@ export default {
   storySourceUltra: "Nemotron 3 Ultra · Token Factory",
   storySourceOpenrouter: "OpenRouter",
   storySourceClaude: "Claude",
-  storySourceRules: "rules",
+  storySourceRules: "Written from raw data",
   storySourceBudget: "budget",
   storySourceCache: "cache",
   storySourceNim: "NVIDIA NIM (fallback)",
@@ -226,7 +232,7 @@ export default {
   logbookChatTitle: "Logbook — ask a question",
   filmWebSourcesTitle: "Web sources (Tavily) · {port}:",
   tfLatencyLine: "Token Factory response time today on this server (median): {list}.",
-  tfLatencyItem: "{model} {s} s",
+  tfLatencyItem: "{model} {s} s (n={n})",
   tfLatencyDecimal: ".",
   tfModelMissingLine: "Not in the Token Factory catalog today: {model}. {substitute} answers instead, and its texts carry its own name.",
   tfModelMissingNone: "Not in the Token Factory catalog today: {model}. Its texts use the next labelled fallback.",
@@ -249,6 +255,12 @@ export default {
   logbookWebSourcesTitle: "Web sources (Tavily)",
   logbookWebUnavailable: "Web watch unavailable (missing Tavily key or error).",
   logbookChatPlaceholder: "Wind at the boat? Next stop?",
+  tavilyWatchLabel: "Tavily watch",
+  tavilyWatchHint: "Server-side web search on upcoming stops (10 days before to 2 days after)",
+  tavilyWatchAdmin: "An admin key is needed to change the watch",
+  tavilyWatchError: "Watch: server unreachable",
+  logbookChatInputLabel: "Ask the logbook",
+
   logbookChatSend: "Send",
   logbookExamplesTitle: "Try a question:",
   logbookExampleDeepQ: "Why is the boat heading for its next stop, and what is the main risk?",
@@ -272,6 +284,14 @@ export default {
   replayStartTitle: "Replay the route from Saint-Maur to today, told day by day",
   replayBerryOnly: "Replay: Berry-Mappemonde route only — coming soon for your route",
   replayPreparing: "preparing",
+  replayUnavailable: "The official expedition film is unavailable right now.",
+  filmLoadPending: "Loading film…",
+  filmLoadPreparing: "The film is being prepared…",
+  filmLoadEmpty: "No film received yet.",
+  filmLoadError: "Could not load the film.",
+  filmLoadTimeout: "Film loading timed out.",
+  filmLoadStale: "The received film is incomplete or out of date.",
+  filmLoadRetry: "Retry",
   replayStop: "Stop",
   replayStopTitle: "Stop the film and return to Follow",
   replayProgress: "Replay: {pct} %",
@@ -285,7 +305,10 @@ export default {
   filmStorySource: "Story: {source}",
   filmStoryRaw: "Raw",
   filmStoryWritten: "Edited",
-  filmStoryWrittenSoon: "not yet written for this duration",
+  filmStoryWrittenCustomUnavailable: "The edited film is unavailable on a custom route.",
+  filmStoryLockedPlaying: "Stop the film to switch Raw/Edited",
+  filmStoryWrittenUnavailable: "The edited film is temporarily unavailable.",
+  filmStoryWrittenRetry: "Retry",
   recomputeConstraintsSkipper: "Under the skipper's orders: wind < {wind}, sea < {hs} — no step of the route in those conditions.",
   recomputeConstraintsDefault: "Without skipper's orders: only a sea ≥ {hs} is avoided.",
   drawingInProgress: "Drawing in progress",
@@ -301,6 +324,7 @@ export default {
   planReviewOk: "nothing to report",
   planReviewEmpty: "No leg to review.",
   planReviewCommentTitle: "What I would change",
+  planReviewNoChange: "No change suggested for now.",
   planReviewLegAlerts: "alerts: {n}",
   planReviewApply: "Apply",
   planReviewLanes: "lanes: {names}",
@@ -421,7 +445,7 @@ export default {
   polarFailed:            "Failed",
   polarUploadErrorPrefix: "Failed",
   polarDefaultUnavailable: "The default polar is temporarily unavailable.",
-  polarServiceUnavailable: "Polar service unavailable (HTTP {status}). Please try again shortly.",
+  polarServiceUnavailable: "The polar service is temporarily unavailable. Please try again shortly.",
   polarFileTooLarge:      "The file exceeds the 10 MB size limit.",
   polarNetworkError:      "The polar service is unreachable. Check your connection and try again.",
   polarUpwind:            "↑ Upwind",
@@ -497,6 +521,7 @@ export default {
   showFilmBar:      "Show the bar",
   filmArrived:      "Arrived at {name}",
   filmScrub:        "Scrub along the route",
+  filmScrubValue:   "{at} of {total} nautical miles",
   filmPhaseAir:     "Air transfer — the boat stays in port",
   filmPhaseAirReturn: "Return flight — the boat then resumes the route",
   filmPhaseSide:    "Sail Halifax — Saint-Pierre-et-Miquelon",
@@ -673,6 +698,7 @@ export default {
 
   // LY1 — Clément Filisetti
   climatologyUnavailable: "atlas unavailable",
+  layerUnavailable: "data unavailable",
   // SO1
   skipperCoastalRule: "Coastal advised for < 12 m",
   exportNeedsRoute: "No route to export",
@@ -705,6 +731,8 @@ export default {
 
   // ED2
   ed2WritingNemotron: "Writing…",
+  ed2WritingWait:    "Waiting for writing…",
+  ed2WriteFailed:    "Writing failed",
   ed2BrandLine: "NVIDIA · Nebius",
 
   // FM1

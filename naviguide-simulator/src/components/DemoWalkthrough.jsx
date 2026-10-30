@@ -1,12 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Compass, Loader2, Play, X } from "lucide-react";
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
 import { useLang } from "../i18n/LangContext.jsx";
-import {
-  describeModelRoles, getDemoSteps, tourEditedOffer, computePanelPosition, computeArrowDirection,
-  getStagePadding, PANEL_HEIGHT,
-} from "./demoWalkthrough.js";
+import { describeModelRoles, getDemoSteps, tourEditedOffer, computePanelPosition, computeArrowDirection, getStagePadding } from "./demoWalkthrough.js";
 import { describeTfLatency } from "../utils/tfLatency.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
@@ -25,6 +22,9 @@ export { getDemoSteps } from "./demoWalkthrough.js";
  * pendant la lecture du film ; panneau du côté opposé à celui que l'étape ouvre,
  * et en bas de l'écran sous 768 px.
  */
+/** Nombre d'images (rAF) pendant lesquelles on attend le bouton Tracer monté tard. */
+export const PULSE_MAX_ATTEMPTS = 30;
+
 export function DemoWalkthrough({
   replayReady = false,
   replayActive = false,
@@ -49,6 +49,7 @@ export function DemoWalkthrough({
   const launchRef = useRef(null);
   const headingRef = useRef(null);
   const chipRef = useRef(null);
+  const panelRef = useRef(null);
   const returnFocusRef = useRef(false);
   const autoStartedRef = useRef(false);
   // Étape « Qui fait quoi » : une lecture de /ici/warm/status par ouverture de la visite.
@@ -132,8 +133,6 @@ export function DemoWalkthrough({
   // Projecteur driver.js (MIT) : assombrit tout l'écran sauf l'élément réel de l'étape.
   // Le panneau React reste la bulle (boutons, i18n, focus) ; driver.js ne gère que le spot.
   const driverRef = useRef(null);
-  const panelRef = useRef(null);
-  const [panelHeight, setPanelHeight] = useState(PANEL_HEIGHT);
   const [anchor, setAnchor] = useState(null);
   const spotOn = open && !hidden && !collapsed;
   const target = step?.target || null;
@@ -147,15 +146,6 @@ export function DemoWalkthrough({
       setAnchor(null);
     }
   }, [spotOn, target]);
-
-  // R9: cleanup on step change — destroy driver, reset refs
-  useEffect(() => {
-    if (!spotOn) {
-      driverRef.current?.destroy();
-      driverRef.current = null;
-      setAnchor(null);
-    }
-  }, [spotOn]);
 
   useEffect(() => {
     if (!spotOn || !target) {
@@ -198,40 +188,31 @@ export function DemoWalkthrough({
         stable = key === last ? stable + 1 : 0;
         last = key;
         if (stable >= 3 && key !== shown) { shown = key; show(el); }
+      } else if (driverRef.current) {
+        driverRef.current.destroy();
+        driverRef.current = null;
+        shown = "";
+        setAnchor(null);
       }
       tries += 1;
-      if (tries < 600) raf = window.requestAnimationFrame(track);
+      raf = window.requestAnimationFrame(track);
     };
     raf = window.requestAnimationFrame(track);
     const onResize = () => {
       shown = "";
-      tries = 0;
+      last = "";
       stable = 0;
+      tries = 0;
+      window.cancelAnimationFrame(raf);
       raf = window.requestAnimationFrame(track);
     };
     window.addEventListener("resize", onResize);
     return () => {
       window.cancelAnimationFrame(raf);
       window.removeEventListener("resize", onResize);
-      driverRef.current?.destroy();
-      driverRef.current = null;
-      setAnchor(null);
     };
   }, [spotOn, target, step.id]);
   useEffect(() => () => { driverRef.current?.destroy(); driverRef.current = null; }, []);
-
-  useLayoutEffect(() => {
-    const el = panelRef.current;
-    if (!el || collapsed || !open) return undefined;
-    const measure = () => {
-      const h = el.getBoundingClientRect().height;
-      if (h > 0) setPanelHeight(h);
-    };
-    measure();
-    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    ro?.observe(el);
-    return () => ro?.disconnect();
-  }, [open, collapsed, index, step.id]);
 
   // R13 : Tab / Maj+Tab restent dans le panneau tant que la visite est ouverte.
   useEffect(() => {
@@ -273,18 +254,17 @@ export function DemoWalkthrough({
   }, [open, hidden, collapsed, index, step.id]);
 
   // Pulse animation on "trace" step target — unique useEffect, réessaye si le bouton n'existe pas encore
-  // R10: use separate counter (attempts) instead of rAF ID
   useEffect(() => {
-    if (step.id !== "trace" || !target || !spotOn) return;
-    let el = document.querySelector(target);
+    if (step.id !== "trace" || !target) return;
+    let el = null;
+    // checkRaf ne sert qu'à l'annulation : un id rAF n'est pas un nombre d'essais.
     let checkRaf = 0;
     let attempts = 0;
     const tryAdd = () => {
       el = document.querySelector(target);
       if (el) {
         el.classList.add("naviguide-tour-pulse");
-      } else if (attempts < 30) {
-        attempts += 1;
+      } else if (++attempts < PULSE_MAX_ATTEMPTS) {
         checkRaf = window.requestAnimationFrame(tryAdd);
       }
     };
@@ -293,7 +273,7 @@ export function DemoWalkthrough({
       window.cancelAnimationFrame(checkRaf);
       if (el) el.classList.remove("naviguide-tour-pulse");
     };
-  }, [step.id, target, spotOn]);
+  }, [step.id, target]);
 
   if (hidden) return null;
 
@@ -325,7 +305,7 @@ export function DemoWalkthrough({
         type="button"
         data-testid="demo-walkthrough-launch"
         onClick={start}
-        className={`naviguide-demo-launch fixed right-3 top-14 z-[2300] md:top-10 inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold shadow-xl backdrop-blur-sm ${light ? "border-cyan-700/30 bg-white/95 text-slate-900 hover:bg-slate-100" : "border-cyan-200/35 bg-slate-950/95 text-white hover:bg-slate-900"}`}
+        className={`naviguide-demo-launch fixed right-3 top-14 z-[2300] inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold shadow-xl backdrop-blur-sm ${light ? "border-cyan-700/30 bg-white/95 text-slate-900 hover:bg-slate-100" : "border-cyan-200/35 bg-slate-950/95 text-white hover:bg-slate-900"}`}
         title={t("demoLaunchTitle")}
       >
         <Compass size={15} aria-hidden="true" />
@@ -342,7 +322,7 @@ export function DemoWalkthrough({
         data-testid="demo-walkthrough-chip"
         onClick={() => setExpanded(true)}
         title={t("demoChipTitle")}
-        className={`naviguide-demo-launch fixed right-3 top-14 z-[2300] md:top-10 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold shadow-xl ${surface}`}
+        className={`naviguide-demo-launch fixed right-3 top-14 z-[2300] inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold shadow-xl ${surface}`}
       >
         <Compass size={13} aria-hidden="true" />
         {t("demoChip", { n: index + 1, total })}
@@ -352,27 +332,32 @@ export function DemoWalkthrough({
 
   // Compute panel position using pure logic from demoWalkthrough.js
   const panelStyle = anchor && typeof window !== "undefined" && window.innerWidth >= 768
-    ? computePanelPosition(anchor, step.id, window.innerWidth, window.innerHeight, panelHeight)
+    ? computePanelPosition(anchor, step.id, window.innerWidth, window.innerHeight)
     : undefined;
 
   const arrowDir = (anchor && window && window.innerWidth >= 768)
-    ? computeArrowDirection(anchor, step.id, window.innerWidth, window.innerHeight, panelHeight)
+    ? computeArrowDirection(anchor, step.id, window.innerWidth, window.innerHeight)
     : undefined;
 
   return (
+    <div
+      data-arrow={arrowDir || undefined}
+      style={panelStyle}
+      className={`naviguide-demo-panel fixed z-[2300] inset-x-2 bottom-2 md:inset-x-auto md:bottom-auto md:top-14 md:w-[min(23rem,calc(100vw-1.5rem))] ${side}`}
+    >
     <aside
       ref={panelRef}
       role="region"
       aria-label={t("demoRegion")}
       data-testid="demo-walkthrough-panel"
+      data-arrow={arrowDir || undefined}
       data-step={step.id}
       data-side={step.side}
       data-target={step.target || ""}
       data-spot={anchor ? "on" : "off"}
-      {...(arrowDir ? { "data-arrow": arrowDir } : {})}
-      style={panelStyle}
-      className={`naviguide-demo-panel fixed z-[2300] flex flex-col overflow-y-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-md inset-x-2 bottom-2 max-h-[45dvh] md:inset-x-auto md:bottom-auto md:top-14 md:w-[min(23rem,calc(100vw-1.5rem))] md:max-h-[calc(100dvh-5rem)] ${side} ${surface}`}
+      className={`flex max-h-[45dvh] flex-col overflow-y-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-md md:max-h-[calc(100dvh-5rem)] ${surface}`}
     >
+      <div className="min-h-0 flex-1 overflow-y-auto">
       <p className="sr-only" aria-live="polite" data-testid="demo-walkthrough-live">
         {t("demoStepLive", { n: index + 1, total, title: step.title })}
       </p>
@@ -404,35 +389,12 @@ export function DemoWalkthrough({
         <div className="h-full rounded-full bg-cyan-400/80 transition-[width]" style={{ width: `${((index + 1) / total) * 100}%` }} />
       </div>
 
-<p className={`mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${muted}`}>
+      <p className={`mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${muted}`}>
         {t("demoStepOf", { n: index + 1, total })}
       </p>
-  <h2 ref={headingRef} tabIndex={-1} data-testid="demo-walkthrough-title" className="text-base font-semibold leading-snug outline-none">{step.title}</h2>
-  <p data-testid="demo-walkthrough-body" className={`mt-2 text-sm leading-relaxed ${bodyText}`}>{step.body}</p>
+      <h2 ref={headingRef} tabIndex={-1} data-testid="demo-walkthrough-title" className="text-base font-semibold leading-snug outline-none">{step.title}</h2>
+      <p data-testid="demo-walkthrough-body" className={`mt-2 text-sm leading-relaxed ${bodyText}`}>{step.body}</p>
 
-  {spotOn && (
-    <div
-      tabIndex={0}
-      role="region"
-      aria-label={t("demoPanelAria")}
-      data-testid="demo-walkthrough-panel"
-      onKeyDown={(e) => {
-        if (e.key === "Tab") {
-          const focusable = e.currentTarget.querySelectorAll(
-            'button:not([disabled]), [href], input, select, textarea, [tabIndex]:not([tabIndex="-1"])'
-          );
-          const first = focusable[0];
-          const last = focusable[focusable.length - 1];
-          if (e.shiftKey && document.activeElement === first) {
-            e.preventDefault();
-            last.focus();
-          } else if (!e.shiftKey && document.activeElement === last) {
-            e.preventDefault();
-            first.focus();
-          }
-        }
-      }}
-    >
       {step.id === "models" ? (() => {
         const roles = status.state === "loading" || status.state === "idle" ? null : describeModelRoles(status.llm, t);
         return (
@@ -518,34 +480,32 @@ export function DemoWalkthrough({
         );
       })() : null}
 
-      <div className={`mt-5 flex flex-col gap-2 border-t pt-3 ${light ? "border-slate-200" : "border-white/10"}`}>
-        <div className="flex items-center justify-between gap-2">
-          <button type="button" data-testid="demo-walkthrough-prev" onClick={() => goTo(index - 1)} disabled={index === 0} className={secondaryButton}>
-            <ArrowLeft size={14} aria-hidden="true" />
-            {t("demoPrev")}
-          </button>
-          {index < total - 1 ? (
-            <button type="button" data-testid="demo-walkthrough-next" onClick={() => goTo(index + 1)} className={primaryButton}>
-              {t("demoNext")}
-              <ArrowRight size={14} aria-hidden="true" />
-            </button>
-          ) : (
-            <button type="button" data-testid="demo-walkthrough-end" onClick={close} className={primaryButton}>
-              {t("demoEnd")}
-            </button>
-          )}
-        </div>
-        <button
-          type="button"
-          data-testid="demo-walkthrough-exit"
-          onClick={close}
-          className={`self-start rounded-md px-1 py-1 text-xs underline underline-offset-2 ${muted}`}
-        >
-          {t("demoExit")}
+      <div className={`mt-5 flex items-center justify-between gap-2 border-t pt-3 ${light ? "border-slate-200" : "border-white/10"}`}>
+        <button type="button" data-testid="demo-walkthrough-prev" onClick={() => goTo(index - 1)} disabled={index === 0} className={secondaryButton}>
+          <ArrowLeft size={14} aria-hidden="true" />
+          {t("demoPrev")}
         </button>
+        {index < total - 1 ? (
+          <button type="button" data-testid="demo-walkthrough-next" onClick={() => goTo(index + 1)} className={primaryButton}>
+            {t("demoNext")}
+            <ArrowRight size={14} aria-hidden="true" />
+          </button>
+        ) : (
+          <button type="button" data-testid="demo-walkthrough-end" onClick={close} className={primaryButton}>
+            {t("demoEnd")}
+          </button>
+        )}
       </div>
-    </div>
-  )}
+      <button
+        type="button"
+        data-testid="demo-walkthrough-exit"
+        onClick={close}
+        className={`mt-2 self-start rounded-md px-1 py-1 text-xs underline underline-offset-2 ${muted}`}
+      >
+        {t("demoExit")}
+      </button>
+      </div>
     </aside>
+    </div>
   );
 }

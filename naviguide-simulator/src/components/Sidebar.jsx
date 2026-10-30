@@ -392,11 +392,13 @@ export const Sidebar = memo(function Sidebar({
         type="button"
         onClick={onToggle}
         aria-expanded={open ? "true" : "false"}
+        aria-label={open ? t("hideSidebar") : t("showExpeditionPanel")}
         className={`naviguide-sidebar-toggle naviguide-sidebar-toggle--left absolute top-4 z-30 bg-slate-900/95 text-white
           rounded-full flex items-center justify-center shadow-lg
           hover:bg-slate-800 transition-all duration-300
           w-9 h-9 border border-slate-700
           ${open ? "left-[322px]" : "left-4"}`}
+        aria-label={open ? t("hideSidebar") : t("showExpeditionPanel")}
         title={open ? t("hideSidebar") : t("showExpeditionPanel")}
       >
         {open ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
@@ -550,7 +552,7 @@ export const Sidebar = memo(function Sidebar({
                 </div>
               </div>
             ) : null}
-            story={(Array.isArray(story) ? story : []).some(Boolean) ? (
+            story={routeSource !== "custom" && (Array.isArray(story) ? story : []).some(Boolean) ? (
               <div data-testid="expedition-story" data-replay={storyReplay ? "1" : "0"} className={`sim-box-story !h-auto rounded-lg border p-2 min-w-0 ${storyReplay ? "border-sky-400/60 bg-sky-900/40" : "border-sky-500/25 bg-sky-950/30"}`}>
                 <div className="text-[10px] font-semibold text-sky-200 leading-snug">
                   {t("storyTitle")}{storyReplay ? <span className="ml-1 text-[9px] font-normal text-sky-100/80">· {t("replayBadge")}</span> : null}

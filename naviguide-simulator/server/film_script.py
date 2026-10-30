@@ -1,8 +1,8 @@
 """Script du film 2:30 — brut (règles), sélection, version rédigée.
 
 Le LLM ne produit jamais un nombre : `filter_numbers` + balises `[[ev:id]]`.
-Rédigé **au clic** Rédigé : Super écrit le français ; Ultra édite
-puis juge si le plafond juge est ouvert ; Lightning traduit. GET et
+Rédigé **au clic** Rédigé : Super écrit le FR et l'EN en parallèle (brut
+de chaque langue) ; Ultra édite puis juge le FR si le plafond juge est ouvert. GET et
 `warm_film_story` ne lancent aucun modèle. Repli : le brut.
 
 Au recalcul du stock, VL propose des ids du sac ;
@@ -12,6 +12,7 @@ Suivre ne rappelle rien.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
@@ -381,7 +382,7 @@ _COAST_GEO = (
     (re.compile(r"cascais|lisboa|lisbon|peniche|sines", re.I), ("le Portugal", "Portugal", "coast")),
     (re.compile(r"tanger|tangier|algeciras|ceuta|europa point|^gibraltar$", re.I), ("le détroit de Gibraltar", "the Strait of Gibraltar", "strait")),
     (re.compile(r"porto torres|cagliari|olbia|alghero", re.I), ("la Sardaigne", "Sardinia", "island")),
-    (re.compile(r"^calvi$|bastia|bonifacio|porto-vecchio", re.I), ("la Corse", "Corsica", "island")),
+    (re.compile(r"^calvi$|bastia|bonifacio|porto-vecchio|^l['’]?\s*[iî]le[- ]rousse$", re.I), ("la Corse", "Corsica", "island")),
     (re.compile(r"almer[ií]a|motril|m[aá]laga|cartagena", re.I), ("l'Andalousie", "Andalusia", "coast")),
     (re.compile(r"mah[oó]n|palma|ibiza|ciutadella", re.I), ("les Baléares", "the Balearic Islands", "island")),
 )
@@ -399,6 +400,7 @@ _COAST_PORT_SHORT = (
     (re.compile(r"mah[oó]n", re.I), "Mahón"),
     (re.compile(r"porto torres", re.I), "Porto Torres"),
     (re.compile(r"\bcalvi\b", re.I), "Calvi"),
+    (re.compile(r"l['’]?\s*[iî]le[- ]rousse", re.I), "L'Île-Rousse"),
     (re.compile(r"bastia", re.I), "Bastia"),
     (re.compile(r"porto[- ]?vecchio", re.I), "Porto-Vecchio"),
     (re.compile(r"bonifacio", re.I), "Bonifacio"),
@@ -618,6 +620,21 @@ def _moment_near_named_place(change: dict, clock: dict | None, marks: list | Non
         return True
     d = _nm_between(coords[0], coords[1], boat[0], boat[1])
     return d is not None and d <= 30.0
+
+
+def _coast_is_arrival(
+    change: dict, dest_name: str, items: list | None, dest: dict | None, lang: str,
+) -> bool:
+    """Une côte « longée » qui est le port (ou la marina) d'arrivée de la jambe."""
+    place = change_place_name(change) or short_name(change.get("title") or "")
+    if not place:
+        return False
+    if dest_name and (same_stop(place, dest_name) or same_stop(place, short_name(dest_name))):
+        return True
+    harbor = _arrival_harbor(items, dest, lang) if dest else ""
+    folded_place, folded_harbor = _fold_stop(place), _fold_stop(harbor)
+    harbor_name = re.sub(r"^(?:(?:la|le|l')\s+)?(?:marina|port)\s+", "", folded_harbor)
+    return bool(harbor_name) and folded_place == harbor_name
 
 
 def _is_departure_port_echo(change: dict, from_name: str, dest_name: str) -> bool:
@@ -1105,7 +1122,7 @@ def dose_zee_changes(changes: list[dict], span_ms: int) -> list[dict]:
     return kept
 
 
-def dose_coast_changes(changes: list[dict], span_ms: int) -> list[dict]:
+def dose_coast_changes(changes: list[dict], span_ms: int, lang: str = "fr") -> list[dict]:
     """Au plus un jalon de côte par jour de film ; même géographie le même jour → une phrase."""
     coasts = [c for c in changes if _is_coast_source(c)]
     coasts.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
@@ -1114,11 +1131,26 @@ def dose_coast_changes(changes: list[dict], span_ms: int) -> list[dict]:
         raw = change_place_name(c) or short_name(c.get("title") or "")
         name = _coast_port_short(raw) or raw
         geo = _coast_geo(raw) or _coast_geo(name)
+        source_geo = c.get("geo") if isinstance(c.get("geo"), dict) else None
         day = _utc_day(c)
         key = f"{day}:{(geo[0] if geo else name).casefold()}"
         buckets.setdefault(key, []).append({**c, "ports": [name] if name else [], "geo": (
-            {"fr": geo[0], "en": geo[1], "kind": geo[2]} if geo else None
+            {"fr": geo[0], "en": geo[1], "kind": geo[2]} if geo else source_geo
         )})
+    def geo_title(geo: dict | None) -> str:
+        if not isinstance(geo, dict):
+            return ""
+        fr = str(geo.get("fr") or "")
+        if not _en(lang):
+            return fr
+        en = str(geo.get("en") or "")
+        if en:
+            return en
+        return {
+            "limite du plateau continental": "continental shelf edge",
+            "limite du continent": "continental edge",
+        }.get(fr.casefold(), "")
+
     merged: list[dict] = []
     for group in buckets.values():
         first = group[0]
@@ -1137,9 +1169,7 @@ def dose_coast_changes(changes: list[dict], span_ms: int) -> list[dict]:
             **first,
             "id": first.get("id") or f"coast:{ports[0] if ports else first.get('tMs')}",
             "kind": "coast",
-            "title": " — ".join(
-                [((geo or {}).get("fr") or "")] + ports
-            ).strip(" —") or (ports[0] if ports else first.get("title")),
+            "title": " — ".join([geo_title(geo)] + ports).strip(" —") or (ports[0] if ports else first.get("title")),
             "ports": ports,
             "geo": geo,
         })
@@ -1162,7 +1192,7 @@ def dose_coast_changes(changes: list[dict], span_ms: int) -> list[dict]:
                     islands[island_at[geo_key]] = {
                         **prev,
                         "ports": ports,
-                        "title": " — ".join([((prev.get("geo") or {}).get("fr") or "")] + ports).strip(" —"),
+                        "title": " — ".join([geo_title(prev.get("geo"))] + ports).strip(" —"),
                     }
                 continue
             if geo_key:
@@ -1990,6 +2020,7 @@ def apply_chosen_subjects(
     ids: list[str] | None,
     bag: list[dict] | None,
     seconds: Any,
+    lang: str = "fr",
 ) -> dict:
     """Remplace des redites par les ids choisis. N'empile pas. Puis film_char_budget."""
     chapters = [{**c, "text": c.get("text") or ""} for c in (plan.get("chapters") or [])]
@@ -2075,6 +2106,8 @@ def apply_chosen_subjects(
                 spoken.append(rec)
     if budget > 0:
         _film_apply_char_budget(chapters, seconds)
+    for ch in chapters:
+        _reanchor_edited_chapter(ch, lang)
     blob_after = " ".join(ch.get("text") or "" for ch in chapters)
     watch_spoken = any(
         str(r.get("kind") or "") == TV1_WATCH_KIND
@@ -3635,14 +3668,18 @@ def _bubble_payload(ev: dict, chapter: dict, lang: str, prev: dict | None = None
         score = bubble_score(entry, role=ev.get("role"))
     title = short_name(ev.get("name") or "") or (prev or {}).get("title") or entry.get("kind") or ev.get("kind") or ""
     fact = event_sentence({**ev, "name": ev.get("name") or title}, lang).strip()
-    if not fact:
+    if _en(lang):
+        fact = str(entry.get("fact_en") or fact or "").strip()
+    if not fact and not _en(lang):
         fact = ((prev or {}).get("card") or {}).get("text") or (prev or {}).get("fact") or ""
     char_idx = (prev or {}).get("charIdx")
     if char_idx is None:
         char_idx = _event_char_idx(ev, chapter, fact)
     card = dict((prev or {}).get("card") or _card(entry))
     card["title"] = card.get("title") or title
-    card["text"] = card.get("text") or fact
+    # Les anciennes cartes peuvent conserver le texte FR dans card.text. En EN,
+    # ne garder que le texte produit dans cette langue (ou fact_en).
+    card["text"] = (fact if _en(lang) else (card.get("text") or fact))
     card["kind"] = card.get("kind") or ev.get("kind")
     card["score"] = score
     if not card.get("at"):
@@ -4109,7 +4146,11 @@ def review_leg_for_chapter(review: dict | None, from_name: str, to_name: str) ->
         return None
     legs = _review_legs(review)
     for leg in legs:
-        if same_stop(leg.get("from") or "", frm) and same_stop(leg.get("to") or "", to):
+        if (
+            same_stop(leg.get("from") or "", frm) and same_stop(leg.get("to") or "", to)
+        ) or (
+            same_stop(leg.get("from") or "", to) and same_stop(leg.get("to") or "", frm)
+        ):
             return leg
     # Vol : le bateau repart de Cayenne, la revue date encore Saint-Pierre → dest.
     if _air_stop_key(frm) == "cayenne":
@@ -4120,9 +4161,7 @@ def review_leg_for_chapter(review: dict | None, from_name: str, to_name: str) ->
 
 
 def _window_leg_nm(w: dict) -> Optional[float]:
-    """Écart de milles de l'horloge / des marques — même source que plan-review.
-    Une seule échelle : nm si réel aux deux bouts (et pas miroir / 0 avec filmNm>1),
-    sinon filmNm aux deux bouts. destNm de même échelle si dispo."""
+    """Écart de milles de l'horloge / des marques — même source que plan-review."""
     frm = w.get("from") or {}
     dest = w.get("to") or {}
 
@@ -4134,20 +4173,16 @@ def _window_leg_nm(w: dict) -> Optional[float]:
         return None
 
     a_nm, b_nm = num(frm, "nm"), num(dest, "nm")
-    a_fm, b_fm = num(frm, "filmNm"), num(dest, "filmNm")
-    # Jamais nm d'un côté et filmNm de l'autre (417 = nm − filmNm).
-    mirrored = (
-        None not in (a_nm, b_nm, a_fm, b_fm)
-        and abs(b_fm - b_nm) <= 1
-        and abs(a_fm - a_nm) > 1
-    )
-    if not mirrored and a_nm is not None and b_nm is not None and (b_nm - a_nm) > 1:
+    if a_nm is not None and b_nm is not None and (b_nm - a_nm) > 1:
         return b_nm - a_nm
-    if a_fm is not None and b_fm is not None and (b_fm - a_fm) > 1:
-        return b_fm - a_fm
-    a = a_fm if a_fm is not None else a_nm
-    d = w.get("destNm")
-    b = float(d) if isinstance(d, (int, float)) and not isinstance(d, bool) else None
+    # Keep both endpoints on the same odometer when the window mixes scales.
+    a_film, b_film = num(frm, "filmNm"), num(dest, "filmNm")
+    if a_film is not None and b_film is not None and (b_film - a_film) > 1:
+        return b_film - a_film
+    a = a_film if b_film is not None else a_nm
+    b = b_film if b_film is not None else b_nm
+    if b is None and isinstance(w.get("destNm"), (int, float)):
+        b = float(w["destNm"])
     if a is None or b is None:
         return None
     gap = b - a
@@ -4247,6 +4282,9 @@ def spoken_sea_days(days: Any, lang: str = "fr") -> str:
     except (TypeError, ValueError):
         return ""
     en = _en(lang)
+    # 41 milles à 8 nœuds (Gustavia → Marigot) font 5 heures : pas « un jour de mer ».
+    if d < 0.75:
+        return "less than a day at sea" if en else "moins d'un jour de mer"
     if d < 1.5:
         return "one day at sea" if en else "un jour de mer"
     if d < 8:
@@ -4285,6 +4323,12 @@ def _spoken_days_word(n: int, lang: str) -> str:
     if _en(lang):
         return f"{_spoken_int(n, lang)} day" + ("" if n == 1 else "s")
     return f"{_spoken_int(n, lang)} jour" + ("" if n == 1 else "s")
+
+
+def _spoken_day_adjective(n: int, lang: str) -> str:
+    if _en(lang):
+        return f"{_spoken_int(n, lang)}-day"
+    return _spoken_days_word(n, lang)
 
 
 def review_fingerprint(review: dict | None) -> str:
@@ -5420,6 +5464,9 @@ def _windows(stops: list[dict], t0: int, t_end: int, clock: dict | None = None) 
         list(stops or [{"name": "Saint-Maur", "iso": _iso(t0), "filmNm": 0}]),
         clock,
     )
+    # A « via » point is route geometry, not an arrival. Keeping it as a
+    # chapter boundary splits one Halifax ↔ Saint-Pierre hop into fragments.
+    pts = [point for point in pts if str(point.get("kind") or "").casefold() != "via"]
     pts.sort(key=lambda s: (
         _ms(s.get("iso")) if _ms(s.get("iso")) is not None else 10**15,
         float(s.get("filmNm") if s.get("filmNm") is not None else s.get("nm") or 0),
@@ -5687,38 +5734,13 @@ def _review_hop_trusted(
     raw = leg.get("legNm")
     if not isinstance(raw, (int, float)) or isinstance(raw, bool):
         return False
-    if float(raw) > cap:
+    if abs(float(nm) - float(raw)) > 0.6:
         return False
-    if _same_odometer(float(raw), dest) and float(raw) > 1500:
+    if float(nm) > cap:
         return False
-    cross = _cross_scale_hop_nm(w)
-    if cross is not None and not _side_scale_disagrees(raw, cross):
+    if _same_odometer(float(nm), dest) and float(nm) > 1500:
         return False
     return True
-
-
-def _cross_scale_hop_nm(w: dict) -> Optional[float]:
-    """Écart nm−filmNm quand l'arrivée porte l'odomètre voile (417, pas la jambe)."""
-    frm = w.get("from") or {}
-    dest = w.get("to") or {}
-
-    def num(row: dict | None, *keys: str) -> Optional[float]:
-        for key in keys:
-            val = (row or {}).get(key)
-            if isinstance(val, (int, float)) and not isinstance(val, bool):
-                return float(val)
-        return None
-
-    a_nm, b_nm = num(frm, "nm"), num(dest, "nm")
-    a_fm, b_fm = num(frm, "filmNm"), num(dest, "filmNm")
-    if a_fm is None or b_nm is None or b_fm is None:
-        return None
-    if abs(b_nm - b_fm) <= 1:
-        return None
-    if a_nm is not None and abs(a_fm - a_nm) <= 1:
-        return None
-    gap = b_nm - a_fm
-    return gap if gap > 1 else None
 
 
 def _side_hop_metrics(w: dict, review: dict | None) -> dict[str, Any]:
@@ -5733,35 +5755,24 @@ def _side_hop_metrics(w: dict, review: dict | None) -> dict[str, Any]:
     voyage = isinstance(nm, (int, float)) and not isinstance(nm, bool) and (
         float(nm) > cap or (_same_odometer(float(nm), dest) and float(nm) > 1500)
     )
-    raw = None
-    if isinstance(chosen, dict) and isinstance(chosen.get("legs"), list) and chosen.get("legs"):
-        raw = chosen["legs"][0].get("legNm")
-    trusted = (
-        raw is not None
-        and isinstance(raw, (int, float))
-        and not isinstance(raw, bool)
-        and _review_hop_trusted(w, chosen, raw, cap, dest)
-    )
-    if trusted:
-        metrics["legNm"] = float(raw)
+    mixed = not _review_hop_trusted(w, chosen, nm, cap, dest) and _side_scale_disagrees(nm, scale)
+    if voyage or mixed or not isinstance(nm, (int, float)) or isinstance(nm, bool):
+        hop = scale
+        if hop is None or hop > cap:
+            hop = _nm_between(
+                (w.get("from") or {}).get("lat"), (w.get("from") or {}).get("lon"),
+                (dest or {}).get("lat"), (dest or {}).get("lon"),
+            )
+            if hop is not None and hop > cap:
+                hop = None
+        metrics["legNm"] = hop
         metrics["daysAtSea"] = None
-    else:
-        mixed = _side_scale_disagrees(nm, scale) if isinstance(nm, (int, float)) and not isinstance(nm, bool) else True
-        if voyage or mixed or not isinstance(nm, (int, float)) or isinstance(nm, bool):
-            hop = scale
-            if hop is None or hop > cap:
-                hop = _nm_between(
-                    (w.get("from") or {}).get("lat"), (w.get("from") or {}).get("lon"),
-                    (dest or {}).get("lat"), (dest or {}).get("lon"),
-                )
-                if hop is not None and hop > cap:
-                    hop = None
-            metrics["legNm"] = hop
-            metrics["daysAtSea"] = None
     days = metrics.get("daysAtSea")
-    if window_days and isinstance(days, (int, float)) and not isinstance(days, bool):
-        if float(days) > max(window_days * 1.5, window_days + 2):
-            metrics["daysAtSea"] = window_days
+    if window_days and (
+        not isinstance(days, (int, float)) or isinstance(days, bool)
+        or float(days) > max(window_days * 1.5, window_days + 2)
+    ):
+        metrics["daysAtSea"] = window_days
     elif (
         not isinstance(days, (int, float)) or isinstance(days, bool)
     ) and isinstance(metrics.get("legNm"), (int, float)) and not isinstance(metrics.get("legNm"), bool):
@@ -6118,6 +6129,8 @@ def _harbor_spoken(name: str, dest: str, kind: str, lang: str) -> str:
         return raw if not en else raw
     marina = kind == "marina" or bool(re.search(r"marina|minimes", raw, re.I))
     if marina:
+        if en:
+            raw = re.sub(r"^(?:de |du |des |d['’])", "", raw, flags=re.I).strip()
         return f"the {raw} marina" if en else f"la marina {raw}"
     return f"the port of {raw}" if en else f"le port {_de(raw)}"
 
@@ -6143,7 +6156,7 @@ def _hold_phrase(days: int, chapter_i: int, lang: str) -> str:
     spoken = _spoken_days_word(int(days), lang)
     if _en(lang):
         variants = (
-            f"a {spoken} stopover",
+            f"a {_spoken_day_adjective(int(days), lang)} stopover",
             f"a stay of {spoken}",
             f"{spoken} at the harbour",
             f"{spoken} alongside",
@@ -6201,7 +6214,9 @@ def _arrival_harbor(items: list | None, dest: dict | None, lang: str) -> str:
         if not name or looks_english_title(name):
             continue
         dist = _nm_between(dest_lat, dest_lon, item.get("lat"), item.get("lon"))
-        near = bool(dest_name) and same_stop(dest_name, name)
+        near = bool(dest_name) and (
+            dest_name.casefold() in name.casefold() or name.casefold() in dest_name.casefold()
+        )
         if not near and (dist is None or dist > 25.0):
             continue
         if not near and _harbor_names_other_town(name, dest_name):
@@ -6605,6 +6620,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 "tB": _iso(w["tB"]),
                 "text": text,
                 "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "_anchorText": text,
                 "events": placed,
                 "fromName": w.get("fromName") or "",
                 "toName": w.get("toName") or "",
@@ -7458,12 +7474,12 @@ def _cap_argo_candidates(pool: list[dict], spare: list[dict]) -> tuple[list[dict
 
 def select_chapter_changes(
     changes: list[dict], t_a: int, t_b: int, *, budget: bool = True, tier: Optional[int] = None,
-    clock: dict | None = None, depart_ms: Optional[int] = None,
+    clock: dict | None = None, depart_ms: Optional[int] = None, lang: str = "fr",
 ) -> list[dict]:
     usable = _usable_changes(changes)
     span = (t_b or 0) - (t_a or 0)
     zee = dose_zee_changes(usable, span)
-    coast = dose_coast_changes(usable, span)
+    coast = dose_coast_changes(usable, span, lang=lang)
     amp = dose_amp_changes(usable, span)
     proj = dose_project_changes(usable, span)
     climo = dose_climo_changes(usable, span)
@@ -8144,13 +8160,36 @@ def _place_idx_in_sentence(sentence: str, origin: int, place: str = "") -> int:
     return origin + max(0, len(sent) // 2)
 
 
+def _prefix_hit_is_same_sentence(text: str, idx: int, spoken: str) -> bool:
+    """Le repli sur 12 caractères ne vaut que pour la même phrase.
+
+    « Puis, les eaux … » commence plusieurs phrases : une phrase coupée par le
+    budget (« Puis, les eaux capverdiennes. ») ne doit pas voler l'ancre d'une
+    phrase restée (« Puis, les eaux françaises. ») — sinon la barre prend la
+    date de la phrase coupée (relecture « date », 150 s au now réel).
+    """
+    found = text[idx:]
+    end = re.search(r"[.!?;](\s|$)", found)
+    sent = found[: end.end()] if end else found
+    if spoken[:20] and sent.startswith(spoken[:20]):
+        return True
+    tail = spoken.rstrip(" .!?;:\u2026")[-10:]
+    return bool(tail) and sent.rstrip().endswith(tail)
+
+
 def _locate_spoken(text: str, spoken: str, start: int = 0) -> int:
     needle = spoken[:28] if len(spoken) > 28 else spoken
     idx = text.find(needle, start) if needle else -1
     if idx < 0 and len(needle) > 12:
-        idx = text.find(needle[:12], start)
+        hit = text.find(needle[:12], start)
+        while hit >= 0 and not _prefix_hit_is_same_sentence(text, hit, spoken):
+            hit = text.find(needle[:12], hit + 1)
+        idx = hit
     if idx < 0 and len(spoken) > 24:
-        idx = text.find(spoken[-24:], start)
+        hit = text.find(spoken[-24:], start)
+        while hit >= 0 and not _prefix_hit_is_same_sentence(text, hit, spoken):
+            hit = text.find(spoken[-24:], hit + 1)
+        idx = hit
     return idx
 
 
@@ -9190,6 +9229,63 @@ def chapter_anchors(text: str, anchored: list, t_a: int, t_b: int, lang: str) ->
     return result
 
 
+def _reanchor_edited_chapter(ch: dict, lang: str) -> None:
+    """Move existing sentence anchors onto the final edited chapter text."""
+    original = str(ch.get("_anchorText") or "")
+    final = str(ch.get("text") or "")
+    anchors = ch.get("anchors") or []
+    if not original or not anchors:
+        # Without the source text, there is no safe way to validate offsets.
+        ch["anchors"] = []
+        ch["_anchorText"] = final
+        return
+    sentences = _sentences(original)
+    spans: list[tuple[int, int, str]] = []
+    cursor = 0
+    for sentence in sentences:
+        start = original.find(sentence, cursor)
+        if start < 0:
+            continue
+        end = start + len(sentence)
+        spans.append((start, end, sentence))
+        cursor = end
+    anchored: list[tuple[str, Any]] = []
+    final_sentences = _sentences(final)
+    for anchor in anchors:
+        if not isinstance(anchor, dict) or anchor.get("t") is None:
+            continue
+        try:
+            idx = int(anchor.get("charIdx") or 0)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        # chapter_anchors stores a voice-lookahead position (12 characters
+        # before the spoken place), so resolve the anchor to its sentence at
+        # the corresponding spoken position.
+        sentence_idx = min(len(original) - 1, idx + FILM_VOICE_LOOKAHEAD_CHARS)
+        sentence_span = next(((a, b, s) for a, b, s in spans if a <= sentence_idx < b), None)
+        sentence = sentence_span[2] if sentence_span else None
+        # If the lookahead crosses a sentence boundary, the original anchor
+        # cannot be attributed safely. Also drop duplicate sentences when the
+        # final text has a different occurrence count: the surviving copy
+        # cannot be distinguished from the removed one by text alone.
+        if sentence_span and not (sentence_span[0] <= idx < sentence_span[1]):
+            sentence = None
+        if sentence:
+            normalized = speak_film_text(sentence, lang)
+            original_count = sum(speak_film_text(s, lang) == normalized for _, _, s in spans)
+            final_count = sum(speak_film_text(s, lang) == normalized for s in final_sentences)
+            # A sentence can be attributed to its anchor by text alone only
+            # when it has one unambiguous occurrence on both sides. Equal
+            # duplicate counts are not enough: edits may have reordered them.
+            if original_count != 1 or final_count != 1:
+                sentence = None
+        anchor_t = _ms(anchor["t"])
+        if sentence and anchor_t is not None and _locate_spoken(final, speak_film_text(sentence, lang), 0) >= 0:
+            anchored.append((sentence, anchor_t))
+    ch["anchors"] = chapter_anchors(final, anchored, _ms(ch.get("tA")), _ms(ch.get("tB")), lang)
+    ch["_anchorText"] = final
+
+
 def _trim_free_script(chapters: list[dict], max_words: int = FILM_FREE_MAX_WORDS) -> list[dict]:
     guard = 0
     while script_words(chapters) > max_words and guard < 200:
@@ -9388,10 +9484,25 @@ def _align_moments_to_window(moments: list[dict], w: dict, depart_ms: Optional[i
     plusieurs jours : couper par date seule versait les eaux de Samoa ou Tonga dans
     Cayenne → Papeete. Un moment qui porte sa jambe ne parle que dans la fenêtre de
     la même jambe ; ses dates sont reportées proportionnellement dans cette fenêtre.
-    Les moments sans jambe gardent le découpage par date.
+    Les moments sans jambe gardent le découpage par date, avec un contrôle
+    géographique dès que la fenêtre possède une géométrie connue.
     """
     frm, dest = _leg_key(w.get("fromName")), _leg_key(w.get("destName") or w.get("toName"))
     t_a, t_b = w.get("tA"), w.get("tB")
+    points = []
+    for v in ((w.get("clock") or {}).get("vertices") or []):
+        if not isinstance(v, dict) or v.get("vehicle") in {"plane", "land"}:
+            continue
+        t = _ms(v.get("iso"))
+        if t is None or t_a is None or t_b is None or not t_a <= t <= t_b:
+            continue
+        pair = _row_latlon(v)
+        if pair:
+            points.append(pair)
+    for prefix in ("from", "to"):
+        pair = _row_latlon(w.get(prefix)) or _as_latlon(w.get(f"{prefix}Lat"), w.get(f"{prefix}Lon"))
+        if pair:
+            points.append(pair)
     free: list[dict] = []
     mine: list[tuple[int, dict]] = []
     for m in moments:
@@ -9399,7 +9510,9 @@ def _align_moments_to_window(moments: list[dict], w: dict, depart_ms: Optional[i
             continue
         mf, mt = _moment_leg_ends(m)
         if not mf and not mt:
-            free.append(m)
+            pair = _row_latlon(m)
+            if not points or (pair and any(_nm_between(*pair, *p) <= 300 for p in points)):
+                free.append(m)
             continue
         if frm and dest and mf == frm and mt == dest:
             t = _change_t(m)
@@ -9506,7 +9619,7 @@ def build_raw_from_moments(
             flat = [c for c in flat if _station_ident(c) not in stations_said]
         selected = select_chapter_changes(
             flat, w["tA"], w["tB"], budget=has_budget, tier=tier if has_budget else None,
-            clock=w.get("clock") or clock, depart_ms=depart_ms,
+            clock=w.get("clock") or clock, depart_ms=depart_ms, lang=lang,
         )
         # Une aire déjà dite, une fois. Le 2:30 n'en empile pas une seconde.
         if compact and any(_is_amp_change(c) for c in selected_all):
@@ -9533,7 +9646,13 @@ def build_raw_from_moments(
             if _is_air_only_stop(title) and not (_is_air_window(w) or _is_side_window(w)):
                 return
             if change.get("kind") == "approche" and dest_name and title and (
-                same_stop(title, dest_name)
+                same_stop(title, dest_name) or dest_name.casefold() in title.casefold()
+            ):
+                return
+            # « Le bateau longe Mata-Utu. […] Arrivée à Mata-Utu » : on ne longe pas
+            # le port où l'on arrive (ni sa marina : Dégrad des Cannes, Cayenne).
+            if change.get("kind") == "coast" and _coast_is_arrival(
+                change, dest_name or "", selected, dest, lang,
             ):
                 return
             place = change_place_name(change) or title
@@ -9627,6 +9746,7 @@ def build_raw_from_moments(
                 "tB": _iso(w["tB"]),
                 "text": text,
                 "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "_anchorText": text,
                 "events": placed,
                 "fromName": w.get("fromName") or "",
                 "toName": w.get("toName") or "",
@@ -9719,6 +9839,7 @@ def build_raw_from_moments(
             "tB": _iso(w["tB"]),
             "text": text,
             "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+            "_anchorText": text,
             "events": placed,
             "fromName": w.get("fromName") or "",
             "toName": w.get("toName") or "",
@@ -9748,6 +9869,8 @@ def build_raw_from_moments(
         _film_apply_char_budget(chapters, seconds)
     chapters[:] = _drop_degenerate_chapters(chapters)
     mark_year_changes(chapters, lang)
+    for ch in chapters:
+        _reanchor_edited_chapter(ch, lang)
     chars = script_chars(chapters)
     return _with_dc_subjects({
         "chapters": chapters,
@@ -9964,7 +10087,7 @@ _NAME_STOP = frozenset({
     "august", "september", "october", "november", "december", "l", "expédition",
     "expedition", "catamaran", "bateau", "boat", "équipage", "equipage", "crew",
     "approche", "approach", "quitte", "leaves", "left", "departed", "today",
-    "aujourd’hui",
+    "aujourd’hui", "upcoming",  # « Upcoming stops: … » : l’adjectif en tête de phrase, pas un nom
 })
 _NAME_TOKEN_RE = re.compile(
     r"[A-ZÉÈÊÀÂÙÛÎÔÇ][A-Za-zÀ-ÿ'’]*(?:-[A-ZÉÈÊÀÂÙÛÎÔÇ]?[A-Za-zÀ-ÿ'’]*)*"
@@ -11103,6 +11226,17 @@ def _insert_missing_air(rows: list[dict], clock_marks: list | None) -> list[dict
     return out
 
 
+def _chapter_stop_names(plan: dict | None) -> list[dict]:
+    """Départs et arrivées des chapitres, dans l'ordre du film."""
+    return [
+        {"name": str(ch.get(key) or "")}
+        for ch in (plan or {}).get("chapters") or []
+        if isinstance(ch, dict)
+        for key in ("fromName", "toName")
+        if str(ch.get(key) or "").strip()
+    ]
+
+
 def _route_stops_for_reread(plan: dict | None) -> list[dict]:
     """Escales du plan s'il les donne, sinon les marques du voyage (ordre de route).
 
@@ -11120,6 +11254,9 @@ def _route_stops_for_reread(plan: dict | None) -> list[dict]:
         marks = voy.get("marks") if isinstance(voy.get("marks"), list) else []
         clock = voy.get("clock") if isinstance(voy.get("clock"), dict) else {}
         rows = _insert_missing_air(_as_stop_rows(marks), clock.get("marks"))
+        # Halifax manque aussi aux marques d'horloge du voyage officiel : le chapitre
+        # du second bateau le nomme, on l'insère après l'escale qui le précède.
+        rows = _insert_missing_air(rows, _chapter_stop_names(plan))
         if len(rows) >= 8:
             return rows
         named = [
@@ -11674,6 +11811,17 @@ def _pad_tagged(text: str, budget: int) -> str:
     return body
 
 
+def _chapter_provenance(result: Any) -> dict[str, str]:
+    """Exact metadata for accepted chapter text; judges/reviews never call this.
+
+    Rules/budget fallbacks and validation-only calls have no chapter attribution.
+    """
+    model = str(getattr(result, "model", "") or "").strip()
+    source = str(result[1] or "").strip() if isinstance(result, (tuple, list)) and len(result) > 1 else ""
+    tier = str(getattr(result, "tier", "") or "").strip()
+    return {"served_model": model, "served_source": source, "served_tier": tier} if model and source else {}
+
+
 async def write_stored_plan(
     plan: dict,
     *,
@@ -11683,7 +11831,7 @@ async def write_stored_plan(
 ) -> tuple[Optional[dict], dict[str, Any]]:
     """Réécrit un plan public (stock) phrase par phrase. Aucun appel si la cascade rend rules/budget."""
     raw_chapters = [c for c in (plan.get("chapters") or []) if isinstance(c, dict)]
-    stats = {"rewritten": 0, "fallen": 0, "source": "rules"}
+    stats = {"rewritten": 0, "fallen": 0, "source": "rules", "model": None}
     if not raw_chapters:
         return None, stats
     secs = seconds if seconds is not None else plan.get("targetSeconds")
@@ -11706,9 +11854,11 @@ async def write_stored_plan(
             f"sentences={json.dumps(raw_sents, ensure_ascii=False)}"
         )
         max_tok = min(WRITE_MAX_TOKENS, max(400, 80 * len(raw_sents)))
-        text, source = await cascade(
+        result = await cascade(
             WRITE_SYSTEM, user, tier="write", fallback="", facts=facts, max_tokens=max_tok,
         )
+        text, source = result
+        stats["model"] = getattr(result, "model", None) or stats["model"]
         if not (text or "").strip() or source in {"rules", "budget"}:
             chapters_out.append(ch)
             stats["fallen"] += len(raw_sents)
@@ -11726,7 +11876,7 @@ async def write_stored_plan(
                 fb += extra_fb
                 rw = max(0, rw - extra_fb)
         anchors = reanchor_written_chapter(ch, guarded, lang)
-        chapters_out.append({**ch, "text": guarded, "anchors": anchors})
+        chapters_out.append({**ch, **_chapter_provenance(result), "text": guarded, "anchors": anchors})
         stats["rewritten"] += rw
         stats["fallen"] += fb
     stats["source"] = source_last
@@ -11915,9 +12065,10 @@ async def edit_written_once(
         # (« Arrivée à Ajaccio… » dite deux fois, les alizés perdus). Le garde-fou
         # vérifie les nombres, épelés compris.
         from story_cascade import NO_NUMBER_FILTER  # noqa: PLC0415
-        text, source = await cascade(
+        result = await cascade(
             EDIT_SYSTEM, user, tier="judge", fallback="", facts=NO_NUMBER_FILTER, max_tokens=max_tok,
         )
+        text, source = result
         if not str(source).endswith("-ultra") or _looks_cut(src, text):
             out.append(ch)
             continue
@@ -11943,7 +12094,7 @@ async def edit_written_once(
         if rw <= 0:
             out.append(ch)
             continue
-        out.append({**ch, "text": guarded, "anchors": reanchor_written_chapter(raw_ch, guarded, "fr")})
+        out.append({**ch, **_chapter_provenance(result), "text": guarded, "anchors": reanchor_written_chapter(raw_ch, guarded, "fr")})
         rewritten += 1
     if rewritten <= 0:
         return None
@@ -12376,6 +12527,26 @@ def en_translation_guard(text: str, fr_src: str) -> str:
     return fix_en_toponyms(out, fr_src)
 
 
+def _glued_french_share(src_words: set[str], text: str) -> float:
+    """Part des mots français (≥ 3 lettres) retrouvés comme mots entiers.
+
+    Une vraie traduction anglaise en garde ≤ 0,51 (noms propres, « marina »…) sur les
+    films du 29/10 ; un français recopié, même soudé, en garde 1,0."""
+    if not src_words:
+        return 0.0
+    folded_src = {_fold_stop(word) for word in src_words if len(_fold_stop(word)) >= 3}
+    if not folded_src:
+        return 0.0
+    folded_text = _fold_stop(text or "")
+    whole_words = set(re.findall(r"[^\W\d_]{3,}", folded_text, flags=re.UNICODE))
+    compact_text = re.sub(r"[^\w]", "", folded_text, flags=re.UNICODE)
+    matched = sum(
+        1 for word in folded_src
+        if word in whole_words or (len(word) > 4 and word in compact_text)
+    )
+    return matched / len(folded_src)
+
+
 async def translate_written_plan(
     fr_plan: dict,
     raw_plan: dict,
@@ -12404,7 +12575,7 @@ async def translate_written_plan(
             # Lightning rend parfois le français tel quel : nouvelles demandes, chacune
             # avec une autre consigne, sinon le cache rend la même réponse. Un seul
             # chapitre raté faisait tomber tout l'anglais du film intégral.
-            text, source = await cascade(
+            result = await cascade(
                 TRANSLATE_SYSTEM,
                 (_TRANSLATE_LEADS[_attempt] + src) + keep,
                 tier="fast",
@@ -12414,6 +12585,7 @@ async def translate_written_plan(
                 facts=NO_NUMBER_FILTER,
                 max_tokens=min(1200, max(256, (len(src) // 2) + 80)),
             )
+            text, source = result
             if not (text or "").strip() or source in {"rules", "budget"}:
                 return None
             # Date et durée remises d'aplomb AVANT le garde-fou (il les compare au
@@ -12428,6 +12600,11 @@ async def translate_written_plan(
             out_w = set(re.findall(r"[^\W\d_]{3,}", (text or "").casefold()))
             if src_w and len(src_w & out_w) / len(src_w) > 0.6:
                 fb = max(fb, 1)  # Lightning a rendu le français
+            if src_w and _glued_french_share(src_w, text or "") > 0.8:
+                # Lightning a rendu le français aux espaces mangées (« l'équipagereprend
+                # le secondvoilierpourHalifax ») : les mots soudés échappent au
+                # recouvrement ci-dessus (150 s du 29/10, leg-8).
+                fb = max(fb, 1)
             if re.search(r"\bfortnight\b", text or "", re.I) and "quinzaine" not in src.casefold():
                 # Lightning rend « une dizaine de jours » par « a fortnight » : on remet la
                 # traduction exacte de l'approximation dite en français, sinon refus.
@@ -12463,7 +12640,8 @@ async def translate_written_plan(
             r"\1 sails past", guarded,
         )
         anchors = reanchor_written_chapter(ch, guarded, "en")
-        out.append({**ch, "text": guarded, "anchors": anchors})
+        provenance = _chapter_provenance(result)
+        out.append({**{k: v for k, v in ch.items() if k not in {"served_model", "served_source", "served_tier"}}, **provenance, "text": guarded, "anchors": anchors})
     if not any_ok:
         return None
     stamped = _stamp_written_plan(
@@ -12646,15 +12824,16 @@ def _plan_digits_for_speech(plan: dict, raw_plan: dict, lang: str = "fr") -> dic
     return {**plan, "chapters": chapters}
 
 
-async def write_film_chain(
+async def _write_film_single(
     plan: dict,
     *,
-    seconds: Any = 150,
-    cascade: Callable = cascade_text,
-) -> tuple[Optional[dict], Optional[dict], dict[str, Any]]:
-    """Au clic : Super FR, puis Ultra édite + juge si plafond ouvert, puis Lightning EN."""
+    lang: str,
+    seconds: Any,
+    cascade: Callable,
+) -> tuple[Optional[dict], dict[str, Any]]:
+    """Rédige un film dans une langue (Super, Ultra si FR, relecture). Sans traduction."""
     stats: dict[str, Any] = {
-        "super": 0, "ultra_edit": 0, "ultra_judge": 0, "lightning": 0,
+        "super": 0, "ultra_edit": 0, "ultra_judge": 0,
         "source": "rules", "reviewed": False,
     }
     raw = dict(plan)
@@ -12663,47 +12842,44 @@ async def write_film_chain(
     if secs == 150:
         full_raw = {**raw, "targetSeconds": 0}
         super_plan, super_stats = await write_stored_plan(
-            full_raw, lang="fr", cascade=cascade, seconds=0,
+            full_raw, lang=lang, cascade=cascade, seconds=0,
         )
     else:
+        full_raw = raw
         super_plan, super_stats = await write_stored_plan(
-            raw, lang="fr", cascade=cascade, seconds=seconds,
+            raw, lang=lang, cascade=cascade, seconds=seconds,
         )
-    # Reçu du film (idée n° 3) : phrases réécrites / retombées sur les règles, mesurées.
     stats["rewritten"] = int((super_stats or {}).get("rewritten") or 0)
     stats["fallen"] = int((super_stats or {}).get("fallen") or 0)
     if super_plan is None or int((super_stats or {}).get("rewritten") or 0) <= 0:
-        return None, None, stats
+        return None, stats
     stats["super"] = 1
-    super_plan = _plan_digits_for_speech(super_plan, full_raw if secs == 150 else raw)
+    ref_raw = full_raw if secs == 150 else raw
+    super_plan = _plan_digits_for_speech(super_plan, ref_raw, lang)
     if secs == 150:
-        super_plan = condense_written_plan(super_plan, 150, lang="fr")
+        super_plan = condense_written_plan(super_plan, 150, lang=lang)
     origin = public_written_source(super_plan.get("source") or (super_stats or {}).get("source"))
     if origin == WRITTEN_SOURCE:
         stats["source"] = WRITTEN_SOURCE
         accepted = _stamp_written_plan(super_plan, WRITTEN_SOURCE, seconds, model=_write_model())
     else:
         stats["source"] = origin or "rules"
-        from story_cascade import NIM_MODEL  # noqa: PLC0415
-        nim_source = f"nvidia-{NIM_MODEL.split('/')[-1]}"
-        model = NIM_MODEL if (origin or "") == nim_source else (origin or None)
+        from story_cascade import nim_model  # noqa: PLC0415
+        nim_name = (super_stats or {}).get("model") or nim_model("write")
+        nim_source = f"nvidia-{nim_name.split('/')[-1]}"
+        model = nim_name if (origin or "") == nim_source else (origin or None)
         accepted = _stamp_written_plan(super_plan, origin or "rules", seconds, model=model)
 
-    ref_raw = full_raw if secs == 150 else raw
-    if film_ultra_open():
+    if _en(lang) is False and film_ultra_open():
         edited = await edit_written_once(accepted, ref_raw, cascade=cascade)
         stats["ultra_edit"] = 1
         if edited and secs == 150:
-            # Ultra relit contre l'intégral : il peut rallonger, on retient le débit mesuré.
-            edited = condense_written_plan(edited, 150, lang="fr")
-        edited = _dedupe_plan(edited, ref_raw, "fr")
+            edited = condense_written_plan(edited, 150, lang=lang)
+        edited = _dedupe_plan(edited, ref_raw, lang)
         if edited:
             failed = await judge_written_chapters(edited, cascade=cascade, raw_plan=ref_raw)
             stats["ultra_judge"] = 1
             if failed:
-                # Un seul chapitre refusé (« Text omits projects… ») laissait tout le
-                # film sans relecture : on reprend Super sur ces chapitres et Ultra
-                # les rejuge ; le film n'est relu que si tout passe.
                 stats["judge_failed"] = list(failed)
                 edited = _restore_chapters(edited, accepted, failed)
                 again = await judge_written_chapters(
@@ -12711,8 +12887,7 @@ async def write_film_chain(
                 )
                 failed = again if again is not None else None
                 if failed and secs != 150:
-                    # Super omettait aussi : le chapitre brut (la référence même du juge).
-                    raw_digits = _plan_digits_for_speech(ref_raw, ref_raw)
+                    raw_digits = _plan_digits_for_speech(ref_raw, ref_raw, lang)
                     edited = _restore_chapters(edited, raw_digits, failed)
                     again = await judge_written_chapters(
                         edited, cascade=cascade, raw_plan=ref_raw, only=set(failed),
@@ -12729,40 +12904,65 @@ async def write_film_chain(
                 stats["reviewed"] = True
                 stats["source"] = WRITTEN_SOURCE
 
-    accepted = _dedupe_plan(accepted, ref_raw, "fr")
-    accepted = _polish_written_plan(accepted, ref_raw, "fr")
+    accepted = _dedupe_plan(accepted, ref_raw, lang)
+    accepted = _polish_written_plan(accepted, ref_raw, lang)
     if secs == 150:
-        # Dernier passage au débit mesuré : rien ne doit rallonger le 2:30 après Ultra.
-        accepted = {**condense_written_plan(accepted, 150, lang="fr"), "targetSeconds": accepted.get("targetSeconds", 150)}
+        accepted = {
+            **condense_written_plan(accepted, 150, lang=lang),
+            "targetSeconds": accepted.get("targetSeconds", 150),
+        }
     stops = _route_stops_for_reread(raw)
-    ok_fr, review_fr = await reread_before_store(accepted, stops, cascade=cascade, lang="fr")
-    stats["reread"] = "pass" if ok_fr else "fail"
-    stats["rereadBy"] = str(review_fr.get("source") or "")
-    if not ok_fr:
-        stats["faults"] = review_fr.get("faults") or []
-        return None, None, stats
+    ok, review = await reread_before_store(accepted, stops, cascade=cascade, lang=lang)
+    stats["reread"] = "pass" if ok else "fail"
+    stats["rereadBy"] = str(review.get("source") or "")
+    if not ok:
+        stats["faults"] = review.get("faults") or []
+        return None, stats
+    return accepted, stats
 
-    en_plan = await translate_written_plan(accepted, ref_raw, cascade=cascade)
-    if en_plan and secs == 150:
-        # Lightning rallonge parfois : l'anglais tient lui aussi dans 2:30.
-        en_plan = condense_written_plan(en_plan, 150, lang="en")
-    if en_plan:
-        en_plan = _stamp_written_plan(
-            en_plan,
-            accepted.get("source") or WRITTEN_SOURCE,
-            seconds,
-            reviewed_by=accepted.get("reviewedBy"),
-            model=accepted.get("model"),
+
+async def write_film_chain(
+    plan: dict,
+    *,
+    seconds: Any = 150,
+    cascade: Callable = cascade_text,
+    lang: str = "fr",
+    en_raw: dict | None = None,
+) -> tuple[Optional[dict], Optional[dict], dict[str, Any]]:
+    """Au clic : rédaction directe FR et EN en parallèle (brut EN), jamais traduite du FR."""
+    stats: dict[str, Any] = {
+        "super": 0, "ultra_edit": 0, "ultra_judge": 0, "lightning": 0,
+        "source": "rules", "reviewed": False,
+    }
+    if _en(lang):
+        en_plan, en_stats = await _write_film_single(plan, lang="en", seconds=seconds, cascade=cascade)
+        stats.update(en_stats)
+        if en_plan:
+            stats["lightning"] = 1
+        return None, en_plan, stats
+
+    en_payload = en_raw if isinstance(en_raw, dict) and (en_raw.get("chapters") or []) else None
+    if en_payload:
+        en_payload = {
+            **en_payload,
+            "targetSeconds": _film_seconds(seconds if seconds is not None else plan.get("targetSeconds")),
+        }
+        (fr_plan, fr_stats), (en_plan, en_stats) = await asyncio.gather(
+            _write_film_single(plan, lang="fr", seconds=seconds, cascade=cascade),
+            _write_film_single(en_payload, lang="en", seconds=seconds, cascade=cascade),
         )
-        stats["lightning"] = 1
-        ok_en, review_en = await reread_before_store(en_plan, stops, cascade=cascade, lang="en")
-        stats["reread_en"] = "pass" if ok_en else "fail"
-        stats["rereadBy_en"] = str(review_en.get("source") or "")
-        if not ok_en:
-            stats["faults"] = review_en.get("faults") or []
-            stats["lightning"] = 0
-            en_plan = None
-    return accepted, en_plan, stats
+        stats.update(fr_stats)
+        if en_plan:
+            stats["lightning"] = 1
+            stats["reread_en"] = en_stats.get("reread")
+            stats["rereadBy_en"] = en_stats.get("rereadBy")
+        else:
+            stats["faults"] = en_stats.get("faults") or stats.get("faults")
+        return fr_plan, en_plan, stats
+
+    fr_plan, fr_stats = await _write_film_single(plan, lang="fr", seconds=seconds, cascade=cascade)
+    stats.update(fr_stats)
+    return fr_plan, None, stats
 
 
 def _public_plan(plan: dict, source: str) -> dict:
@@ -12773,6 +12973,7 @@ def _public_plan(plan: dict, source: str) -> dict:
             "tA": c.get("tA"),
             "tB": c.get("tB"),
             "text": fix_en_waters_casing(c.get("text") or ""),
+            **({key: c[key] for key in ("served_model", "served_source", "served_tier") if c.get(key)}),
             "anchors": [
                 {"charIdx": a.get("charIdx"), "t": a.get("t")}
                 for a in (c.get("anchors") or [])
@@ -12859,7 +13060,7 @@ async def build_film_response(
             bag = film_choice_bag(raw_full.get("dcSubjects") or [])
             tour = tour_snapshot(packed)
             ids, _src = await choose_film_ids(bag, tour, seconds, cascade=cascade)
-            raw_full = apply_chosen_subjects(raw_full, ids, bag, seconds)
+            raw_full = apply_chosen_subjects(raw_full, ids, bag, seconds, lang=lang)
         except Exception:
             pass
     raw = _public_plan(raw_full, "rules")

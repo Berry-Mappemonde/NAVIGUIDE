@@ -28,7 +28,13 @@ test("NAV-C follow : preparing → ready sans rechargement", async ({ page }) =>
   });
   await page.route(/\/voyage\/official(\?.*)?$/, async (route) => {
     if (route.request().method() !== "PUT") return route.continue();
-    const res = await route.fetch();
+    let res;
+    try {
+      res = await route.fetch();
+    } catch {
+      // La requête peut encore être en vol lorsque le test se termine.
+      return;
+    }
     let body = {};
     try { body = await res.json(); } catch { body = {}; }
     delete body.clock;
@@ -38,9 +44,11 @@ test("NAV-C follow : preparing → ready sans rechargement", async ({ page }) =>
   await page.goto("/");
   await dismissNotForNav(page);
   const line = page.getByTestId("clock-line");
+  // « LIVE » peut venir du repli local avant que l'horloge serveur soit prête.
+  // Attendre la reprise du GET après les réponses preparing avant de lire la ligne.
+  await expect.poll(() => gets, { timeout: 45_000 }).toBeGreaterThan(PREPARING_GETS);
   await expect(line).toBeVisible({ timeout: 30_000 });
   await expect(line).toContainText(/\d[\d\s.,]* nm .*LIVE/i, { timeout: 45_000 });
-  expect(gets).toBeGreaterThan(PREPARING_GETS);
   const settled = gets;
   await page.waitForTimeout(8_000);
   expect(gets, "plus de relance une fois l'horloge prête").toBe(settled);
