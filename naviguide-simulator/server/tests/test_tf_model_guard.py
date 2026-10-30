@@ -28,6 +28,14 @@ US_IDS = [
 ]
 
 
+def test_ultra_and_write_default_to_eu_token_factory(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_TF_BASE_ULTRA", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_TF_BASE_EU", raising=False)
+    assert story_cascade._tf_url("deep") == f"{EU}/chat/completions"
+    assert story_cascade._tf_url("judge") == f"{EU}/chat/completions"
+    assert story_cascade._tf_url("write") == f"{EU}/chat/completions"
+
+
 def _catalog(ids):
     return {"object": "list", "data": [{"id": i, "object": "model"} for i in ids]}
 
