@@ -179,9 +179,8 @@ Un merge sur `main` déploie [https://naviguide.fr](https://naviguide.fr) sur Co
 
 Mesuré depuis git, fichiers de code seulement. Les lignes sont copiées de cette mesure. Ce n’est pas une estimation.
 
-Au 2026-08-26 (commit dfca7b1, 2026-08-20) : 0 fichiers de code, 0 lignes — pas de naviguide-simulator/.
-Depuis le 2026-08-26 : 174 566 de ces lignes ont été écrites ou réécrites → **100.0 %** du code actuel.
-Brassage : +220 468 / −25 851 lignes, 811 fichiers touchés, 1094 commits (141.1 % du code actuel en ajouts + suppressions).
+Au 2026-08-26 : 0 fichiers de code, 0 ligne — le simulateur NAVIGUIDE n’existait pas.
+Mesure depuis git à la tête e481787d, fichiers de code seulement : 934 fichiers et 223 567 lignes aujourd’hui ; 100 % de ces lignes ont été écrites ou réécrites depuis le 2026-08-26 — 1 361 commits depuis le 2026-08-26T16:00:00Z.
 
 ## IA responsable et sécurité
 

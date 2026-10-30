@@ -187,7 +187,7 @@ A merge to `main` deploys [https://naviguide.fr](https://naviguide.fr) on Contab
 
 Measured from git on code files only. The sentence is copied from that measurement. It is not an estimate.
 
-In numbers (from git, code files only): on August 26, 2026 the repository held 0 code files and 0 lines — the NAVIGUIDE simulator did not exist. Today it holds 708 code files and 174,566 lines, and 100% of those lines (174,566) were written or rewritten since August 26, 2026 — 1094 commits, 811 files touched. The simulator (171,071 lines) is entirely post-August 26, 2026.
+In numbers (measured at commit e481787d, from git, code files only): on August 26, 2026 the repository held 0 code files and 0 lines — the NAVIGUIDE simulator did not exist. Today it holds 934 code files and 223,567 lines, and 100% of those lines (223,567) were written or rewritten since August 26, 2026 — 1,361 commits since 2026-08-26T16:00:00Z.
 
 ## Known limitations
 
