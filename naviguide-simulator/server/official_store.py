@@ -20,7 +20,7 @@ import threading
 import time
 import asyncio
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -2979,6 +2979,9 @@ def film_receipt(calls: list[dict], stats: Optional[dict], when: datetime, base:
 # between API workers using the same official store directory.
 _FILM_WRITE_TASKS: dict[tuple[str, int], asyncio.Task] = {}
 _FILM_WRITE_FAILED: set[tuple[str, int]] = set()
+# A write normally completes well before this; older reservations are assumed
+# abandoned after a process restart and become eligible for retry.
+FILM_WRITE_STALE_AFTER = timedelta(minutes=15)
 
 
 def _film_write_db() -> Path:
@@ -2992,12 +2995,27 @@ def _film_write_db() -> Path:
     return path
 
 
-def _film_write_state(seconds: int) -> str | None:
+def _film_write_state(seconds: int, *, now: datetime | None = None) -> str | None:
     with sqlite3.connect(_film_write_db(), timeout=10) as db:
-        row = db.execute("SELECT status, owner_pid FROM film_write_tasks WHERE seconds=?", (seconds,)).fetchone()
+        row = db.execute("SELECT status, owner_pid, updated_at FROM film_write_tasks WHERE seconds=?", (seconds,)).fetchone()
         if not row:
             return None
-        status, owner_pid = row
+        status, owner_pid, updated_at = row
+        if status == "writing":
+            try:
+                written_at = datetime.fromisoformat(str(updated_at).replace("Z", "+00:00"))
+                if written_at.tzinfo is None:
+                    written_at = written_at.replace(tzinfo=timezone.utc)
+                current = now or _utc_now()
+                if current.tzinfo is None:
+                    current = current.replace(tzinfo=timezone.utc)
+                if current.astimezone(timezone.utc) - written_at.astimezone(timezone.utc) >= FILM_WRITE_STALE_AFTER:
+                    db.execute("UPDATE film_write_tasks SET status='failed', owner_pid=NULL, updated_at=? WHERE seconds=? AND status='writing'", (_iso(current), seconds))
+                    return "failed"
+            except (TypeError, ValueError, OverflowError):
+                # An unreadable timestamp cannot establish that a write is fresh.
+                db.execute("UPDATE film_write_tasks SET status='failed', owner_pid=NULL, updated_at=? WHERE seconds=? AND status='writing'", (_iso(now), seconds))
+                return "failed"
         if status == "writing" and owner_pid != os.getpid():
             try:
                 os.kill(int(owner_pid), 0)
@@ -3092,10 +3110,19 @@ async def start_film_write(
     db = sqlite3.connect(_film_write_db(), timeout=10, isolation_level=None)
     try:
         db.execute("BEGIN IMMEDIATE")
-        row = db.execute("SELECT status FROM film_write_tasks WHERE seconds=?", (secs,)).fetchone()
+        row = db.execute("SELECT status, updated_at FROM film_write_tasks WHERE seconds=?", (secs,)).fetchone()
         if row and row[0] == "writing":
-            db.execute("ROLLBACK")
-            return {**cached, "status": "writing", "writing": True, "hasWritten": False, "targetSeconds": secs}
+            try:
+                reserved_at = datetime.fromisoformat(str(row[1]).replace("Z", "+00:00"))
+                if reserved_at.tzinfo is None:
+                    reserved_at = reserved_at.replace(tzinfo=timezone.utc)
+                current = _utc_now()
+                if current - reserved_at.astimezone(timezone.utc) < FILM_WRITE_STALE_AFTER:
+                    db.execute("ROLLBACK")
+                    return {**cached, "status": "writing", "writing": True, "hasWritten": False, "targetSeconds": secs}
+            except (TypeError, ValueError, OverflowError):
+                db.execute("ROLLBACK")
+                return {**cached, "status": "writing", "writing": True, "hasWritten": False, "targetSeconds": secs}
         db.execute("INSERT INTO film_write_tasks(seconds,status,owner_pid,updated_at) VALUES(?,?,?,?) ON CONFLICT(seconds) DO UPDATE SET status=excluded.status, owner_pid=excluded.owner_pid, updated_at=excluded.updated_at", (secs, "writing", os.getpid(), _iso()))
         db.execute("COMMIT")
     finally:
