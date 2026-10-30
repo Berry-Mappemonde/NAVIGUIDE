@@ -669,6 +669,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                   onClick={onTogglePlay}
                   aria-label={playing ? t("pause") : t("play")}
                   className="w-7 h-6 rounded-md bg-cyan-600 hover:bg-cyan-500 flex items-center justify-center"
+                  aria-label={playing ? t("pause") : t("play")}
                   title={playing ? t("pause") : t("play")}
                 >
                   {playing ? <Pause size={12} /> : <Play size={12} className="ml-0.5" />}
