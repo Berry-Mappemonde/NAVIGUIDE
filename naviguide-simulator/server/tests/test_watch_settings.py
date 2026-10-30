@@ -1,4 +1,6 @@
 """R42 : interrupteur « Veille Tavily » — réglage persistant, effet réel sur watch_enabled()."""
+import asyncio
+
 from fastapi.testclient import TestClient
 
 import escale_watch
@@ -35,6 +37,30 @@ def test_toggle_persists_and_drives_watch_enabled(monkeypatch):
     assert c.get("/escale/watch/settings").json()["enabled"] is False
     r = c.post("/escale/watch/settings", json={"enabled": True})
     assert r.json()["enabled"] is True and escale_watch.watch_enabled() is True
+
+
+def test_disabling_setting_cancels_periodic_watch_loop(monkeypatch):
+    import ici_warm  # noqa: PLC0415
+
+    class RunningTask:
+        cancelled = False
+
+        def done(self):
+            return False
+
+        def cancel(self):
+            self.cancelled = True
+
+    task = RunningTask()
+    monkeypatch.setattr(ici_warm, "_WATCH_LOOP_TASK", task)
+    monkeypatch.setenv("NAVIGUIDE_TAVILY_WATCH", "1")
+
+    import escale_api  # noqa: PLC0415
+    response = asyncio.run(escale_api.post_watch_settings({"enabled": False}))
+
+    assert response["enabled"] is False
+    assert task.cancelled is True
+    assert ici_warm._WATCH_LOOP_TASK is None
 
 
 def test_off_means_zero_search(monkeypatch):

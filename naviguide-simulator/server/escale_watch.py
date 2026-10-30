@@ -581,6 +581,9 @@ async def search_watch(
     if isinstance(status, int) and status >= 400:
         stored["reason"] = "http-error"
         stored["status"] = status
+        # Une panne temporaire ne doit pas empêcher une nouvelle tentative
+        # pour cette question pendant le reste de la journée.
+        return {**stored, "cached": False}
     _cache_put(WATCH_NS, key, stored)
     return {**stored, "cached": False}
 

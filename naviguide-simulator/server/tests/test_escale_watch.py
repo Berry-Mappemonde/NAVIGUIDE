@@ -94,7 +94,7 @@ def test_watch_query_and_window():
     assert escale_watch.stops_in_window(clock, late) == []
 
 
-def test_search_watch_keeps_http_error_distinct_from_empty(monkeypatch):
+def test_search_watch_does_not_cache_http_error(monkeypatch):
     _keys(monkeypatch)
     calls = 0
 
@@ -107,11 +107,14 @@ def test_search_watch_keeps_http_error_distinct_from_empty(monkeypatch):
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             return await escale_watch.search_watch("Nouméa", client=client, now=NOW)
 
-    result = asyncio.run(run())
-    assert result["reason"] == "http-error"
-    assert result["status"] == 503
-    assert result["results"] == []
-    assert calls == 1
+    first = asyncio.run(run())
+    second = asyncio.run(run())
+    for result in (first, second):
+        assert result["reason"] == "http-error"
+        assert result["status"] == 503
+        assert result["results"] == []
+        assert result["cached"] is False
+    assert calls == 2
 
 
 def test_one_watch_writes_news_with_url(monkeypatch):

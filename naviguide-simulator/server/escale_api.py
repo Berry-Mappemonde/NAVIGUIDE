@@ -539,12 +539,14 @@ async def post_watch_settings(body: dict[str, Any]):
     if enabled is not None and not isinstance(enabled, bool):
         raise HTTPException(400, "enabled (booléen ou null) requis")
     escale_watch.set_watch_override(enabled)
-    if enabled:
-        try:
-            import ici_warm  # noqa: PLC0415
+    try:
+        import ici_warm  # noqa: PLC0415
+        if escale_watch.watch_enabled():
             ici_warm.ensure_watch_loop()
-        except Exception as exc:
-            log.debug("boucle veille : %s", exc)
+        else:
+            ici_warm.cancel_watch_loop()
+    except Exception as exc:
+        log.debug("boucle veille : %s", exc)
     return escale_watch.watch_settings()
 
 

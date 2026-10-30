@@ -972,6 +972,18 @@ def ensure_watch_loop(loop=None) -> bool:
         return False
 
 
+def cancel_watch_loop() -> bool:
+    """Arrête la veille périodique dès que le réglage la désactive."""
+    global _WATCH_LOOP_TASK
+    task = _WATCH_LOOP_TASK
+    _WATCH_LOOP_TASK = None
+    if task is None or task.done():
+        return False
+    task.cancel()
+    _state["watch"] = {"status": "disabled"}
+    return True
+
+
 async def _watch_loop(pause_s: float | None = None) -> None:
     """Passe de veille seule : 2 min après le démarrage, puis toutes les 24 h.
 
