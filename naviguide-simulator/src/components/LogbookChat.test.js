@@ -20,6 +20,13 @@ describe("LogbookChat contract", () => {
     assert.match(src, /text-xs/);
     assert.doesNotMatch(src, /logbook-chat-ai-notice[\s\S]{0,400}text-\[9px\]/);
   });
+  it("l’avis vit sous le cadre à hauteur fixe, pas dedans — il écrasait la liste à 0 px", () => {
+    const formEnd = src.indexOf("</form>");
+    const boxEnd = src.indexOf("</div>", formEnd);
+    const noticeAt = src.indexOf('data-testid="logbook-chat-ai-notice"');
+    assert.ok(formEnd > 0 && noticeAt > boxEnd, "l’avis suit la fermeture du cadre sim-box-chat");
+    assert.match(src, /<>\s*<div data-testid="logbook-chat" className="sim-box-chat/);
+  });
   it("lives in the left sidebar, in both views, and says whether exchanges are logged", () => {
     assert.match(sidebar, /<LogbookChat messages=\{chat\.messages\}/);
     assert.match(sidebar, /\{!drawingHidesBerry && chat \? \(/, "any view, not once a drawn point hides Berry");

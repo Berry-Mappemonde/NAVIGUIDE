@@ -55,7 +55,10 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
     onAsk?.(q);
   };
 
+  // L'avis vit sous le cadre, pas dedans : le cadre a une hauteur fixe (--sim-box-h-chat) et l'avis
+  // y écrasait la liste des réponses à 0 px jusqu'à « Compris ».
   return (
+    <>
     <div data-testid="logbook-chat" className="sim-box-chat rounded-lg border border-violet-500/25 bg-violet-950/25 p-2 min-w-0">
       <div className="flex items-center gap-1.5 mb-1 flex-shrink-0">
         <MessageSquare size={12} className="text-violet-200" />
@@ -86,23 +89,6 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
           {error ? <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p> : null}
         </div>
       </div>
-      {showAiNotice ? (
-        <div
-          data-testid="logbook-chat-ai-notice"
-          className="mt-1.5 rounded-md border border-violet-300/45 bg-violet-950 px-2 py-1.5 text-xs leading-snug text-violet-50"
-          role="note"
-        >
-          <p>{t("aiActChatNotice")}</p>
-          <button
-            type="button"
-            data-testid="logbook-chat-ai-notice-dismiss"
-            onClick={dismissAiNotice}
-            className="mt-1 text-xs font-semibold text-white underline underline-offset-2 hover:text-violet-100"
-          >
-            {t("aiActChatNoticeDismiss")}
-          </button>
-        </div>
-      ) : null}
       <form onSubmit={submit} className="mt-1.5 flex items-center gap-1 flex-shrink-0">
         <input
           type="text"
@@ -125,5 +111,23 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
         </button>
       </form>
     </div>
+    {showAiNotice ? (
+      <div
+        data-testid="logbook-chat-ai-notice"
+        className="mt-1.5 rounded-md border border-violet-300/45 bg-violet-950 px-2 py-1.5 text-xs leading-snug text-violet-50"
+        role="note"
+      >
+        <p>{t("aiActChatNotice")}</p>
+        <button
+          type="button"
+          data-testid="logbook-chat-ai-notice-dismiss"
+          onClick={dismissAiNotice}
+          className="mt-1 text-xs font-semibold text-white underline underline-offset-2 hover:text-violet-100"
+        >
+          {t("aiActChatNoticeDismiss")}
+        </button>
+      </div>
+    ) : null}
+    </>
   );
 });
