@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt, sentenceSpan, stepFilmTime } from "../engine/replay.js";
-import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, arrivalBubbleFitsDestination, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmBudgetCanPlay, filmCharRatesStable, filmChapterPlayheadCapped, filmEndCharIdx, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmResponseShouldRetry, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, arrivalBubbleFitsDestination, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmBoatAtPhrase, filmBoatTimeAtPhrase, filmBudgetCanPlay, filmCharRatesStable, filmChapterPlayheadCapped, filmEndCharIdx, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmResponseShouldRetry, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
 import { briefingForReplayPosition, replayPlace } from "./useReplay.js";
 import { VOICE_LEAD_MS, VOICE_MS_PER_CHAR } from "../utils/speak.js";
 import { shouldStopSpeakingOnChapterChange } from "./useReplayVoice.js";
@@ -18,6 +18,21 @@ const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
 const bar = readFileSync(join(here, "..", "components", "SimulationFilmBar.jsx"), "utf8");
 
 describe("useReplay contract", () => {
+  it("expose un état de chargement récupérable pour le film officiel, avec libellés FR/EN", () => {
+    assert.match(hook, /setTimeout\(\(\) => \{\s*requestTimedOut = true;\s*ac\.abort\(\);\s*\}, 30_000\)/);
+    assert.match(hook, /setFilmStatus\("timeout"\)/);
+    assert.match(hook, /setFilmStatus\("absent"\)/);
+    assert.match(hook, /const retryFilmLoad = useCallback/);
+    assert.match(app, /onRetryLoad: replay\.retryFilmLoad/);
+    assert.match(bar, /data-testid="film-load-status"/);
+    assert.match(bar, /data-testid="film-load-retry"/);
+    for (const key of ["filmLoadPending", "filmLoadPreparing", "filmLoadEmpty", "filmLoadError", "filmLoadTimeout", "filmLoadStale", "filmLoadRetry"]) {
+      assert.ok(fr[key], `fr.${key}`);
+      assert.ok(en[key], `en.${key}`);
+      assert.notEqual(fr[key], en[key], `${key} traduit`);
+    }
+  });
+
   it("replays on the official clock, consumes the film plan, and hands back to live at the end or on Stop", () => {
     assert.match(hook, /replayWindow\(clockToUse, Date\.now\(\)\)/);
     assert.match(hook, /fromLat: c\.fromLat/);
@@ -479,8 +494,9 @@ describe("Film officiel, pas la Simulation", () => {
     assert.equal(isReadyRemoteFilm({ status: "ready", chapters: [] }, { official: false }), false);
     assert.equal(canStartOfficialReplay({ officialClock: { t0: "x" }, remoteStatus: "preparing" }), false);
     assert.equal(FILM_PREPARE_POLL_MS, 10_000);
-    assert.equal(FILM_PREPARE_MAX_MS, 120_000);
     assert.match(hook, /FILM_PREPARE_POLL_MS/);
+    assert.match(hook, /if \(applied === "preparing"\) \{\s*retryTimer = setTimeout\(load, FILM_PREPARE_POLL_MS\);/);
+    assert.doesNotMatch(hook, /prepareStarted|FILM_PREPARE_MAX_MS/);
     assert.match(hook, /filmRequestPath\(voyageId\)/);
     assert.doesNotMatch(hook, /fetch\(`\$\{API\}\/voyage\/official\/film\?\$\{q\}`/);
   });
@@ -1381,8 +1397,9 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
   it("signale l’indisponibilité seulement après l’échec de toute la cascade", () => {
     assert.match(hook, /data\?\.reason === "all-providers-failed"/);
     assert.match(hook, /setWrittenUnavailable\("unavailable"\)/);
-    assert.match(hook, /\.catch\(\(\) => \{\s*if \(generation === filmWriteGenerationRef\.current\) setWrittenUnavailable\("unavailable"\);/);
-    assert.match(hook, /if \(!data\) \{\s*setWrittenUnavailable\("unavailable"\)/);
+    assert.match(hook, /\.catch\(\(\) => \{\s*if \(generation === filmWriteGenerationRef\.current\) setWrittenUnavailable\(null\);/);
+    assert.match(hook, /if \(!data\) \{\s*setWrittenUnavailable\(null\)/);
+    assert.match(hook, /else if \(data\?\.reason === "all-providers-failed"\) setWrittenUnavailable\("unavailable"\)/);
     assert.match(hook, /writtenUnavailable,/);
     assert.match(app, /writtenUnavailable: replay\.writtenUnavailable/);
     assert.match(bar, /filmStoryWrittenUnavailable/);
@@ -1390,6 +1407,9 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(bar, /filmStoryWrittenRetry/);
     assert.match(bar, /if \(!replay\.active\) replay\.onStyle\?\.\("written"\)/);
     assert.match(hook, /setWrittenUnavailable\("unavailable"\)/);
+    assert.equal(fr.filmStoryWrittenUnavailable, "Le film rédigé est momentanément indisponible.");
+    assert.equal(en.filmStoryWrittenUnavailable, "The edited film is temporarily unavailable.");
+    assert.match(bar, /<span role="status">\{t\("filmStoryWrittenUnavailable"\)\}<\/span>/);
   });
 });
 
