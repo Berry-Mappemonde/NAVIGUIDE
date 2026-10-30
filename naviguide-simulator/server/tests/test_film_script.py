@@ -6191,6 +6191,34 @@ def test_truncated_reread_verdict_is_never_a_pass():
         assert rep["faults"] == ["verdict-illisible"]
 
 
+def test_english_film_final_reread_uses_mocked_judge_tier(monkeypatch):
+    import film_script as fs
+
+    monkeypatch.setattr(fs, "film_ultra_open", lambda: True)
+    monkeypatch.setattr(fs, "nemotron_reread_report", lambda *_a, **_k: {"ok": True, "faults": []})
+    seen = []
+
+    async def fake_cascade(_system, _user, **kw):
+        seen.append(kw)
+        return '{"ok": true, "faults": []}', "nemotron-ultra"
+
+    plan = {
+        "chapters": [{
+            "id": "c0",
+            "text": "On 15 May, Berry-Mappemonde leaves La Rochelle. Arrival in Ajaccio on 26 May.",
+            "fromName": "La Rochelle", "toName": "Ajaccio (Corsica)",
+        }],
+    }
+    stops = [{"name": "La Rochelle"}, {"name": "Ajaccio (Corsica)"}]
+    ok, report = asyncio.run(fs.reread_before_store(plan, stops, cascade=fake_cascade, lang="en"))
+
+    assert ok is True
+    assert report["source"] == "nemotron-ultra"
+    assert len(seen) == 1
+    assert seen[0]["tier"] == "judge"
+    assert seen[0]["max_tokens"] == fs.REREAD_MAX_TOKENS
+
+
 def test_truncated_ultra_judge_verdict_is_never_a_pass():
     from film_script import judge_written_once
 
