@@ -67,6 +67,25 @@ Nemotron 3 Nano 30B et Nemotron 3 Super 120B quittent Token Factory le 9 novembr
 
 **Cascade.** Un cache SQLite de 24 h est lu d’abord. Si le budget du jour ou `NAVIGUIDE_LLM_MODE` refuse l’appel, rien n’est envoyé et la source est `budget`. Sinon l’ordre par défaut de `DEFAULT_PROVIDERS` est Token Factory, puis NIM, puis OpenRouter, puis Claude. Si l’appelant a fourni un texte de repli et que chaque fournisseur a échoué, la source est `rules`.
 
+### Si un fournisseur ne répond pas
+
+`DEFAULT_PROVIDERS`, dans `naviguide-simulator/server/story_cascade.py`, fixe l’ordre illustré ci-dessous. Une expiration ou une réponse HTTP 402, 429 ou 5xx fait essayer le fournisseur suivant. Le repli après expiration est actif par défaut ; seule une valeur `0`, `false`, `no` ou `off` dans `NAVIGUIDE_LLM_TIMEOUT_FALLBACK` le désactive. Si les modèles ne répondent pas, NAVIGUIDE conserve un texte déterministe tiré des faits bruts.
+
+```mermaid
+flowchart TD
+    A["Nebius Token Factory · Nemotron<br/>défauts : Lightning / Super-VL / Ultra<br/>NAVIGUIDE_TF_TIMEOUT_S : 25 s<br/>NAVIGUIDE_TF_TIMEOUT_ULTRA_S : 45 s"]
+    B["NVIDIA NIM · openai/gpt-oss-20b<br/>NVIDIA_URL · TIMEOUT : 25 s, connexion : 8 s"]
+    C["OpenRouter · openai/gpt-4o-mini<br/>OPENROUTER_URL · TIMEOUT : 25 s, connexion : 8 s"]
+    D["Claude · claude-haiku-4-5<br/>ANTHROPIC_URL · TIMEOUT : 25 s, connexion : 8 s"]
+    E["Texte déterministe des règles<br/>faits bruts"]
+    A -->|"expiration / HTTP 402, 429, 5xx"| B
+    B -->|"expiration / erreur HTTP"| C
+    C -->|"expiration / erreur HTTP"| D
+    D -->|"expiration / erreur HTTP"| E
+```
+
+Dans `llm_budget.DEFAULT_MODELS`, Token Factory associe Lightning (`nvidia/Nemotron-3_5-Lightning`) à `nano` et `fast`, Super-VL (`nvidia/Nemotron-3.5-Super-VL`) à `write`, Ultra (`nvidia/Nemotron-3-Ultra-550b-a55b`) à `deep` et `judge`. Les variables `NAVIGUIDE_TF_MODEL_*` permettent de remplacer ces défauts. Les noms de variables d’accès sont `NEBIUS_API_KEY`, `NVIDIA_API_KEY`, `OPENROUTER_API_KEY` et `ANTHROPIC_API_KEY`.
+
 Sur le palier `fast` seulement, un corps Token Factory vide, un statut HTTP 500 ou plus, ou un délai dépassé, est retenté une fois sur Token Factory avec le modèle Super VL. Un 4xx ne prend pas ce second essai. Sur le palier `nano`, un échec Token Factory est retenté une fois sur Token Factory en Lightning, puis la cascade continue. NIM sert `openai/gpt-oss-20b` à `https://integrate.api.nvidia.com/v1/chat/completions` ; ce modèle n'est pas un Nemotron et sa source reste étiquetée `nvidia-openai/gpt-oss-20b`. Après un timeout Token Factory, la cascade continue par défaut vers NIM, OpenRouter puis Claude, pour qu'un modèle reste toujours disponible ; `NAVIGUIDE_LLM_TIMEOUT_FALLBACK=0` arrête ces replis (texte de règles étiqueté). OpenRouter vaut par défaut `openai/gpt-4o-mini`. Claude est `claude-haiku-4-5`.
 
 **Chiffres.** `filter_numbers` dans `naviguide-simulator/server/story_cascade.py` retire chaque phrase qui contient un nombre absent des faits. Une phrase sans nombre est gardée. Le filtre ne prend pas une invention non numérique.

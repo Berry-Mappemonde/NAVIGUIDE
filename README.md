@@ -67,6 +67,25 @@ Nemotron 3 Nano 30B and Nemotron 3 Super 120B leave Token Factory on 9 November 
 
 **Cascade.** A 24-hour SQLite cache is read first. If the daily budget or `NAVIGUIDE_LLM_MODE` refuses the call, nothing is sent and the source is `budget`. The default order is Token Factory, NIM, OpenRouter, then Claude. After a Token Factory timeout, the cascade continues to NIM, OpenRouter and Claude by default so a model remains available; set `NAVIGUIDE_LLM_TIMEOUT_FALLBACK=0` to disable these fallbacks. NIM currently serves `openai/gpt-oss-20b`, a non-Nemotron model, and is labelled `nvidia-openai/gpt-oss-20b`. If the caller passed a fallback string and every permitted provider failed, the source is `rules`.
 
+### The LLM cascade
+
+The default provider order is `DEFAULT_PROVIDERS` in `naviguide-simulator/server/story_cascade.py`. HTTP errors such as 402, 429, and 5xx, and timeouts, move to the next provider; timeout fallback is on unless `NAVIGUIDE_LLM_TIMEOUT_FALLBACK` is set to `0`, `false`, `no`, or `off`. The last resort is the deterministic `rules` text built from raw facts.
+
+```mermaid
+flowchart TD
+    A["Nebius Token Factory · Nemotron<br/>tier defaults: Lightning / Super-VL / Ultra<br/>NAVIGUIDE_TF_TIMEOUT_S: 25 s<br/>NAVIGUIDE_TF_TIMEOUT_ULTRA_S: 45 s"]
+    B["NVIDIA NIM · openai/gpt-oss-20b<br/>NVIDIA_URL · TIMEOUT: 25 s, connect: 8 s"]
+    C["OpenRouter · openai/gpt-4o-mini<br/>OPENROUTER_URL · TIMEOUT: 25 s, connect: 8 s"]
+    D["Claude · claude-haiku-4-5<br/>ANTHROPIC_URL · TIMEOUT: 25 s, connect: 8 s"]
+    E["Deterministic rules text<br/>raw facts"]
+    A -->|"timeout / HTTP 402, 429, 5xx"| B
+    B -->|"timeout / HTTP error"| C
+    C -->|"timeout / HTTP error"| D
+    D -->|"timeout / HTTP error"| E
+```
+
+The Token Factory tier model defaults are `nvidia/Nemotron-3_5-Lightning` (`nano`, `fast`), `nvidia/Nemotron-3.5-Super-VL` (`write`), and `nvidia/Nemotron-3-Ultra-550b-a55b` (`deep`, `judge`), from `llm_budget.DEFAULT_MODELS`; `NAVIGUIDE_TF_MODEL_*` variables can override them. Provider credentials are read from `NEBIUS_API_KEY`, `NVIDIA_API_KEY`, `OPENROUTER_API_KEY`, and `ANTHROPIC_API_KEY`.
+
 On the `fast` tier only, an empty Token Factory body, an HTTP status of 500 or higher, or a timeout is tried once more on Token Factory with the Super VL model. A 4xx does not take that second try. On the `nano` tier, a Token Factory failure is tried once more on Token Factory as Lightning, then the cascade continues. NIM is `openai/gpt-oss-20b` at `https://integrate.api.nvidia.com/v1/chat/completions`. OpenRouter defaults to `openai/gpt-4o-mini`. Claude is `claude-haiku-4-5`.
 
 **Numbers.** `filter_numbers` in `naviguide-simulator/server/story_cascade.py` drops every sentence that contains a number not already in the facts. A sentence with no number is kept. The filter does not catch a non-numeric invention.
