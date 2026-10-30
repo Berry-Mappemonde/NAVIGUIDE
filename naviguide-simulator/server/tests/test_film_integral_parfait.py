@@ -34,6 +34,18 @@ def test_coast_naming_arrival_marina_is_dropped():
               "lat": 4.85, "lon": -52.27}
     dest = {"name": "Cayenne (Guyane)", "lat": 4.93, "lon": -52.33}
     assert _coast_is_arrival(_coast("Dégrad des Cannes"), "Cayenne (Guyane)", [marina], dest, "fr")
+    assert not _coast_is_arrival(_coast("Cannes"), "Cayenne (Guyane)", [marina], dest, "fr")
+
+
+def test_coast_arrival_harbor_errors_are_not_hidden(monkeypatch):
+    import pytest
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("harbor lookup failed")
+
+    monkeypatch.setattr(fs, "_arrival_harbor", fail)
+    with pytest.raises(RuntimeError, match="harbor lookup failed"):
+        _coast_is_arrival(_coast("Dégrad des Cannes"), "Cayenne", [], {"name": "Cayenne"}, "fr")
 
 
 def test_other_coasts_are_kept():

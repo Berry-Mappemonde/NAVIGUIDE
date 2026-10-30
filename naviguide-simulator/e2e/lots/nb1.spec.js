@@ -61,7 +61,7 @@ test("source en texte, aucun logo tiers", async ({ page }) => {
       type: "sans API",
       description: "GET /voyage/official absent — libellé du film rédigé sauté ; absence de logo gardée",
     });
-    return;
+    test.skip(true, "GET /voyage/official indisponible : film rédigé non vérifiable sans API");
   }
 
   const filmRes = await page.request.get("/voyage/official/film?lang=fr&style=written&seconds=150", { timeout: 12_000 }).catch(() => null);
@@ -74,8 +74,25 @@ test("source en texte, aucun logo tiers", async ({ page }) => {
       type: "film rédigé absent",
       description: "film rédigé non servi — libellé sauté ; absence de logo gardée",
     });
-    return;
+    test.skip(true, "Le stock offline ne sert pas de film rédigé");
   }
+
+  // Le libellé lu plus bas doit être celui du film sondé (seconds=150) : on
+  // choisit la même durée dans la barre, sinon la pilule Rédigé s'applique à la
+  // durée par défaut, qui n'a pas de film rédigé dans le stock figé (« règles »).
+  // La pilule bascule (re-cliquer 150 revient à l'intégral) : on ne clique que si
+  // elle n'est pas déjà choisie, puis on vérifie qu'elle l'est.
+  const pill150 = page.locator("[data-testid='film-duration'] [data-seconds='150']");
+  const pillShown = await expect(pill150).toBeVisible({ timeout: 20_000 }).then(() => true).catch(() => false);
+  if (!pillShown) {
+    test.info().annotations.push({
+      type: "film rédigé absent",
+      description: "pilule 2:30 absente — libellé sauté ; absence de logo gardée",
+    });
+    test.skip(true, "La pilule 150 s n'est pas disponible dans cette configuration");
+  }
+  if ((await pill150.getAttribute("aria-pressed")) !== "true") await pill150.click();
+  await expect(pill150).toHaveAttribute("aria-pressed", "true");
 
   const written = page.getByTestId("film-style-written");
   const enabled = await expect(written).toBeEnabled({ timeout: 15_000 }).then(() => true).catch(() => false);
@@ -84,12 +101,16 @@ test("source en texte, aucun logo tiers", async ({ page }) => {
       type: "film rédigé absent",
       description: "pilule Rédigé inactive — libellé sauté ; absence de logo gardée",
     });
-    return;
+    test.skip(true, "Le film rédigé est indisponible dans cette configuration");
   }
 
   await written.click();
   const source = page.getByTestId("film-source");
   await expect(source).toBeVisible({ timeout: 8_000 });
+  // Le clic sur « Rédigé » affiche d'abord « Rédaction en cours… » le temps de
+  // charger le film rédigé (150 s servi par le stock figé depuis feat/film-150s) :
+  // on lit le libellé de source une fois ce passage terminé.
+  await expect(source).not.toHaveText(/Rédaction en cours|Writing…/, { timeout: 30_000 });
   await expect(source.locator("img, svg")).toHaveCount(0);
   const text = (await source.innerText()).replace(/\s+/g, " ").trim();
   expect(text.length).toBeGreaterThan(0);
