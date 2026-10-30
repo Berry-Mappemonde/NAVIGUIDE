@@ -8,10 +8,18 @@ const srcDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(srcDir, "..");
 
 // Keep exceptions reviewable by exact relative path and opening-tag line.
+// Drawing-mode lines are found by their handler, so merges that move App.jsx
+// do not break the guard.
+function lineOf(relPath, needle) {
+  const lines = readFileSync(path.join(repoRoot, relPath), "utf8").split("\n");
+  const index = lines.findIndex((line) => line.includes(needle));
+  return `${relPath}:${index + 1}`;
+}
+
 const ALLOW_LIST = new Set([
   // Drawing-mode controls are an explicit protected area per local NAVIGUIDE rules.
-  "src/App.jsx:2211",
-  "src/App.jsx:2212",
+  lineOf("src/App.jsx", "<button type=\"button\" onClick={handleDrawUndo}"),
+  lineOf("src/App.jsx", "<button type=\"button\" onClick={handleDrawRedo}"),
   // "Draw your own route" section (delete route button) is protected: not modified.
   "src/components/Sidebar.jsx:226",
 ]);
