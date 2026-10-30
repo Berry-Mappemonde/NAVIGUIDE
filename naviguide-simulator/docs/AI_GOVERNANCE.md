@@ -42,7 +42,7 @@ Ordre exécuté, défaut `tokenfactory`, `nim`, `openrouter`, `claude` (`server/
 1. Cache SQLite 24 h (`server/story_cascade.py:52-53`, `server/story_cascade.py:1022-1025`).
 2. Si le budget ou le mode refuse : `source=budget`, aucun réseau (`server/story_cascade.py:1026-1028`).
 3. Token Factory. Sur le palier `fast` seulement, un vide, un HTTP ≥ 500 ou un timeout déclenche un second essai avec le modèle Super (`write`) ; un 4xx ne le déclenche pas (`server/story_cascade.py:803-811`, `server/story_cascade.py:1035-1050`). Test : `server/tests/test_story_cascade.py:915-950`.
-4. Si ce saut échoue encore : NIM, puis OpenRouter, puis Claude (`server/story_cascade.py:1052-1067`). Test vide Lightning puis Super vide → NIM : `server/tests/test_story_cascade.py:984`.
+4. Si ce saut échoue encore : NIM, puis OpenRouter, puis Claude (`server/story_cascade.py:1052-1067`). Sur `nano`, un échec Token Factory déclenche d’abord un second essai sur Token Factory avec Lightning. Après un timeout Token Factory, la cascade continue vers les fournisseurs non-Nemotron par défaut ; `NAVIGUIDE_LLM_TIMEOUT_FALLBACK=0` l’arrête (`server/story_cascade.py:1035-1037`, `server/story_cascade.py:1408-1411`). Test vide Lightning puis Super vide → NIM : `server/tests/test_story_cascade.py:984`.
 5. Si un texte de repli est fourni : `source=rules` (`server/story_cascade.py:1103-1105`).
 
 Deux docstrings sont en retard sur ce code : la ligne 1 et la ligne 1121 de `server/story_cascade.py` n’y mentionnent pas NIM. L’ordre qui tourne est `DEFAULT_PROVIDERS` et le test cité.
@@ -119,7 +119,7 @@ Lien REDTEAM : aucun `evals/redteam/` ni `docs/security/REDTEAM_2026-10.md` sur 
 
 The tables above are the evidence. The running Token Factory hosts are `api.tokenfactory.nebius.com` for Lightning and Super, and `api.tokenfactory.us-central1.nebius.com` for Ultra (`deep` and `judge`). `eu-north1` and `devpost/nebius_futur.md` are **à vérifier**.
 
-Cascade: SQLite cache, then Token Factory, then a second Super call only after an empty body, HTTP ≥ 500, or a timeout on the `fast` tier, then NIM, OpenRouter, Claude, then `rules` if a fallback string was given. `filter_numbers` runs on each of those texts.
+Cascade: SQLite cache, then Token Factory (on `fast`, an empty body, HTTP ≥ 500, or timeout gets one retry with Super; `nano` retries once with Lightning after any Token Factory failure), then NIM, OpenRouter, Claude, then `rules` if a fallback string was given. After a Token Factory timeout, non-Nemotron providers remain enabled by default; `NAVIGUIDE_LLM_TIMEOUT_FALLBACK=0` disables them. `filter_numbers` runs on each of those texts.
 
 Budgets (NB1): daily token caps in `server/llm_budget.py:32-37`. A missing `NAVIGUIDE_LLM_DAILY_USD` does not cut spending. Default mode is `on-demand`.
 
