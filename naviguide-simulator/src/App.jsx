@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Redo2, Undo2, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar.jsx";
-import { PanelBoundary } from "./components/RootErrorBoundary.jsx";
+import { PanelBoundary, ReplayErrorBoundary } from "./components/RootErrorBoundary.jsx";
 import { CarnetDeBord, mapPageHref, useCarnetPage } from "./components/CarnetDeBord.jsx";
 import { ToolsSidebar } from "./components/ToolsSidebar.jsx";
 import { LayerFichePopup } from "./components/LayerFichePopup.jsx";
@@ -1108,8 +1108,9 @@ export default function App() {
     t0: suivreBerry ? replayT0 : voyage.t0,
     onT0: suivreBerry ? setReplayT0 : voyage.setT0,
     remoteStatus: replay.remoteStatus,
+    onRetryLoad: replay.retryFilmLoad,
     customFilm: suivreCustom,
-  } : null), [isSuivre, officialClock, suivreBerry, suivreCustom, view, closeEscaleSheet, maritimeLayers, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.fromName, replay.toName, replay.subtitle, replay.subtitlePlace, replay.targetSeconds, replay.estimatedSeconds, replay.variantEstimates, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmReviewedBy, replay.filmModel, replay.filmWebContext, replay.filmReceipt, replay.filmWriting, replay.filmStyle, replay.hasWritten, replay.writtenUnavailable, replay.setFilmStyle, replay.remoteStatus, replayT0, voyage.t0, voyage.setT0]);
+  } : null), [isSuivre, officialClock, suivreBerry, suivreCustom, view, closeEscaleSheet, maritimeLayers, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.fromName, replay.toName, replay.subtitle, replay.subtitlePlace, replay.targetSeconds, replay.estimatedSeconds, replay.variantEstimates, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmReviewedBy, replay.filmModel, replay.filmWebContext, replay.filmReceipt, replay.filmWriting, replay.filmStyle, replay.hasWritten, replay.writtenUnavailable, replay.setFilmStyle, replay.remoteStatus, replay.retryFilmLoad, replayT0, voyage.t0, voyage.setT0]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
@@ -2281,7 +2282,7 @@ export default function App() {
         </div>
       )}
 
-      <PanelBoundary>
+      <ReplayErrorBoundary>
       <SimulationFilmBar
         ref={filmBarRef}
         barRef={filmBarRef}
@@ -2376,7 +2377,7 @@ export default function App() {
         } : null}
         disclaimer={t("creditsLine")}
       />
-      </PanelBoundary>
+      </ReplayErrorBoundary>
 
       <RecomputeDialog
         draft={vessel.draft}
@@ -2414,7 +2415,7 @@ export default function App() {
 
       {selectedSatellite && (
         <div data-testid="satellite-popup" className="naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2100] w-[360px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl bottom-52">
-          <button type="button" data-testid="satellite-popup-close" className="absolute top-2 right-2 text-slate-400" onClick={closeSatellite}><X size={14} /></button>
+          <button type="button" data-testid="satellite-popup-close" className="absolute top-2 right-2 text-slate-400" aria-label={t("satellitePopupClose")} onClick={closeSatellite}><X size={14} /></button>
           <div className="font-semibold mb-2">{t("satelliteData")}</div>
           <div className="flex gap-1 mb-2">
             {["wind", "waves", "currents"].map((tab) => (

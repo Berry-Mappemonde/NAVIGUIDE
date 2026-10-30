@@ -28,7 +28,9 @@ def client(tmp_path, monkeypatch):
     saildocs.GRIB_DIR = tmp_path / "grib"
     reset_limiters()
     from main import app
-    return TestClient(app)
+    test_client = TestClient(app)
+    yield test_client
+    reset_limiters()
 
 
 def _official(points=None):

@@ -186,14 +186,12 @@ async function readPolarResponse(response) {
   throw error;
 }
 
-function polarErrorDetail(error, t) {
+export function polarErrorDetail(error, t) {
   if (error?.code === "DEFAULT_POLAR_NOT_FOUND") return t("polarDefaultUnavailable");
   if (error?.status === 401 || error?.status === 503) return t("adminKeyRequired");
   if (error?.status === 413) return t("polarFileTooLarge");
-  if (error?.status >= 500) {
-    return t("polarServiceUnavailable", { status: error.status });
-  }
-  if (error?.detail) return error.detail;
+  if (error?.status >= 500) return t("polarServiceUnavailable");
+  // Server details may contain internal codes or exception text.
   return t("polarNetworkError");
 }
 
@@ -576,6 +574,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
           rounded-full w-9 h-9 flex items-center justify-center shadow-lg
           border border-slate-700
           hover:bg-slate-800 transition-all duration-300 ${open ? "right-[322px]" : "right-4"}`}
+        aria-label={open ? t("hideToolsPanel") : t("showToolsPanel")}
         title={open ? t("hideToolsPanel") : t("showToolsPanel")}
       >
         {open ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
