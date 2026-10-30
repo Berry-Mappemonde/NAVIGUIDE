@@ -1370,6 +1370,13 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(chooseBlock, /filmWritingRef\.current = false/);
     assert.match(chooseBlock, /style=written/);
     assert.match(hook, /chooseFilmStyle/);
+    assert.match(hook, /filmWritePollGenRef\.current \+= 1;\s+filmWritePollAbortRef\.current\?\.abort\(\);\s+filmWritePollAbortRef\.current = null;/);
+    assert.match(hook, /const writeGen = \+\+filmWritePollGenRef\.current;/);
+    assert.match(hook, /if \(writeGen !== filmWritePollGenRef\.current\) return;/);
+    assert.match(hook, /\.catch\(\(\) => \{\s+if \(writeGen !== filmWritePollGenRef\.current\) return;\s+setFilmWriteError\(true\);\s+setFilmWriting\(false\);/);
+    assert.match(hook, /\.finally\(\(\) => \{[\s\S]*?if \(writeGen === filmWritePollGenRef\.current\) \{\s+filmWriteStartingRef\.current = false;/);
+    assert.match(hook, /finally \{\s+if \(gen === filmWritePollGenRef\.current\) \{\s+filmWriteStartingRef\.current = false;\s+\}\s+\}/);
+    assert.match(hook, /filmWritePollAbortRef\.current = null;\s+filmWriteStartingRef\.current = false;/);
     assert.match(hook, /resolveServedFilm/);
     assert.match(hook, /probeWritten/);
     assert.match(hook, /applyResolvedMeta/);
@@ -1383,6 +1390,7 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(bar, /testId="film-source"/);
     assert.match(bar, /textOnly/);
     assert.match(bar, /ed2WritingNemotron/);
+    assert.match(bar, /ed2WriteFailed/);
     const probeAt = hook.indexOf("const probeWritten");
     assert.ok(probeAt > 0);
     const probe = hook.slice(probeAt, probeAt + 900);
@@ -1398,9 +1406,12 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
   it("signale l’indisponibilité seulement après l’échec de toute la cascade", () => {
     assert.match(hook, /data\?\.reason === "all-providers-failed"/);
     assert.match(hook, /setWrittenUnavailable\("unavailable"\)/);
-    assert.match(hook, /\.catch\(\(\) => \{\s*if \(generation === filmWriteGenerationRef\.current\) setWrittenUnavailable\(null\);/);
-    assert.match(hook, /if \(!data\) \{\s*setWrittenUnavailable\(null\)/);
-    assert.match(hook, /else if \(data\?\.reason === "all-providers-failed"\) setWrittenUnavailable\("unavailable"\)/);
+    // RL191 (#191) on #159's async write: a network miss or an empty answer
+    // flags the write error but never "unavailable".
+    assert.match(hook, /\.catch\(\(\) => \{[^}]*?if \(generation === filmWriteGenerationRef\.current\) setWrittenUnavailable\(null\);/s);
+    assert.match(hook, /if \(!data\) \{[^}]*?setWrittenUnavailable\(null\);/s);
+    assert.doesNotMatch(hook, /if \(!data\) \{\s*setWrittenUnavailable\("unavailable"\)/);
+    assert.match(hook, /setWrittenUnavailable\(data\?\.reason === "all-providers-failed" \? "unavailable" : null\)/);
     assert.match(hook, /writtenUnavailable,/);
     assert.match(app, /writtenUnavailable: replay\.writtenUnavailable/);
     assert.match(bar, /filmStoryWrittenUnavailable/);

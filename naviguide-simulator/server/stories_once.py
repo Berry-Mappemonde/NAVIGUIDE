@@ -33,7 +33,7 @@ _STEPS = (
     ("w", "write", 512, 400),
     ("e", "judge", 512, 400),
     ("j", "judge", 256, 128),
-    ("t", "fast", 512, 256),
+    ("t", "write", 2048, 2048),
 )
 _STEP = {step: (tier, prompt, completion) for step, tier, prompt, completion in _STEPS}
 
@@ -530,29 +530,25 @@ def _judge(story: dict, row: dict) -> None:
 
 
 def _translate(story: dict, row: dict) -> None:
-    from film_script import translate_written_plan  # noqa: PLC0415
+    from film_script import write_film_chain  # noqa: PLC0415
 
     if _slot_text(row, "en"):
         return
-    fr = _slot_text(row, "fr")
-    if not fr or not _phrase(story):
+    if not _slot_text(row, "fr") or not _phrase(story):
         return
-    fr_plan = {
-        "chapters": [{"id": story.get("stableKey"), "text": fr}],
-        "source": (row.get("fr") or {}).get("source"),
-        "reviewedBy": (row.get("fr") or {}).get("reviewedBy"),
-        "targetSeconds": 0,
-    }
-    en_plan = _run(translate_written_plan(fr_plan, _plan_dict(story), cascade=_cascade()))
+    en_raw = _plan_dict(story)
+    if not en_raw:
+        return
+    _, en_plan, _stats = _run(
+        write_film_chain(en_raw, seconds=0, lang="en", cascade=_cascade()),
+    )
+    if not en_plan or not (en_plan.get("chapters") or []):
+        return
     _record("t")
     text = _chapter_text(en_plan)
     if not text:
-        raise RuntimeError("traduction vide")
-    extra = {}
-    reviewed = (row.get("fr") or {}).get("reviewedBy")
-    if reviewed:
-        extra["reviewedBy"] = reviewed
-    _put_slot(row, "en", text, str((en_plan or {}).get("source") or ""), **extra)
+        return
+    _put_slot(row, "en", text, str((en_plan or {}).get("source") or ""))
 
 
 def execute_call(call: Any) -> dict[str, Any]:

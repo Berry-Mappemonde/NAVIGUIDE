@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nextFilmWebContext, normalizeSourceUrl, publicFilmWebContext } from "./filmWebSources.js";
+import { nextFilmWebContext, normalizeFilmWebSourceUrl, normalizeSourceUrl, publicFilmWebContext } from "./filmWebSources.js";
 import { resolveServedFilm } from "../hooks/useReplay.js";
 import fr from "../i18n/fr.js";
 import en from "../i18n/en.js";
@@ -49,6 +49,38 @@ test("resolveServedFilm transmet la provenance Tavily (rédigé et brut)", () =>
   assert.equal(raw.webContext?.port, "Papeete");
   const none = resolveServedFilm({ hasWritten: true, source: "nemotron-super" }, "written");
   assert.equal(none.webContext, null);
+});
+
+test("publicFilmWebContext dédoublonne les URL normalisées", () => {
+  const out = publicFilmWebContext({
+    webContext: {
+      basis: "tavily",
+      port: "Ajaccio",
+      sources: [
+        { title: "A", url: "https://WWW.Example.COM/path/" },
+        { title: "B", url: "https://example.com/path" },
+        { title: "C", url: "https://other.org/" },
+      ],
+    },
+  });
+  assert.equal(out.sources.length, 2);
+  assert.deepEqual(out.sources.map((s) => s.domain), ["example.com", "other.org"]);
+});
+
+test("normalisation garde la requête et le port", () => {
+  assert.equal(normalizeFilmWebSourceUrl("https://WWW.Example.COM:8443/path/?q=1#x"), "https://example.com:8443/path?q=1");
+  assert.notEqual(normalizeFilmWebSourceUrl("https://example.com/path?q=1"), "https://example.com/path?q=2");
+});
+
+test("publicFilmWebContext rejette https:// sans hôte", () => {
+  const out = publicFilmWebContext({
+    webContext: {
+      basis: "tavily",
+      port: "Ajaccio",
+      sources: [{ title: "x", url: "https://", domain: "x.org" }],
+    },
+  });
+  assert.equal(out, null);
 });
 
 test("libellé du film : Tavily nommé en FR et EN", () => {

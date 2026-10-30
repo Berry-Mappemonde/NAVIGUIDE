@@ -96,6 +96,40 @@ def test_compact_keeps_only_public_provenance():
     assert film_web_context.public({"basis": "other", "port": "X", "sources": []}) is None
 
 
+def test_compact_dedupes_urls_by_normalized_key():
+    out = film_web_context.compact({
+        "status": "ready",
+        "port": "Ajaccio",
+        "fetchedAt": "2026-09-26T12:00:00Z",
+        "sources": [
+            {"title": "A", "url": "https://WWW.Example.COM/foo/"},
+            {"title": "B", "url": "https://example.com/foo"},
+            {"title": "C", "url": "https://other.org/bar"},
+        ],
+    })
+    assert out is not None
+    assert len(out["sources"]) == 2
+    assert {s["domain"] for s in out["sources"]} == {"example.com", "other.org"}
+
+
+def test_url_normalization_keeps_query_and_normalizes_host_port():
+    assert film_web_context._normalize_url_key("https://WWW.Example.COM:8443/foo/?a=1#part") == (
+        "https://example.com:8443/foo?a=1"
+    )
+    assert film_web_context._normalize_url_key("https://example.com/foo?a=2") != (
+        film_web_context._normalize_url_key("https://example.com/foo?a=1")
+    )
+
+
+def test_compact_rejects_empty_url_host():
+    assert film_web_context.compact({
+        "status": "ready",
+        "port": "Ajaccio",
+        "fetchedAt": "2026-09-26T12:00:00Z",
+        "sources": [{"title": "x", "url": "https://", "domain": "x.org"}],
+    }) is None
+
+
 def test_written_click_calls_tavily_and_film_serves_sources(tmp_path, monkeypatch):
     _install(tmp_path, monkeypatch)
     monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")

@@ -11,8 +11,10 @@ import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 import FilmReceipt from "./FilmReceipt.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
+import { isKeyboardClick, scrubKeyTarget } from "./filmScrub.js";
 import { filmDurationClass, filmDurationPill } from "../engine/playSpeeds.js";
 import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle, writtenPillEnabled } from "../hooks/useReplay.js";
+import { normalizeFilmWebSourceUrl } from "../utils/filmWebSources.js";
 
 function filmPill(replay, sec) {
   return filmDurationPill({ seconds: sec, active: replay?.active, estimates: replay?.variantEstimates });
@@ -160,10 +162,23 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
         : "";
   const onBarClick = (e) => {
     if (!showPlaybackControls) return;
+    if (isKeyboardClick(e)) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const t0 = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     onSeekNm(t0 * barTotal);
   };
+  const onBarKeyDown = (e) => {
+    if (!showPlaybackControls) return;
+    const target = scrubKeyTarget(e.key, e.shiftKey, barNm, barTotal);
+    if (target == null) return;
+    e.preventDefault();
+    onSeekNm(target);
+  };
+  const nmLocale = lang === "en" ? "en-US" : "fr-FR";
+  const scrubValueText = t("filmScrubValue", {
+    at: Math.round(barNm || 0).toLocaleString(nmLocale),
+    total: Math.round(barTotal || 0).toLocaleString(nmLocale),
+  });
   const filmSubtitle = visibleFilmSubtitle(replay?.subtitle || "", {
     fromName: replay?.fromName || fromName,
     toName: replay?.toName || toName,
@@ -291,10 +306,19 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
         <div className="relative w-full h-2 rounded-full bg-white/10 mt-1">
           <button
             type="button"
+            data-testid="film-scrub"
+            role="slider"
+            aria-label={t("filmScrub")}
+            aria-valuemin={0}
+            aria-valuemax={Math.round(barTotal || 0)}
+            aria-valuenow={Math.round(barNm || 0)}
+            aria-valuetext={scrubValueText}
+            aria-orientation="horizontal"
             onClick={onBarClick}
+            onKeyDown={onBarKeyDown}
             disabled={!showPlaybackControls}
             aria-label={showPlaybackControls ? t("filmScrub") : undefined}
-            className="absolute inset-0 w-full h-full rounded-full"
+            className="absolute inset-0 w-full h-full rounded-full before:absolute before:-inset-y-2 before:inset-x-0 before:content-['']"
             title={showPlaybackControls ? t("filmScrub") : undefined}
           >
             <span className="absolute inset-y-0 left-0 rounded-full bg-cyan-400/80" style={{ width: `${pct}%` }} />
@@ -440,8 +464,20 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                   </div>
                 ) : null}
                 {replay.writing ? (
-                  <div data-testid="film-source" className="min-w-0 max-w-full whitespace-normal break-words text-xs leading-snug text-white/90">
-                    {t("ed2WritingNemotron")}
+                  <div
+                    data-testid="film-source"
+                    className="min-w-0 max-w-full whitespace-normal break-words text-xs leading-snug text-white/90"
+                  >
+                    <LlmSourceBadge
+                      source={replay.source}
+                      reviewedBy={replay.reviewedBy}
+                      label={filmSourceLabel(replay.source, replay.reviewedBy, t, replay.model)}
+                      textOnly
+                      className="min-w-0 max-w-full whitespace-normal break-words [&_span]:text-xs [&_span]:text-white/90"
+                    />
+                    <p className="mt-0.5 text-white/80">
+                      {replay.filmWriteError ? t("ed2WriteFailed") : t("ed2WritingNemotron")}
+                    </p>
                   </div>
                 ) : (
                   <LlmSourceBadge
@@ -454,14 +490,17 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     className="min-w-0 max-w-full whitespace-normal break-words [&_span]:text-xs [&_span]:text-white/90"
                   />
                 )}
-                {replay.webContext?.sources?.length && !replay.writing && (replay.style || "raw") === "written" && replay.hasWritten ? (
+                {replay.webContext?.sources?.length
+                && !replay.writing
+                && (replay.style || "raw") === "written"
+                && replay.hasWritten ? (
                   <div
                     data-testid="film-web-sources"
                     className="min-w-0 max-w-full whitespace-normal break-words text-[10px] leading-snug text-violet-200/90"
                   >
                     <span>{t("filmWebSourcesTitle", { port: replay.webContext.port })}</span>{" "}
                     {replay.webContext.sources.map((s, i) => (
-                      <span key={s.url}>
+                      <span key={normalizeFilmWebSourceUrl(s.url) || s.url}>
                         {i ? " · " : ""}
                         <a
                           href={s.url}
@@ -641,12 +680,16 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                   type="button"
                   disabled
                   aria-disabled="true"
+                  aria-label={`${t("replayStart")}: ${t("replayUnavailable")}`}
                   data-testid="replay-start"
                   className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed disabled:pointer-events-none"
-                  title={t("replayPreparing")}
+                  title={t("replayUnavailable")}
                 >
                   ↺ {t("replayStart")}
                 </button>
+                <span role="status" className="min-w-0 text-[9px] leading-tight text-sky-100/90">
+                  {t("replayUnavailable")}
+                </span>
               </div>
             ) : null}
           </div>

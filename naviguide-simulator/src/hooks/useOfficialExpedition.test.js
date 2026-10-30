@@ -28,9 +28,13 @@ describe("useOfficialExpedition — position officielle", () => {
     assert.match(source, /if \(!enabled\) \{\s*frozenClientRef\.current = null;\s*return null;/);
   });
 
-  it("lit l’horloge serveur même quand le PUT officiel est refusé", () => {
-    // L'horloge part avant / avec le PUT (pas après lui) ; 29 sept. : une seule fois par tentative.
-    assert.match(source, /Promise\.all\(\[haveClock \? null : readClock\(\), putOfficial\(\)\.catch\(\(\) => null\)\]\)/);
+  it("saute le PUT si le GET fournit l’horloge, mais répare après un GET absent même si l’effet est annulé", () => {
+    assert.match(source, /const ck = haveClock \? null : await readClock\(\);[\s\S]*?const needPut = /);
+    // Horloge absente ou inutilisable → PUT de réparation, même si un PUT précédent est mémorisé
+    // (putOfficial rend alors sa réponse mémorisée) : sinon l'horloge 404 n'est jamais recréée.
+    assert.match(source, /const needPut = hasAdminSecret\(\) \|\| \(!haveClock && !isUsableOfficialClock\(ck\)\);/);
+    assert.doesNotMatch(source, /const ck = haveClock \? null : await readClock\(\);\s*if \(cancelled\) return;/);
+    assert.match(source, /const data = needPut \? await putOfficial\(\)\.catch\(\(\) => null\) : null;/);
     assert.ok(source.includes("gotClock = haveClock || isUsableOfficialClock(ck) || isUsableOfficialClock(data?.clock);"));
     assert.ok(source.includes("if (isUsableOfficialClock(ck) && !cancelled)"));
     assert.ok(source.includes("if (isUsableOfficialClock(data.clock))"));
