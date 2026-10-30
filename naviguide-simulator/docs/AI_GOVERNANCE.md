@@ -12,12 +12,12 @@ Défauts de `server/llm_budget.py:116-137`, test `server/tests/test_llm_budget.p
 
 | Palier | Identifiant | Source UI | Hôte Token Factory dans ce dépôt |
 |---|---|---|---|
-| `fast` | `nvidia/Nemotron-3_5-Lightning` | `nemotron-lightning` | `https://api.tokenfactory.nebius.com/v1` (`server/story_cascade.py:33-36`, `server/story_cascade.py:581-590`) |
-| `write` | `nvidia/Nemotron-3.5-Super-VL` | `nemotron-super-vl` | même hôte que Lightning (`server/story_cascade.py:581-590`) |
-| `deep` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | `https://api.tokenfactory.us-central1.nebius.com/v1` (`server/story_cascade.py:37-41`, `server/story_cascade.py:585-589`) |
+| `fast` | `nvidia/Nemotron-3_5-Lightning` | `nemotron-lightning` | `https://api.tokenfactory.nebius.com/v1` (`server/story_cascade.py:37-40`, `server/story_cascade.py:773-786`) |
+| `write` | `nvidia/Nemotron-3.5-Super-VL` | `nemotron-super-vl` | même hôte que Lightning (`server/story_cascade.py:37-40`, `server/story_cascade.py:773-786`) |
+| `deep` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | `https://api.tokenfactory.us-central1.nebius.com/v1` (`server/story_cascade.py:46-50`, `server/story_cascade.py:773-782`) |
 | `judge` | `nvidia/Nemotron-3-Ultra-550b-a55b` | `nemotron-ultra` | même hôte que `deep` |
 
-Le test `server/tests/test_story_cascade.py:1020-1032` exige `us-central1` pour `deep`, et l’interdit pour `fast` et pour `write`.
+Le test `server/tests/test_story_cascade.py:1834-1835` interdit `us-central1` pour Nano ; `server/tests/test_tf_model_guard.py:116-124` vérifie que l’absence d’Ultra sur l’hôte US fait chercher le substitut sur l’hôte UE.
 
 `eu-north1` n’apparaît pas dans le dépôt. `devpost/nebius_futur.md` n’y est pas. Placer Lightning en `eu-north1`, ou Super en `us-central1`, contredit ou dépasse ce checkout : **à vérifier**.
 
@@ -27,9 +27,9 @@ Autres identifiants, hors de ces quatre paliers :
 
 | Rôle | Identifiant | Preuve |
 |---|---|---|
-| NIM | `openai/gpt-oss-20b` | `server/story_cascade.py:42-45` |
-| OpenRouter | `openai/gpt-4o-mini`, ou `OPENROUTER_MODEL` | `server/story_cascade.py:46` |
-| Claude | `claude-haiku-4-5` | `server/story_cascade.py:47` |
+| NIM | `openai/gpt-oss-20b` | `server/story_cascade.py:51-56` |
+| OpenRouter | `openai/gpt-4o-mini`, ou `OPENROUTER_MODEL` | `server/story_cascade.py:51-56` |
+| Claude | `claude-haiku-4-5` | `server/story_cascade.py:51-56` |
 | Embeddings | `Qwen/Qwen3-Embedding-8B`, seulement si `NAVIGUIDE_EMBEDDINGS=1` | `server/logbook_chat.py:100`, `server/logbook_chat.py:849-850` |
 | Route VL | `nvidia/Nemotron-3.5-Super-VL` | `server/vl_route.py:49` |
 
@@ -37,21 +37,21 @@ Le README racine parle d’un hôte « Nano / Lightning / Super » (`../../READM
 
 ## Cascade
 
-Ordre exécuté, défaut `tokenfactory`, `nim`, `openrouter`, `claude` (`server/story_cascade.py:51`, `server/story_cascade.py:151-170`). Test : `server/tests/test_story_cascade.py:50-60` (pas de Tavily dans ce module).
+Ordre exécuté, défaut `tokenfactory`, `nim`, `openrouter`, `claude` (`server/story_cascade.py:59`, `server/story_cascade.py:191-205`). Test : `server/tests/test_story_cascade.py:60-70` (pas de Tavily dans ce module).
 
-1. Cache SQLite 24 h (`server/story_cascade.py:52-53`, `server/story_cascade.py:1022-1025`).
-2. Si le budget ou le mode refuse : `source=budget`, aucun réseau (`server/story_cascade.py:1026-1028`).
-3. Token Factory. Sur le palier `fast` seulement, un vide, un HTTP ≥ 500 ou un timeout déclenche un second essai avec le modèle Super (`write`) ; un 4xx ne le déclenche pas (`server/story_cascade.py:803-811`, `server/story_cascade.py:1035-1050`). Test : `server/tests/test_story_cascade.py:915-950`.
-4. Si ce saut échoue encore : NIM, puis OpenRouter, puis Claude (`server/story_cascade.py:1052-1067`). Sur `nano`, un échec Token Factory déclenche d’abord un second essai sur Token Factory avec Lightning. Après un timeout Token Factory, la cascade continue vers les fournisseurs non-Nemotron par défaut ; `NAVIGUIDE_LLM_TIMEOUT_FALLBACK=0` l’arrête (second essai nano : `server/story_cascade.py:1411-1420` ; défaut ON : `server/story_cascade.py:1085-1087` ; contrôle après timeout : `server/story_cascade.py:1458`). Test vide Lightning puis Super vide → NIM : `server/tests/test_story_cascade.py:984`.
-5. Si un texte de repli est fourni : `source=rules` (`server/story_cascade.py:1103-1105`).
+1. Cache SQLite 24 h (`server/story_cascade.py:64`, `server/story_cascade.py:1332-1364`).
+2. Si le budget ou le mode refuse : `source=budget`, aucun appel fournisseur (`server/story_cascade.py:1384-1386`).
+3. Token Factory. Sur le palier `fast` seulement, un vide, un HTTP ≥ 500 ou un timeout déclenche un second essai avec le modèle Super (`write`) ; un 4xx ne le déclenche pas (`server/story_cascade.py:1090-1105`, `server/story_cascade.py:1425-1432`). Test : `server/tests/test_story_cascade.py:947-983`.
+4. Si ce saut échoue encore : NIM, puis OpenRouter, puis Claude (`server/story_cascade.py:59`, `server/story_cascade.py:1435-1450`). Sur `nano`, un échec Token Factory déclenche d’abord un second essai sur Token Factory avec Lightning. Après un timeout Token Factory, la cascade continue vers les fournisseurs non-Nemotron par défaut ; `NAVIGUIDE_LLM_TIMEOUT_FALLBACK=0` l’arrête (second essai nano : `server/story_cascade.py:1411-1424` ; défaut ON : `server/story_cascade.py:1085-1087` ; contrôle après timeout : `server/story_cascade.py:1458-1462`). Test vide Lightning puis Super vide → NIM : `server/tests/test_story_cascade.py:1016-1045`.
+5. Si un texte de repli est fourni : `source=rules` (`server/story_cascade.py:1513-1516`).
 
 Deux docstrings sont en retard sur ce code : la ligne 1 et la ligne 1121 de `server/story_cascade.py` n’y mentionnent pas NIM. L’ordre qui tourne est `DEFAULT_PROVIDERS` et le test cité.
 
-`filter_numbers` s’applique au texte de chaque fournisseur et au repli (`server/story_cascade.py:1074`, `server/story_cascade.py:1104`).
+`filter_numbers` s’applique au texte de chaque fournisseur et au repli (`server/story_cascade.py:424-430`, `server/story_cascade.py:1479-1481`, `server/story_cascade.py:1513-1515`).
 
 ## Filtre des chiffres
 
-`filter_numbers` retire chaque phrase dont un nombre n’est pas déjà dans les faits (`server/story_cascade.py:229-247`). Tests : `server/tests/test_story_cascade.py:345`, `server/tests/test_story_cascade.py:364`, `server/tests/test_logbook_chat.py:245`, `server/tests/test_escale_watch.py:212`.
+`filter_numbers` retire chaque phrase dont un nombre n’est pas déjà dans les faits (`server/story_cascade.py:368-388`). Tests : `server/tests/test_story_cascade.py:345`, `server/tests/test_story_cascade.py:364`, `server/tests/test_logbook_chat.py:245`, `server/tests/test_escale_watch.py:212`.
 
 Le filtre ne juge pas une phrase sans chiffre. Un fait non numérique inventé n’est pas retiré par cette fonction.
 
@@ -89,7 +89,7 @@ Constructeurs lus :
 
 - Journal : la question tapée et un JSON de faits d’expédition (escales, ZEE, AMP, météo, science, veilles, polaire, ordres, revue, câbles). Le constructeur n’ajoute pas de compte, d’e-mail ni de nom de visiteur (`server/logbook_chat.py:1005-1029`).
 - Veille : nom de port et date dans un modèle fixe (`server/escale_watch.py:42-46`, `server/escale_watch.py:132-136`).
-- La cascade envoie les chaînes `system` et `user` qu’on lui donne (`server/story_cascade.py:788-792`). Elle n’appelle pas Tavily (`server/story_cascade.py:1125`, test `server/tests/test_story_cascade.py:50-58`).
+- La cascade envoie les chaînes `system` et `user` qu’on lui donne (`server/story_cascade.py:1519-1535`). Elle n’appelle pas Tavily (`server/story_cascade.py:1531-1535`, test `server/tests/test_story_cascade.py:60-70`).
 
 La question du journal part telle qu’elle est tapée. Un inventaire de chaque appelant de `cascade_text` n’est pas dans cette fiche : **à vérifier**.
 
@@ -105,9 +105,9 @@ Article 4 (culture de l’IA) : pas de module ni de registre de formation dans c
 
 ## Limites
 
-- Le filtre retire des phrases à chiffres inconnus ; il ne vérifie pas le reste (`server/story_cascade.py:229-247`).
-- Après échec des fournisseurs, le texte local peut s’afficher avec `source=rules` (`server/story_cascade.py:1103-1105`). Ce n’est pas un texte de modèle (`server/ai_transparency.py:18`).
-- Thinking est coupé sur l’appel Token Factory (`server/story_cascade.py:795-798`).
+- Le filtre retire des phrases à chiffres inconnus ; il ne vérifie pas le reste (`server/story_cascade.py:368-388`).
+- Après échec des fournisseurs, le texte local peut s’afficher avec `source=rules` (`server/story_cascade.py:1513-1516`). Ce n’est pas un texte de modèle (`server/ai_transparency.py:18`).
+- Thinking est coupé sur l’appel Token Factory (`server/story_cascade.py:1046-1058`).
 - Ce n’est pas une carte marine (`../../README.md:10`).
 - Les plafonds et les identifiants se changent par l’environnement (`server/llm_budget.py:174-181`).
 - Sans `NAVIGUIDE_LLM_DAILY_USD`, il n’y a pas de coupure en dollars (`server/llm_budget.py:227-228`).
