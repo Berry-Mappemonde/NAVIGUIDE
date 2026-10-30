@@ -13,7 +13,7 @@ for (const [lang, label] of [["fr", "Veille Tavily"], ["en", "Tavily watch"]]) {
     const initial = await api.json();
     const before = initial.enabled;
     const adminSecret = (process.env.NAVIGUIDE_ADMIN_SECRET || "").trim();
-    if (adminSecret) await page.addInitScript((secret) => localStorage.setItem("ng.sim.adminSecret", secret), adminSecret);
+    if (adminSecret) await page.setExtraHTTPHeaders({ "X-Naviguide-Admin": adminSecret });
     try {
       await page.addInitScript((l) => localStorage.setItem("naviguide_lang_v4", l), lang);
       await page.goto("/");
