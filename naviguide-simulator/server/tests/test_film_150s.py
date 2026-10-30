@@ -7,7 +7,7 @@ françaises. ») : la barre disait 26 juin pour une phrase du 4 juin, et la
 relecture refusait le rédigé (« date »).
 """
 import film_script as fs
-from film_script import _anchor_dates_regress, _locate_spoken, chapter_anchors
+from film_script import _anchor_dates_regress, _locate_spoken, chapter_anchors, chapter_metrics
 
 DAY = 86_400_000
 T0 = 1_780_531_200_000  # 2026-06-04T00:00:00Z
@@ -27,6 +27,37 @@ def test_prefix_fallback_still_finds_a_trimmed_sentence():
     text = "Le 4 juin, départ vers Fort-de-France : 5 153 milles. Arrivée le 14 juillet."
     spoken = "Le 4 juin, départ vers Fort-de-France : 5 153 milles, une quarantaine de jours de mer."
     assert _locate_spoken(text, spoken) == 0
+
+
+def test_suffix_fallback_does_not_anchor_to_another_sentence():
+    suffix = "la phrase reste en mémoire."
+    text = f"Une phrase différente contient {suffix} Et la suite continue."
+    spoken = "Le texte coupé décrit un autre départ, puis " + suffix
+    assert _locate_spoken(text, spoken) < 0
+
+
+def test_review_metrics_match_leg_in_either_direction():
+    review = {"legs": [{"from": "Saint-Pierre", "to": "Halifax", "legNm": 489,
+                        "daysAtSea": 3, "plannedKnots": 8}]}
+    for frm, to in (("Halifax", "Saint-Pierre"), ("Saint-Pierre", "Halifax")):
+        window = {"fromName": frm, "toName": to,
+                  "from": {"name": frm, "nm": 100}, "to": {"name": to, "nm": 589},
+                  "mode": "sail", "tA": T0, "tB": T0 + 3 * DAY}
+        assert chapter_metrics(window, review)["legNm"] == 489
+        assert fs._side_hop_metrics(window, review)["legNm"] == 489
+
+
+def test_via_marker_does_not_split_saint_pierre_hop():
+    t0, t1, t2 = 1_800_000_000_000, 1_800_100_000_000, 1_800_200_000_000
+    windows = fs._windows([
+        {"name": "Halifax", "iso": fs._iso(t0), "nm": 8_643.0, "filmNm": 8_643.0},
+        {"name": "Saint-Pierre", "iso": fs._iso(t1), "nm": 9_015.0, "filmNm": 9_132.54, "kind": "via"},
+        {"name": "Saint-Pierre", "iso": fs._iso(t2), "nm": 9_132.0, "filmNm": 9_132.0},
+    ], t0, t2)
+    assert len(windows) == 1
+    assert windows[0]["fromName"] == "Halifax"
+    assert windows[0]["toName"] == "Saint-Pierre"
+    assert fs._window_leg_nm(windows[0]) == 489
 
 
 def test_cut_sentence_does_not_steal_a_kept_anchor():
@@ -66,6 +97,11 @@ def test_glued_french_share_separates_copy_from_translation():
     assert fs._glued_french_share(src_w, EN_LEG8) < 0.6
 
 
+def test_glued_french_share_uses_accent_folded_whole_words():
+    assert fs._glued_french_share({"mer"}, "summer") == 0
+    assert fs._glued_french_share({"équipage"}, "equipage à bord") == 1
+
+
 def test_glued_french_is_retried_never_served_as_english():
     import asyncio
     raw_ch = {"id": "leg-8", "text": FR_LEG8, "anchors": []}
@@ -101,9 +137,9 @@ def test_frozen_store_holds_reviewed_150s_film_fr_and_en():
             json.load(tf.extractfile(m)) for m in tf.getmembers()
             if m.isfile() and m.name.endswith(".json")
         ]
-    films = [d for d in films if d.get("family") == "film"
-             and str(d.get("key", "")).endswith(":" + __import__("official_store").FILM_SCRIPT_REV)]
-    assert films
+    film_key = "c4a0d2dc06cea61b:2026-05-15T08:00:00Z:2026-10-29:" + __import__("official_store").FILM_SCRIPT_REV
+    films = [d for d in films if d.get("family") == "film" and d.get("key") == film_key]
+    assert len(films) == 1
     written = films[0]["payload"].get("written") or {}
     for lg in ("fr", "en"):
         plan = (written.get(lg) or {}).get("150") or {}

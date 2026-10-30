@@ -630,11 +630,10 @@ def _coast_is_arrival(
         return False
     if dest_name and (same_stop(place, dest_name) or same_stop(place, short_name(dest_name))):
         return True
-    try:
-        harbor = _arrival_harbor(items, dest, lang) if dest else ""
-    except Exception:
-        harbor = ""
-    return bool(harbor) and place.casefold() in harbor.casefold()
+    harbor = _arrival_harbor(items, dest, lang) if dest else ""
+    folded_place, folded_harbor = _fold_stop(place), _fold_stop(harbor)
+    harbor_name = re.sub(r"^(?:(?:la|le|l')\s+)?(?:marina|port)\s+", "", folded_harbor)
+    return bool(harbor_name) and folded_place == harbor_name
 
 
 def _is_departure_port_echo(change: dict, from_name: str, dest_name: str) -> bool:
@@ -4126,7 +4125,11 @@ def review_leg_for_chapter(review: dict | None, from_name: str, to_name: str) ->
         return None
     legs = _review_legs(review)
     for leg in legs:
-        if same_stop(leg.get("from") or "", frm) and same_stop(leg.get("to") or "", to):
+        if (
+            same_stop(leg.get("from") or "", frm) and same_stop(leg.get("to") or "", to)
+        ) or (
+            same_stop(leg.get("from") or "", to) and same_stop(leg.get("to") or "", frm)
+        ):
             return leg
     # Vol : le bateau repart de Cayenne, la revue date encore Saint-Pierre → dest.
     if _air_stop_key(frm) == "cayenne":
@@ -5430,6 +5433,9 @@ def _windows(stops: list[dict], t0: int, t_end: int, clock: dict | None = None) 
         list(stops or [{"name": "Saint-Maur", "iso": _iso(t0), "filmNm": 0}]),
         clock,
     )
+    # A « via » point is route geometry, not an arrival. Keeping it as a
+    # chapter boundary splits one Halifax ↔ Saint-Pierre hop into fragments.
+    pts = [point for point in pts if str(point.get("kind") or "").casefold() != "via"]
     pts.sort(key=lambda s: (
         _ms(s.get("iso")) if _ms(s.get("iso")) is not None else 10**15,
         float(s.get("filmNm") if s.get("filmNm") is not None else s.get("nm") or 0),
@@ -8134,7 +8140,7 @@ def _prefix_hit_is_same_sentence(text: str, idx: int, spoken: str) -> bool:
     if spoken[:20] and sent.startswith(spoken[:20]):
         return True
     tail = spoken.rstrip(" .!?;:\u2026")[-10:]
-    return bool(tail) and tail in sent
+    return bool(tail) and sent.rstrip().endswith(tail)
 
 
 def _locate_spoken(text: str, spoken: str, start: int = 0) -> int:
@@ -8146,7 +8152,10 @@ def _locate_spoken(text: str, spoken: str, start: int = 0) -> int:
             hit = text.find(needle[:12], hit + 1)
         idx = hit
     if idx < 0 and len(spoken) > 24:
-        idx = text.find(spoken[-24:], start)
+        hit = text.find(spoken[-24:], start)
+        while hit >= 0 and not _prefix_hit_is_same_sentence(text, hit, spoken):
+            hit = text.find(spoken[-24:], hit + 1)
+        idx = hit
     return idx
 
 
@@ -12393,14 +12402,23 @@ def en_translation_guard(text: str, fr_src: str) -> str:
 
 
 def _glued_french_share(src_words: set[str], text: str) -> float:
-    """Part des mots français (≥ 3 lettres) retrouvés dans la sortie, espaces ôtées.
+    """Part des mots français (≥ 3 lettres) retrouvés comme mots entiers.
 
     Une vraie traduction anglaise en garde ≤ 0,51 (noms propres, « marina »…) sur les
     films du 29/10 ; un français recopié, même soudé, en garde 1,0."""
     if not src_words:
         return 0.0
-    blob = re.sub(r"\s+", "", (text or "").casefold())
-    return sum(1 for w in src_words if w in blob) / len(src_words)
+    folded_src = {_fold_stop(word) for word in src_words if len(_fold_stop(word)) >= 3}
+    if not folded_src:
+        return 0.0
+    folded_text = _fold_stop(text or "")
+    whole_words = set(re.findall(r"[^\W\d_]{3,}", folded_text, flags=re.UNICODE))
+    compact_text = re.sub(r"[^\w]", "", folded_text, flags=re.UNICODE)
+    matched = sum(
+        1 for word in folded_src
+        if word in whole_words or (len(word) > 4 and word in compact_text)
+    )
+    return matched / len(folded_src)
 
 
 async def translate_written_plan(

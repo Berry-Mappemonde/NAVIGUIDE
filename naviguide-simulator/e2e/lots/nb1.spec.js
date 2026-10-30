@@ -61,7 +61,7 @@ test("source en texte, aucun logo tiers", async ({ page }) => {
       type: "sans API",
       description: "GET /voyage/official absent — libellé du film rédigé sauté ; absence de logo gardée",
     });
-    return;
+    test.skip(true, "GET /voyage/official indisponible : film rédigé non vérifiable sans API");
   }
 
   const filmRes = await page.request.get("/voyage/official/film?lang=fr&style=written&seconds=150", { timeout: 12_000 }).catch(() => null);
@@ -74,7 +74,7 @@ test("source en texte, aucun logo tiers", async ({ page }) => {
       type: "film rédigé absent",
       description: "film rédigé non servi — libellé sauté ; absence de logo gardée",
     });
-    return;
+    test.skip(true, "Le stock offline ne sert pas de film rédigé");
   }
 
   // Le libellé lu plus bas doit être celui du film sondé (seconds=150) : on
@@ -89,7 +89,7 @@ test("source en texte, aucun logo tiers", async ({ page }) => {
       type: "film rédigé absent",
       description: "pilule 2:30 absente — libellé sauté ; absence de logo gardée",
     });
-    return;
+    test.skip(true, "La pilule 150 s n'est pas disponible dans cette configuration");
   }
   if ((await pill150.getAttribute("aria-pressed")) !== "true") await pill150.click();
   await expect(pill150).toHaveAttribute("aria-pressed", "true");
@@ -101,7 +101,7 @@ test("source en texte, aucun logo tiers", async ({ page }) => {
       type: "film rédigé absent",
       description: "pilule Rédigé inactive — libellé sauté ; absence de logo gardée",
     });
-    return;
+    test.skip(true, "Le film rédigé est indisponible dans cette configuration");
   }
 
   await written.click();
