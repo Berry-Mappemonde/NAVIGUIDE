@@ -1378,6 +1378,9 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(bar, /filmStoryWrittenRetry/);
     assert.match(bar, /if \(!replay\.active\) replay\.onStyle\?\.\("written"\)/);
     assert.match(hook, /setWrittenUnavailable\("unavailable"\)/);
+    assert.equal(fr.filmStoryWrittenUnavailable, "Le film rédigé est momentanément indisponible.");
+    assert.equal(en.filmStoryWrittenUnavailable, "The edited film is temporarily unavailable.");
+    assert.match(bar, /<span role="status">\{t\("filmStoryWrittenUnavailable"\)\}<\/span>/);
   });
 });
 
