@@ -677,4 +677,8 @@ export default {
   // NB2
   storySourceNano: "Nemotron 3 Nano · Token Factory",
   filmModels: "Modèles",
+
+  // ── Filet d'erreur des panneaux (#101) ─────────────────────────────────────
+  panelError: "Ce panneau a rencontré une erreur.",
+  panelReload: "Recharger le panneau",
 };
