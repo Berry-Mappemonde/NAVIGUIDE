@@ -1452,6 +1452,11 @@ async def _cascade_once(
     failures: list[dict[str, str]] = []
     tf_timed_out = False
     for name, step in hops:
+        # A local replay without Token Factory credentials must not even enter
+        # the TF hop. This also keeps the default provider list usable offline.
+        if name == "tokenfactory" and not nebius_key():
+            failures.append({"provider": name, "reason": "skipped: API key unavailable"})
+            continue
         if name == "tokenfactory" and llm_budget.tokenfactory_quota_paused():
             failures.append({"provider": name, "reason": "skipped: quota exhausted"})
             continue
