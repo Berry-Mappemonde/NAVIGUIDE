@@ -173,7 +173,10 @@ export function useOfficialExpedition({
         const haveClock = Boolean(serverClockRef.current);
         const ck = haveClock ? null : await readClock();
         if (cancelled) return;
-        const needPut = hasAdminSecret() || (!haveClock && !isUsableOfficialClock(ck));
+        // Un PUT anonyme déclenche la réparation serveur bornée, même si le GET
+        // a déjà fourni l'horloge. putOfficial déduplique sur l'empreinte de route.
+        const routeFingerprint = `${points.length}|${points[0]?.lat}|${points[points.length - 1]?.lat}|${expeditionId || ""}`;
+        const needPut = hasAdminSecret() || putRef.current !== routeFingerprint || (!haveClock && !isUsableOfficialClock(ck));
         const data = needPut ? await putOfficial().catch(() => null) : null;
         if (cancelled) return;
         gotClock = haveClock || isUsableOfficialClock(ck) || isUsableOfficialClock(data?.clock);
