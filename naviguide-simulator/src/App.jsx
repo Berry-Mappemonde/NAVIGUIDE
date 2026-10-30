@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Redo2, Undo2, X } from "lucide-react";
-import { Sidebar } from "./components/Sidebar.jsx";
 import { PanelBoundary } from "./components/RootErrorBoundary.jsx";
 import { CarnetDeBord, mapPageHref, useCarnetPage } from "./components/CarnetDeBord.jsx";
-import { ToolsSidebar } from "./components/ToolsSidebar.jsx";
 import { LayerFichePopup } from "./components/LayerFichePopup.jsx";
 import { EscalePopupHost } from "./components/EscalePopup.jsx";
 import { shouldCloseEscaleSheet } from "./components/escalePopup.js";
@@ -12,8 +10,6 @@ import { readNotForNavAccepted, writeNotForNavAccepted } from "./utils/notForNav
 import { SatelliteMetPanel } from "./components/SatelliteMetPanel.jsx";
 import { useLang } from "./i18n/LangContext.jsx";
 import { ITINERARY_POINTS } from "./constants/itineraryPoints";
-import { SimulationFilmBar } from "./components/SimulationFilmBar.jsx";
-import { DemoWalkthrough } from "./components/DemoWalkthrough.jsx";
 import { TOUR_EDITED_WAIT_MS, tourEditedStep, wantsTourFromUrl } from "./components/demoWalkthrough.js";
 import { RecomputeDialog } from "./components/RecomputeDialog.jsx";
 import { useRouteWindProfile } from "./hooks/useRouteWindProfile.js";
@@ -104,9 +100,13 @@ import { DRAW_MAX_POINTS, canFinishDrawnRoute, useRouteDrawing } from "./hooks/u
 import { parseRouteFile } from "./utils/routeImport.js";
 import { viewExportMode } from "./utils/routeExport.js";
 import { attachClockIso, legendNowAndLive, officialNowMs, usePlanReview } from "./hooks/usePlanReview.js";
-import { MapScene } from "./map/MapScene.jsx";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
+const Sidebar = lazy(() => import("./components/Sidebar.jsx").then((module) => ({ default: module.Sidebar })));
+const ToolsSidebar = lazy(() => import("./components/ToolsSidebar.jsx").then((module) => ({ default: module.ToolsSidebar })));
+const SimulationFilmBar = lazy(() => import("./components/SimulationFilmBar.jsx").then((module) => ({ default: module.SimulationFilmBar })));
+const MapScene = lazy(() => import("./map/MapScene.jsx").then((module) => ({ default: module.MapScene })));
+const DemoWalkthrough = lazy(() => import("./components/DemoWalkthrough.jsx").then((module) => ({ default: module.DemoWalkthrough })));
 const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL;
 const PLAN_CACHE_TTL = 24 * 60 * 60 * 1000;
 const NOOP = () => {};
@@ -2027,7 +2027,7 @@ export default function App() {
       style={{ height: "100vh", width: "100vw", position: "relative", ...rootInsetVars }}
       className={`${isLightMode ? "light-mode" : ""}${filmFullscreen ? " film-fullscreen" : ""}`.trim()}
     >
-      <MapScene
+      <Suspense fallback={null}><MapScene
         scene={mapScene}
         gateRef={gateRef}
         onReady={handleSceneReady}
@@ -2044,7 +2044,7 @@ export default function App() {
         onWaypointHover={setHoveredPoint}
         onDrawingWaypointClick={handleDrawingWaypointClick}
         onWaypointClick={openEscaleFromUi}
-      />
+      /></Suspense>
 
       <NotForNavModal
         open={notForNavOpen}
@@ -2061,7 +2061,7 @@ export default function App() {
       />
       <PanelBoundary>
       <PanelCrashProbe panel="sidebar" />
-      <Sidebar
+      <Suspense fallback={null}><Sidebar
         plan={expeditionPlan}
         open={sidebarOpen}
         onToggle={toggleSidebar}
@@ -2132,11 +2132,11 @@ export default function App() {
         escaleLoading={Boolean(escaleSheet?.loading)}
         escaleError={escaleSheet?.error}
         onEscaleClose={closeEscaleSheet}
-      />
+      /></Suspense>
       </PanelBoundary>
 
       <PanelBoundary>
-      <ToolsSidebar
+      <Suspense fallback={null}><ToolsSidebar
         segments={statsSegs}
         points={statsPoints}
         open={toolsOpen}
@@ -2182,7 +2182,7 @@ export default function App() {
         exportPoints={drawingMode ? drawnPoints : legendMarks}
         tracerLayout={!isSuivre}
         ampNearby={iciPack.dossier?.amp || []}
-      />
+      /></Suspense>
       </PanelBoundary>
 
       {!sceneReady && !drawingMode && (
@@ -2281,7 +2281,7 @@ export default function App() {
       )}
 
       <PanelBoundary>
-      <SimulationFilmBar
+      <Suspense fallback={null}><SimulationFilmBar
         ref={filmBarRef}
         barRef={filmBarRef}
         fromName={hudLeg?.fromStop}
@@ -2374,7 +2374,7 @@ export default function App() {
           spread: clockSample.spread,
         } : null}
         disclaimer={t("creditsLine")}
-      />
+      /></Suspense>
       </PanelBoundary>
 
       <RecomputeDialog
@@ -2394,7 +2394,7 @@ export default function App() {
       />
       <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
 
-      <DemoWalkthrough
+      <Suspense fallback={null}><DemoWalkthrough
         replayReady={Boolean(replayControls?.canStart)}
         replayActive={Boolean(replay.active)}
         customRoute={routeSource === "custom"}
@@ -2409,7 +2409,7 @@ export default function App() {
         editedFellBack={demoEditedFellBack}
         onPlayEdited={startDemoEditedReplay}
         onClose={closeDemo}
-      />
+      /></Suspense>
 
       {selectedSatellite && (
         <div data-testid="satellite-popup" className="naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2100] w-[360px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl bottom-52">
