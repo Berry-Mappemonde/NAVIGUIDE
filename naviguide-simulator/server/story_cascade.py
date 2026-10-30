@@ -1123,19 +1123,14 @@ async def _call_tokenfactory(
                 param = str(errors.get("param") or "").lower()
                 rejected = code in {"model_not_found", "model_not_supported", "invalid_model"} and (not param or param == "model")
                 body = " ".join((str(errors.get("message") or ""), code, param))
-        except ValueError:
+            if isinstance(payload, dict):
+                quota_exhausted = quota_exhausted or any(
+                    str(payload.get(key) or "").lower() == "insufficient_quota"
+                    or str(payload.get(key) or "").lower().startswith("credit_balance_")
+                    for key in ("type", "code")
+                )
+        except (ValueError, UnicodeDecodeError):
             pass
-        if not quota_exhausted:
-            try:
-                raw_error = r.json()
-                if isinstance(raw_error, dict):
-                    quota_exhausted = any(
-                        str(raw_error.get(key) or "").lower() == "insufficient_quota"
-                        or str(raw_error.get(key) or "").lower().startswith("credit_balance_")
-                        for key in ("type", "code")
-                    )
-            except ValueError:
-                pass
         if quota_exhausted:
             llm_budget.pause_tokenfactory_for_quota()
         explicit = re.search(r"(?:model|model_id|model id).{0,50}(?:not found|does not exist|unknown|unsupported|invalid)|(?:not found|does not exist|unknown|unsupported|invalid).{0,50}(?:model|model_id|model id)", body, re.I)
