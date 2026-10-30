@@ -2285,13 +2285,15 @@ export function useReplay({
       setFilmStyle("raw");
       return;
     }
-    if (active || filmWritingRef.current) return;
+    if (filmWritingRef.current) return;
+    if (active && !hasWritten) return;
+    if (active) stop();
     filmWritingRef.current = true;
     const path = filmRequestPath(voyageId);
-    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
+    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=written&t0=${encodeURIComponent(t0)}`;
     setFilmWriting(true);
     setWrittenUnavailable(null);
-    fetch(`${API}${path}?${q}`, { method: "POST" })
+    fetch(`${API}${path}?${q}`, hasWritten ? undefined : { method: "POST" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) {
@@ -2316,7 +2318,7 @@ export function useReplay({
         filmWritingRef.current = false;
         setFilmWriting(false);
       });
-  }, [active, lang, targetSeconds, t0, voyageId]);
+  }, [active, hasWritten, lang, stop, targetSeconds, t0, voyageId]);
 
   return {
     active,

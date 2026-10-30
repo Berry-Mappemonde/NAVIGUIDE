@@ -323,6 +323,7 @@ _film_write_hourly = rate_limited("film-write-hour", 10**9, 3600.0, global_limit
 async def post_official_film_write(
     lang: str = Query("fr"),
     seconds: int = Query(150, ge=0, le=300),
+    style: str = Query("written"),
     t0: str | None = Query(None),
 ):
     """Clic Rédigé : une chaîne Super / Ultra / Lightning, jamais au GET.

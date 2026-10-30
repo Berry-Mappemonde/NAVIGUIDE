@@ -1445,7 +1445,7 @@ export default function App() {
   // Un clic : choisir Rédigé (sans appel Nemotron, le rédigé existe déjà : hasWritten),
   // puis lancer le film dès que le plan rédigé est chargé (effet ci-dessous).
   const startDemoEditedReplay = useCallback(() => {
-    if (replay.active || !replayControls) return;
+    if (!replayControls) return;
     setDemoEditedFellBack(false);
     if (!replay.hasWritten) {
       // Repli annoncé dans la visite : le Brut joue.

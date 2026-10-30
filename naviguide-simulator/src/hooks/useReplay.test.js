@@ -1326,13 +1326,15 @@ describe("Pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(hook, /style=\$\{style\}/);
     assert.match(hook, /style=written/);
     assert.match(hook, /style=written/);
-    assert.match(hook, /fetch\(`\$\{API\}\$\{path\}\?\$\{q\}`, \{ method: "POST" \}\)/);
     const chooseAt = hook.indexOf("const chooseFilmStyle");
     const chooseBlock = hook.slice(chooseAt, hook.indexOf("return {\n    active", chooseAt));
-    assert.match(chooseBlock, /if \(active \|\| filmWritingRef\.current\) return/);
+    assert.match(chooseBlock, /if \(filmWritingRef\.current\) return/);
+    assert.match(chooseBlock, /if \(active && !hasWritten\) return/);
+    assert.match(chooseBlock, /if \(active\) stop\(\)/);
+    assert.match(chooseBlock, /fetch\(`\$\{API\}\$\{path\}\?\$\{q\}`, hasWritten \? undefined : \{ method: "POST" \}\)/);
     assert.match(chooseBlock, /filmWritingRef\.current = true/);
     assert.match(chooseBlock, /filmWritingRef\.current = false/);
-    assert.doesNotMatch(hook.slice(hook.indexOf("const chooseFilmStyle"), hook.indexOf("return {\n    active")), /if \(hasWritten\)\s*\{/);
+    assert.match(chooseBlock, /style=written/);
     assert.match(hook, /chooseFilmStyle/);
     assert.match(hook, /resolveServedFilm/);
     assert.match(hook, /probeWritten/);
