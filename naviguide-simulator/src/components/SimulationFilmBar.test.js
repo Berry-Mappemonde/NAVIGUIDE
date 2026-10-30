@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import en from "../i18n/en.js";
+import fr from "../i18n/fr.js";
 import {
   clockRegimeText,
   clockWeatherTooltip,
@@ -50,6 +52,15 @@ describe("barre film — vitesse cyclique", () => {
     assert.equal((bar.match(/data-testid="film-speed"/g) || []).length, 1);
     assert.doesNotMatch(bar, /PROFILES\.map/);
     assert.match(bar, /onClick=\{\(\) => onProfile\(nextFilmSpeed\(profile\)\)\}/);
+  });
+});
+
+describe("barre film — film officiel indisponible", () => {
+  it("explique l’état vide dans la langue active au lieu d’annoncer une préparation", () => {
+    const unavailableBranch = bar.slice(bar.indexOf("replay?.unavailable"));
+    assert.match(unavailableBranch, /title=\{t\("replayUnavailable"\)\}/);
+    assert.notEqual(en.replayUnavailable, en.replayPreparing);
+    assert.notEqual(fr.replayUnavailable, fr.replayPreparing);
   });
 });
 
