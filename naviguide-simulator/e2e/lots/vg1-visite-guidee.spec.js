@@ -396,10 +396,14 @@ test("R44 — étape 7 : pulse appliqué quand le bouton Tracer apparaît après
     el.setAttribute("data-testid", "view-tracer-later");
     window.__r44Restore = () => el.setAttribute("data-testid", "view-tracer");
   });
-  await page.getByTestId("demo-walkthrough-next").click();
-  await expect(panel(page)).toHaveAttribute("data-step", "trace");
-  await page.waitForTimeout(150);
-  await page.evaluate(() => window.__r44Restore());
+  try {
+    await page.getByTestId("demo-walkthrough-next").click();
+    await expect(panel(page)).toHaveAttribute("data-step", "trace");
+    await page.waitForTimeout(150);
+  } finally {
+    // Rend toujours la cible, même si une étape a échoué (page partagée par les assertions suivantes).
+    await page.evaluate(() => window.__r44Restore?.()).catch(() => {});
+  }
   const traceBtn = page.getByTestId("view-tracer").first();
   await expect(traceBtn).toHaveClass(/naviguide-tour-pulse/, { timeout: 5000 });
 });
