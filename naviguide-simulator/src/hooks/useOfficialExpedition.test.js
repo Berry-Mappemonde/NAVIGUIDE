@@ -28,9 +28,9 @@ describe("useOfficialExpedition — position officielle", () => {
     assert.match(source, /if \(!enabled\) \{\s*frozenClientRef\.current = null;\s*return null;/);
   });
 
-  it("lit l’horloge serveur même quand le PUT officiel est refusé", () => {
-    // L'horloge part avant / avec le PUT (pas après lui) ; 29 sept. : une seule fois par tentative.
-    assert.match(source, /Promise\.all\(\[haveClock \? null : readClock\(\), putOfficial\(\)\.catch\(\(\) => null\)\]\)/);
+  it("lit l’horloge avant le PUT et ne répare qu'une horloge absente/inutilisable ou admin", () => {
+    assert.match(source, /const ck = haveClock \? null : await readClock\(\);[\s\S]*?const needPut = hasAdminSecret\(\) \|\| \(!haveClock && !isUsableOfficialClock\(ck\)\);/);
+    assert.match(source, /const data = needPut \? await putOfficial\(\)\.catch\(\(\) => null\) : null;/);
     assert.ok(source.includes("gotClock = haveClock || isUsableOfficialClock(ck) || isUsableOfficialClock(data?.clock);"));
     assert.ok(source.includes("if (isUsableOfficialClock(ck) && !cancelled)"));
     assert.ok(source.includes("if (isUsableOfficialClock(data.clock))"));
