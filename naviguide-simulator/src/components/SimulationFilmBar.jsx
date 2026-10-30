@@ -11,6 +11,7 @@ import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 import FilmReceipt from "./FilmReceipt.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
+import { isKeyboardClick, scrubKeyTarget } from "./filmScrub.js";
 import { filmDurationClass, filmDurationPill } from "../engine/playSpeeds.js";
 import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle, writtenPillEnabled } from "../hooks/useReplay.js";
 
@@ -160,10 +161,20 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
         : "";
   const onBarClick = (e) => {
     if (!showPlaybackControls) return;
+    if (isKeyboardClick(e)) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const t0 = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     onSeekNm(t0 * barTotal);
   };
+  const onBarKeyDown = (e) => {
+    if (!showPlaybackControls) return;
+    const target = scrubKeyTarget(e.key, e.shiftKey, barNm, barTotal);
+    if (target == null) return;
+    e.preventDefault();
+    onSeekNm(target);
+  };
+  const nmLocale = lang === "en" ? "en-US" : "fr-FR";
+  const scrubValueText = `${Math.round(barNm || 0).toLocaleString(nmLocale)} nm / ${Math.round(barTotal || 0).toLocaleString(nmLocale)} nm`;
   const filmSubtitle = visibleFilmSubtitle(replay?.subtitle || "", {
     fromName: replay?.fromName || fromName,
     toName: replay?.toName || toName,
@@ -289,9 +300,18 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
         <div className="relative w-full h-2 rounded-full bg-white/10 mt-1">
           <button
             type="button"
+            data-testid="film-scrub"
+            role="slider"
+            aria-label={t("filmScrub")}
+            aria-valuemin={0}
+            aria-valuemax={Math.round(barTotal || 0)}
+            aria-valuenow={Math.round(barNm || 0)}
+            aria-valuetext={scrubValueText}
+            aria-orientation="horizontal"
             onClick={onBarClick}
+            onKeyDown={onBarKeyDown}
             disabled={!showPlaybackControls}
-            className="absolute inset-0 w-full h-full rounded-full"
+            className="absolute inset-0 w-full h-full rounded-full before:absolute before:-inset-y-2 before:inset-x-0 before:content-['']"
             title={showPlaybackControls ? t("filmScrub") : undefined}
           >
             <span className="absolute inset-y-0 left-0 rounded-full bg-cyan-400/80" style={{ width: `${pct}%` }} />
