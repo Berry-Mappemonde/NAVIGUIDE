@@ -2188,6 +2188,53 @@ def test_written_all_providers_failed_returns_reason_and_raw_film(tmp_path, monk
     assert out["chapters"]  # Le film brut reste exploitable.
 
 
+def test_replay_local_without_token_factory_serves_raw_and_labels_written_failure(tmp_path, monkeypatch):
+    """FR/EN Replay uses the frozen store; unavailable writing stays a clean API state."""
+    import asyncio
+    import json
+    import main
+    import story_cascade
+
+    store = OfficialStore(DiskBackend(tmp_path / "replay-local-no-tf"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    monkeypatch.setenv("NAVIGUIDE_LLM_PROVIDERS", "nim")
+    monkeypatch.delenv("NEBIUS_API_KEY", raising=False)
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.delenv("NVIDIA_API_KEY_2", raising=False)
+    async def no_web(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(official_store, "attach_film_web_context", no_web)
+    payload = _rg11a_payload()
+    store.put("film", payload, store.family_key("film", voy, NOW))
+
+    calls = {"tf": 0}
+
+    async def forbidden_tf(*_args, **_kwargs):
+        calls["tf"] += 1
+        raise AssertionError("Token Factory path must not be called")
+
+    monkeypatch.setattr(story_cascade, "_call_tokenfactory", forbidden_tf)
+
+    for lang in ("fr", "en"):
+        raw = asyncio.run(main.get_official_film(lang=lang, seconds=150, style="raw"))
+        assert raw["status"] == READY
+        assert raw["chapters"]
+        written = asyncio.run(main.post_official_film_write(lang=lang, seconds=150))
+        assert written["status"] == READY
+        assert written["hasWritten"] is False
+        assert written["reason"] == "all-providers-failed"
+        assert written["chapters"]
+        assert "NEBIUS_API_KEY" not in json.dumps(written)
+        assert "RuntimeError" not in json.dumps(written)
+
+    assert calls["tf"] == 0
+
+
 # Visiteur public (nginx pose X-Real-IP). Sans ces en-têtes, l'appel local
 # est admin et le limiteur ne s'applique pas — comme pour POST /ici/story.
 _PUBLIC_FILM = {"X-Real-IP": "203.0.113.40", "X-Forwarded-For": "203.0.113.40"}
