@@ -178,6 +178,7 @@ def test_parse_catalog_shapes():
     assert tf_catalog.parse_catalog({"choices": []}) is None
     assert tf_catalog.parse_catalog({"data": []}) == []
     assert tf_catalog.parse_catalog(None) is None
+    assert tf_catalog.parse_catalog({"data": [{"object": "model"}]}) is None
 
 
 def test_has_model_is_case_insensitive_and_unknown_is_none():
@@ -273,10 +274,30 @@ def test_ensure_fresh_handles_cache_read_failure(monkeypatch):
     assert asyncio.run(go()) is None
 
 
-def test_model_missing_preserves_prior_substitute():
+def test_model_missing_last_event_clears_substitute():
     llm_budget.record_model_missing("write", "model-a", "fast", "model-b")
     row = llm_budget.record_model_missing("write", "model-a")
-    assert row["substitute"] == "model-b" and row["substituteTier"] == "fast"
+    assert row["substitute"] is None and row["substituteTier"] is None
+    assert row["count"] == 2
+
+
+def test_nano_missing_models_does_not_post_tokenfactory(monkeypatch):
+    seen = []
+    monkeypatch.setenv("NVIDIA_API_KEY", "nv-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_PROVIDERS", "tokenfactory,nim")
+    def handler(request):
+        seen.append((request.method, str(request.url)))
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": []})
+        if "tokenfactory" in str(request.url):
+            pytest.fail("inadmissible Token Factory model was posted")
+        return httpx.Response(200, json={"choices": [{"message": {"content": "NIM answer"}}], "model": "openai/gpt-oss-20b"})
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text("sys", "nano missing test", client, tier="nano", fallback="rules", facts={})
+    result = asyncio.run(go())
+    assert result[1].startswith("nvidia-")
+    assert not any(m == "POST" and "tokenfactory" in u for m, u in seen)
 
 
 def test_explicit_model_not_found_invalidates_catalog():
@@ -287,6 +308,33 @@ def test_explicit_model_not_found_invalidates_catalog():
                 await story_cascade._call_tokenfactory("sys", "user", "write", client)
     asyncio.run(go())
     assert tf_catalog.has_model(EU, "stale/model") is None
+
+
+@pytest.mark.parametrize("status,error", [(422, {"code": "model_not_found", "param": "model"}), (400, {"message": "unknown model_id: stale/model"})])
+def test_model_rejection_invalidates_then_next_call_rereads(monkeypatch, status, error):
+    gets = []
+    posts = 0
+    def handler(req):
+        nonlocal posts
+        if req.method == "GET":
+            gets.append(1)
+            return httpx.Response(200, json=_catalog([llm_budget.model_for("write")]))
+        posts += 1
+        if posts == 1:
+            return httpx.Response(status, json={"error": error})
+        return httpx.Response(200, json=_chat_ok("ok", "stale/model"))
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    async def call():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await story_cascade._guarded_tier("write", client)
+            try:
+                await story_cascade._call_tokenfactory("sys", "user", "write", client)
+            except RuntimeError:
+                pass
+            await story_cascade._guarded_tier("write", client)
+            await story_cascade._call_tokenfactory("sys", "user", "write", client)
+    asyncio.run(call())
+    assert len(gets) == 2
 
 
 def test_tf_call_never_without_timeout(monkeypatch):

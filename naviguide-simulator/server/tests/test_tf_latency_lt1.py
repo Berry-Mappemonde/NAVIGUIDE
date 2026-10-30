@@ -57,6 +57,23 @@ def test_R1b_queue_timeout_does_not_retry_super(monkeypatch):
         story_cascade.TokenFactoryTimeout("tokenfactory timeout after 25 s")) is True
 
 
+@pytest.mark.parametrize("failure", ["5xx", "timeout"])
+def test_R1c_selected_write_is_not_retried_as_super(monkeypatch, failure):
+    """Fast routed to write must not issue the LT1 write call a second time."""
+    monkeypatch.setenv("NAVIGUIDE_LLM_PROVIDERS", "tokenfactory")
+    async def selected_write(_tier, _client):
+        return "write"
+    monkeypatch.setattr(story_cascade, "_guarded_tier", selected_write)
+    seen = []
+    def h(req):
+        seen.append(json.loads(req.read().decode())["model"])
+        if failure == "timeout":
+            raise httpx.ReadTimeout("slow", request=req)
+        return httpx.Response(503, json={"error": "busy"})
+    _run(h, tier="fast")
+    assert seen == [llm_budget.model_for("write")]
+
+
 def _r2_handler(seen):
     def h(req):
         seen.append(str(req.url))

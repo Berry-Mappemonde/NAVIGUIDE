@@ -98,8 +98,11 @@ def parse_catalog(data: Any) -> list[str] | None:
     """Ids d'une réponse OpenAI `/models`. None si la forme est inattendue."""
     if not isinstance(data, dict) or not isinstance(data.get("data"), list):
         return None
-    ids = [str(m.get("id")).strip() for m in data["data"] if isinstance(m, dict) and m.get("id")]
-    return ids
+    source = data["data"]
+    if not source:
+        return []
+    ids = [str(m.get("id")).strip() for m in source if isinstance(m, dict) and m.get("id") and str(m.get("id")).strip()]
+    return ids or None
 
 
 async def refresh(base: str, key: str, client: httpx.AsyncClient) -> dict[str, Any]:

@@ -754,6 +754,10 @@ GUARD_SUBSTITUTES: dict[str, tuple[str, ...]] = {
 }
 
 
+class TokenFactoryModelMissing(RuntimeError):
+    """Catalogue connu : aucun palier admissible ne possède le modèle demandé."""
+
+
 async def _guarded_tier(tier: str, client: httpx.AsyncClient) -> str:
     """Palier à appeler après la garde du catalogue.
 
@@ -785,7 +789,7 @@ async def _guarded_tier(tier: str, client: httpx.AsyncClient) -> str:
             )
             return alt
     llm_budget.record_model_missing(t, model)
-    raise RuntimeError(f"tokenfactory model missing from catalog: {model} @ {base}")
+    raise TokenFactoryModelMissing(f"tokenfactory model missing from catalog: {model} @ {base}")
 
 
 class CascadeResult(tuple):
@@ -1087,7 +1091,20 @@ async def _call_tokenfactory(
     finally:
         sema.release()
     if r.status_code >= 400:
-        if r.status_code in (400, 404) and re.search(r"model.{0,40}not found|not found.{0,40}model", r.text, re.I):
+        body = r.text
+        rejected = False
+        try:
+            payload = r.json()
+            errors = payload.get("error") if isinstance(payload, dict) else None
+            if isinstance(errors, dict):
+                code = str(errors.get("code") or "").lower()
+                param = str(errors.get("param") or "").lower()
+                rejected = code in {"model_not_found", "model_not_supported", "invalid_model"} and (not param or param == "model")
+                body = " ".join((str(errors.get("message") or ""), code, param))
+        except ValueError:
+            pass
+        explicit = re.search(r"(?:model|model_id|model id).{0,50}(?:not found|does not exist|unknown|unsupported|invalid)|(?:not found|does not exist|unknown|unsupported|invalid).{0,50}(?:model|model_id|model id)", body, re.I)
+        if rejected or (r.status_code in (400, 404) and explicit):
             tf_catalog.invalidate(tf_base(t))
         raise _http_error("tokenfactory", r)
     # Latence par palier du modèle appelé (C1-a) : aller-retour HTTP réussi.
@@ -1293,6 +1310,7 @@ async def _cascade_once(
     asked_lang = "en" if _is_en(lang) else "fr"
 
     async def _tokenfactory_hop() -> tuple[str, str]:
+        call_tier = norm_tier
         try:
             call_tier = await _guarded_tier(norm_tier, http)
             if call_tier != norm_tier:
@@ -1305,6 +1323,8 @@ async def _cascade_once(
                 lang=asked_lang,
             )
         except Exception as exc:
+            if isinstance(exc, TokenFactoryModelMissing):
+                raise
             if norm_tier == "nano":
                 # File pleine (P2-2) : Lightning ré-attendrait la même file.
                 if isinstance(exc, TokenFactoryTimeout) and exc.queue:
@@ -1313,12 +1333,13 @@ async def _cascade_once(
                 # le maillon NIM du tour de providers si Lightning échoue aussi.
                 if not llm_budget.allow("fast"):
                     raise
+                fallback_tier = await _guarded_tier("fast", http)
                 log.warning("cascade nano: %s — repli Lightning", exc)
                 return await _call_tokenfactory(
-                    system, user, "fast", http, max_tokens=max_tokens, cascade_tier=norm_tier,
+                    system, user, fallback_tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
                     lang=asked_lang,
                 )
-            if norm_tier != "fast" or not _tf_fast_super_retry(exc):
+            if call_tier != "fast" or not _tf_fast_super_retry(exc):
                 raise
             llm_budget.record_retry_super()
             budget = max_tokens if max_tokens is not None else llm_budget.max_tokens_for(norm_tier)

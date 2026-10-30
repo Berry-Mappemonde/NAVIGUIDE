@@ -853,8 +853,8 @@ def record_model_missing(
         row = cur.get(t) or {"count": 0}
         row.update({
             "model": (model or "").strip(),
-            "substitute": ((substitute or "").strip() or row.get("substitute")),
-            "substituteTier": normalize_tier(substitute_tier) if substitute_tier else row.get("substituteTier"),
+            "substitute": (substitute or "").strip() or None,
+            "substituteTier": normalize_tier(substitute_tier) if substitute_tier else None,
             "count": int(row.get("count") or 0) + 1,
         })
         cur[t] = row
