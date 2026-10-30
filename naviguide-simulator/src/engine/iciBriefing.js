@@ -133,7 +133,13 @@ function why(code, lang) {
   if (/^openmeteo_unavailable/.test(key)) return isEn(lang) ? "Open-Meteo did not answer" : "Open-Meteo n’a pas répondu";
   if (/^rtofs_unavailable/.test(key)) return isEn(lang) ? "RTOFS did not answer" : "RTOFS n’a pas répondu";
   if (/^outside_us_enc/.test(key)) return isEn(lang) ? "Outside NOAA ENC (US charts) coverage" : "Hors couverture des cartes NOAA (ENC US)";
+  if (/overpass_unavailable/.test(key)) return REASONS.overpass_unavailable[isEn(lang) ? 1 : 0];
   return key;
+}
+
+/** Libellé lisible d’un code moteur (tests et journal). */
+export function formatIciReason(code, lang = "fr") {
+  return why(code, lang);
 }
 
 function joinList(parts, lang) {

@@ -194,6 +194,39 @@ describe("visite guidée des juges", () => {
   });
 });
 
+it("C3 : invariants front visite + journal (sans 97f061c0)", () => {
+  const tour = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
+  const chat = readFileSync(new URL("./LogbookChat.jsx", import.meta.url), "utf8");
+  assert.match(tour, /naviguide-tour-pulse/);
+  assert.match(tour, /data-arrow/);
+  assert.match(tour, /step\?\.id !== "models"/);
+  assert.match(tour, /fetchStatus\(\)/);
+  assert.match(tour, /naviguide-demo-launch fixed right-3 top-14/);
+  assert.match(chat, /LOGBOOK_EXAMPLES/);
+  assert.match(chat, /logbook-chat-web-sources/);
+  assert.match(chat, /data-tour="logbook"/);
+  assert.match(chat, /logbook-chat-send/);
+});
+
+it("R13 : piège Tab documenté dans le panneau visite", () => {
+  const src = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
+  assert.match(src, /R13 : Tab[\s\S]*e\.key !== "Tab"/);
+});
+
+it("R11 : onResize relance le suivi du projecteur", () => {
+  const src = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
+  assert.match(src, /onResize[\s\S]*tries = 0[\s\S]*requestAnimationFrame\(track\)/);
+});
+
+it("R9 : le cleanup du projecteur appelle destroy() au changement d'étape", () => {
+  const src = readFileSync(new URL("./DemoWalkthrough.jsx", import.meta.url), "utf8");
+  assert.match(
+    src,
+    /return \(\) => \{[\s\S]*cancelAnimationFrame\(raf\)[\s\S]*driverRef\.current\?\.destroy\(\)/,
+    "le cleanup rAF doit détruire driver.js",
+  );
+});
+
 it("driver.js : chaque étape a un élément réel ou aucun (pas de cible inventée)", () => {
   assert.deepEqual(Object.keys(DEMO_TOUR_TARGETS), DEMO_STEP_IDS);
   assert.equal(DEMO_TOUR_TARGETS.briefing, '[data-tour="logbook"]');
@@ -215,6 +248,20 @@ describe("placement logic (exported from demoWalkthrough.js)", () => {
     assert.ok(pos && pos.bottom && pos.top === "auto");
     const bottom = Number(pos.bottom.replace("px", ""));
     assert.ok(bottom > 768 - 600);
+  });
+
+  it("R12 : replay borde le panneau haut quand la hauteur mesurée dépasse l'écran", () => {
+    const tallPanel = 500;
+    const minTop = 56;
+    const minBottom = 56;
+    for (const innerHeight of [400, 600, 900]) {
+      const pos = computePanelPosition(anchorBottom, "replay", 1024, innerHeight, tallPanel);
+      assert.ok(pos?.bottom, `replay bottom attendu pour h=${innerHeight}`);
+      const bottom = Number(pos.bottom.replace("px", ""));
+      const effective = Math.min(tallPanel, Math.max(120, innerHeight - minTop - minBottom));
+      const topEdge = innerHeight - bottom - effective;
+      assert.ok(topEdge >= minTop, `haut du panneau >= MIN_TOP pour h=${innerHeight}, got ${topEdge}`);
+    }
   });
 
   it("computePanelPosition for replay step with anchor in top half returns top position", () => {

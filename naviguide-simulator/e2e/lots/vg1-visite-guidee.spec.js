@@ -384,6 +384,21 @@ test("VG1 — flèche bulle → élément : data-arrow up/down/left/right + ::be
   await expect(panel(page)).not.toHaveAttribute("data-arrow");
 });
 
+test("VG1 — R13 : dix Tab consécutifs restent dans le panneau de visite", async ({ page }) => {
+  await open(page);
+  await startTour(page);
+  const p = panel(page);
+  await expect(p).toBeVisible();
+  for (let i = 0; i < 10; i += 1) {
+    await page.keyboard.press("Tab");
+    const inside = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="demo-walkthrough-panel"]');
+      return Boolean(el && el.contains(document.activeElement));
+    });
+    expect(inside).toBe(true);
+  }
+});
+
 // R44 : le bouton Tracer « monté tard » (cible absente à l'ouverture de l'étape 7) reçoit
 // quand même le pulse. Avant le correctif, le réessai comparait l'id rAF (> 30 à ce stade).
 test("R44 — étape 7 : pulse appliqué quand le bouton Tracer apparaît après l'ouverture", async ({ page }) => {
