@@ -226,6 +226,7 @@ function BerryCard({
           <button
             type="button"
             onClick={handleDelete}
+            aria-label={t("deleteCustomRoute")}
             title={t("deleteCustomRoute")}
             className="flex items-center justify-center px-2 py-1 rounded-lg text-[10px]
               border border-red-500/40 text-red-300 hover:bg-red-600/20"
@@ -392,6 +393,7 @@ export const Sidebar = memo(function Sidebar({
         type="button"
         onClick={onToggle}
         aria-expanded={open ? "true" : "false"}
+        aria-label={open ? t("hideSidebar") : t("showExpeditionPanel")}
         className={`naviguide-sidebar-toggle naviguide-sidebar-toggle--left absolute top-4 z-30 bg-slate-900/95 text-white
           rounded-full flex items-center justify-center shadow-lg
           hover:bg-slate-800 transition-all duration-300
