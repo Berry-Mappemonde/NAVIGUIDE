@@ -32,7 +32,7 @@ export function scrubKeyTarget(key, shiftKey, barNm, barTotal) {
   return Math.max(0, Math.min(total, target));
 }
 
-/** Keyboard-generated button clicks have detail === 0 and no reliable pointer position. */
+/** Trusted keyboard-generated clicks have detail === 0 and no pointer position. */
 export function isKeyboardClick(e) {
-  return Number(e?.detail) === 0;
+  return e?.isTrusted === true && Number(e?.detail) === 0;
 }

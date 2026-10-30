@@ -27,8 +27,10 @@ describe("film scrub keyboard controls", () => {
   });
 
   it("distinguishes keyboard generated clicks", () => {
-    assert.equal(isKeyboardClick({ detail: 0 }), true);
-    assert.equal(isKeyboardClick({ detail: 1 }), false);
+    assert.equal(isKeyboardClick({ detail: 0, isTrusted: true }), true);
+    assert.equal(isKeyboardClick({ detail: 0, isTrusted: false }), false);
+    assert.equal(isKeyboardClick({ detail: 0 }), false);
+    assert.equal(isKeyboardClick({ detail: 1, isTrusted: true }), false);
   });
 
   it("exposes localized slider semantics and keyboard handling", () => {
