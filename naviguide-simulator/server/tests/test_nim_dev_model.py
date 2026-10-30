@@ -58,3 +58,28 @@ def test_call_nim_uses_model_and_never_records_usd(monkeypatch):
     assert source == "nvidia-nemotron-3-ultra-550b-a55b"
     assert res.model == "nvidia/nemotron-3-ultra-550b-a55b"
     assert recorded == []  # aucun compteur Token Factory (tokens / USD)
+
+
+def test_write_tier_override_only_affects_write(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_NIM_MODEL_WRITE", "nvidia/nemotron-3.5-super-vl-120b-a12b")
+    assert sc.nim_model("write") == "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    assert sc.nim_model("WRITE") == "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    assert sc.nim_model("deep") == sc.NIM_MODEL
+    assert sc.nim_model() == sc.NIM_MODEL
+
+
+def test_call_nim_logs_chosen_model(monkeypatch, caplog):
+    import logging
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+    monkeypatch.setenv("NAVIGUIDE_NIM_MODEL_WRITE", "nvidia/nemotron-3.5-super-vl-120b-a12b")
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Cap au sud-ouest."}}]})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await sc._call_nim("sys", "user", client, tier="write")
+
+    with caplog.at_level(logging.INFO, logger=sc.log.name):
+        asyncio.run(run())
+    assert any("nvidia/nemotron-3.5-super-vl-120b-a12b" in r.getMessage() for r in caplog.records)

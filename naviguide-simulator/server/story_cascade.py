@@ -1133,6 +1133,7 @@ async def _call_nim(
     if not key:
         raise RuntimeError("NVIDIA_API_KEY missing")
     nim = nim_model(tier)
+    log.info("cascade nim: modèle %s (palier %s)", nim, tier or "-")
     payload = {
         "model": nim,
         "messages": [
