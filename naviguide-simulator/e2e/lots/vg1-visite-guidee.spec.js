@@ -225,3 +225,145 @@ test("VG1 sans ?tour : la visite reste fermée au chargement", async ({ page }) 
   await expect(page.getByTestId("demo-walkthrough-launch")).toBeVisible();
   await expect(panel(page)).toHaveCount(0);
 });
+
+test("VG1 driver.js : projecteur sur l'élément réel, question du journal cliquable, Échap éteint tout", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page);
+  const shots = process.env.TOUR_SHOTS_DIR;
+  await startTour(page);
+  await expect(panel(page)).toHaveAttribute("data-spot", "off");
+  await expect(page.locator(".driver-overlay")).toHaveCount(0);
+  if (shots) await page.screenshot({ path: `${shots}/01-bienvenue.png` });
+  await next(page, "models");
+  await next(page, "live");
+  await expect(panel(page)).toHaveAttribute("data-spot", "on");
+  await expect(page.locator(".leaflet-container.driver-active-element")).toHaveCount(1);
+  if (shots) await page.screenshot({ path: `${shots}/02-carte.png` });
+  await next(page, "briefing");
+  await expect(page.locator('[data-tour="logbook"].driver-active-element')).toHaveCount(1);
+  await expect(page.locator(".driver-overlay")).toBeVisible();
+  // La question d'exemple reste cliquable sous le projecteur (pointer-events).
+  const ex = page.getByTestId("logbook-chat-examples").locator("button").first();
+  await expect(ex).toBeVisible();
+  await expect.poll(() => ex.evaluate((b) => {
+    const r = b.getBoundingClientRect();
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return b === top || b.contains(top);
+  }), { timeout: 5_000 }).toBe(true);
+  if (shots) await page.screenshot({ path: `${shots}/03-journal-nemotron.png` });
+  await next(page, "layers");
+  await next(page, "replay");
+  await expect(page.locator('[data-tour="film"].driver-active-element')).toHaveCount(1);
+  if (shots) await page.screenshot({ path: `${shots}/04-film.png` });
+  await page.keyboard.press("Escape");
+  await expect(panel(page)).toHaveCount(0);
+  await expect(page.locator(".driver-overlay")).toHaveCount(0);
+  await expect(page.locator(".driver-active-element")).toHaveCount(0);
+});
+
+/* Tests additionnels demandés par la tâche (corrections PR #155) */
+
+test("VG1 — pas d'overlay driver.js aux étapes 1, 2, 8 (welcome, models, return)", async ({ page }) => {
+  await open(page);
+  await startTour(page);
+  // Étape 1 : welcome (target = null)
+  await expect(panel(page)).toHaveAttribute("data-step", "welcome");
+  await expect(page.locator(".driver-overlay")).toHaveCount(0);
+  await expect(page.locator(".driver-active-element")).toHaveCount(0);
+  // Étape 2 : models (target = null)
+  await next(page, "models");
+  await expect(page.locator(".driver-overlay")).toHaveCount(0);
+  await expect(page.locator(".driver-active-element")).toHaveCount(0);
+  // Passer aux étapes intermédiaires
+  await next(page, "live");
+  await next(page, "briefing");
+  await next(page, "layers");
+  await next(page, "replay");
+  await next(page, "trace");
+  // Étape 8 : return (target = null)
+  await next(page, "return");
+  await expect(page.locator(".driver-overlay")).toHaveCount(0);
+  await expect(page.locator(".driver-active-element")).toHaveCount(0);
+});
+
+test("VG1 — étape 5 (layers) : cible = summary [data-tour=layers] (pas le details entier)", async ({ page }) => {
+  await open(page);
+  await startTour(page);
+  await next(page, "models");
+  await next(page, "live");
+  await next(page, "briefing");
+  await next(page, "layers");
+  // Vérifier que l'élément éclairé est bien le summary (et non le details)
+  const summary = page.locator('[data-tour="layers"]').first();
+  await expect(summary).toBeVisible();
+  // Le driver doit éclairer exactement ce sélecteur
+  await expect(page.locator('[data-tour="layers"].driver-active-element')).toHaveCount(1);
+  // Le <details> ne doit PAS avoir la classe driver-active-element
+  await expect(page.locator('details.driver-active-element')).toHaveCount(0);
+});
+
+test("VG1 — étape 6 (replay) : bulle au-dessus de la barre film, barre visible", async ({ page }) => {
+  await open(page);
+  await startTour(page);
+  await next(page, "models");
+  await next(page, "live");
+  await next(page, "briefing");
+  await next(page, "layers");
+  await next(page, "replay");
+  // La barre film doit être visible (pas cachée)
+  const filmBar = page.locator('[data-tour="film"]').first();
+  await expect(filmBar).toBeVisible();
+  // La bulle (panneau) doit être au-dessus : bottom de la bulle ≤ top de la barre
+  const panelEl = panel(page);
+  const panelBox = await panelEl.boundingBox();
+  const barBox = await filmBar.boundingBox();
+  expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(barBox.y + 12); // 12px marge
+});
+
+test("VG1 — étape 7 (trace) : bouton Tracer visible, pulse, classe retirée à la sortie", async ({ page }) => {
+  await open(page);
+  await startTour(page);
+  await next(page, "models");
+  await next(page, "live");
+  await next(page, "briefing");
+  await next(page, "layers");
+  await next(page, "replay");
+  await next(page, "trace");
+  // Le bouton Tracer doit être visible et avoir la classe pulse
+  const traceBtn = page.locator('[data-testid="view-tracer"]').first();
+  await expect(traceBtn).toBeVisible();
+  // Attendre que la classe pulse soit ajoutée (raf retry up to 30 frames)
+  await expect(traceBtn).toHaveAttribute("class", /naviguide-tour-pulse/, { timeout: 10000 });
+  // Vérifier le stagePadding ~14 (via data-step ou inspection)
+  await expect(panel(page)).toHaveAttribute("data-step", "trace");
+  // Quitter la visite : la classe pulse doit être retirée
+  await page.keyboard.press("Escape");
+  await expect(traceBtn).not.toHaveClass("naviguide-tour-pulse");
+});
+
+test("VG1 — flèche bulle → élément : data-arrow up/down/left/right + ::before", async ({ page }) => {
+  await open(page);
+  await startTour(page);
+  // welcome, models, return : pas de flèche (target = null)
+  await expect(panel(page)).not.toHaveAttribute("data-arrow");
+  await next(page, "models");
+  await expect(panel(page)).not.toHaveAttribute("data-arrow");
+  // live : target = .leaflet-container (à droite) → flèche left
+  await next(page, "live");
+  await expect(panel(page)).toHaveAttribute("data-arrow", "left");
+  // briefing : target = [data-tour="logbook"] (à droite) → flèche left
+  await next(page, "briefing");
+  await expect(panel(page)).toHaveAttribute("data-arrow", "left");
+  // layers : target = [data-tour="layers"] (à gauche) → flèche right
+  await next(page, "layers");
+  await expect(panel(page)).toHaveAttribute("data-arrow", "right");
+  // replay : target = [data-tour="film"] (à droite, en bas) → flèche down (panneau au-dessus)
+  await next(page, "replay");
+  await expect(panel(page)).toHaveAttribute("data-arrow", "down");
+  // trace : target = [data-testid="view-tracer"] (à gauche) → flèche right
+  await next(page, "trace");
+  await expect(panel(page)).toHaveAttribute("data-arrow", "right");
+  // return : target = null → pas de flèche
+  await next(page, "return");
+  await expect(panel(page)).not.toHaveAttribute("data-arrow");
+});
