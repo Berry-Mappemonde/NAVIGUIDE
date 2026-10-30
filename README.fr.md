@@ -33,7 +33,7 @@ Raccourci : [https://naviguide.fr/?tour=1](https://naviguide.fr/?tour=1) ouvre l
 
 1. Cliquez **Suivre l’expédition**.
 2. Cliquez **Revoir l’expédition**. S’il est grisé, l’info-bulle dit **en préparation**.
-3. Quand les commandes du film sont là, **Brut** et **Rédigé** sont côte à côte. **Rédigé** est la narration écrite. Si **Rédigé** est grisé, l’info-bulle dit **pas encore rédigé pour cette durée**. Pour l’accessibilité, le bouton haut-parleur de la barre du film (libellé **Écouter**) lit le film à voix haute : pendant un replay, la synthèse vocale du navigateur (`speechSynthesis`, `naviguide-simulator/src/utils/speak.js`) lit chaque paragraphe au fil du film, en anglais ou en français, sans appel à Nemotron ni au serveur NAVIGUIDE.
+3. Quand les commandes du film sont là, **Brut** et **Rédigé** sont côte à côte. Cliquez sur **Rédigé** pour demander la narration écrite. Pendant la lecture, la pastille est verrouillée et son info-bulle dit **Arrêtez le film pour passer Brut/Rédigé**. Si tous les fournisseurs échouent, la page affiche **Le film rédigé est momentanément indisponible.** Pour l’accessibilité, le bouton haut-parleur de la barre du film (libellé **Écouter**) lit le film à voix haute : pendant un replay, la synthèse vocale du navigateur (`speechSynthesis`, `naviguide-simulator/src/utils/speak.js`) lit chaque paragraphe au fil du film, en anglais ou en français, sans appel à Nemotron ni au serveur NAVIGUIDE.
 4. Quand le bateau est à une escale, le panneau s’intitule **Fiche d’escale**. Si cette escale est dans la fenêtre de veille et qu’une veille a été gardée, une carte porte le nom du port, les mots **veille du**, et une date, plus une phrase. Sans veille gardée, cette carte est absente. La fiche liste quand même les lieux qu’elle a.
 5. Dans le panneau latéral, **Journal de bord — posez une question**. Le champ dit **Quel vent au bateau ? Prochaine escale ?** Le bouton a pour info-bulle **Envoyer**. Sous **Essayez une question :**, trois puces envoient une question prête en un clic : **Pourquoi ? · Ultra** (une question « pourquoi », répondue par Nemotron 3 Ultra), **Actu du port · Tavily** (ce que le web dit du port de la prochaine escale : Ultra avec les sources web Tavily) et **Vent · Lightning** (Lightning lit la question, les faits répondent).
 
@@ -187,6 +187,10 @@ Le texte généré est marqué. Le libellé est **Contenu généré par IA (mod�
 Ce checkout ne contient pas de répertoire d’évaluation adverse ni de rapport de tests adverses. Ce README ne dit pas que le produit a été testé avec NVIDIA garak ou promptfoo.
 
 Politique : [SECURITY.md](SECURITY.md). Fiche des sources : [naviguide-simulator/DATA_SOURCES.md](naviguide-simulator/DATA_SOURCES.md).
+
+## Limites connues
+
+- **Le premier film rédigé pour une durée prend du temps.** Il est demandé à Token Factory, puis à NIM, OpenRouter et Claude ; un autre modèle peut prendre le relais.
 
 [![CodeQL](https://github.com/Berry-Mappemonde/NAVIGUIDE/actions/workflows/codeql.yml/badge.svg)](https://github.com/Berry-Mappemonde/NAVIGUIDE/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Berry-Mappemonde/NAVIGUIDE/badge)](https://scorecard.dev/viewer/?uri=github.com/Berry-Mappemonde/NAVIGUIDE)
