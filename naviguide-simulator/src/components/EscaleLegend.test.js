@@ -29,7 +29,7 @@ describe("EscaleLegend — informative dans tous les modes (étend RE2)", () => 
     assert.doesNotMatch(src, /onClick/);
     assert.doesNotMatch(src, /<button/);
     assert.doesNotMatch(src, /cursor-pointer/);
-    assert.match(src, /<div className="flex-1 min-w-0 text-left px-2 py-1 text-\[11px\] cursor-default"/);
+    assert.match(src, /<div className="flex-1 min-w-0 text-left px-2 py-1 text-\[12px\] cursor-default"/);
     assert.match(src, /nmLabel/);
     assert.match(src, /dateLabel/);
     assert.match(src, /quayLabel/);
@@ -86,9 +86,9 @@ describe("EscaleLegend — pastilles de régime", () => {
     assert.match(src, /data-testid="escale-regime-legend"/);
     assert.match(src, /data-testid="escale-regime-pill"/);
     assert.match(src, /data-regime=\{id\}/);
-    assert.match(colors, /hindcast:\s*"#2dd4bf"/);
-    assert.match(colors, /forecast:\s*"#38bdf8"/);
-    assert.match(colors, /climatology:\s*"#c084fc"/);
+    assert.match(colors, /hindcast:\s*"#e86aab"/);
+    assert.match(colors, /forecast:\s*"#5b9bd5"/);
+    assert.match(colors, /climatology:\s*"#a99bc9"/);
     assert.doesNotMatch(src, /<button/);
   });
 });

@@ -36,7 +36,7 @@ const API = import.meta.env?.VITE_API_URL ?? "";
 function Section({ testId, label, children }) {
   return (
     <section data-testid={testId} className="ici-maintenant-section min-w-0">
-      <div className="text-[10px] font-semibold text-slate-400 leading-snug">{label}</div>
+      <div className="text-[12px] font-semibold text-slate-400 leading-snug">{label}</div>
       <div className="mt-0.5 min-w-0">{children}</div>
     </section>
   );
@@ -54,16 +54,16 @@ function CardAlias({ card, testId, lang = "fr", onDismiss, onNext, onFocus }) {
       data-type={card.type}
       data-kind={card.kind}
       data-inline="1"
-      className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
+      className="text-[12px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
     >
-      {title ? <div className="text-[10px] font-semibold text-sky-200">{title}</div> : null}
+      {title ? <div className="text-[12px] font-semibold text-slate-100">{title}</div> : null}
       {card.text ? <p>{localizeStoredFact(card.text, lang)}</p> : null}
       {testId === "moment-now" && typeof onDismiss === "function" ? (
         <button
           type="button"
           data-testid="moment-dismiss"
           onClick={onDismiss}
-          className="mt-0.5 text-[10px] text-slate-300 bg-transparent border-0 cursor-pointer px-0"
+          className="mt-0.5 text-[12px] text-slate-300 bg-transparent border-0 cursor-pointer px-0"
         >
           {t("momentClose")}
         </button>
@@ -73,7 +73,7 @@ function CardAlias({ card, testId, lang = "fr", onDismiss, onNext, onFocus }) {
           type="button"
           data-testid="moment-next"
           onClick={onNext}
-          className="mt-0.5 text-[10px] text-slate-300 bg-transparent border-0 cursor-pointer px-0"
+          className="mt-0.5 text-[12px] text-slate-300 bg-transparent border-0 cursor-pointer px-0"
         >
           {t("momentNext")}
         </button>
@@ -83,7 +83,7 @@ function CardAlias({ card, testId, lang = "fr", onDismiss, onNext, onFocus }) {
           type="button"
           data-testid="moment-focus"
           onClick={() => onFocus(card.entity)}
-          className="mt-0.5 ml-2 text-[10px] text-sky-300 bg-transparent border-0 cursor-pointer px-0"
+          className="mt-0.5 ml-2 text-[12px] text-sky-300 bg-transparent border-0 cursor-pointer px-0"
         >
           {t("momentSeeOnMap")}
         </button>
@@ -95,7 +95,7 @@ function CardAlias({ card, testId, lang = "fr", onDismiss, onNext, onFocus }) {
           target="_blank"
           rel="noopener noreferrer"
           data-testid={`moment-link-${link.kind}`}
-          className="ml-2 text-[10px] text-sky-300 hover:text-sky-100 no-underline"
+          className="ml-2 text-[12px] text-sky-300 hover:text-sky-100 no-underline"
         >
           {link.host || "↗"}
         </a>
@@ -154,7 +154,7 @@ function JournalList({ entries, onSeek, lang, days = null }) {
             data-testid="journal-day"
             data-day={day}
             onClick={() => selectDay(day)}
-            className="w-full text-left text-[11px] leading-snug px-0.5 py-0.5 bg-transparent border-0 cursor-pointer hover:bg-white/5 text-slate-200"
+            className="w-full text-left text-[12px] leading-snug px-0.5 py-0.5 bg-transparent border-0 cursor-pointer hover:bg-white/5 text-slate-200"
           >
             {day}
           </button>
@@ -167,7 +167,7 @@ function JournalList({ entries, onSeek, lang, days = null }) {
             data-testid="ici-journal-entry"
             data-t={entry.t}
             onClick={() => seekJournalEntry(onSeek, entry)}
-            className="ici-journal-entry w-full text-left text-[11px] leading-snug px-0.5 py-0.5 bg-transparent border-0 cursor-pointer hover:bg-white/5 break-words [overflow-wrap:anywhere]"
+            className="ici-journal-entry w-full text-left text-[12px] leading-snug px-0.5 py-0.5 bg-transparent border-0 cursor-pointer hover:bg-white/5 break-words [overflow-wrap:anywhere]"
           >
             {formatJournalLine(entry, lang)}
           </button>
@@ -277,7 +277,7 @@ export function IciMaintenant({
             data-testid={tab.testId}
             aria-selected={view === tab.id}
             onClick={() => setView(tab.id)}
-            className={`text-[10px] leading-none px-0 py-0.5 bg-transparent border-0 cursor-pointer ${
+            className={`text-[12px] leading-none px-0 py-0.5 bg-transparent border-0 cursor-pointer ${
               view === tab.id ? "text-slate-100" : "text-slate-500 hover:text-slate-300"
             }`}
           >
@@ -308,7 +308,7 @@ export function IciMaintenant({
               data-testid="ici-leg-line"
               data-from={shown?.leg?.from || ""}
               data-to={shown?.leg?.to || ""}
-              className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
+              className="text-[12px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
               style={tint ? { color: tint } : undefined}
             >
               {formatLegLine(shown?.leg, t, lang)}
@@ -325,7 +325,7 @@ export function IciMaintenant({
                     key={alert.id}
                     data-testid="ici-alert"
                     data-alert-id={alert.id}
-                    className={`inline-flex items-center gap-1 max-w-full rounded-full border px-1.5 py-0.5 text-[10px] leading-snug ${
+                    className={`inline-flex items-center gap-1 max-w-full rounded-full border px-1.5 py-0.5 text-[12px] leading-snug ${
                       danger
                         ? "border-rose-400/50 bg-rose-950/40 text-rose-100"
                         : "border-amber-400/50 bg-amber-950/40 text-amber-100"
@@ -377,13 +377,13 @@ export function IciMaintenant({
                 >
                   {replayFrame.stop && !replayFrame.highSeas ? (
                     <div data-testid="ici-replay-header" className="min-w-0">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200 leading-snug">{t("escaleSheetTitle")}</div>
+                      <div className="text-[12px] font-semibold text-emerald-200 leading-snug">{t("escaleSheetTitle")}</div>
                       <div className="text-[12px] font-semibold text-white leading-snug truncate">{replayFrame.stop.name}</div>
                     </div>
                   ) : null}
                   <p
                     data-testid="ici-replay-status"
-                    className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
+                    className="text-[12px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
                   >
                     {replayFrame.statusText}
                   </p>
@@ -391,7 +391,7 @@ export function IciMaintenant({
               ) : todayPosition ? (
                 <p
                   data-testid="ici-today-position"
-                  className="text-[11px] leading-snug text-amber-200 break-words [overflow-wrap:anywhere]"
+                  className="text-[12px] leading-snug text-amber-200 break-words [overflow-wrap:anywhere]"
                 >
                   {t("iciTodayPosition")}
                 </p>
@@ -402,7 +402,7 @@ export function IciMaintenant({
                     <p
                       key={`${i}-${sentence}`}
                       data-testid="ici-here-sentence"
-                      className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
+                      className="text-[12px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
                     >
                       {sentence}
                     </p>
@@ -416,7 +416,7 @@ export function IciMaintenant({
                           target="_blank"
                           rel="noopener noreferrer"
                           data-testid="ici-source-link"
-                          className="text-[10px] text-sky-300 hover:text-sky-100 no-underline"
+                          className="text-[12px] text-sky-300 hover:text-sky-100 no-underline"
                         >
                           {link.label}
                         </a>
@@ -442,7 +442,7 @@ export function IciMaintenant({
                   key={`${item.kind || "around"}-${item.title || i}`}
                   data-testid="ici-around"
                   data-kind={item.kind}
-                  className="text-[11px] leading-snug text-slate-200"
+                  className="text-[12px] leading-snug text-slate-200"
                 >
                   <summary className="cursor-pointer list-inside">
                     {enDecimals(localizeStoredTitle(item.title, lang), lang)}
@@ -454,7 +454,7 @@ export function IciMaintenant({
                       target="_blank"
                       rel="noopener noreferrer"
                       data-testid="ici-around-link"
-                      className="ml-3 text-[10px] text-sky-300 hover:text-sky-100 no-underline"
+                      className="ml-3 text-[12px] text-sky-300 hover:text-sky-100 no-underline"
                     >
                       {item.url}
                     </a>
@@ -465,7 +465,7 @@ export function IciMaintenant({
           </Section>
 
           <Section testId="ici-section-sources" label={t("iciSectionSources")}>
-            <p data-testid="ici-sources-line" className="text-[10px] leading-snug text-slate-400">
+            <p data-testid="ici-sources-line" className="text-[12px] leading-snug text-slate-400">
               {(frame.sources || []).filter(Boolean).map((tag) => localizeSourceTag(tag, lang)).join(" · ")}
             </p>
           </Section>
@@ -503,7 +503,7 @@ export function IciMaintenant({
           href={carnetPageHref(typeof window !== "undefined" ? window.location.search : "")}
           onClick={(e) => followCarnetLink(e, carnetPageHref(window.location.search))}
           data-testid="carnet-open"
-          className="inline-block text-[11px] leading-snug text-sky-300 hover:text-sky-100 no-underline mb-1"
+          className="inline-block text-[12px] leading-snug text-sky-300 hover:text-sky-100 no-underline mb-1"
         >
           {t("carnetOpen")}
         </a>
