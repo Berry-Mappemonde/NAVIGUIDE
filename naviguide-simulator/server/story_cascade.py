@@ -11,8 +11,15 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import os
 import re
+import time
+import random
+import weakref
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +27,7 @@ import httpx
 from dotenv import load_dotenv
 
 import llm_budget
+import tf_catalog
 from ai_transparency import with_ai_transparency
 
 log = logging.getLogger("naviguide-simulator.story-cascade")
@@ -39,35 +47,138 @@ TOKENFACTORY_EU_BASE = (
     os.environ.get("NAVIGUIDE_TF_BASE_EU")
     or "https://api.tokenfactory.nebius.com/v1"
 ).rstrip("/")
-# Cookbook Ultra: https://api.tokenfactory.us-central1.nebius.com/v1/
+# Ultra default host is EU Token Factory: https://api.tokenfactory.nebius.com/v1/
 TOKENFACTORY_ULTRA_BASE = (
     os.environ.get("NAVIGUIDE_TF_BASE_ULTRA")
-    or "https://api.tokenfactory.us-central1.nebius.com/v1"
+    or "https://api.tokenfactory.nebius.com/v1"
 ).rstrip("/")
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 NIM_MODEL = "openai/gpt-oss-20b"
+
+# NIM free-tier controls: concurrency (default 2, 1..16), max attempts
+# (default 3, 1..5), plus optional fast tiers/model overrides.
+_nim_loop_semaphores: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = weakref.WeakKeyDictionary()
+_nim_sleep = asyncio.sleep
+
+
+def _nim_int_env(name: str, default: int, low: int, high: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return min(high, max(low, value))
+
+
+def _nim_semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    semaphore = _nim_loop_semaphores.get(loop)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(_nim_int_env("NAVIGUIDE_NIM_CONCURRENCY", 2, 1, 16))
+        _nim_loop_semaphores[loop] = semaphore
+    return semaphore
+
+
+def _nim_float_env(name: str, default: float, low: float, high: float) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(value):
+        return default
+    return min(high, max(low, value))
+
+
+def _nim_retry_delay(response: httpx.Response, attempt: int) -> float:
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        try:
+            seconds = float(retry_after)
+            if math.isfinite(seconds) and seconds >= 0:
+                return min(20.0, seconds)
+        except ValueError:
+            pass
+        try:
+            when = parsedate_to_datetime(retry_after)
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            return min(20.0, max(0.0, (when - datetime.now(timezone.utc)).total_seconds()))
+        except (TypeError, ValueError, OverflowError):
+            pass
+    delay = min(8.0, 1.0 * (2 ** (attempt - 1)))
+    return random.uniform(0.0, delay)
+
+
+def nim_model(tier: str = "") -> str:
+    """Modèle NIM (build.nvidia.com, gratuit) : dev / tests sans Token Factory.
+
+    NAVIGUIDE_NIM_MODEL_<PALIER> (NANO, FAST, WRITE, DEEP, JUDGE), sinon
+    NAVIGUIDE_NIM_FAST_TIERS + NAVIGUIDE_NIM_FAST_MODEL, sinon
+    NAVIGUIDE_NIM_MODEL, sinon le défaut historique NIM_MODEL.
+    """
+    t = (tier or "").strip().upper()
+    if t:
+        per_tier = (os.environ.get(f"NAVIGUIDE_NIM_MODEL_{t}") or "").strip()
+        if per_tier:
+            return per_tier
+        fast_tiers = {x.strip().upper() for x in os.environ.get("NAVIGUIDE_NIM_FAST_TIERS", "").split(",") if x.strip()}
+        fast_model = (os.environ.get("NAVIGUIDE_NIM_FAST_MODEL") or "").strip()
+        if t in fast_tiers and fast_model:
+            return fast_model
+    return (os.environ.get("NAVIGUIDE_NIM_MODEL") or "").strip() or NIM_MODEL
 OR_MODEL = os.environ.get("OPENROUTER_MODEL") or "openai/gpt-4o-mini"
 CLAUDE_MODEL = "claude-haiku-4-5"
 MAX_TOKENS = 400
 TIMEOUT = httpx.Timeout(25.0, connect=8.0)
-TIMEOUT_ULTRA = httpx.Timeout(45.0, connect=8.0)
 DEFAULT_PROVIDERS = ("tokenfactory", "nim", "openrouter", "claude")
+# Maillons hors Nemotron : après un timeout Token Factory, on continue la
+# cascade par défaut ; NAVIGUIDE_LLM_TIMEOUT_FALLBACK=0 permet de l'arrêter.
+NON_NEMOTRON_PROVIDERS = frozenset({"nim", "openrouter", "claude"})
 CACHE_NS = "llm-cache"
 CACHE_TTL_S = 24 * 3600.0
 TF_PARALLEL_DEFAULT = 4
+TF_QUEUE_TIMEOUT_S = 10.0
 KNOWN_SOURCES = frozenset({
-    "nemotron-nano", "nemotron-lightning", "nemotron-super", "nemotron-ultra",
+    "nemotron-nano", "nemotron-lightning", "nemotron-super", "nemotron-super-vl",
+    "nemotron-ultra",
     "openrouter", "claude", "rules", "budget", "cache",
 })
+_TF_DEADLINE: ContextVar[float | None] = ContextVar("tf_cascade_deadline", default=None)
+
+
+def tf_timeout(tier: str) -> httpx.Timeout:
+    """Timeout par palier pour Token Factory (garde de latence, C1-a).
+
+    Jamais `None` : avec httpx 0.28, `timeout=None` coupe tout délai et un
+    appel lent bloquait la visite des juges.
+    deep/judge : lit NAVIGUIDE_TF_TIMEOUT_ULTRA_S (float > 0), défaut 45.0
+    autres paliers : lit NAVIGUIDE_TF_TIMEOUT_S, défaut 25.0
+    Valeurs invalides/≤0 → défaut.
+    Retourne httpx.Timeout(seconds, connect=min(8.0, seconds)).
+    """
+    t = llm_budget.normalize_tier(tier)
+    if t in {"deep", "judge"}:
+        raw = _env("NAVIGUIDE_TF_TIMEOUT_ULTRA_S")
+        default = 45.0
+    else:
+        raw = _env("NAVIGUIDE_TF_TIMEOUT_S")
+        default = 25.0
+    try:
+        val = float(raw) if raw else default
+    except (TypeError, ValueError):
+        val = default
+    if not math.isfinite(val) or val <= 0:
+        val = default
+    connect = min(8.0, val)
+    return httpx.Timeout(val, connect=connect)
+
 
 _NUM_RE = re.compile(r"\d+(?:[.,]\d+)?")
 _INFLIGHT: dict[str, asyncio.Future] = {}
 _INFLIGHT_GUARD: asyncio.Lock | None = None
 _TF_SEMA: asyncio.Semaphore | None = None
 
-_FENCE_RE = re.compile(r"^```(?:json|text)?\s*|\s*```$", re.M)
 _THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
 _THINK_OPEN_RE = re.compile(r"<think\b[^>]*>.*\Z", re.IGNORECASE | re.DOTALL)
 _PROMPT_LEAK_RE = re.compile(
@@ -231,20 +342,121 @@ def _numbers(text: str) -> set[str]:
     return out
 
 
-def filter_numbers(answer: str, facts: Any) -> tuple[str, int]:
+_FR_UNITS = {
+    "zéro": 0, "zero": 0, "un": 1, "une": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5,
+    "six": 6, "sept": 7, "huit": 8, "neuf": 9, "dix": 10, "onze": 11, "douze": 12,
+    "treize": 13, "quatorze": 14, "quinze": 15, "seize": 16, "vingt": 20, "vingts": 20,
+    "trente": 30, "quarante": 40, "cinquante": 50, "soixante": 60,
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "seven": 7, "eight": 8,
+    "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+    "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70,
+    "eighty": 80, "ninety": 90,
+}
+_NUM_HUNDRED = {"cent", "cents", "hundred", "hundreds"}
+_NUM_THOUSAND = {"mille", "thousand", "thousands"}
+_NUM_LINK = {"et", "and"}
+# Mots seuls trop ambigus pour être des nombres (« un bateau », « un mille » nautique,
+# « bateau neuf », « one of »).
+_NUM_ALONE_SKIP = {"un", "une", "neuf", "one", "mille"}
+_NUM_WORD_RE = re.compile(r"[A-Za-zÀ-ÿ]+|[\s\-]+|[^A-Za-zÀ-ÿ\s\-]+")
+
+
+def _words_value(words: list[str]) -> int:
+    total, cur, prev = 0, 0, ""
+    for w in words:
+        if w in _NUM_HUNDRED:
+            cur = max(1, cur) * 100
+        elif w in _NUM_THOUSAND:
+            total += max(1, cur) * 1000
+            cur = 0
+        elif w in ("vingt", "vingts") and prev == "quatre" and cur % 100 == 4:
+            cur += 76
+        else:
+            cur += _FR_UNITS[w]
+        prev = w
+    return total + cur
+
+
+def spelled_numbers_to_digits(text: str) -> str:
+    """« cent soixante-dix-sept » → « 177 » : les nombres en lettres comparés en chiffres.
+
+    Sans cela, un modèle qui épelle un chiffre (173 → « cent soixante-dix-sept »)
+    passait le garde-fou des nombres.
+    """
+    toks = _NUM_WORD_RE.findall(text or "")
+    out: list[str] = []
+    i = 0
+    while i < len(toks):
+        low = toks[i].lower()
+        if low in _FR_UNITS or low in _NUM_HUNDRED or low in _NUM_THOUSAND:
+            words, j, last = [low], i + 1, i
+            while j < len(toks):
+                t = toks[j].lower()
+                if t.strip(" -") == "" and "\n" not in t:
+                    j += 1
+                    continue
+                if t in _NUM_LINK and j + 2 < len(toks) and toks[j + 2].lower() in _FR_UNITS:
+                    j += 1
+                    continue
+                if t in _FR_UNITS or t in _NUM_HUNDRED or t in _NUM_THOUSAND:
+                    # « un mille » / « deux milles » : le mille nautique n'est pas 1000.
+                    if t == "mille" and (j + 1 >= len(toks) or not any(
+                        toks[k].lower() in _FR_UNITS or toks[k].lower() in _NUM_HUNDRED
+                        for k in range(j + 1, min(j + 3, len(toks)))
+                    )) and words[-1] in ("un", "une"):
+                        break
+                    words.append(t)
+                    last = j
+                    j += 1
+                    continue
+                break
+            if len(words) == 1 and words[0] in _NUM_ALONE_SKIP:
+                out.append(toks[i])
+                i += 1
+                continue
+            try:
+                out.append(str(_words_value(words)))
+            except KeyError:
+                out.append("".join(toks[i:last + 1]))
+            i = last + 1
+            continue
+        out.append(toks[i])
+        i += 1
+    return "".join(out)
+
+
+_GROUPED_NUM_RE = re.compile(r"\b\d{1,3}(?:[ ,\u202f\u00a0]\d{3})+\b")
+
+
+def _numbers_spoken(text: str) -> set[str]:
+    norm = spelled_numbers_to_digits(text or "")
+    norm = _GROUPED_NUM_RE.sub(lambda m: re.sub(r"\D", "", m.group(0)), norm)
+    # « 8 393 » vaut 8393 seulement : « 393 » seul n'est pas un fait.
+    return _numbers(norm)
+
+
+# Verdict JSON d'un relecteur : il cite des chiffres pour décrire une faute, il n'en
+# publie aucun. Le filtre des nombres le viderait (« rules » → lu comme un pass).
+NO_NUMBER_FILTER = object()
+
+
+def filter_numbers(answer: str, facts: Any, *, spelled: bool = False) -> tuple[str, int]:
     """Drop every sentence whose figures are not already in `facts`.
 
     Same contract as logbook_chat.filter_numbers: a year or a time present
     in the facts is allowed. Returns (text, dropped).
     """
     blob = facts if isinstance(facts, str) else json.dumps(facts, ensure_ascii=False, default=str)
-    allowed = _numbers(blob)
+    allowed = _numbers_spoken(blob) if spelled else _numbers(blob)
     kept, dropped = [], 0
-    for s in _SENT_SPLIT_RE.split(answer or ""):
+    for s in _split_sentences(answer or ""):
         s = s.strip()
         if not s:
             continue
-        nums = _numbers(s)
+        norm = spelled_numbers_to_digits(s) if spelled else s
+        norm = norm if not spelled else _GROUPED_NUM_RE.sub(lambda m: re.sub(r"\D", "", m.group(0)), norm)
+        nums = _numbers(norm)
         if nums and not nums.issubset(allowed):
             dropped += 1
             continue
@@ -262,7 +474,7 @@ def expand_spoken_units(text: str, lang: str = "fr") -> str:
 
 def split_short_sentences(text: str, max_len: int = 160) -> str:
     """Phrases courtes et complètes — jamais de coupure au milieu."""
-    parts = [p.strip() for p in _SENT_SPLIT_RE.split(text or "") if p.strip()]
+    parts = [p.strip() for p in _split_sentences(text or "") if p.strip()]
     out: list[str] = []
     for part in parts:
         chunk = part if part.endswith((".", "!", "?", "…")) else f"{part}."
@@ -415,7 +627,7 @@ def _strip_preamble(txt: str) -> str:
 
 def _clean_text(txt: str | None) -> str:
     s = _strip_think(txt or "")
-    s = _FENCE_RE.sub("", s.strip()).strip()
+    s = _strip_fences(s.strip()).strip()
     s = _strip_preamble(s)
     if _PROMPT_LEAK_RE.search(s):
         return ""
@@ -433,7 +645,58 @@ _META_RE = re.compile(
     r"analyze user input|thinking off|wait, let me|translate a sailing-log)",
     re.IGNORECASE,
 )
-_SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
+def _split_sentences(text: str) -> list[str]:
+    """Split after sentence punctuation and whitespace in one linear pass."""
+    parts: list[str] = []
+    start = 0
+    i = 0
+    while i < len(text):
+        if text[i] in ".!?…":
+            whitespace_end = i + 1
+            while whitespace_end < len(text) and text[whitespace_end].isspace():
+                whitespace_end += 1
+            if whitespace_end > i + 1 and whitespace_end < len(text):
+                parts.append(text[start:i + 1])
+                start = whitespace_end
+                i = whitespace_end
+                continue
+            i = whitespace_end
+        else:
+            i += 1
+    parts.append(text[start:])
+    return parts
+
+
+def _strip_fences(text: str) -> str:
+    """Remove line-start opening and line-end closing fences without regex backtracking."""
+    chars = list(text)
+    i = 0
+    while i < len(text):
+        line_start = i == 0 or text[i - 1] == "\n"
+        if text.startswith("```", i):
+            end = i + 3
+            if end == len(text) or text[end] == "\n":
+                before = i
+                while before > 0 and text[before - 1].isspace():
+                    before -= 1
+                for j in range(before, end):
+                    chars[j] = ""
+                i = end
+                continue
+        if line_start and text.startswith("```", i):
+            after = i + 3
+            if text.startswith("json", after):
+                after += 4
+            elif text.startswith("text", after):
+                after += 4
+            while after < len(text) and text[after].isspace():
+                after += 1
+            for j in range(i, after):
+                chars[j] = ""
+            i = after
+            continue
+        i += 1
+    return "".join(chars)
 _WORD_RE = re.compile(r"[0-9A-Za-zÀ-ÿ]+")
 # Marqueurs de raisonnement. Une phrase douteuse ne devient pas le texte visiteur.
 _REASON_MARK_RE = re.compile(
@@ -575,7 +838,7 @@ def tidy_story(
     raw = re.sub(r"\s{2,}", " ", raw).strip()
     if not raw:
         return (fallback or "").strip()
-    kept = [s.strip() for s in _SENT_SPLIT_RE.split(raw) if s.strip() and not _META_RE.search(s)]
+    kept = [s.strip() for s in _split_sentences(raw) if s.strip() and not _META_RE.search(s)]
     out = " ".join(kept[:max_sentences]).strip()
     if len(out) > max_chars:
         cut = out[:max_chars]
@@ -584,19 +847,78 @@ def tidy_story(
 
 
 def _tf_url(tier: str) -> str:
-    """Nano is pinned to the EU host. Lightning / Super stay on the default
-    TF host. Ultra uses us-central1 (Nebius cookbook) unless
-    NAVIGUIDE_TF_BASE_ULTRA is set."""
+    """Nano and write (Super-VL) are pinned to the EU host. Lightning stays on
+    the default TF host. Ultra uses EU host (Nebius Token Factory) unless
+    NAVIGUIDE_TF_BASE_ULTRA is set. NAVIGUIDE_TF_BASE_EU pins nano/write to
+    their host. NAVIGUIDE_PORT_WEB is a 0/1 flag for Tavily web context."""
     t = llm_budget.normalize_tier(tier)
     if t in {"deep", "judge"}:
         base = (
             _env("NAVIGUIDE_TF_BASE_ULTRA") or TOKENFACTORY_ULTRA_BASE
         ).rstrip("/")
         return f"{base}/chat/completions"
-    if t == "nano":
+    if t in {"nano", "write"}:
         base = (_env("NAVIGUIDE_TF_BASE_EU") or TOKENFACTORY_EU_BASE).rstrip("/")
         return f"{base}/chat/completions"
     return TOKENFACTORY_URL
+
+
+def tf_base(tier: str) -> str:
+    """Hôte Token Factory (`…/v1`) qui sert ce palier — celui de `_tf_url`."""
+    url = _tf_url(tier)
+    suffix = "/chat/completions"
+    return url[: -len(suffix)] if url.endswith(suffix) else url.rsplit("/", 2)[0]
+
+
+# Garde de disponibilité (C1-b) : si l'id d'un palier manque au catalogue de
+# son hôte, on essaie ces paliers Token Factory, dans l'ordre. Ce sont d'autres
+# Nemotron TF (jamais NIM / OpenRouter ici) ; la réponse garde la source et le
+# modèle du palier qui a vraiment répondu.
+GUARD_SUBSTITUTES: dict[str, tuple[str, ...]] = {
+    "nano": ("fast", "write"),
+    "fast": ("write",),
+    "write": ("fast",),
+    "deep": ("write", "fast"),
+    "judge": ("write", "fast"),
+}
+
+
+class TokenFactoryModelMissing(RuntimeError):
+    """Catalogue connu : aucun palier admissible ne possède le modèle demandé."""
+
+
+async def _guarded_tier(tier: str, client: httpx.AsyncClient) -> str:
+    """Palier à appeler après la garde du catalogue.
+
+    Inconnu (catalogue illisible, garde coupée) : on garde le palier demandé.
+    Absent : premier remplaçant présent dans le catalogue de son hôte et dans
+    le budget du jour, compté dans `modelGuard.missing`. Aucun remplaçant :
+    RuntimeError, la cascade passe au repli suivant (déjà étiqueté).
+    """
+    t = llm_budget.normalize_tier(tier)
+    key = nebius_key()
+    if not tf_catalog.enabled() or not key:
+        return t
+    model = llm_budget.model_for(t)
+    base = tf_base(t)
+    await tf_catalog.ensure_fresh(base, key, client)
+    if tf_catalog.has_model(base, model) is not False:
+        return t
+    for alt in GUARD_SUBSTITUTES.get(t, ()):
+        alt_model = llm_budget.model_for(alt)
+        alt_base = tf_base(alt)
+        if alt_model.lower() == model.lower() and alt_base == base:
+            continue
+        await tf_catalog.ensure_fresh(alt_base, key, client)
+        if tf_catalog.has_model(alt_base, alt_model) is True and llm_budget.allow(alt):
+            llm_budget.record_model_missing(t, model, alt, alt_model)
+            log.warning(
+                "garde catalogue : %s absent de %s — palier %s servi par %s (%s)",
+                model, base, t, alt, alt_model,
+            )
+            return alt
+    llm_budget.record_model_missing(t, model)
+    raise TokenFactoryModelMissing(f"tokenfactory model missing from catalog: {model} @ {base}")
 
 
 class CascadeResult(tuple):
@@ -714,10 +1036,10 @@ def _recover_reasoning_text(raw: Any, *, prompt: str = "", lang: str = "fr") -> 
     else:
         parts = _message_parts(raw)
         blob = _parts_text(parts, reasoning=True) or _parts_text(parts, reasoning=False)
-    stripped = _strip_preamble(_strip_think(_FENCE_RE.sub("", blob or "")))
+    stripped = _strip_preamble(_strip_think(_strip_fences(blob or "")))
     want_en = _is_en(lang)
     kept: list[str] = []
-    for sentence in _SENT_SPLIT_RE.split(stripped):
+    for sentence in _split_sentences(stripped):
         sentence = sentence.strip()
         if not sentence:
             continue
@@ -777,6 +1099,11 @@ def _claude_text(data: dict[str, Any] | None) -> str:
 
 def _http_error(provider: str, response: httpx.Response) -> RuntimeError:
     """Keep the exact HTTP status and a short body — never swallow a 4xx/5xx."""
+    if provider == "tokenfactory" and hasattr(response, "extensions"):
+        llm_budget.record_latency_error(
+            llm_budget.normalize_tier(str(response.extensions.get("tf-tier") or "write")),
+            "httpErrors", float(response.extensions.get("tf-elapsed-ms") or 0), response.status_code,
+        )
     body = " ".join((response.text or "").split())[:180]
     msg = f"{provider} HTTP {response.status_code}"
     if body:
@@ -809,9 +1136,44 @@ def _tf_payload(system: str, user: str, tier: str, max_tokens: int | None = None
     return payload
 
 
+class TokenFactoryTimeout(RuntimeError):
+    """Timeout Token Factory étiqueté (garde de latence).
+
+    `queue=True` : la file du limiteur est restée pleine (aucun POST parti).
+    `queue=False` : le POST a dépassé l'échéance totale du palier.
+    """
+
+    def __init__(self, message: str, *, queue: bool = False) -> None:
+        super().__init__(message)
+        self.queue = queue
+
+
+def _is_tf_timeout(exc: BaseException | None) -> bool:
+    """Vrai si `exc` (ou une exception de sa chaîne) est un timeout TF."""
+    seen = 0
+    while exc is not None and seen < 8:
+        if isinstance(exc, TokenFactoryTimeout):
+            return True
+        exc = exc.__cause__ or exc.__context__
+        seen += 1
+    return False
+
+
+def timeout_fallback_allowed() -> bool:
+    """Autorise le repli après timeout TF par défaut, sauf opt-out explicite."""
+    return _env("NAVIGUIDE_LLM_TIMEOUT_FALLBACK").strip().lower() not in {"0", "false", "no", "off"}
+
+
 def _tf_fast_super_retry(exc: BaseException) -> bool:
-    """Second essai Super (LT1) : vide, 5xx ou timeout — pas les 4xx."""
-    if isinstance(exc, httpx.TimeoutException):
+    """Second essai Super (LT1) : vide, 5xx ou timeout HTTP — pas les 4xx.
+
+    Le timeout HTTP arrive enveloppé (TokenFactoryTimeout, PR #153) : on le
+    reconnaît. Le timeout de file (`queue`) est exclu : la file est partagée,
+    un second essai ré-attendrait la même file.
+    """
+    if isinstance(exc, TokenFactoryTimeout):
+        return not exc.queue
+    if isinstance(exc, (httpx.TimeoutException, asyncio.TimeoutError)):
         return True
     msg = str(exc)
     if "tokenfactory empty" in msg:
@@ -832,16 +1194,81 @@ async def _call_tokenfactory(
         raise RuntimeError("NEBIUS_API_KEY missing")
     t = llm_budget.normalize_tier(tier)
     payload = _tf_payload(system, user, t, max_tokens)
-    timeout = TIMEOUT_ULTRA if t in {"deep", "judge"} else None
-    async with _tf_limiter():
-        r = await client.post(
-            _tf_url(t),
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json=payload,
-            timeout=timeout,
-        )
+    timeout = tf_timeout(t)
+    sema = _tf_limiter()
+    deadline = _TF_DEADLINE.get()
+    remaining = max(0.0, deadline - time.monotonic()) if deadline is not None else timeout.read
+    if remaining <= 0:
+        llm_budget.record_latency_timeout(t)
+        raise TokenFactoryTimeout("tokenfactory cascade deadline exhausted")
+    # Allow realistic judge bursts (8–10 calls): with four TF slots and
+    # configured 25 s per-call / total tier deadlines, a 10 s queue budget
+    # covers a second short generation wave while staying inside that deadline.
+    queue_timeout = min(TF_QUEUE_TIMEOUT_S, timeout.read, max(0.001, remaining - 0.005))
+    started = time.monotonic()
+    try:
+        await asyncio.wait_for(sema.acquire(), timeout=queue_timeout)
+    except asyncio.TimeoutError as exc:
+        # File d'attente du limiteur pleine trop longtemps : repli étiqueté.
+        llm_budget.record_latency_timeout(t)
+        raise TokenFactoryTimeout("tokenfactory queue timeout", queue=True) from exc
+    started = time.monotonic()
+    try:
+        # Échéance totale (P2-1) : httpx.Timeout borne chaque lecture, pas la
+        # requête entière ; une réponse au compte-gouttes pouvait la dépasser.
+        remaining = max(0.001, deadline - time.monotonic()) if deadline is not None else timeout.read
+        async with asyncio.timeout(remaining):
+            r = await client.post(
+                _tf_url(t),
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=httpx.Timeout(min(timeout.read, remaining), connect=min(timeout.connect, remaining)),
+            )
+        elapsed_ms = (time.monotonic() - started) * 1000.0
+        r.extensions["tf-tier"] = t
+        r.extensions["tf-elapsed-ms"] = elapsed_ms
+    except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
+        llm_budget.record_latency_timeout(t)
+        # Budget (P2-3) : la génération a pu partir côté Token Factory ;
+        # estimation prudente (prompt estimé + max_tokens) comptée au plafond.
+        est_pt, _ = _estimate_tokens(system, user, "")
+        llm_budget.record(t, est_pt, int(payload.get("max_tokens") or 0))
+        raise TokenFactoryTimeout(f"tokenfactory timeout after {timeout.read:g} s") from exc
+    except httpx.RequestError:
+        llm_budget.record_latency_error(t, "networkErrors", (time.monotonic() - started) * 1000.0)
+        raise
+    finally:
+        sema.release()
     if r.status_code >= 400:
+        body = r.text
+        rejected = False
+        quota_exhausted = r.status_code == 402
+        try:
+            payload = r.json()
+            errors = payload.get("error") if isinstance(payload, dict) else None
+            if isinstance(errors, dict):
+                code = str(errors.get("code") or "").lower()
+                error_type = str(errors.get("type") or "").lower()
+                quota_exhausted = quota_exhausted or code == "insufficient_quota" or error_type == "insufficient_quota" or code.startswith("credit_balance_") or error_type.startswith("credit_balance_")
+                param = str(errors.get("param") or "").lower()
+                rejected = code in {"model_not_found", "model_not_supported", "invalid_model"} and (not param or param == "model")
+                body = " ".join((str(errors.get("message") or ""), code, param))
+            if isinstance(payload, dict):
+                quota_exhausted = quota_exhausted or any(
+                    str(payload.get(key) or "").lower() == "insufficient_quota"
+                    or str(payload.get(key) or "").lower().startswith("credit_balance_")
+                    for key in ("type", "code")
+                )
+        except (ValueError, UnicodeDecodeError):
+            pass
+        if quota_exhausted:
+            llm_budget.pause_tokenfactory_for_quota()
+        explicit = re.search(r"(?:model|model_id|model id).{0,50}(?:not found|does not exist|unknown|unsupported|invalid)|(?:not found|does not exist|unknown|unsupported|invalid).{0,50}(?:model|model_id|model id)", body, re.I)
+        if rejected or (r.status_code in (400, 404) and explicit):
+            tf_catalog.invalidate(tf_base(t))
         raise _http_error("tokenfactory", r)
+    # Latence par palier du modèle appelé (C1-a) : aller-retour HTTP réussi.
+    llm_budget.record_latency(t, elapsed_ms)
     data = r.json()
     text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
     reported = str((data or {}).get("model") or "")
@@ -859,6 +1286,7 @@ async def _call_tokenfactory(
     llm_budget.record(t, pt, ct)
     report_tier = cascade_tier if cascade_tier is not None else t
     llm_budget.remember_source(source, report_tier)
+    llm_budget.remember_served_model(model, report_tier)
     llm_budget.clear_tier_errors(report_tier)
     return _as_result(text, source, model=model, tier=t)
 
@@ -869,8 +1297,10 @@ async def _call_nim(
     key = nvidia_key()
     if not key:
         raise RuntimeError("NVIDIA_API_KEY missing")
+    nim = nim_model(tier)
+    log.info("cascade nim: modèle %s (palier %s)", nim, tier or "-")
     payload = {
-        "model": NIM_MODEL,
+        "model": nim,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -882,19 +1312,49 @@ async def _call_nim(
         "reasoning_effort": "low",
         "chat_template_kwargs": {"thinking": False},
     }
-    r = await client.post(
-        NVIDIA_URL,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json=payload,
-    )
+    attempts = _nim_int_env("NAVIGUIDE_NIM_MAX_ATTEMPTS", 3, 1, 5)
+    deadline = _nim_float_env("NAVIGUIDE_NIM_DEADLINE_S", 30.0, 1.0, 300.0)
+
+    async def call_with_retries() -> httpx.Response:
+        for attempt in range(1, attempts + 1):
+            try:
+                async with _nim_semaphore():
+                    response = await client.post(
+                        NVIDIA_URL,
+                        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                        json=payload,
+                    )
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                if attempt >= attempts:
+                    raise
+                delay = min(8.0, 1.0 * (2 ** (attempt - 1)))
+                delay = random.uniform(0.0, delay)
+                log.info("cascade nim transport retry: attempt %d/%d in %.3fs", attempt + 1, attempts, delay)
+                await _nim_sleep(delay)
+                continue
+            except httpx.TransportError:
+                raise
+            if response.status_code not in (429, 503):
+                return response
+            if attempt >= attempts:
+                raise _http_error("nvidia", response)
+            delay = _nim_retry_delay(response, attempt)
+            log.info("cascade nim retry: attempt %d/%d in %.3fs", attempt + 1, attempts, delay)
+            await _nim_sleep(delay)
+        raise RuntimeError("nvidia attempts exhausted")
+
+    try:
+        r = await asyncio.wait_for(call_with_retries(), timeout=deadline)
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError(f"nvidia deadline exceeded after {deadline:g} s") from exc
     if r.status_code >= 400:
         raise _http_error("nvidia", r)
     data = r.json()
     text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
     if not text:
         raise RuntimeError("nvidia empty")
-    source = f"nvidia-{NIM_MODEL.split('/')[-1]}"
-    model = _exact_model(source, str((data or {}).get("model") or ""), NIM_MODEL)
+    source = f"nvidia-{nim.split('/')[-1]}"
+    model = _exact_model(source, str((data or {}).get("model") or ""), nim)
     return _as_result(text, source, model=model, tier=tier)
 
 
@@ -1028,6 +1488,7 @@ async def _cascade_once(
     max_tokens: int | None = None,
     lang: str = "fr",
 ) -> tuple[str, str]:
+    tf_deadline = time.monotonic() + tf_timeout(tier).read
     cache_key = prompt_cache_key(system, user, tier, online=online, max_tokens=max_tokens)
     hit = _cache_get(cache_key)
     if hit:
@@ -1042,23 +1503,38 @@ async def _cascade_once(
     asked_lang = "en" if _is_en(lang) else "fr"
 
     async def _tokenfactory_hop() -> tuple[str, str]:
+        call_tier = norm_tier
         try:
+            call_tier = await _guarded_tier(norm_tier, http)
+            if call_tier != norm_tier:
+                return await _call_tokenfactory(
+                    system, user, call_tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
+                    lang=asked_lang,
+                )
             return await _call_tokenfactory(
                 system, user, tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
                 lang=asked_lang,
             )
         except Exception as exc:
+            if isinstance(exc, TokenFactoryModelMissing):
+                raise
+            if llm_budget.tokenfactory_quota_paused():
+                raise
             if norm_tier == "nano":
+                # File pleine (P2-2) : Lightning ré-attendrait la même file.
+                if isinstance(exc, TokenFactoryTimeout) and exc.queue:
+                    raise
                 # Repli étiqueté : Lightning (source nemotron-lightning), puis
                 # le maillon NIM du tour de providers si Lightning échoue aussi.
                 if not llm_budget.allow("fast"):
                     raise
+                fallback_tier = await _guarded_tier("fast", http)
                 log.warning("cascade nano: %s — repli Lightning", exc)
                 return await _call_tokenfactory(
-                    system, user, "fast", http, max_tokens=max_tokens, cascade_tier=norm_tier,
+                    system, user, fallback_tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
                     lang=asked_lang,
                 )
-            if norm_tier != "fast" or not _tf_fast_super_retry(exc):
+            if call_tier != "fast" or not _tf_fast_super_retry(exc):
                 raise
             llm_budget.record_retry_super()
             budget = max_tokens if max_tokens is not None else llm_budget.max_tokens_for(norm_tier)
@@ -1086,11 +1562,39 @@ async def _cascade_once(
             )))
 
     failures: list[dict[str, str]] = []
+    tf_timed_out = False
     for name, step in hops:
+        # A local replay without Token Factory credentials must not even enter
+        # the TF hop. This also keeps the default provider list usable offline.
+        if name == "tokenfactory" and not nebius_key():
+            failures.append({"provider": name, "reason": "skipped: API key unavailable"})
+            continue
+        if name == "tokenfactory" and llm_budget.tokenfactory_quota_paused():
+            failures.append({"provider": name, "reason": "skipped: quota exhausted"})
+            continue
+        if tf_timed_out and name in NON_NEMOTRON_PROVIDERS and not timeout_fallback_allowed():
+            # P1-2 : pas de repli silencieux hors Nemotron après un timeout TF
+            # (défaut des providers). Texte de règles étiqueté à la place.
+            failures.append({"provider": name, "reason": "skipped: non-Nemotron after tokenfactory timeout"})
+            continue
         try:
-            result = await step()
+            if name == "tokenfactory":
+                token = _TF_DEADLINE.set(tf_deadline)
+                catalog_token = tf_catalog.set_deadline(tf_deadline)
+                try:
+                    remaining = max(0.0, tf_deadline - time.monotonic())
+                    if remaining <= 0:
+                        raise TokenFactoryTimeout("tokenfactory cascade deadline exhausted")
+                    async with asyncio.timeout(remaining):
+                        result = await step()
+                finally:
+                    tf_catalog.reset_deadline(catalog_token)
+                    _TF_DEADLINE.reset(token)
+            else:
+                result = await step()
             text, source = result
-            text = _apply_filter(text, facts if facts is not None else user)
+            if facts is not NO_NUMBER_FILTER:
+                text = _apply_filter(text, facts if facts is not None else user)
             if _clean_text(text):
                 if failures:
                     llm_budget.remember_cascade_errors(failures, tier=norm_tier)
@@ -1113,6 +1617,8 @@ async def _cascade_once(
             failures.append({"provider": name, "reason": last})
         except Exception as exc:
             last = str(exc)[:240]
+            if name == "tokenfactory" and (_is_tf_timeout(exc) or time.monotonic() >= tf_deadline):
+                tf_timed_out = True
             log.warning("cascade %s: %r", name, exc)
             failures.append({"provider": name, "reason": last})
 

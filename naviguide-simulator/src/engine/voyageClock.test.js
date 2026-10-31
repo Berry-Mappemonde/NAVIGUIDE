@@ -16,6 +16,8 @@ import {
   clockTickLabelsFromClock,
   filmBarTicks,
   formatFilmClockLine,
+  formatCivilDate,
+  formatStopoverDate,
   rebaseIso,
   resolveStoryT0,
   lookupVoyageClock,
@@ -470,6 +472,18 @@ describe("Voile hors avion", () => {
     const seaAfter = clock.vertices.filter((v) => v.vehicle === "main" && v.sailNm > 1000);
     assert.ok(seaAfter.length);
     assert.equal(Math.max(...seaAfter.map((v) => v.sailNm)), 1030);
+  });
+});
+
+describe("formatStopoverDate", () => {
+  it("shows arrival and departure in English, preserving the French date label", () => {
+    const arrival = "2026-05-15T08:00:00Z";
+    assert.equal(formatStopoverDate(arrival, 16 * 24, "en"), "15–31 May");
+    assert.equal(formatStopoverDate(arrival, 16 * 24, "fr"), formatCivilDate(arrival, "fr"));
+  });
+
+  it("formats a month boundary without exposing an ISO date", () => {
+    assert.equal(formatStopoverDate("2026-05-31T08:00:00Z", 48, "en"), "31 May–2 Jun");
   });
 });
 

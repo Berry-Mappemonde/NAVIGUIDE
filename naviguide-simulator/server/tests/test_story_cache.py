@@ -47,7 +47,7 @@ def test_story_endpoint_reads_the_cache_then_writes_through_it(monkeypatch):
     body = {"event": "zee-enter", "type": "zee-enter", "stableKey": "zee-enter:5693", "lang": "fr", "payload": {"zee": {"name": "Spanish EEZ", "mrgid": 5693}}}
     r1 = client.post("/ici/story", json=body, headers=PUBLIC).json()
     assert r1["status"] == "ready" and r1["cached"] is False and len(calls) == 1
-    assert r1["source"] == "nemotron-super"
+    assert r1["source"] == "nemotron-super-vl"
     assert any("tokenfactory.nebius.com" in u for u in calls)
     r2 = client.post("/ici/story", json={**body, "eventId": "other"}, headers=PUBLIC).json()
     assert r2["status"] == "ready" and r2["cached"] is True and r2["engine"].startswith("cache:")
@@ -75,14 +75,14 @@ def test_pregeneration_removed():
 
 def test_story_through_cache_keeps_writer_source():
     async def writer(body, client=None):
-        return {"status": "ready", "text": "Entrée dans la ZEE.", "engine": "nemotron-super", "source": "nemotron-super"}
+        return {"status": "ready", "text": "Entrée dans la ZEE.", "engine": "nemotron-super-vl", "source": "nemotron-super-vl"}
 
     body = {"type": "zee-enter", "stableKey": "zee-enter:l2", "lang": "fr"}
     out = asyncio.run(story_cache.story_through_cache(body, writer=writer))
-    assert out["source"] == "nemotron-super" and out["cached"] is False
+    assert out["source"] == "nemotron-super-vl" and out["cached"] is False
     hit = story_cache.get_cached(body)
     assert hit["source"] == "cache"
-    assert "nemotron-super" in hit["engine"]
+    assert "nemotron-super-vl" in hit["engine"]
 
 
 def test_story_through_cache_fills_source_from_engine_when_missing():
@@ -110,8 +110,8 @@ def test_story_through_cache_translates_cached_fr(monkeypatch):
         return {
             "status": "ready",
             "text": "Entrée dans la ZEE 5677.",
-            "engine": "nemotron-super",
-            "source": "nemotron-super",
+            "engine": "nemotron-super-vl",
+            "source": "nemotron-super-vl",
         }
 
     async def fake_tr(text, lang, client=None, **kw):

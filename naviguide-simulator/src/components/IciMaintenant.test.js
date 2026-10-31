@@ -338,6 +338,7 @@ describe("IciMaintenant — : onglet Récit et journal nommé", () => {
     assert.equal(localizeStoredTitle("AMP Taaone", "en"), "Marine protected area Taaone");
     assert.equal(localizeStoredTitle("Aire marine protégée Matavai", "en"), "Marine protected area Matavai");
     assert.equal(localizeStoredTitle("Zone économique exclusive espagnole", "en"), "Spanish EEZ");
+    assert.equal(localizeStoredTitle("Zone économique exclusive vénézuélienne", "en"), "Venezuelan EEZ");
     assert.equal(localizeStoredTitle("Entrée dans Zone économique exclusive française (France métropolitaine)", "en"), "Entering French EEZ (France métropolitaine)");
     assert.equal(journalChangeLabel({
       changes: [{ kind: "zee-enter", score: 2, title: "Zone économique exclusive espagnole", fact: "" }],
@@ -440,4 +441,15 @@ describe("IciMaintenant — : Suivre × ma route", () => {
     assert.match(legs[0].title, /Antilles/);
     assert.equal(legsFromClockMarks({ marks: [{ name: "Seul" }] }).length, 0);
   });
+});
+
+
+it("localizes geographic exonyms in stored title parentheses without changing FR", () => {
+  for (const [raw, expected] of [
+    ["Pojada (Polynésie Française)", "Pojada (French Polynesia)"],
+    ["Station (Wallis-et-Futuna)", "Station (Wallis and Futuna)"],
+  ]) {
+    assert.equal(localizeStoredTitle(raw, "en"), expected);
+    assert.equal(localizeStoredTitle(raw, "fr"), raw);
+  }
 });

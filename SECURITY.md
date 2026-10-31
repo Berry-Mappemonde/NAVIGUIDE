@@ -47,9 +47,9 @@ TODO (Berry): state the target time to a first response and the target time to a
 
 ## Alertes connues / Known alerts
 
-Au 18 octobre 2026, ce dépôt n'a pas encore de résultat CodeQL publié. Aucune alerte de gravité haute ou critique n'est donc consignée sur :
+CodeQL analyse les pull requests. Les alertes détectées sont suivies dans l'onglet Security de GitHub et traitées dans les pull requests concernées.
 
-As of 18 October 2026, this repository has no published CodeQL result yet. No high or critical alert is recorded on:
+CodeQL runs on pull requests. Findings are tracked in GitHub's Security tab and addressed in the relevant pull requests.
 
 - `naviguide-simulator/server/story_cascade.py`
 - `naviguide-simulator/server/escale_watch.py`

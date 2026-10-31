@@ -55,12 +55,12 @@ describe("mapInsetVars — crédits Leaflet dans la carte visible", () => {
     assert.equal(hidden["--sim-inset-bottom"], "0px");
   });
 
-  it("inset = mesure + 4", () => {
+  it("inset = mesure + 10", () => {
     const tall = mapInsetVars({ filmBarVisible: true, filmBarMeasuredPx: 140 });
     assert.equal(tall["--sim-inset-bottom"], `${140 + ATTRIBUTION_FILM_GAP_PX}px`);
     const chip = mapInsetVars({ filmBarVisible: true, filmBarMeasuredPx: 44 });
     assert.equal(chip["--sim-inset-bottom"], `${44 + ATTRIBUTION_FILM_GAP_PX}px`);
-    assert.equal(ATTRIBUTION_FILM_GAP_PX, 4);
+    assert.equal(ATTRIBUTION_FILM_GAP_PX, 10);
   });
 
   it("mesure l’occupation depuis le bas jusqu’au haut de la barre", () => {

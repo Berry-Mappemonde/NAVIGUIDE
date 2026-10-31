@@ -46,9 +46,9 @@ export function useLang() {
         createElement(LlmSourceBadge, { source, textOnly: true, testId: "film-source" }),
       ));
       const html = render("nemotron-super");
-      assert.match(html, /Models · AI-generated content \(model: Nemotron 3 Super · Token Factory\)/);
+      assert.match(html, /Models · AI-generated content \(model: Nemotron 3\.5 Super VL · Token Factory\)/);
       const nano = render("nemotron-nano");
-      assert.match(nano, /Models · AI-generated content \(model: Nemotron 3 Nano · Token Factory\)/);
+      assert.match(nano, /Models · AI-generated content \(model: Nemotron 3 Nano 30B · Token Factory\)/);
       assert.doesNotMatch(nano, /<img\b|<svg\b|\.svg|background-image|backgroundImage|url\(/i);
       assert.match(html, /<span>NVIDIA<\/span><span aria-hidden="true">·<\/span><span>Nebius<\/span>/);
       assert.doesNotMatch(html, /<img\b/i);

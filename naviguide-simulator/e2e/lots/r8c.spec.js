@@ -4,7 +4,7 @@
 // manque, on annote et on saute seulement les assertions d'horloge / fiche
 // enrichie, jamais celles sur l'absence de cartes flottantes.
 import { expect, test } from "@playwright/test";
-import { dismissNotForNav } from "../helpers.js";
+import { dismissNotForNav, openLeftDrawer } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-r8c/${name}.webp`,
@@ -22,10 +22,8 @@ async function leaveCinema(page) {
 
 async function showLeftPanel(page) {
   await leaveCinema(page);
-  const box = page.getByTestId("ici-maintenant");
-  if (await box.isVisible().catch(() => false)) return;
-  await page.locator(".naviguide-sidebar-toggle--left").click();
-  await expect(box).toBeVisible({ timeout: 15_000 });
+  await openLeftDrawer(page);
+  await expect(page.getByTestId("ici-maintenant")).toBeVisible({ timeout: 15_000 });
 }
 
 async function hideLeftPanel(page) {

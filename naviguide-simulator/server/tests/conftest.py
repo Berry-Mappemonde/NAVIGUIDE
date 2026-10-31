@@ -20,7 +20,12 @@ os.environ.setdefault("NAVIGUIDE_HINDCAST", "0")
 os.environ.setdefault("NAVIGUIDE_ETA_PREHEAT", "0")
 # No LLM pre-generation after a (test) warm run either.
 os.environ.setdefault("NAVIGUIDE_STORY_PREGEN", "0")
-# Pas de boucle veille Tavily pendant les tests.
+# Garde du catalogue Token Factory (GET /models) coupée par défaut : les
+# MockTransport des tests ne servent que /chat/completions. Les tests du garde
+# le rallument eux-mêmes (test_tf_model_guard.py).
+os.environ.setdefault("NAVIGUIDE_TF_MODEL_GUARD", "0")
+# Nouveau défaut : 1 (PR #401). Les tests forcent 0 explicitement ; un seul test
+# vérifie le défaut = actif.
 os.environ.setdefault("NAVIGUIDE_TAVILY_WATCH", "0")
 
 # Le secret admin d'un .env local ne doit pas faire échouer les tests qui

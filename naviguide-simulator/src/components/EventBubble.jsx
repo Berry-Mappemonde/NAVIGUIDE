@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { createRoot } from "react-dom/client";
+import { unmountRootLater } from "../utils/unmountRootLater.js";
 import { LocateFixed } from "lucide-react";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
 import { LangProvider, useLang } from "../i18n/LangContext.jsx";
@@ -87,9 +88,9 @@ function CardLinks({ entity, t }) {
 }
 
 export function EventBubble({ card, onClose }) {
-  const { t } = useLang();
-  const title = useMemo(() => bubbleTitle(card), [card]);
-  const facts = useMemo(() => bubbleFacts(card), [card]);
+  const { lang, t } = useLang();
+  const title = useMemo(() => bubbleTitle(card, undefined, lang), [card, lang]);
+  const facts = useMemo(() => bubbleFacts(card, lang), [card, lang]);
   const chips = useMemo(() => bubbleChips(card), [card]);
   if (!card) return null;
   return (
@@ -270,7 +271,9 @@ export function attachEventBubble(scene, L) {
       if (hideTimer) clearTimeout(hideTimer);
       if (visibleTimer) clearTimeout(visibleTimer);
       hide({ immediate: true });
-      try { root?.unmount(); } catch { /* tests */ }
+      // Différé : dispose() part souvent d'un nettoyage d'effet React ; un
+      // unmount synchrone pendant le rendu déclenche l'erreur « synchronously unmount ».
+      unmountRootLater(root);
     },
   };
   scene.eventBubble = api;

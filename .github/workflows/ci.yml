@@ -66,6 +66,10 @@ jobs:
         env:
           # Aucun secret : Copernicus et les LLM restent en repli / mock.
           PYTHONDONTWRITEBYTECODE: "1"
+      # Le stock figé de la recette et sa route : refus s'ils divergent, ::warning:: tant que
+      # la route publiée a changé depuis le gel (lancé ici car Playwright avale la sortie de l'API).
+      - name: Stock figé de la recette et route publiée
+        run: python scripts/e2e_store_preflight.py server/tests/fixtures/official_store.tar.gz server/tests/fixtures/official_store.route.geojson
       # Sécurité P1 : une dépendance avec une faille connue bloque la
       # PR — critique côté npm (prod seulement), toute faille côté pip.
       - name: Audit npm (dépendances de prod, critique = bloquant)
@@ -146,7 +150,10 @@ jobs:
     # cœurs ; Vite, l'API et un second navigateur faisaient dépasser les délais).
     name: simulateur — recette automatique (Playwright, stock figé) ${{ matrix.shard }}/6
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # 29 oct. : la tranche 1 (fc1, fc2, fl1 ≈ 2 min chacun) prend 10 à 12 min
+    # selon le runner ; à 12 min elle était annulée avant fl1 et fm1.
+    # globalTimeout Playwright : 15 min (playwright.config.js).
+    timeout-minutes: 18
     needs: [changes, simulator-dist]
     if: needs.changes.outputs.simulator == 'true'
     strategy:

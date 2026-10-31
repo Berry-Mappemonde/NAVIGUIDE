@@ -151,6 +151,7 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
             type="button"
             onClick={onDismiss}
             data-testid="moment-dismiss"
+            aria-label={t("momentClose")}
             title={t("momentClose")}
             className="w-6 h-6 flex items-center justify-center rounded-md text-white/60 hover:text-white hover:bg-white/10"
           >

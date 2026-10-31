@@ -9,12 +9,14 @@ import {
   EventBubbleGate,
   FilmEventScoreGate,
   applyBubbleClose,
+  bubbleFacts,
   bubbleId,
   bubbleScore,
   bubbleTitle,
   createEventPopupOptions,
   ensureEventPopup,
   followPopupToMarker,
+  filmEventCard,
   isBubbleSuppressed,
   pickFilmEvent,
   shouldShowFilmEvent,
@@ -53,6 +55,15 @@ function fakeMarker(lat, lng) {
 }
 
 describe("EventBubble — contrat", () => {
+  it("masque un corps français en anglais et conserve le français en français", () => {
+    const ev = { kind: "zee", fact: "Du 11 juin, des navires arrivent.", card: { text: "Du 11 juin, des navires arrivent." } };
+    assert.equal(filmEventCard(ev, "en").text, "");
+    assert.equal(bubbleFacts({ text: ev.fact }, "en"), "");
+    assert.equal(filmEventCard(ev, "fr").text, ev.fact);
+    assert.equal(bubbleFacts({ text: ev.fact }, "fr"), ev.fact);
+    assert.equal(filmEventCard({ ...ev, fact: "Ships arrive.", card: { text: "Ships arrive." } }, "en").text, "Ships arrive.");
+  });
+
   it("L.popup : autoPan false, pas de croix Leaflet, classe event-bubble, 280 px", () => {
     const opts = createEventPopupOptions();
     assert.equal(opts.autoPan, false);
@@ -137,6 +148,15 @@ describe("EventBubble — contrat", () => {
     })?.id, "wx");
   });
 
+  it("localise le titre ZEE des bulles et cartes du film en EN sans modifier le FR", () => {
+    const card = { kind: "zee", title: "Zone économique exclusive vénézuélienne" };
+    assert.equal(bubbleTitle(card, undefined, "fr"), card.title);
+    assert.equal(bubbleTitle(card, undefined, "en"), "Venezuelan EEZ");
+    assert.equal(filmEventCard({ card }).title, card.title);
+    assert.equal(filmEventCard({ card }, "en").title, "Venezuelan EEZ");
+    assert.match(src, /bubbleTitle\(card, undefined, lang\)/);
+  });
+
   it("la scène resynchronise la popup après syncMarkers ; le film ouvre la bulle", () => {
     assert.match(sceneSrc, /this\.eventBubble = attachEventBubble\(this, L\)/);
     assert.match(sceneSrc, /this\.eventBubble\?\.sync\(\)/);
@@ -209,5 +229,13 @@ describe("eventBubble — : seuil de score et somme 20 s", () => {
     assert.equal(gate.accept({ id: "amp-1", kind: "amp", score: 1 }), null);
     t = 2_000;
     assert.equal(gate.accept({ id: "zee-1", kind: "zee", score: 2 })?.id, "zee-1");
+  });
+});
+
+describe("EN text_en priority", () => {
+  it("EN prefers text_en over French text", async () => {
+    const { bubbleFacts } = await import("./eventBubble.js");
+    assert.match(bubbleFacts({ text: "Le bateau longe la côte des Baléares avec les alizés.", text_en: "The boat sails along the Balearic coast." }, "en"), /Balearic/);
+    assert.match(bubbleFacts({ text: "Le bateau longe la côte.", text_en: "The boat sails." }, "fr"), /bateau/);
   });
 });

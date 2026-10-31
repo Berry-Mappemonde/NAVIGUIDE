@@ -637,6 +637,23 @@ export function formatCivilDate(iso, lang = "fr") {
   return `${day} ${months[d.getUTCMonth()]} ${year} · ${hh}:${mm} UTC`;
 }
 
+/** Arrival → departure label for a stopover. French keeps its existing date label. */
+export function formatStopoverDate(iso, holdHours, lang = "fr") {
+  if (String(lang).toLowerCase().startsWith("fr") || !(Number(holdHours) > 0)) {
+    return formatCivilDate(iso, lang);
+  }
+  const arrival = new Date(iso);
+  if (Number.isNaN(arrival.getTime())) return formatCivilDate(iso, lang);
+  const departure = new Date(arrival.getTime() + Number(holdHours) * 3_600_000);
+  const months = MONTHS_SHORT.en;
+  const arriveLabel = `${arrival.getUTCDate()} ${months[arrival.getUTCMonth()]}`;
+  const departLabel = `${departure.getUTCDate()} ${months[departure.getUTCMonth()]}`;
+  return arrival.getUTCMonth() === departure.getUTCMonth()
+    && arrival.getUTCFullYear() === departure.getUTCFullYear()
+    ? `${arrival.getUTCDate()}–${departLabel}`
+    : `${arriveLabel}–${departLabel}`;
+}
+
 /** Décale une ISO de `fromT0` vers `toT0` (mêmes nombres d’heures, aucune date inventée). */
 export function rebaseIso(iso, fromT0, toT0) {
   const a = Date.parse(iso ?? "");

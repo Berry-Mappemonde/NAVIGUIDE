@@ -12,9 +12,12 @@ const apiPort = Number(
 const apiOrigin = `http://127.0.0.1:${apiPort}`;
 
 const viteServer = {
-  command: `npx vite preview --host 127.0.0.1 --port ${port} --strictPort`,
+  // Avec l'API hors ligne, le build est servi avec la route du stock figé (scripts/e2e-preview.sh).
+  command: withApi
+    ? `bash scripts/e2e-preview.sh ${port}`
+    : `npx vite preview --host 127.0.0.1 --port ${port} --strictPort`,
   url: origin,
-  reuseExistingServer: !process.env.CI && !process.env.PW_PORT,
+  reuseExistingServer: !withApi && !process.env.CI && !process.env.PW_PORT,
   timeout: 60_000,
   env: withApi
     ? { ...process.env, API_PROXY_TARGET: apiOrigin }
@@ -41,7 +44,8 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   // Un seul navigateur en CI : le runner a deux cœurs, déjà pris par Vite et l'API.
   workers: process.env.CI ? 1 : 4,
-  globalTimeout: 12 * 60 * 1000,
+  // 29 oct. : la tranche 1 (fc1, fc2, fl1 ≈ 2,6 min chacun depuis le regel du stock) dépasse 12 min.
+  globalTimeout: 15 * 60 * 1000,
   reporter: process.env.CI
     ? [
       ["github"],

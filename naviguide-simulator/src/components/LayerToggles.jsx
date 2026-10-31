@@ -28,7 +28,7 @@ export const LayerToggles = memo(function LayerToggles({ maritimeLayers }) {
         const error = maritimeLayers[errorKey];
         const climo = key.startsWith("climo-");
         const empty = key === "capitaineries" && harbourEmpty;
-        const titleBase = error ? `${t(titleKey)} : ${error}` : t(titleKey);
+        const titleBase = error ? `${t(titleKey)} : ${t("layerUnavailable")}` : t(titleKey);
         const title = climo && climoMeta ? `${titleBase} · ${climoMeta}` : titleBase;
         return (
           <button

@@ -95,7 +95,7 @@ test("Rédigé actif si hasWritten ou film prêt, jamais Rédigé comme source",
   await written.click();
   await expect(written).toHaveAttribute("aria-pressed", "true");
   const source = page.getByTestId("film-source");
-  await expect(source).toContainText("Nemotron 3 Super", { timeout: 8_000 });
+  await expect(source).toContainText("Nemotron 3.5 Super VL", { timeout: 8_000 });
   await expect(source).toContainText("Token Factory");
   await expect(source).not.toHaveAttribute("hidden", "");
   expect(llmHits, "aucun appel LLM depuis le navigateur").toEqual([]);
@@ -118,8 +118,9 @@ test("Rédigé actif si hasWritten ou film prêt, jamais Rédigé comme source",
   await expect(rawOff).toHaveAttribute("aria-pressed", "true");
   await expect(sourceOff).toBeAttached();
   const srcText = (await sourceOff.innerText()).trim();
+  await expect(sourceOff).toHaveAttribute("data-llm-source", "rules");
   expect(srcText, "jamais le mot Rédigé comme source").not.toMatch(/Rédigé/i);
-  expect(srcText).toMatch(/règles/i);
+  expect(srcText).toMatch(/(^|· )Formulé par les données brutes$/);
   expect(llmHits, "aucun appel LLM depuis le navigateur").toEqual([]);
   await shot(page, "02-brut");
 });

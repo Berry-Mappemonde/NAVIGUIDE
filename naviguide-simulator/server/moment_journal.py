@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from moment import build_moment, signature
+from moment import localize_place_name
 
 log = logging.getLogger("naviguide-simulator.moments")
 
@@ -32,6 +33,7 @@ APPROACH_NM_FLOOR = 80.0
 APPROACH_FRAC = 0.10
 _GENERIC_TITLES = frozenset({
     "station croisée", "station", "stations", "croisée", "croisee",
+    "station passed", "passed",
     "marina croisée", "marina", "marinas",
     "aire marine protégée", "amp", "mpa",
     "formalités d'entrée", "ports d'entrée", "port d'entrée",
@@ -55,6 +57,18 @@ def _as_float(value: Any) -> float | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
     return None
+
+
+def _english(lang: str) -> bool:
+    return str(lang or "fr").lower().startswith("en")
+
+
+def _distance(value: Any, lang: str) -> str:
+    number = float(value)
+    if not _english(lang):
+        return str(value)
+    rendered = f"{number:.1f}" if number % 1 else str(int(number))
+    return rendered
 
 
 def _parse_iso(value: Any) -> datetime | None:
@@ -234,7 +248,7 @@ def _approach_threshold(leg_nm: float | None) -> float:
     return max(APPROACH_NM_FLOOR, APPROACH_FRAC * span)
 
 
-def diff_moments(prev: dict | None, cur: dict | None, *, marks: list | None = None) -> list[dict]:
+def diff_moments(prev: dict | None, cur: dict | None, *, marks: list | None = None, lang: str = "fr") -> list[dict]:
     """Différence entre deux Moments. Première ligne (prev vide) → []."""
     if not isinstance(cur, dict) or not prev:
         return []
@@ -246,10 +260,12 @@ def diff_moments(prev: dict | None, cur: dict | None, *, marks: list | None = No
     if prev_to and cur_to and prev_to != cur_to:
         arrived = _escale_place(cur, None, marks) or _stop_title(str(prev_to))
         if arrived:
+            if _english(lang):
+                arrived = localize_place_name(arrived, lang)
             changes.append(_change(
                 "escale", SCORE_ESCALE,
-                f"Arrivée à {arrived}",
-                f"{prev_to} → {cur_to}",
+                f"{'Arrival at' if _english(lang) else 'Arrivée à'} {arrived}",
+                (f"{localize_place_name(prev_to, lang)} → {localize_place_name(cur_to, lang)}" if _english(lang) else f"{prev_to} → {cur_to}"),
             ))
     rem = _as_float(cur_leg.get("remainingNm"))
     prev_rem = _as_float(prev_leg.get("remainingNm"))
@@ -261,10 +277,13 @@ def diff_moments(prev: dict | None, cur: dict | None, *, marks: list | None = No
     ):
         place = _escale_place(cur, cur_to, marks)
         if place:
+            if _english(lang):
+                place = localize_place_name(place, lang)
+            distance = _distance(rem, lang)
             changes.append(_change(
                 "escale", SCORE_ESCALE,
-                f"Arrivée à {place}",
-                f"Reste {rem} nm.",
+                f"{'Arrival at' if _english(lang) else 'Arrivée à'} {place}",
+                (f"{distance} nm remaining." if _english(lang) else f"Reste {distance} nm."),
             ))
 
     prev_alerts, cur_alerts = _alert_map(prev), _alert_map(cur)
@@ -298,8 +317,8 @@ def diff_moments(prev: dict | None, cur: dict | None, *, marks: list | None = No
         if prev_name:
             changes.append(_change(
                 "zee-enter", SCORE_ZEE,
-                "Haute mer",
-                f"Sortie de {prev_name}.",
+                ("High seas" if _english(lang) else "Haute mer"),
+                (f"Left {localize_place_name(prev_name, lang)}." if _english(lang) else f"Sortie de {prev_name}."),
             ))
     elif _entry(prev) != _entry(cur) and not any(c.get("kind") == "zee-enter" for c in changes):
         ports = [str(p).strip() for p in (_entry(cur).get("ports") or []) if str(p).strip()]
@@ -677,7 +696,7 @@ def _pearls_in_route_order(voy: dict) -> list[dict]:
     return out
 
 
-def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
+def _build_rows(voyage_id: str, voy: dict, lang: str = "fr") -> list[dict]:
     pearls = _pearls_in_route_order(voy)
     vertices = (voy.get("clock") or {}).get("vertices") or []
     if not isinstance(vertices, list):
@@ -716,7 +735,7 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
         leg_idx, jambe = _leg_at(
             legs, sail if sail is not None else 0.0, pos=pos, marks=marks,
         )
-        cur = build_moment(pearl, clock, jambe, thresholds, lang="fr")
+        cur = build_moment(pearl, clock, jambe, thresholds, lang=lang)
         sig = cur.get("signature") or signature(cur)
         to_nm = _as_float(jambe.get("toNm"))
         from_nm = _as_float(jambe.get("fromNm"))
@@ -745,7 +764,7 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
             continue
         # L'ancien « le port / la marina la plus proche a changé » répétait le même nom à chaque pas.
         changes = [
-            c for c in diff_moments(prev, cur, marks=marks)
+            c for c in diff_moments(prev, cur, marks=marks, lang=lang)
             if c.get("kind") not in {"marina", "port", "coast", "project"}
         ]
         changes.extend(new_places)
@@ -761,7 +780,7 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
                 rem_nm = int(round(live_rem))
                 changes.append(_change(
                     "approche", SCORE_APPROCHE, title,
-                    f"Approche de {title}, reste {rem_nm} milles nautiques.",
+                    (f"Approaching {localize_place_name(title, lang)}, {rem_nm} nm remaining." if _english(lang) else f"Approche de {title}, reste {rem_nm} milles nautiques."),
                 ))
         if live_rem is not None:
             prev_rem_live = live_rem
@@ -848,9 +867,9 @@ def _with_clock(voy: dict) -> dict:
     return {**voy, "clock": clock} if clock else voy
 
 
-def rows_from_voyage(voyage_id: str, voy: dict) -> list[dict]:
+def rows_from_voyage(voyage_id: str, voy: dict, lang: str = "fr") -> list[dict]:
     """Moments datés, même forme que le journal officiel. `voy['pearls']` si déjà chargées."""
-    return _build_rows(voyage_id, voy)
+    return _build_rows(voyage_id, voy, lang=lang)
 
 
 def moment_row_key(row: dict) -> str:
@@ -1013,7 +1032,7 @@ def merge_preserve_moment_rows(
     existing: list[dict],
     rebuilt: list[dict],
     *,
-    refresh_from_rebuild: bool = False,
+    refresh_from_rebuild: bool = True,
 ) -> tuple[list[dict], list[dict]]:
     """Garde toutes les lignes existantes ; fusionne les champs du recalcul par seq."""
     by_seq: dict[int, dict] = {}

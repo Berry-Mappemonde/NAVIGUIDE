@@ -1,6 +1,6 @@
 import { memo, useMemo } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
-import { formatCivilDate } from "../engine/voyageClock.js";
+import { formatStopoverDate } from "../engine/voyageClock.js";
 import { displayStopName } from "../utils/stopLabels.js";
 import { formatEtaRange, formatEtaRangeTitle, nextStopFromMarks, nextStopRowIndex, useOfficialEta } from "../hooks/usePlanReview.js";
 import { regimeLegendHex } from "../utils/riskColors.js";
@@ -77,7 +77,7 @@ export const EscaleLegend = memo(function EscaleLegend({
         at,
         mark: m,
         nmLabel: `${Math.round(Number(m.nm) || 0).toLocaleString(lang === "en" ? "en-US" : "fr-FR")} nm`,
-        dateLabel: m.iso ? ` · ${formatCivilDate(m.iso, lang)}` : "",
+        dateLabel: m.iso ? ` · ${formatStopoverDate(m.iso, m.holdHours, lang)}` : "",
         quayLabel: m.holdHours > 0 ? ` · ${t("escalesQuay", { days: Math.round(m.holdHours / 24) })}` : "",
       };
     }), [marks, lang, t]);

@@ -37,10 +37,10 @@ def test_allow_false_at_cap(monkeypatch):
 
 def test_models_and_sources_are_overridable(monkeypatch):
     assert llm_budget.model_for("fast") == "nvidia/Nemotron-3_5-Lightning"
-    assert llm_budget.model_for("write") == "nvidia/nemotron-3-super-120b-a12b"
+    assert llm_budget.model_for("write") == "nvidia/Nemotron-3.5-Super-VL"
     assert llm_budget.model_for("deep") == "nvidia/Nemotron-3-Ultra-550b-a55b"
     assert llm_budget.model_for("judge") == "nvidia/Nemotron-3-Ultra-550b-a55b"
-    assert llm_budget.source_for("write") == "nemotron-super"
+    assert llm_budget.source_for("write") == "nemotron-super-vl"
     assert llm_budget.source_for("deep") == "nemotron-ultra"
     monkeypatch.setenv("NAVIGUIDE_TF_MODEL_WRITE", "nvidia/nemotron-3-nano-30b-a3b")
     assert llm_budget.model_for("write") == "nvidia/nemotron-3-nano-30b-a3b"
@@ -105,18 +105,18 @@ def test_mode_all_allows_background(monkeypatch):
         assert llm_budget.allow("write") is True
 
 
-def test_judge_cap_default_is_sixty_thousand(monkeypatch):
+def test_judge_cap_default_is_judge_sized(monkeypatch):
     monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     monkeypatch.delenv("NAVIGUIDE_LLM_BACKGROUND", raising=False)
-    assert llm_budget.daily_cap("judge") == 60_000
+    assert llm_budget.daily_cap("judge") == 250_000
     assert llm_budget.allow("judge") is True
 
 
 def test_judge_stays_off_when_mode_off(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
     monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
-    assert llm_budget.daily_cap("judge") == 60_000
+    assert llm_budget.daily_cap("judge") == 250_000
     assert llm_budget.allow("judge") is False
     assert llm_budget.allow_chat_ultra() is False
 
@@ -137,10 +137,10 @@ def test_chat_ultra_cap_default_ten_eleventh_refused(monkeypatch):
     assert st["chatUltra"]["cap"] == 10
 
 
-def test_ultra_daily_cap_is_eighty_thousand(monkeypatch):
+def test_ultra_daily_cap_default(monkeypatch):
     monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_DEEP", raising=False)
-    assert llm_budget.DEFAULT_CAPS["deep"] == 80_000
-    assert llm_budget.daily_cap("deep") == 80_000
+    assert llm_budget.DEFAULT_CAPS["deep"] == 150_000
+    assert llm_budget.daily_cap("deep") == 150_000
 
 
 def test_daily_usd_absent_does_not_cut(monkeypatch):
@@ -189,10 +189,10 @@ def test_daily_usd_refuses_when_call_would_exceed(monkeypatch):
 
 
 def test_judge_cap_unchanged_without_token_env(monkeypatch):
-    """Le palier juge du dépôt ne bouge pas (tête = 60_000, pas 0)."""
+    """Le palier juge du dépôt ne bouge pas (tête = 250_000, pas 0)."""
     monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
-    assert llm_budget.DEFAULT_CAPS["judge"] == 60_000
-    assert llm_budget.daily_cap("judge") == 60_000
+    assert llm_budget.DEFAULT_CAPS["judge"] == 250_000
+    assert llm_budget.daily_cap("judge") == 250_000
 
 
 def test_last_source_by_tier_tracks_per_tier():
@@ -261,18 +261,18 @@ def test_deferred_demand_allows_write_in_on_demand_background(monkeypatch):
 def test_nano_tier_uses_exact_catalog_id(monkeypatch):
     """Palier nano : id catalogue exact, source, prix, plafond, surcharge d'env."""
     assert "nano" in llm_budget.TIERS
-    assert llm_budget.DEFAULT_MODELS["nano"] == "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
-    assert llm_budget.model_for("nano") == "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
-    assert llm_budget.source_for("nano") == "nemotron-nano"
+    assert llm_budget.DEFAULT_MODELS["nano"] == "nvidia/Nemotron-3_5-Lightning"
+    assert llm_budget.model_for("nano") == "nvidia/Nemotron-3_5-Lightning"
+    assert llm_budget.source_for("nano") == "nemotron-lightning"
     assert llm_budget.PRICES_PER_M["nano"] == (0.06, 0.24)
     assert llm_budget.estimate_usd("nano", 1_000_000, 0) == 0.06
     assert llm_budget.estimate_usd("nano", 0, 1_000_000) == 0.24
     assert llm_budget.DEFAULT_CAPS["nano"] == 100_000
     assert llm_budget.daily_cap("nano") == 100_000
     assert llm_budget.max_tokens_for("nano") == 256
-    monkeypatch.setenv("NAVIGUIDE_TF_MODEL_NANO", "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B")
+    monkeypatch.setenv("NAVIGUIDE_TF_MODEL_NANO", "nvidia/Nemotron-3_5-Lightning")
     monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_NANO", "42")
-    assert llm_budget.model_for("nano") == "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+    assert llm_budget.model_for("nano") == "nvidia/Nemotron-3_5-Lightning"
     assert llm_budget.daily_cap("nano") == 42
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     assert llm_budget.allow("nano") is True
@@ -282,3 +282,36 @@ def test_nano_tier_uses_exact_catalog_id(monkeypatch):
     st = llm_budget.status()
     assert st["nano"]["tokens"] == 42
     assert st["nano"]["calls"] == 1
+
+
+def test_default_caps_fit_one_judge_film_and_chat():
+    """Un film intégral (~18k write + ~15k Ultra, relevé du 28 oct.) plus 10 questions
+    Ultra (≤ 2 048 sortie + ~3k entrée) tiennent plusieurs fois dans les plafonds."""
+    film_write, film_ultra = 18_000, 15_000
+    chat_ultra = 10 * (2_048 + 3_000)
+    judge_day = film_ultra + chat_ultra
+    assert llm_budget.DEFAULT_CAPS["judge"] >= 3 * judge_day
+    assert llm_budget.DEFAULT_CAPS["write"] >= 10 * film_write
+
+
+def test_default_caps_keep_judges_reserve():
+    """Borne haute (tout au prix de sortie) : ≤ MAX_DEFAULT_DAY_USD par jour."""
+    worst = llm_budget.worst_case_day_usd(dict(llm_budget.DEFAULT_CAPS))
+    assert worst <= llm_budget.MAX_DEFAULT_DAY_USD
+    # 47 jours (30 oct. → 15 déc.) au pire : sous 90 $.
+    assert worst * 47 < 90
+
+
+def test_status_exposes_caps_and_remaining(monkeypatch):
+    for t in llm_budget.TIERS:
+        monkeypatch.delenv(f"NAVIGUIDE_LLM_DAILY_TOKENS_{t.upper()}", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "1000")
+    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_USD", raising=False)
+    llm_budget.record("judge", 300, 100)
+    caps = llm_budget.status()["caps"]
+    assert caps["tokens"]["judge"] == 1000
+    assert caps["remaining"]["judge"] == 600
+    assert caps["tokens"]["write"] == llm_budget.DEFAULT_CAPS["write"]
+    assert caps["dailyUsd"] is None
+    assert caps["tavilyCredits"] == llm_budget.tavily_cap()
+    assert caps["worstCaseDayUsd"] > 0

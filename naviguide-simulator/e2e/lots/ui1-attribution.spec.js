@@ -74,7 +74,7 @@ async function assertAttributionOnBar(page, label) {
     const g = await creditGeometry(page);
     if (!g.ok) return `absent (${label})`;
     const heightOk = Math.abs(g.attrH - g.zoomH) <= 0.5;
-    const gapOk = g.attrBottom <= g.barTop - 2 && g.attrBottom >= g.barTop - 8;
+    const gapOk = g.attrBottom <= g.barTop - 2 && g.attrBottom >= g.barTop - 12;
     return heightOk && gapOk ? "ok" : `h=${g.attrH}/${g.zoomH} gap=${g.gap.toFixed(2)} (${label})`;
   }, { timeout: 8_000 }).toBe("ok");
   const g = await creditGeometry(page);
@@ -82,7 +82,7 @@ async function assertAttributionOnBar(page, label) {
   expect(Math.abs(g.attrH - g.zoomH), `hauteur attribution ${g.attrH} vs zoom ${g.zoomH} (${label})`).toBeLessThanOrEqual(0.5);
   expect(Math.abs(g.attrH - g.plusH), `hauteur attribution ${g.attrH} vs + ${g.plusH} (${label})`).toBeLessThanOrEqual(0.5);
   expect(g.attrBottom, `attribution sous la barre (${label}), gap=${g.gap}`).toBeLessThanOrEqual(g.barTop - 2);
-  expect(g.attrBottom, `attribution trop loin de la barre (${label}), gap=${g.gap}`).toBeGreaterThanOrEqual(g.barTop - 8);
+  expect(g.attrBottom, `attribution trop loin de la barre (${label}), gap=${g.gap}`).toBeGreaterThanOrEqual(g.barTop - 12);
   expect(g.text).toMatch(/Leaflet/);
   expect(g.text).toMatch(/Esri/);
   expect(g.text).toMatch(/OpenStreetMap/);

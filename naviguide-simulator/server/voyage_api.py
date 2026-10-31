@@ -82,7 +82,24 @@ STALE_VOYAGE_DAYS = 7
 # le même fichier que le client charge en /route.geojson. Après la
 # séparation, NAVIGUIDE remplace ce lien par le fichier récupéré
 # depuis GET /api/export/route.geojson. Pas une seconde copie ici.
-_ROUTE_GEOJSON = Path(__file__).resolve().parent.parent / "public" / "route.geojson"
+# Seule exception : la recette hors ligne (NAVIGUIDE_OFFLINE, posé par
+# scripts/e2e-store-api.sh) lit la route sur laquelle le stock figé a été
+# calculé (NAVIGUIDE_OFFICIAL_ROUTE_FILE), pour que l'empreinte de la route
+# corresponde aux clés de l'archive. Jamais en production ni en dev.
+_PUBLIC_ROUTE_GEOJSON = Path(__file__).resolve().parent.parent / "public" / "route.geojson"
+
+
+def _route_geojson_path() -> Path:
+    override = (os.environ.get("NAVIGUIDE_OFFICIAL_ROUTE_FILE") or "").strip()
+    if override:
+        import offline  # noqa: PLC0415
+
+        if offline.enabled():
+            return Path(override)
+    return _PUBLIC_ROUTE_GEOJSON
+
+
+_ROUTE_GEOJSON = _route_geojson_path()
 _AIR_JUMP_NM = 120.0
 _AIR_FILM_NM = 80.0
 _create_limited = rate_limited("voyage-create", 6, 60.0, global_limit=60)
@@ -1269,7 +1286,9 @@ def ensure_official(body: VoyageCreate, background: BackgroundTasks, request: Re
         if changed:
             save_voyage(existing)
             log.info("voyage officiel mis à jour par l'admin (%s points)", len(existing["points"]))
-        background.add_task(official_store.kick_worker)
+        # Admin : passage complet (kick_worker). Visiteur : réparation bornée —
+        # relance un remplisseur mort et ne le réveille que si le climo du jour manque.
+        background.add_task(official_store.kick_worker if is_admin(request) else official_store.repair_worker)
         clock = official_store.stored_clock() or existing.get("clock")
         meta = _public_meta(existing)
         if clock:
@@ -1364,13 +1383,45 @@ class JournalNoteIn(BaseModel):
     t: Optional[str] = None
 
 
+def _stored_moments_in_english(rows: list[dict]) -> list[dict]:
+    """Only reuse cached rows when their language is explicitly identified.
+
+    The official frozen journal is French and has no localized companion
+    fields. Guessing from place names or translating prose heuristically would
+    leak French into the English view, so unknown-language rows are omitted.
+    """
+    return [
+        row for row in rows or []
+        if isinstance(row, dict)
+        and str(row.get("lang") or row.get("language") or "").lower().startswith("en")
+    ]
+
+
 @router.get("/voyage/official/moments")
 def get_official_moments(
     until: str | None = Query(None, description="ISO : ne garder que les lignes t ≤ until"),
+    lang: str = Query("fr"),
 ):
     """Journal des moments — lu du stock RF2, jamais un warm sur la requête."""
     try:
         out = official_store.serve_moments(until=until)
+        if lang.lower().startswith("en") and out.get("status") != official_store.PREPARING:
+            voy = load_voyage(OFFICIAL_VOYAGE_ID)
+            if voy is not None:
+                from moment_journal import _with_clock, rows_from_voyage  # noqa: PLC0415
+
+                rows = rows_from_voyage(OFFICIAL_VOYAGE_ID, _with_clock(voy), lang="en")
+                # The frozen/offline voyage may not contain the pearl history
+                # needed to rebuild the localized view. Keep the stored journal
+                # only when rows identify themselves as English; the official
+                # frozen rows are French and must not leak into this response.
+                if not rows:
+                    rows = _stored_moments_in_english(out.get("moments") or [])
+                if until:
+                    from moment_journal import _iso_le  # noqa: PLC0415
+
+                    rows = [row for row in rows if _iso_le(row.get("t"), until)]
+                out = {**out, "count": len(rows), "moments": rows}
     except Exception as exc:
         log.exception("GET /voyage/official/moments")
         official_store.kick_worker()

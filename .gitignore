@@ -44,3 +44,8 @@ credentials.json
 # Accumulators roses / P90 en cours — ne pas committer
 backend/data/climatology/**/*.partial.npz
 backend/data/climatology/**/*.npz.tmp
+
+# Dépendances Python installées localement (contournement sandbox) — NE JAMAIS committer
+.pip_packages/
+candidate.geojson
+amp-nogo.json

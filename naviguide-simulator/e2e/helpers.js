@@ -60,6 +60,17 @@ export async function panelClosed(page, side) {
   return cls.includes("translate-x-full");
 }
 
+// The drawer's buttons stay visibility:hidden until it has slid in (5dbab1a), and its box
+// counts as visible even while slid off-screen. So read the toggle, never a button or the
+// box: clicking the toggle on a drawer that is already opening closes it.
+export async function openLeftDrawer(page) {
+  const toggle = page.locator(".naviguide-sidebar-toggle--left");
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  const drawer = page.locator(".naviguide-sidebar-drawer");
+  await expect(drawer).toHaveClass(/naviguide-drawer-settled/, { timeout: 15_000 });
+  await expect(drawer).toBeInViewport();
+}
+
 export async function showLeftPanel(page) {
   await leaveCinema(page);
   const box = page.getByTestId("ici-maintenant");

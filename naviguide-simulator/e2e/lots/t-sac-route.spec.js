@@ -2,7 +2,7 @@
 // Sans API : pas de « Bourgenay » (la route officielle ne fuit pas).
 // Avec API (proxy /ici → :8010) : le briefing cite la Mauritanie.
 import { expect, test } from "@playwright/test";
-import { dismissNotForNav } from "../helpers.js";
+import { dismissNotForNav, openLeftDrawer } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-t/${name}.webp`,
@@ -77,9 +77,7 @@ test("Route dessinée au large de la Mauritanie : pas de Bourgenay", async ({ pa
   await page.waitForFunction(() => (window.__naviguideDrawn?.segments?.length || 0) >= 1, { timeout: 20_000 });
 
   const finish = page.getByRole("button", { name: /terminer/i });
-  if (!(await finish.isVisible().catch(() => false))) {
-    await page.locator(".naviguide-sidebar-toggle--left").click();
-  }
+  await openLeftDrawer(page);
   await expect(finish).toBeEnabled({ timeout: 20_000 });
   await finish.click();
 

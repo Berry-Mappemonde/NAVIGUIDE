@@ -206,7 +206,14 @@ test("parcours 60 secondes : suivre, revoir, journal, tracer, mention IA", async
   expect(size).toBeGreaterThanOrEqual(12);
   await dismissNotForNav(page);
   await expect(notice).toBeVisible();
-  await expect(page.getByRole("button", { name: /tavily/i })).toHaveCount(0);
+  // Seule la question d'exemple « web » nomme Tavily (elle l'annonce, le serveur l'appelle).
+  // Les boutons du tiroir gauche restent visibility: hidden pendant son glissement
+  // (index.css, .naviguide-drawer-settled) : on attend la liste exacte, sans l'affaiblir.
+  const tavilyButtons = page.getByRole("button", { name: /tavily/i });
+  await expect.poll(
+    () => tavilyButtons.evaluateAll((els) => els.map((el) => el.getAttribute("data-testid"))),
+    { timeout: 10_000 },
+  ).toEqual(["logbook-chat-example-web"]);
   await shot(page, "02-journal");
 
   const sheet = page.getByTestId("escale-sheet");
@@ -436,11 +443,13 @@ test("non-régression suivre, film, revue, polaire, exports, fiche", async ({ pa
     const replay = page.getByTestId("replay-start");
     if (await pill150.getAttribute("data-variant-absent") !== "1") await pill150.click();
     if (await replay.isEnabled()) {
+      // La pilule 150 s quitte le DOM pendant le rejeu : lire son état avant de lancer.
+      const pressed150 = await pill150.getAttribute("aria-pressed");
       await replay.click();
       const stop = page.getByTestId("replay-stop");
       await expect(stop).toBeVisible({ timeout: 8_000 });
       const budget = await page.evaluate(() => window.__naviguideFilm?.targetSeconds ?? null);
-      if (budget != null && await pill150.getAttribute("aria-pressed") === "true") {
+      if (budget != null && pressed150 === "true") {
         expect(budget).toBeGreaterThanOrEqual(150 * 0.9);
         expect(budget).toBeLessThanOrEqual(150 * 1.1);
       }
@@ -519,8 +528,7 @@ test("non-régression suivre, film, revue, polaire, exports, fiche", async ({ pa
       await page.locator(".naviguide-sidebar-toggle--right").evaluate((el) => el.click());
       await expect.poll(() => panelClosed(page, "right")).toBe(true);
     }
-    await bringOffscreenFlagsIntoView(page);
-    const freeIdx = await page.evaluate(() => [...document.querySelectorAll("[data-testid='waypoint-flag']")]
+    const findFreeFlag = () => page.evaluate(() => [...document.querySelectorAll("[data-testid='waypoint-flag']")]
       .findIndex((el) => {
         const r = el.getBoundingClientRect();
         if (!r.width || !r.height) return false;
@@ -529,7 +537,16 @@ test("non-régression suivre, film, revue, polaire, exports, fiche", async ({ pa
       }));
     const flags = page.locator("[data-testid='waypoint-flag']");
     const flagCount = await flags.count();
-    if (flagCount > 0) expect(freeIdx, "aucun drapeau dégagé").toBeGreaterThanOrEqual(0);
+    // Après l'arrêt du film, la carte peut encore glisser vers le bateau et
+    // repousser les drapeaux hors cadre : recadrer jusqu'à ce qu'un drapeau soit dégagé.
+    let freeIdx = -1;
+    if (flagCount > 0) {
+      await expect.poll(async () => {
+        await bringOffscreenFlagsIntoView(page);
+        freeIdx = await findFreeFlag();
+        return freeIdx;
+      }, { message: "aucun drapeau dégagé", timeout: 10_000 }).toBeGreaterThanOrEqual(0);
+    }
     if (freeIdx >= 0) {
       const flag = flags.nth(freeIdx);
       await flag.click({ force: true });
@@ -679,14 +696,14 @@ test("non-régression tracé : jambes, terre, distance, suite, 60 points, GeoJSO
 
   await test.step("NAV-G-13 soixante points au plus", async () => {
     await page.waitForFunction(() => typeof window.__naviguideAddDrawnPoint === "function");
-    await page.evaluate(async () => {
-      for (let i = 0; i < 61; i += 1) {
-        await window.__naviguideAddDrawnPoint(46.157, -1.151);
-      }
-    });
-    await expect.poll(() => page.evaluate(() => window.__naviguideDrawn?.points?.length || 0), {
-      timeout: 60_000,
-    }).toBe(60);
+    const initialCount = await page.evaluate(() => window.__naviguideDrawn?.points?.length || 0);
+    for (let i = 0; i < 61; i += 1) {
+      await page.evaluate(() => window.__naviguideAddDrawnPoint(46.157, -1.151));
+      await expect.poll(() => page.evaluate(() => window.__naviguideDrawn?.points?.length || 0), {
+        timeout: 60_000,
+      }).toBe(Math.min(initialCount + i + 1, 60));
+    }
+    await expect.poll(() => page.evaluate(() => window.__naviguideDrawn?.points?.length || 0)).toBe(60);
     await expect(page.getByTestId("draw-point-limit")).toContainText("60 points maximum");
   });
 

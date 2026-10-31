@@ -1,4 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { fetchWatchSettings, saveWatchSettings } from "../utils/watchSettings.js";
 import { CheckCircle2, ChevronLeft, ChevronRight, KeyRound, Loader2, Moon, Sun, TriangleAlert, Upload } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { adminHeaders, getAdminSecret, setAdminSecret } from "../utils/adminSecret.js";
@@ -107,6 +108,7 @@ function LayersDrawer({ tracerLayout, layersOn, t, maritimeLayers }) {
             return next;
           });
         }}
+        data-tour="layers"
       >
         <span className="text-[12px] font-semibold text-slate-200">{t("layersTitle")}</span>
         <span className="flex items-center gap-2">
@@ -185,14 +187,12 @@ async function readPolarResponse(response) {
   throw error;
 }
 
-function polarErrorDetail(error, t) {
+export function polarErrorDetail(error, t) {
   if (error?.code === "DEFAULT_POLAR_NOT_FOUND") return t("polarDefaultUnavailable");
   if (error?.status === 401 || error?.status === 503) return t("adminKeyRequired");
   if (error?.status === 413) return t("polarFileTooLarge");
-  if (error?.status >= 500) {
-    return t("polarServiceUnavailable", { status: error.status });
-  }
-  if (error?.detail) return error.detail;
+  if (error?.status >= 500) return t("polarServiceUnavailable");
+  // Server details may contain internal codes or exception text.
   return t("polarNetworkError");
 }
 
@@ -217,6 +217,58 @@ function PolarVmgRow({ tws, entry }) {
  * Sécurité P0 — la clé admin partagée (X-Naviguide-Admin), sur une ligne :
  * icône, champ « Coller la clé admin », OK. Stockée dans ce navigateur.
  */
+function TavilyWatchToggle() {
+  const { t } = useLang();
+  const [enabled, setEnabled] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+  useEffect(() => {
+    let live = true;
+    fetchWatchSettings()
+      .then((s) => { if (live && s) setEnabled(s.enabled); })
+      .catch(() => { if (live) setNote("tavilyWatchError"); });
+    return () => { live = false; };
+  }, []);
+  const flip = async () => {
+    if (enabled === null || busy) return;
+    setBusy(true);
+    const out = await saveWatchSettings(!enabled);
+    setBusy(false);
+    if (out.ok) {
+      setEnabled(out.settings.enabled);
+      setNote("");
+    } else {
+      setNote(out.reason === "admin" ? "tavilyWatchAdmin" : "tavilyWatchError");
+    }
+  };
+  const on = Boolean(enabled);
+  return (
+    <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 px-3 py-2" data-testid="tavily-watch-setting">
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0">
+          <span id="tavily-watch-label" className="block text-xs font-medium text-slate-200">{t("tavilyWatchLabel")}</span>
+          <span id="tavily-watch-hint" className="block text-[10px] leading-snug text-slate-400">{t("tavilyWatchHint")}</span>
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          aria-labelledby="tavily-watch-label"
+          aria-describedby="tavily-watch-hint"
+          data-testid="tavily-watch-toggle"
+          data-state={enabled === null ? "unknown" : on ? "on" : "off"}
+          disabled={enabled === null || busy}
+          onClick={flip}
+          className={`w-10 h-5 rounded-full relative flex-shrink-0 transition-colors disabled:opacity-50 ${on ? "bg-violet-500" : "bg-slate-600"}`}
+        >
+          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${on ? "left-5" : "left-0.5"}`} />
+        </button>
+      </div>
+      {note ? <p role="status" data-testid="tavily-watch-note" className="mt-1 text-[10px] leading-snug text-amber-300/90">{t(note)}</p> : null}
+    </div>
+  );
+}
+
 function AdminKeyField() {
   const { t } = useLang();
   const [value, setValue] = useState(() => getAdminSecret());
@@ -563,6 +615,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
           rounded-full w-9 h-9 flex items-center justify-center shadow-lg
           border border-slate-700
           hover:bg-slate-800 transition-all duration-300 ${open ? "right-[322px]" : "right-4"}`}
+        aria-label={open ? t("hideToolsPanel") : t("showToolsPanel")}
         title={open ? t("hideToolsPanel") : t("showToolsPanel")}
       >
         {open ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
@@ -817,6 +870,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
             </div>
             )}
 
+            <TavilyWatchToggle />
             <AdminKeyField />
           </div>
 

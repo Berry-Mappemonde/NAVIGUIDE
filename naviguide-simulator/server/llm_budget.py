@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -18,12 +19,50 @@ NS = "llm-budget"
 LAST_SOURCE_NS = "llm"
 LAST_SOURCE_KEY = "last-source"
 LAST_SOURCE_BY_TIER_KEY = "last-source-by-tier"
+LAST_MODEL_BY_TIER_KEY = "last-model-by-tier"
 LAST_ERROR_KEY = "last-error"
 LAST_ERRORS_BY_TIER_KEY = "last-errors-by-tier"
 LAST_ERROR_AT_KEY = "last-error-at"
 FALLBACK_PROVIDERS = ("nim", "openrouter", "claude")
 
+_tf_quota_until = 0.0
+_tf_quota_lock = threading.Lock()
+
+
+def pause_tokenfactory_for_quota() -> None:
+    """Pause Token Factory after an exhausted-credit response (default: 10 min)."""
+    global _tf_quota_until
+    try:
+        pause_s = max(0.0, float(os.environ.get("NAVIGUIDE_TF_QUOTA_PAUSE_S", "600")))
+    except (TypeError, ValueError):
+        pause_s = 600.0
+    if pause_s <= 0:
+        return
+    with _tf_quota_lock:
+        _tf_quota_until = time.time() + pause_s
+
+
+def tokenfactory_quota_paused() -> bool:
+    with _tf_quota_lock:
+        return time.time() < _tf_quota_until
+
+
+def tokenfactory_quota_status() -> dict[str, Any]:
+    with _tf_quota_lock:
+        until = _tf_quota_until
+    if time.time() >= until:
+        return {"state": "ok", "until": None}
+    return {"state": "exhausted", "until": datetime.fromtimestamp(until, timezone.utc).isoformat()}
+
 TIERS = ("nano", "fast", "write", "deep", "judge")
+
+# Nebius Token Factory — deprecations November 2026 (serverless).
+# https://docs.tokenfactory.nebius.com/model-deprecations-november-2026
+DEPRECATED_TOKEN_FACTORY_MODELS = frozenset({
+    "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+    "nvidia/nemotron-3-nano-30b-a3b",
+    "nvidia/nemotron-3-super-120b-a12b",
+})
 
 # Tokens / jour — resserrés le 28 sept. (facture Nebius du mois : 6,58 $ sur 60 $ de crédits, dont 5,19 $ de
 # Nemotron Ultra pour un badge que personne ne voyait) : fast ≈ 0,05 $/j, write ≈ 0,08 $/j.
@@ -34,10 +73,19 @@ DEFAULT_CAPS = {
     # reste sous le palier fast, les appels tiennent en quelques centaines de tokens.
     "nano": 100_000,
     "fast": 200_000,
-    "write": 150_000,
-    "deep": 80_000,
-    "judge": 60_000,
+    # Relevés réels du 28 oct. (PR #126) : un film rédigé intégral = ~18 000 tokens write
+    # + ~15 000 tokens Ultra (édition + relecture, palier judge). À 60 000, un seul juge
+    # (film + quelques questions « Raisonnement ») coupait Ultra pour tous jusqu'à minuit UTC.
+    # Dimensionné pour la période de jugement (1er-15 déc.) : ~15 films intégraux / jour.
+    "write": 450_000,
+    "deep": 150_000,
+    "judge": 250_000,
 }
+
+# Garde-fou : coût maximal d'une journée aux plafonds par défaut, en comptant TOUS les
+# tokens au prix de sortie (borne haute). ~1,68 $/j → ~80 $ sur les 47 jours jusqu'au
+# 15 déc. : la réserve de crédits des juges reste couverte. Un test vérifie la borne.
+MAX_DEFAULT_DAY_USD = 1.75
 
 # Appels Ultra du chat / jour (geste explicite seulement). En plus du plafond tokens judge.
 DEFAULT_CHAT_ULTRA_PER_DAY = 10
@@ -119,9 +167,11 @@ PRICES_PER_M = {
 }
 
 DEFAULT_MODELS = {
-    "nano": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+    # Nano 30B → Nemotron 3.5 Lightning (Nov. 2026 deprecation).
+    "nano": "nvidia/Nemotron-3_5-Lightning",
     "fast": "nvidia/Nemotron-3_5-Lightning",
-    "write": "nvidia/nemotron-3-super-120b-a12b",
+    # Super 120B → Nemotron 3.5 Super VL (Nov. 2026 deprecation).
+    "write": "nvidia/Nemotron-3.5-Super-VL",
     "deep": "nvidia/Nemotron-3-Ultra-550b-a55b",
     "judge": "nvidia/Nemotron-3-Ultra-550b-a55b",
 }
@@ -137,9 +187,9 @@ DEFAULT_MAX_TOKENS = {
 }
 
 SOURCE_FOR_TIER = {
-    "nano": "nemotron-nano",
+    "nano": "nemotron-lightning",  # Nano 30B retiré : le palier sert Lightning 3.5
     "fast": "nemotron-lightning",
-    "write": "nemotron-super",
+    "write": "nemotron-super-vl",
     "deep": "nemotron-ultra",
     "judge": "nemotron-ultra",
 }
@@ -189,6 +239,11 @@ def daily_cap(tier: str) -> int:
 def model_for(tier: str) -> str:
     t = normalize_tier(tier)
     return (os.environ.get(_ENV_MODEL[t]) or DEFAULT_MODELS[t]).strip() or DEFAULT_MODELS[t]
+
+
+def configured_models() -> dict[str, str]:
+    """Modèles Token Factory configurés par palier (override env inclus)."""
+    return {t: model_for(t) for t in TIERS}
 
 
 def max_tokens_for(tier: str) -> int:
@@ -322,15 +377,16 @@ def record(tier: str, prompt_tokens: int, completion_tokens: int) -> dict[str, A
     pt = max(0, int(prompt_tokens))
     ct = max(0, int(completion_tokens))
     add_usd = estimate_usd(t, pt, ct)
-    with _LOCK:
-        cur = get_usage(t)
+    def update(raw):
+        cur = raw if isinstance(raw, dict) else _empty()
+        cur = {**_empty(), **cur}
         cur["prompt_tokens"] = int(cur["prompt_tokens"]) + pt
         cur["completion_tokens"] = int(cur["completion_tokens"]) + ct
         cur["tokens"] = int(cur["prompt_tokens"]) + int(cur["completion_tokens"])
         cur["calls"] = int(cur["calls"]) + 1
         cur["usd"] = round(float(cur["usd"]) + add_usd, 8)
-        pearl_store.kv_put(NS, _kv_key(t), cur)
-        return dict(cur)
+        return cur
+    return dict(pearl_store.kv_update(NS, _kv_key(t), update))
 
 
 def _last_source_by_tier_raw() -> dict[str, str]:
@@ -350,6 +406,38 @@ def _last_source_by_tier_raw() -> dict[str, str]:
 def last_source_by_tier() -> dict[str, str]:
     """Dernière source réelle par palier (LT2) — pour `/ici/warm/status`."""
     return dict(_last_source_by_tier_raw())
+
+
+def _last_model_by_tier_raw() -> dict[str, str]:
+    import pearl_store  # noqa: PLC0415
+
+    hit = pearl_store.kv_get(LAST_SOURCE_NS, LAST_MODEL_BY_TIER_KEY)
+    val = (hit or {}).get("value")
+    if not isinstance(val, dict):
+        return {}
+    out: dict[str, str] = {}
+    for k, v in val.items():
+        if k in TIERS and isinstance(v, str) and v.strip():
+            out[k] = v.strip()
+    return out
+
+
+def last_model_by_tier() -> dict[str, str]:
+    """Dernier id modèle Token Factory servi par palier — `/ici/warm/status`."""
+    return dict(_last_model_by_tier_raw())
+
+
+def remember_served_model(model_id: str | None, tier: str | None = None) -> None:
+    """Id catalogue renvoyé par Token Factory pour ce palier (badge / warm status)."""
+    import pearl_store  # noqa: PLC0415
+
+    mid = (model_id or "").strip()
+    if not mid or tier is None:
+        return
+    t = normalize_tier(tier)
+    by = _last_model_by_tier_raw()
+    by[t] = mid
+    pearl_store.kv_put(LAST_SOURCE_NS, LAST_MODEL_BY_TIER_KEY, by)
 
 
 def remember_source(source: str | None, tier: str | None = None) -> None:
@@ -657,6 +745,215 @@ def remember_tavily_port(port: str | None) -> None:
         pearl_store.kv_put(NS, _tavily_key(), _tavily_persist(cur))
 
 
+# --- Latence mesurée par palier (C1-a) -------------------------------------
+# Durée de l'aller-retour HTTP Token Factory (time.monotonic autour du POST),
+# par palier du modèle réellement appelé. On garde les derniers échantillons
+# du jour (UTC) pour une médiane ; aucune donnée de prompt n'est stockée.
+LATENCY_SAMPLES = 51
+
+
+def _latency_key(day: str | None = None) -> str:
+    return f"{day or today()}:latency"
+
+
+def _latency_raw(day: str | None = None) -> dict[str, dict[str, Any]]:
+    import pearl_store  # noqa: PLC0415
+
+    hit = pearl_store.kv_get(NS, _latency_key(day))
+    val = (hit or {}).get("value")
+    if not isinstance(val, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for k, v in val.items():
+        if k not in TIERS or not isinstance(v, dict):
+            continue
+        samples = [int(x) for x in (v.get("samples") or []) if isinstance(x, (int, float)) and x >= 0]
+        try:
+            calls = max(0, int(v.get("calls") or len(samples)))
+        except (TypeError, ValueError):
+            calls = len(samples)
+        try:
+            timeouts = max(0, int(v.get("timeouts") or 0))
+        except (TypeError, ValueError):
+            timeouts = 0
+        out[k] = {"samples": samples[-LATENCY_SAMPLES:], "calls": calls, "timeouts": timeouts}
+        for error_key in ("networkErrors", "httpErrors"):
+            errors = v.get(error_key) or []
+            if isinstance(errors, list):
+                out[k][error_key] = [dict(e) for e in errors[-LATENCY_SAMPLES:] if isinstance(e, dict)]
+    return out
+
+
+def record_latency(tier: str, ms: float) -> None:
+    """Un appel Token Factory réussi (HTTP < 400) a pris `ms` millisecondes."""
+    import pearl_store  # noqa: PLC0415
+
+    t = normalize_tier(tier)
+    try:
+        val = int(round(float(ms)))
+    except (TypeError, ValueError):
+        return
+    if val < 0:
+        return
+    def update(raw):
+        cur = raw if isinstance(raw, dict) else {}
+        cur = {k: dict(v) for k, v in cur.items() if k in TIERS and isinstance(v, dict)}
+        row = cur.get(t) or {"samples": [], "calls": 0, "timeouts": 0}
+        row["samples"] = (list(row["samples"]) + [val])[-LATENCY_SAMPLES:]
+        row["calls"] = int(row["calls"]) + 1
+        cur[t] = row
+        return cur
+    pearl_store.kv_update(NS, _latency_key(), update)
+
+
+def record_latency_timeout(tier: str) -> None:
+    """Un appel Token Factory a échoué par timeout (queue ou HTTP)."""
+    import pearl_store  # noqa: PLC0415
+
+    t = normalize_tier(tier)
+    def update(raw):
+        cur = raw if isinstance(raw, dict) else {}
+        cur = {k: dict(v) for k, v in cur.items() if k in TIERS and isinstance(v, dict)}
+        row = cur.get(t) or {"samples": [], "calls": 0, "timeouts": 0}
+        row["timeouts"] = int(row["timeouts"]) + 1
+        cur[t] = row
+        return cur
+    pearl_store.kv_update(NS, _latency_key(), update)
+
+
+def record_latency_error(tier: str, kind: str, ms: float, status: int | None = None) -> None:
+    """Record a failed TF request separately from successful latency samples."""
+    import pearl_store  # noqa: PLC0415
+
+    if kind not in {"networkErrors", "httpErrors"}:
+        return
+    t = normalize_tier(tier)
+    try:
+        duration = max(0, int(round(float(ms))))
+    except (TypeError, ValueError):
+        return
+
+    def update(raw):
+        cur = raw if isinstance(raw, dict) else {}
+        cur = {k: dict(v) for k, v in cur.items() if k in TIERS and isinstance(v, dict)}
+        row = cur.setdefault(t, {"samples": [], "calls": 0, "timeouts": 0})
+        entries = list(row.get(kind) or [])
+        error = {"ms": duration}
+        if kind == "httpErrors":
+            error["status"] = int(status or 0)
+        entries = (entries + [error])[-LATENCY_SAMPLES:]
+        row[kind] = entries
+        cur[t] = row
+        return cur
+
+    pearl_store.kv_update(NS, _latency_key(), update)
+
+
+def _median(values: list[int]) -> int | None:
+    if not values:
+        return None
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    return s[mid] if n % 2 else int(round((s[mid - 1] + s[mid]) / 2))
+
+
+def latency_status(day: str | None = None) -> dict[str, dict[str, int]]:
+    """`{tier: {lastMs, medianMs, calls, timeouts?}}` pour les paliers appelés aujourd'hui."""
+    out: dict[str, dict[str, Any]] = {}
+    for t, row in _latency_raw(day).items():
+        samples = row["samples"]
+        calls = int(row["calls"])
+        timeouts = int(row.get("timeouts", 0))
+        if not samples and timeouts == 0 and not row.get("networkErrors") and not row.get("httpErrors"):
+            continue
+        entry: dict[str, int] = {"calls": calls, "samples": len(samples)}
+        if samples:
+            entry["lastMs"] = samples[-1]
+            entry["medianMs"] = _median(samples) or 0
+        if timeouts > 0:
+            entry["timeouts"] = timeouts
+        for key in ("networkErrors", "httpErrors"):
+            errors = row.get(key) or []
+            if errors:
+                entry[key] = {"count": len(errors), "last": dict(errors[-1])}
+        out[t] = entry
+    return out
+
+
+# --- Garde de disponibilité des modèles (C1-b) -------------------------------
+# Un id configuré absent du catalogue Token Factory de son hôte : la cascade
+# prend un autre Nemotron TF présent (libellé réel) ou passe au repli suivant.
+# Compteur du jour par palier demandé, avec l'id manquant et le remplaçant.
+def _guard_key(day: str | None = None) -> str:
+    return f"{day or today()}:model-missing"
+
+
+def model_missing_usage(day: str | None = None) -> dict[str, dict[str, Any]]:
+    import pearl_store  # noqa: PLC0415
+
+    hit = pearl_store.kv_get(NS, _guard_key(day))
+    val = (hit or {}).get("value")
+    if not isinstance(val, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for k, v in val.items():
+        if k in TIERS and isinstance(v, dict) and v.get("model"):
+            try:
+                count = max(0, int(v.get("count") or 0))
+            except (TypeError, ValueError):
+                count = 0
+            out[k] = {
+                "model": str(v.get("model")),
+                "substitute": str(v["substitute"]) if v.get("substitute") else None,
+                "substituteTier": str(v["substituteTier"]) if v.get("substituteTier") else None,
+                "count": count,
+            }
+    return out
+
+
+def record_model_missing(
+    tier: str, model: str, substitute_tier: str | None = None, substitute: str | None = None,
+) -> dict[str, Any]:
+    """Compte un appel dont le modèle configuré manquait au catalogue de son hôte."""
+    import pearl_store  # noqa: PLC0415
+
+    t = normalize_tier(tier)
+    with _LOCK:
+        cur = model_missing_usage()
+        row = cur.get(t) or {"count": 0}
+        row.update({
+            "model": (model or "").strip(),
+            "substitute": (substitute or "").strip() or None,
+            "substituteTier": normalize_tier(substitute_tier) if substitute_tier else None,
+            "count": int(row.get("count") or 0) + 1,
+        })
+        cur[t] = row
+        pearl_store.kv_put(NS, _guard_key(), cur)
+        return dict(row)
+
+
+def worst_case_day_usd(caps: dict[str, int] | None = None) -> float:
+    """Borne haute d'une journée : tous les tokens au plafond, facturés au prix de sortie."""
+    c = caps if caps is not None else {t: daily_cap(t) for t in TIERS}
+    return round(sum(int(c[t]) * PRICES_PER_M[t][1] / 1_000_000 for t in TIERS), 6)
+
+
+def caps_status() -> dict[str, Any]:
+    """Plafonds effectifs (env inclus) et reste du jour — pour vérifier que les juges
+    ne tombent pas sur `source=budget`. Aucun montant de solde n'est lu ni écrit."""
+    tokens = {t: daily_cap(t) for t in TIERS}
+    remaining = {t: max(0, tokens[t] - int(get_usage(t)["tokens"])) for t in TIERS}
+    usd_cap = daily_usd_cap()
+    return {
+        "tokens": tokens,
+        "remaining": remaining,
+        "dailyUsd": usd_cap,
+        "worstCaseDayUsd": worst_case_day_usd(tokens),
+        "tavilyCredits": tavily_cap(),
+    }
+
+
 def status() -> dict[str, Any]:
     """Shape for `/ici/warm/status` → `llm: {tier: {tokens, calls, usd}}`."""
     out: dict[str, Any] = {}
@@ -674,6 +971,7 @@ def status() -> dict[str, Any]:
         "lastAt": tv.get("lastAt"),
         "lastPort": tv.get("lastPort"),
     }
+    out["caps"] = caps_status()
     ultra = chat_ultra_usage()
     out["chatUltra"] = {"calls": int(ultra["calls"]), "cap": chat_ultra_cap()}
     src = last_source()
@@ -684,6 +982,15 @@ def status() -> dict[str, Any]:
         out["lastSourceByTier"] = by_tier
     out["fallback"] = fallback_usage()
     out["retrySuper"] = int(retry_super_usage()["count"])
+    out["tfQuota"] = tokenfactory_quota_status()
+    out["configuredModels"] = configured_models()
+    lat = latency_status()
+    if lat:
+        out["latency"] = lat
+    out["modelGuard"] = model_guard_status()
+    by_model = last_model_by_tier()
+    if by_model:
+        out["lastModelByTier"] = by_model
     errs = last_errors()
     if errs:
         out["lastErrors"] = errs
@@ -692,3 +999,14 @@ def status() -> dict[str, Any]:
         if at:
             out["lastErrorAt"] = at
     return out
+
+
+def model_guard_status() -> dict[str, Any]:
+    """Garde de disponibilité (cache seulement, aucun appel réseau)."""
+    import tf_catalog  # noqa: PLC0415
+
+    return {
+        "enabled": tf_catalog.enabled(),
+        "catalogs": tf_catalog.status(),
+        "missing": model_missing_usage(),
+    }

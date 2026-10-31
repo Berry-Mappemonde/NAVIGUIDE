@@ -71,7 +71,7 @@ def _fake(calls: list):
             return blob, "nemotron-ultra"
         if kw.get("tier") == "fast":
             src = (user or "").split("French text:\n", 1)[-1]
-            return src, "nemotron-lightning"
+            return src.replace("Devant", "The boat is off"), "nemotron-lightning"
         sents = _sents(user)
         if sents:
             return " ".join(sents), "nemotron-super"
@@ -118,7 +118,7 @@ def test_estimate_counts_the_chain_and_does_not_call(monkeypatch):
     assert calls == []
     assert est["calls"] == 8
     assert est["calls"] != stories_once.BATCH_FIGURE
-    assert [item["tier"] for item in est["items"]] == ["write", "judge", "judge", "fast"] * 2
+    assert [item["tier"] for item in est["items"]] == ["write", "judge", "judge", "write"] * 2
     extra = stories_once.estimate_extra()
     assert "stories: 2" in extra
     assert "batch_figure: 177" in extra
@@ -158,7 +158,9 @@ def test_cached_story_makes_no_call_and_a_second_run_is_refused():
 def test_run_stops_at_the_cap_and_resumes_without_repaying(monkeypatch):
     from film_script import film_ultra_open
 
-    assert film_ultra_open() is False
+    # Porte Ultra du film ouverte par défaut (écart n° 44) : le job stories_once
+    # garde ses propres freins (plafond, reprise sans repayer), indépendants d'elle.
+    assert film_ultra_open() is True
     stories_once.set_inventory(_two())
     calls: list = []
     stories_once.set_cascade(_fake(calls))
@@ -179,7 +181,7 @@ def test_run_stops_at_the_cap_and_resumes_without_repaying(monkeypatch):
     state["block"] = False
     result = one_shot.run(stories_once.JOB, est["fingerprint"])
     assert result["completed"][0:2] == stopped.value.completed
-    assert calls == ["write", "judge", "judge", "fast", "write", "judge", "judge", "fast"]
+    assert calls == ["write", "judge", "judge", "write", "judge", "judge"] * 2
     assert len(result["completed"]) == 8
 
 
@@ -210,6 +212,24 @@ def test_service_serves_the_prepared_text_or_the_on_demand_path():
     missed = asyncio.run(story_cache.story_through_cache(other, writer=writer))
     assert called == ["poe-ahead:9:Marseille"]
     assert missed["text"] == "Sur demande."
+
+
+def test_direct_english_write_does_not_copy_french_ultra_receipt(monkeypatch):
+    import film_script
+
+    story = _story("Bilbao", 4)
+    row = {}
+    stories_once._put_slot(row, "fr", "Le bateau quitte Bilbao.", "nemotron-super", reviewedBy="nemotron-ultra")
+
+    async def direct_write(_plan, **_kwargs):
+        return None, {"chapters": [{"text": "The boat leaves Bilbao."}], "source": "nemotron-super"}, {}
+
+    monkeypatch.setattr(film_script, "write_film_chain", direct_write)
+    monkeypatch.setattr(stories_once, "_run", lambda awaitable: asyncio.run(awaitable))
+    monkeypatch.setattr(stories_once, "_cascade", lambda: object())
+    stories_once._translate(story, row)
+    assert row["en"]["text"] == "The boat leaves Bilbao."
+    assert "reviewedBy" not in row["en"]
 
 
 def test_warm_never_starts_the_job():

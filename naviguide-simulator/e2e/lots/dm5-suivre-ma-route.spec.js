@@ -135,6 +135,8 @@ test("Tracer → Terminer → Suivre : ma route, seule ; pilules Berry | ma rout
   await expect(finish).toBeEnabled({ timeout: 20_000 });
   await finish.click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("here-product")).toBeVisible();
+  await expect(page.getByTestId("expedition-story")).toHaveCount(0);
 
   // Suivre l'expédition → Suivre sur MA route (B1) : l'app ne remet pas Berry.
   const officialBefore = officialCalls.length;

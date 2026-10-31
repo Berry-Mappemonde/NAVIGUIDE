@@ -87,3 +87,37 @@ def test_hispaniola_and_timor_are_annotated():
     assert tl and tl["island"] == "timor"
     pg = lookup("Papua New Guinea Exclusive Economic Zone")
     assert pg and pg["island"] == "new_guinea"
+
+
+def test_indian_ocean_waters_have_french_exonyms():
+    """Film 29/10 00 h 46 : « les eaux Sri Lankan », « les eaux Maldivian » (démonyme anglais brut)."""
+    assert waters_label("Sri Lankan Exclusive Economic Zone", "fr") == "les eaux sri-lankaises"
+    assert waters_label("Maldivian Exclusive Economic Zone", "fr") == "les eaux maldiviennes"
+    assert waters_label("Maldives Exclusive Economic Zone", "fr") == "les eaux maldiviennes"
+    assert waters_label("Sri Lankan Exclusive Economic Zone", "en") == "Sri Lankan waters"
+    assert waters_label("Omani Exclusive Economic Zone", "fr") == "les eaux omanaises"
+    # « \boman » ne capture pas Romanian ; l'Inde reste l'Inde.
+    assert lookup("Romanian Exclusive Economic Zone") is None or lookup("Romanian Exclusive Economic Zone")["id"] != "om"
+    assert waters_label("Indian Exclusive Economic Zone", "fr") == "les eaux indiennes"
+
+
+def test_no_english_demonym_left_on_common_eez_names():
+    import re as _re
+    names = [
+        "Sri Lankan", "Maldivian", "Somali", "Omani", "Yemeni", "Djiboutian", "Pakistani",
+        "Myanmar", "Thailand", "Malaysian", "Singaporean", "Nauruan", "Marshallese",
+        "Micronesian", "Palauan", "Namibian", "Angolan", "Gambian",
+    ]
+    for n in names:
+        fr = waters_label(f"{n} Exclusive Economic Zone", "fr")
+        assert fr.startswith("les eaux ") and not _re.search(r"[A-Z]", fr[len("les eaux "):]), (n, fr)
+
+
+def test_gambia_alias_does_not_capture_gambier_islands():
+    """Contre-revue 136-137 P2-6 : « Gambier Islands » (Polynésie) n'est pas la Gambie."""
+    hit = lookup("Gambier Islands")
+    assert hit is None or hit["id"] != "gm"
+    assert "gambiennes" not in waters_label("Gambier Islands", "fr")
+    assert lookup("Gambia")["id"] == "gm"
+    assert lookup("Gambian Exclusive Economic Zone")["id"] == "gm"
+    assert waters_label("Gambian Exclusive Economic Zone", "fr") == "les eaux gambiennes"

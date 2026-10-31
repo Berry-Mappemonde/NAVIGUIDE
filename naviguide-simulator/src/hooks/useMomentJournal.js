@@ -220,14 +220,16 @@ export function appendLocalMoment(entries, moment, { voyageId = "local" } = {}) 
   return ordered.concat(next).slice(-MOMENT_JOURNAL_CAP);
 }
 
-export function momentsRequestPath(voyageId) {
+export function momentsRequestPath(voyageId, lang = "fr") {
   const id = String(voyageId || "").trim();
   if (id && id !== "official") return `/voyage/${encodeURIComponent(id)}/moments`;
-  return "/voyage/official/moments";
+  return String(lang || "fr").toLowerCase().startsWith("en")
+    ? `/voyage/official/moments?lang=${encodeURIComponent(lang)}`
+    : "/voyage/official/moments";
 }
 
-async function defaultMomentsFetch({ signal, voyageId = "official" } = {}) {
-  const res = await fetch(`${API_URL}${momentsRequestPath(voyageId)}`, { signal });
+async function defaultMomentsFetch({ signal, voyageId = "official", lang = "fr" } = {}) {
+  const res = await fetch(`${API_URL}${momentsRequestPath(voyageId, lang)}`, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -309,6 +311,7 @@ export function useMomentJournal({
   until = null,
   enabled = true,
   suivreCustom = false,
+  lang = "fr",
 } = {}) {
   const local = mode === "simulation" || mode === "drawn";
   const [state, setState] = useState(() => ({
@@ -333,7 +336,7 @@ export function useMomentJournal({
     let alive = true;
     setState({ entries: [], loading: true, error: null, source: "none" });
     pollOfficialMoments({
-      fetchFn: (opts) => defaultMomentsFetch({ ...opts, voyageId: routeId }),
+      fetchFn: (opts) => defaultMomentsFetch({ ...opts, voyageId: routeId, lang }),
       signal: controller.signal,
       onUpdate: (next) => {
         if (!alive) return;
@@ -357,7 +360,7 @@ export function useMomentJournal({
       alive = false;
       controller.abort();
     };
-  }, [enabled, local, routeId]);
+  }, [enabled, local, routeId, lang]);
 
   useEffect(() => {
     if (!enabled || !local || !incomingMoment?.signature) return;

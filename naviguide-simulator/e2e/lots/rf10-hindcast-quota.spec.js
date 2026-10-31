@@ -7,7 +7,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { dismissNotForNav } from "../helpers.js";
+import { dismissNotForNav, openLeftDrawer } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rf10");
 mkdirSync(recetteDir, { recursive: true });
@@ -26,23 +26,9 @@ async function leaveCinema(page) {
   if (on) await cinema.click();
 }
 
-function panelOnScreen(page, side) {
-  const sel = side === "left"
-    ? ".naviguide-sidebar-panel.left-0"
-    : ".naviguide-sidebar-panel.right-0";
-  return page.locator(sel).first().evaluate((el) => {
-    const s = getComputedStyle(el);
-    if (s.visibility === "hidden" || s.display === "none" || Number(s.opacity) === 0) return false;
-    const r = el.getBoundingClientRect();
-    return r.width > 50 && r.right > 12 && r.left < window.innerWidth - 12;
-  });
-}
-
 async function showLeftPanel(page) {
   await leaveCinema(page);
-  if (await panelOnScreen(page, "left").catch(() => false)) return;
-  await page.locator(".naviguide-sidebar-toggle--left").click();
-  await expect.poll(() => panelOnScreen(page, "left"), { timeout: 10_000 }).toBe(true);
+  await openLeftDrawer(page);
 }
 
 test("Route hindcast, journal, statut honnête", async ({ page }) => {

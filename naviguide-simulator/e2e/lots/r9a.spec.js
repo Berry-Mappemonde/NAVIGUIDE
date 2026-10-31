@@ -3,7 +3,7 @@
 // GET /voyage/official : sondé ; s'il manque, annotation seulement.
 // GET /ici/warm/status et /voyage/official/moments : seulement si l'API répond.
 import { expect, test } from "@playwright/test";
-import { dismissNotForNav } from "../helpers.js";
+import { dismissNotForNav, openLeftDrawer } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-r9a/${name}.webp`,
@@ -21,9 +21,7 @@ async function leaveCinema(page) {
 
 async function showLeftPanel(page) {
   await leaveCinema(page);
-  const drawBtn = page.getByRole("button", { name: /Berry-Mappemonde.*Tracer votre propre route|Tracer votre propre route|Draw your own route/i });
-  if (await drawBtn.isVisible().catch(() => false)) return;
-  await page.locator(".naviguide-sidebar-toggle--left").click();
+  await openLeftDrawer(page);
 }
 
 test("Aucun changement visible, trois parcours", async ({ page }) => {
