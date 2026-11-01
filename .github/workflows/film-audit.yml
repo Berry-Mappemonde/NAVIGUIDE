@@ -1,0 +1,85 @@
+name: NAVIGUIDE film audit request
+
+on:
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "Durée du film à demander"
+        required: true
+        type: choice
+        options:
+          - "150"
+          - "180"
+          - "0"
+        default: "150"
+  workflow_call:
+    inputs:
+      seconds:
+        description: "Durée du film à demander"
+        required: false
+        type: string
+        default: "150"
+
+permissions:
+  contents: read
+
+jobs:
+  capture-film:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      FILM_SECONDS: ${{ inputs.seconds || '150' }}
+
+    steps:
+      - name: Create output directory
+        run: mkdir -p film-output
+
+      - name: Fetch raw film snapshot
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --connect-timeout 10 --max-time 60 --retry 1 \
+            "https://naviguide.fr/voyage/official/film?lang=fr&seconds=${FILM_SECONDS}&style=raw" \
+            --output film-output/film-raw.json
+
+      - name: Request written film
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --connect-timeout 10 --max-time 180 \
+            --request POST \
+            "https://naviguide.fr/voyage/official/film?lang=fr&seconds=${FILM_SECONDS}" \
+            --output film-output/film-written.json
+
+      - name: Summarize response metadata
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          for p in sorted(Path("film-output").glob("*.json")):
+              try:
+                  obj = json.loads(p.read_text(encoding="utf-8"))
+                  print(
+                      f"{p.name}: "
+                      f"status={obj.get('status')!r}, "
+                      f"source={obj.get('source')!r}, "
+                      f"model={obj.get('model')!r}, "
+                      f"reviewedBy={obj.get('reviewedBy')!r}, "
+                      f"hasWritten={obj.get('hasWritten')!r}, "
+                      f"chapters={len(obj.get('chapters') or [])}, "
+                      f"chars={obj.get('chars')!r}, "
+                      f"reason={obj.get('reason')!r}"
+                  )
+              except Exception as exc:
+                  print(f"{p.name}: réponse illisible ou incomplète: {exc}")
+          PY
+
+      - name: Upload film JSON
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: naviguide-film-audit-${{ github.run_id }}
+          path: film-output/*.json
+          if-no-files-found: warn
+          retention-days: 3
