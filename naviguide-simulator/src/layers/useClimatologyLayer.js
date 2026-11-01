@@ -73,14 +73,13 @@ function mergeTileFeatures(collections, paintProps) {
   return merged;
 }
 
-const EMPTY_LAYERS = { wind: null, waveP50: null, waveP90: null, waveMean: null, current: null, cyclones: null };
+const EMPTY_LAYERS = { wind: null, waveP50: null, waveP90: null, current: null, cyclones: null };
 
 /** Survit au remontage React / StrictMode : le spec RF9 exige created=0 à vue égale. */
 const CLIMO_DRAW_CAPS = {
   wind: LAYER_DRAW_CAPS.wind,
   waveP50: LAYER_DRAW_CAPS.wave,
   waveP90: LAYER_DRAW_CAPS.wave,
-  waveMean: LAYER_DRAW_CAPS.wave,
   current: LAYER_DRAW_CAPS.current,
 };
 
@@ -156,8 +155,8 @@ export function useClimatologyLayer({
     const tileAbort = { ctrl: new AbortController() };
     const cache = SHARED.cache;
     const popupOpts = { ...POPUP_OPTS, maxWidth: 300 };
-    const countsRef = { wind: 0, waveP50: 0, waveP90: 0, waveMean: 0, current: 0, cyclones: 0 };
-    const sourcesRef = { wind: null, waveP50: null, waveP90: null, waveMean: null, current: null };
+    const countsRef = { wind: 0, waveP50: 0, waveP90: 0, current: 0, cyclones: 0 };
+    const sourcesRef = { wind: null, waveP50: null, waveP90: null, current: null };
 
     const loadSafe = (name, fn) => fn().catch((err) => {
       console.error(`[climatology] ${name} layer failed`, err);
@@ -335,11 +334,7 @@ export function useClimatologyLayer({
       }
       await Promise.all(jobs);
       if (cancelled) return;
-      if (showWave && !countsRef.waveP50 && !countsRef.waveP90) {
-        countsRef.waveMean = await loadSafe("wave-mean", () => (
-          loadTiles("wave", { stat: "mean" }, makeWave("mean"), "waveMean", paintWaveProps)
-        ));
-      }
+      // BI wave n'a que p50/p90 : stat=mean revient vide, pas de repli.
       publishCounts();
     };
 

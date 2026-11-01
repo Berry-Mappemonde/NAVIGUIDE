@@ -86,7 +86,7 @@ describe("recette A–G (contrats source)", () => {
     assert.match(read("../layers/useToggleLayers.js"), /showClimoCyclones/);
     assert.match(read("../layers/useClimatologyLayer.js"), /waveP50/);
     assert.match(read("../layers/useClimatologyLayer.js"), /waveP90/);
-    assert.match(read("../layers/useClimatologyLayer.js"), /wave-mean/);
+    assert.doesNotMatch(read("../layers/useClimatologyLayer.js"), /stat: "mean"/);
     assert.match(read("../layers/useClimatologyLayer.js"), /cyclones/);
     assert.match(read("../layers/useClimatologyLayer.js"), /climoPointLngs/);
     assert.match(read("../layers/useClimatologyLayer.js"), /cycloneLatLngCopies/);

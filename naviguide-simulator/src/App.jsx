@@ -2268,7 +2268,6 @@ export default function App() {
                 maritimeLayers.showClimoWind && `roses ${climoLayer.counts.wind || 0}`,
                 maritimeLayers.showClimoWave && `P50 ${climoLayer.counts.waveP50 || 0}`,
                 maritimeLayers.showClimoWave && `P90 ${climoLayer.counts.waveP90 || 0}`,
-                maritimeLayers.showClimoWave && climoLayer.counts.waveMean ? `Hs mean ${climoLayer.counts.waveMean}` : null,
                 maritimeLayers.showClimoCurrent && `courant ${climoLayer.counts.current || 0}`,
                 maritimeLayers.showClimoCyclones && `IBTrACS ${climoLayer.counts.cyclones || 0}`,
               ].filter(Boolean).join(" · ")}
