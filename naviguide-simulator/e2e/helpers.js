@@ -40,7 +40,7 @@ export function cinemaButton(page) {
 }
 
 export async function cinemaPressed(page) {
-  return /bg-cyan-700/.test((await cinemaButton(page).getAttribute("class")) || "");
+  return (await cinemaButton(page).getAttribute("aria-pressed")) === "true";
 }
 
 export async function leaveCinema(page) {

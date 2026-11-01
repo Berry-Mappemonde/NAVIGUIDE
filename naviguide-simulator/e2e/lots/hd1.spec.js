@@ -29,7 +29,7 @@ test("la barre film ne gagne ni rangée ni bouton", async ({ page }) => {
   await expect(page.getByTestId("view-tracer")).toHaveText("Tracer");
   const cinema = page.getByRole("button", { name: /^(cinéma|cinema)$/i });
   await expect(cinema).toBeVisible();
-  expect((await cinema.getAttribute("class")) || "").toMatch(/bg-cyan-700/);
+  await expect(cinema).toHaveAttribute("aria-pressed", "true");
 
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(

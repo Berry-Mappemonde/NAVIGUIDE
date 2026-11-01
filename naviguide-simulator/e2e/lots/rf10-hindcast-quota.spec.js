@@ -22,7 +22,7 @@ const shot = (page, name) => page.screenshot({
 async function leaveCinema(page) {
   const cinema = page.getByRole("button", { name: /^(cinéma|cinema)$/i });
   if (!(await cinema.isVisible().catch(() => false))) return;
-  const on = /bg-cyan-700/.test((await cinema.getAttribute("class")) || "");
+  const on = (await cinema.getAttribute("aria-pressed")) === "true";
   if (on) await cinema.click();
 }
 
@@ -122,8 +122,8 @@ test("Route hindcast, journal, statut honnête", async ({ page }) => {
       });
       return found;
     });
-    if (colors.includes("#2dd4bf")) {
-      expect(colors, "trait teinté hindcast (teal)").toContain("#2dd4bf");
+    if (colors.includes("#e86aab")) {
+      expect(colors, "trait teinté hindcast (magenta)").toContain("#e86aab");
     }
   } else {
     test.info().annotations.push({

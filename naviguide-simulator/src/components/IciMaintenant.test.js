@@ -369,11 +369,11 @@ describe("IciMaintenant — : journal lisible dans les deux thèmes", () => {
   it("pose une couleur explicite claire (sombre) et foncée (clair), sans text-inherit", () => {
     assert.match(
       css,
-      /(?:^|\n)\.ici-maintenant \[data-testid="ici-journal-entry"\] \{[\s\S]{0,80}color:\s*rgb\(226 232 240\)/,
+      /(?:^|\n)\.ici-maintenant \[data-testid="ici-journal-entry"\] \{[\s\S]{0,80}color:\s*rgb\(211 222 227\)/,
     );
     assert.match(
       css,
-      /\.light-mode \.ici-maintenant \[data-testid="ici-journal-entry"\] \{[\s\S]{0,80}color:\s*rgb\(30 41 59\)/,
+      /\.light-mode \.ici-maintenant \[data-testid="ici-journal-entry"\] \{[\s\S]{0,80}color:\s*rgb\(27 42 53\)/,
     );
     assert.match(src, /data-testid="ici-journal-entry"/);
     assert.doesNotMatch(src, /text-inherit/);

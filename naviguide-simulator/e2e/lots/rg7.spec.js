@@ -28,7 +28,7 @@ const ETA_RANGE = /entre le .+ et le |between .+ and /i;
 async function leaveCinema(page) {
   const cinema = page.getByRole("button", { name: /^(cinéma|cinema)$/i });
   if (!(await cinema.isVisible().catch(() => false))) return;
-  const on = /bg-cyan-700/.test((await cinema.getAttribute("class")) || "");
+  const on = (await cinema.getAttribute("aria-pressed")) === "true";
   if (on) await cinema.click();
 }
 

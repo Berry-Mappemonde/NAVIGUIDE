@@ -98,6 +98,8 @@ import { loadOfficialBerryRoute } from "./utils/routeFromOfficial.js";
 import { isCinemaKey, restoreShowLayers, snapshotShowLayers } from "./utils/cinemaHotkey.js";
 import { weatherLine as buildWeatherLine } from "./utils/weatherLine.js";
 import { mapInsetVars, measureFilmBarOccupiedPx } from "./utils/filmBarLayout.js";
+import { useTheme } from "./hooks/useTheme.js";
+import { routePalette } from "./constants/themes.js";
 import { productHasData } from "./hooks/weatherSnapshot.js";
 import { useSatellitePopup } from "./hooks/useSatellitePopup.js";
 import { DRAW_MAX_POINTS, canFinishDrawnRoute, useRouteDrawing } from "./hooks/useRouteDrawing.js";
@@ -170,7 +172,8 @@ export default function App() {
   const [maritimeLayerState, setMaritimeLayerState] = useState(null);
   const maritimeLayers = maritimeLayerState || EMPTY_MARITIME_LAYERS;
   const [climoLayer, setClimoLayer] = useState({ loading: false, error: null, counts: null, source: null });
-  const [isLightMode, setIsLightMode] = useState(false);
+  const { theme, setTheme, isLightMode, setIsLightMode } = useTheme();
+  const routeColors = useMemo(() => routePalette(theme), [theme]);
 
   const [segments, setSegments] = useState([]);
   const [points, setPoints] = useState([]);
@@ -1906,6 +1909,7 @@ export default function App() {
   }), [suivreCustom, customReviewLegs, planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review, planReviewState.advice, handleRecompute]);
   const mapScene = useMemo(() => ({
     isLightMode,
+    routeColors,
     view,
     isTracer,
     isSuivre,
@@ -1947,6 +1951,7 @@ export default function App() {
     filmLeg: replay.filmLeg,
   }), [
     isLightMode,
+    routeColors,
     view,
     isTracer,
     isSuivre,
@@ -2146,6 +2151,8 @@ export default function App() {
         onToggle={toggleTools}
         isLightMode={isLightMode}
         onLightModeChange={setIsLightMode}
+        theme={theme}
+        onThemeChange={setTheme}
         polarData={polarData}
         onPolarDataLoaded={setPolarData}
         routeDistanceNm={stats.nm}
@@ -2208,12 +2215,12 @@ export default function App() {
             <div className="flex items-center gap-2 bg-slate-900/95 border border-green-500/50 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-2xl">
               <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
               <span>{drawingMessage}</span>
-              <span data-testid="draw-point-limit" className="text-[11px] font-medium text-white/70">{t("drawPointLimit", { max: DRAW_MAX_POINTS })}</span>
+              <span data-testid="draw-point-limit" className="text-[12px] font-medium text-white/70">{t("drawPointLimit", { max: DRAW_MAX_POINTS })}</span>
               {drawingLoading && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
               <div className="flex gap-1 ml-1 pointer-events-auto">
                 <button type="button" onClick={handleDrawUndo} disabled={!drawnPoints.length} className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 disabled:opacity-30" title={t("undoLastPoint")}><Undo2 size={13} /></button>
                 <button type="button" onClick={handleDrawRedo} disabled={!canRedo} className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 disabled:opacity-30" title={t("redo")}><Redo2 size={13} /></button>
-                <button type="button" onClick={handleDrawCancel} className="h-7 px-2 rounded-full bg-white/10 text-[11px] font-semibold" title={t("cancel")}>{t("cancel")}</button>
+                <button type="button" onClick={handleDrawCancel} className="h-7 px-2 rounded-full bg-white/10 text-[12px] font-semibold" title={t("cancel")}>{t("cancel")}</button>
               </div>
             </div>
             {drawNotice && (
@@ -2222,7 +2229,7 @@ export default function App() {
               <div
                 role="status"
                 data-testid={drawNotice.kind === "error" ? "route-import-error" : "route-import-notice"}
-                className={`border text-[11px] font-semibold px-3 py-1 rounded-full shadow-lg ${
+                className={`border text-[12px] font-semibold px-3 py-1 rounded-full shadow-lg ${
                   drawNotice.kind === "error"
                     ? "bg-rose-950/95 border-rose-400/60 text-rose-50"
                     : "bg-slate-900/95 border-sky-400/50 text-sky-50"

@@ -81,8 +81,8 @@ test("Tronçon parcouru teinté hindcast", async ({ page }) => {
       });
       return found;
     });
-    if (colors.includes("#2dd4bf")) {
-      expect(colors, "trait teinté hindcast (teal)").toContain("#2dd4bf");
+    if (colors.includes("#e86aab")) {
+      expect(colors, "trait teinté hindcast (magenta)").toContain("#e86aab");
     }
   } else {
     test.info().annotations.push({

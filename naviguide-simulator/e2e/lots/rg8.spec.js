@@ -24,7 +24,7 @@ async function leaveCinema(page) {
   const cinema = page.getByRole("button", { name: /cin[eé]ma/i }).first();
   if (!(await cinema.isVisible().catch(() => false))) return;
   const pressed = await cinema.getAttribute("aria-pressed");
-  const on = pressed === "true" || /bg-cyan-700/.test((await cinema.getAttribute("class")) || "");
+  const on = pressed === "true";
   if (on) await cinema.click();
 }
 

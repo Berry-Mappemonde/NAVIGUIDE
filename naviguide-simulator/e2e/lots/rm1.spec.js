@@ -41,7 +41,7 @@ test("parcours README : EN, Suivre, journal, tracer", async ({ page }) => {
   await showLeftPanel(page);
   const chat = page.getByTestId("logbook-chat");
   await expect(chat).toBeVisible({ timeout: 15_000 });
-  await expect(chat).toContainText("Logbook — ask a question");
+  await expect(chat).toContainText("Ask the logbook");
   await expect(page.getByTestId("logbook-chat-input")).toHaveAttribute(
     "placeholder",
     "Wind at the boat? Next stop?",

@@ -33,9 +33,9 @@ export const LlmSourceBadge = memo(function LlmSourceBadge({
       hidden={hidden || undefined}
       className={`flex flex-col gap-0.5 min-w-0 ${className}`.trim()}
     >
-      <span className="text-xs text-white leading-snug">{line}</span>
+      <span className="text-xs text-text-primary leading-snug">{line}</span>
       {showBrands ? (
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-white leading-snug" data-testid={`${testId}-brands`}>
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-text-primary leading-snug" data-testid={`${testId}-brands`}>
           <span>{t("llmBrandNvidia")}</span>
           <span aria-hidden="true">·</span>
           <span>{t("llmBrandNebius")}</span>

@@ -13,7 +13,7 @@ export default function NotForNavModal({ open, onAccept, onCancel }) {
       aria-modal="true"
     >
       <div className="max-w-md w-full bg-slate-900 border border-amber-400/50 rounded-lg p-5">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-amber-200">
+        <h2 className="text-sm font-bold text-amber-200">
           {t("notForNavigation")}
         </h2>
         <p className="mt-3 text-[13px] leading-relaxed text-slate-300">
@@ -32,7 +32,7 @@ export default function NotForNavModal({ open, onAccept, onCancel }) {
         <div className="mt-4 flex gap-2">
           <button
             type="button"
-            className="flex-1 px-3 py-2 text-[11px] uppercase border border-slate-600 text-slate-300 rounded-lg"
+            className="flex-1 px-3 py-2 text-[12px] border border-slate-600 text-slate-300 rounded-lg"
             onClick={onCancel}
           >
             {t("cancel")}
@@ -40,7 +40,7 @@ export default function NotForNavModal({ open, onAccept, onCancel }) {
           <button
             type="button"
             data-testid="not-for-nav-accept"
-            className="flex-1 px-3 py-2 text-[11px] uppercase border border-amber-400/60 bg-amber-400/15 text-amber-100 rounded-lg disabled:opacity-40"
+            className="flex-1 px-3 py-2 text-[12px] border border-amber-400/60 bg-amber-400/15 text-amber-100 rounded-lg disabled:opacity-40"
             disabled={!acked}
             onClick={() => { if (acked) onAccept(); }}
           >

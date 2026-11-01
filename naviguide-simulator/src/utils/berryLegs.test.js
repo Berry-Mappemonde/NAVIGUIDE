@@ -95,7 +95,7 @@ describe("berryLegs", () => {
       from: { name: "Halifax (Nouvelle-Écosse)" },
       to: { name: "Saint-Pierre (Saint-Pierre-et-Miquelon)" },
     }), false);
-    assert.equal(officialRouteLineStyle({ nonMaritime: true })?.color, "orange");
+    assert.equal(officialRouteLineStyle({ nonMaritime: true })?.color, "#e6a84b");
     assert.equal(officialRouteLineStyle({ coords: [[0, 0], [1, 1]] }), null);
   });
 

@@ -21,9 +21,9 @@ describe("useRouteLayer — teinte par régime", () => {
     assert.equal(segs[1].regime, "forecast");
     assert.equal(segs[2].regime, "climatology");
     assert.ok(segs[0].coords.length >= 2);
-    assert.equal(REGIME_COLORS.hindcast, "#2dd4bf");
-    assert.equal(REGIME_COLORS.forecast, "#38bdf8");
-    assert.equal(REGIME_COLORS.climatology, "#c084fc");
+    assert.equal(REGIME_COLORS.hindcast, "#e86aab");
+    assert.equal(REGIME_COLORS.forecast, "#5b9bd5");
+    assert.equal(REGIME_COLORS.climatology, "#a99bc9");
   });
 
   it("ne teinte pas une jambe avion", () => {

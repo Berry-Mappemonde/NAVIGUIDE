@@ -37,7 +37,7 @@ async function showLeftPanel(page) {
   if (await chat.isVisible({ timeout: 2000 }).catch(() => false)) return;
   const cinema = page.getByRole("button", { name: /^(cinéma|cinema)$/i });
   if (await cinema.isVisible().catch(() => false)) {
-    const on = /bg-cyan-700/.test((await cinema.getAttribute("class")) || "");
+    const on = (await cinema.getAttribute("aria-pressed")) === "true";
     if (on) await cinema.click();
   }
   if (await chat.isVisible({ timeout: 3000 }).catch(() => false)) return;

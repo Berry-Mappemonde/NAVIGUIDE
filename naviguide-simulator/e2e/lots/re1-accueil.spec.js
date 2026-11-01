@@ -27,7 +27,7 @@ function cinemaButton(page) {
 }
 
 async function cinemaPressed(page) {
-  return /bg-cyan-700/.test((await cinemaButton(page).getAttribute("class")) || "");
+  return (await cinemaButton(page).getAttribute("aria-pressed")) === "true";
 }
 
 function panelOnScreen(page, side) {

@@ -38,6 +38,8 @@ import {
 } from "../hooks/useMarkerOffsets.js";
 import { createPanes } from "../layers/layerOrder.js";
 import { installCompactAttribution } from "../layers/compactAttribution.js";
+import { trackFractionalZoom } from "./chartTiles.js";
+import { themedRouteColor } from "../constants/themes.js";
 import {
   ROUTE_CASING_COLOR,
   ROUTE_CASING_WEIGHT,
@@ -46,6 +48,7 @@ import {
   TILE_URLS,
   WAKE_DONE_COLOR,
   WAKE_REST_COLOR,
+  WAKE_REST_DASH,
 } from "../layers/styles.js";
 import { SceneLayerRegistry } from "./SceneLayerRegistry.js";
 import { routeDrawPlan } from "./routeDrawPlan.js";
@@ -108,8 +111,9 @@ const WAKE_STYLE = {
 
 const REST_STYLE = {
   color: WAKE_REST_COLOR,
-  weight: 4,
-  opacity: 0.88,
+  weight: 2.5,
+  dashArray: WAKE_REST_DASH,
+  opacity: 0.9,
   pane: "route",
   interactive: false,
 };
@@ -210,7 +214,7 @@ function zoomForRemaining(nm) {
 function planeHtml() {
   return `<div class="plane-icon marker-rotatable" data-marker-rotatable style="width:64px;height:64px;">
     <svg viewBox="0 0 24 24" width="64" height="64" aria-label="avion">
-      <path fill="#f8fafc" stroke="#22d3ee" stroke-width="0.8"
+      <path fill="#f2f6f8" stroke="#0a1a26" stroke-width="0.8"
         d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5L21 16z"/>
     </svg>
   </div>`;
@@ -257,6 +261,7 @@ export class MapSceneController {
     });
     L.control.zoom({ position: "bottomright" }).addTo(map);
     createPanes(map);
+    trackFractionalZoom(map);
     return new MapSceneController(map, callbacks);
   }
 
@@ -449,7 +454,7 @@ export class MapSceneController {
     if (Number.isFinite(bLat) && Number.isFinite(bLon)) {
       L.polyline([[bLat, bLon], [lat, lon]], {
         pane: "briefing-focus",
-        color: "#7dd3fc",
+        color: themedRouteColor(this.config.routeColors, "#e0589f"),
         weight: 1.5,
         dashArray: "4 6",
         opacity: 0.9,
@@ -656,9 +661,11 @@ export class MapSceneController {
       drawnSegments: this.config.drawnSegments,
       sceneReady: this.config.sceneReady,
       flat: this.config.flat,
+      routeColors: this.config.routeColors,
     };
     if (
       this.routeInputs
+      && this.routeInputs.routeColors === input.routeColors
       && this.routeInputs.segments === input.segments
       && this.routeInputs.customRoute === input.customRoute
       && this.routeInputs.drawingMode === input.drawingMode
@@ -693,7 +700,7 @@ export class MapSceneController {
       if (!segment.coords?.length) return;
       const styles = officialAirRouteStyles(segment);
       if (!styles.length) return;
-      styles.forEach((style) => addRouteLine(group, segment.coords, style));
+      styles.forEach((style) => addRouteLine(group, segment.coords, this.themedStyle(style)));
     });
     const pts = input.flat?.points || [];
     const airStyles = officialAirRouteStyles({ air: true });
@@ -703,7 +710,7 @@ export class MapSceneController {
         [pts[i].lon, pts[i].lat],
         [pts[i + 1].lon, pts[i + 1].lat],
       ];
-      airStyles.forEach((style) => addRouteLine(group, coords, style));
+      airStyles.forEach((style) => addRouteLine(group, coords, this.themedStyle(style)));
     }
     const sideStyles = officialAirRouteStyles({ side: true });
     for (const ep of input.flat?.episodes || []) {
@@ -716,22 +723,29 @@ export class MapSceneController {
         coords.push([p.lon, p.lat]);
       }
       if (coords.length >= 2) {
-        sideStyles.forEach((style) => addRouteLine(group, coords, style));
+        sideStyles.forEach((style) => addRouteLine(group, coords, this.themedStyle(style)));
       }
     }
+  }
+
+  /** A route style in the current theme's colours (see ROUTE_PALETTES recolor). */
+  themedStyle(style) {
+    return { ...style, color: themedRouteColor(this.config.routeColors, style.color) };
   }
 
   syncAltRoute() {
     const draft = this.config.draft;
     const showEnvelopes = Boolean(this.config.showEnvelopes);
-    if (this.altDraft === draft && this.altShowEnvelopes === showEnvelopes) return;
+    const colors = this.config.routeColors;
+    if (this.altDraft === draft && this.altShowEnvelopes === showEnvelopes && this.altColors === colors) return;
     this.altDraft = draft;
     this.altShowEnvelopes = showEnvelopes;
+    this.altColors = colors;
     const group = this.layers.update("alt-route", () => L.layerGroup().addTo(this.map), (layer) => layer.clearLayers());
     if (!draft) return;
     const add = (coords, style) => {
       if (!coords?.length) return;
-      addWorldLine(group, coords, { ...style, pane: "route" });
+      addWorldLine(group, coords, { ...this.themedStyle(style), pane: "route" });
     };
     add(draft.old_geojson?.geometry?.coordinates, { color: "#94a3b8", weight: 2, dashArray: "7 7", opacity: 0.85 });
     add(draft.draft_geojson?.geometry?.coordinates, { color: "#22d3ee", weight: 3, opacity: 0.95 });
@@ -745,24 +759,28 @@ export class MapSceneController {
 
   syncWake(sailNm, enabled) {
     const flat = this.config.flat;
+    const colors = this.config.routeColors || null;
     const group = this.layers.add("wake", () => L.layerGroup().addTo(this.map));
     if (!enabled || !flat?.points?.length) {
       if (this.wakeGeometry) group.clearLayers();
       this.wakeGeometry = null;
       return;
     }
-    if (!this.wakeGeometry || this.wakeGeometry.flat !== flat) {
+    if (!this.wakeGeometry || this.wakeGeometry.flat !== flat || this.wakeGeometry.colors !== colors) {
       group.clearLayers();
       const geometry = staticWakeParts(flat);
       geometry.flat = flat;
+      geometry.colors = colors;
+      const restStyle = colors ? { ...REST_STYLE, color: colors.planned } : REST_STYLE;
+      const wakeStyle = colors ? { ...WAKE_STYLE, color: colors.sailed } : WAKE_STYLE;
       const offsets = worldCopyOffsets(geometry.parts.flat());
       geometry.worldOffsets = offsets;
       geometry.parts.forEach((part) => {
         if (part.length < 2) return;
-        offsets.forEach((offset) => L.polyline(latLngs(part, offset), REST_STYLE).addTo(group));
+        offsets.forEach((offset) => L.polyline(latLngs(part, offset), restStyle).addTo(group));
       });
-      geometry.doneLines = geometry.parts.map(() => createWorldLines(group, WAKE_STYLE, offsets));
-      geometry.tailLines = createWorldLines(group, WAKE_STYLE, offsets);
+      geometry.doneLines = geometry.parts.map(() => createWorldLines(group, wakeStyle, offsets));
+      geometry.tailLines = createWorldLines(group, wakeStyle, offsets);
       geometry.completedIndex = -1;
       this.wakeGeometry = geometry;
     }

@@ -22,7 +22,7 @@ const shot = (page, name) => page.screenshot({
 async function leaveCinema(page) {
   const cinema = page.getByRole("button", { name: /^(cinéma|cinema)$/i });
   if (!(await cinema.isVisible().catch(() => false))) return;
-  const isOn = async () => /bg-cyan-700/.test((await cinema.getAttribute("class")) || "");
+  const isOn = async () => (await cinema.getAttribute("aria-pressed")) === "true";
   if (!(await isOn())) return;
   await page.keyboard.press("Escape");
   if (!(await isOn())) return;

@@ -49,7 +49,7 @@ const Item = memo(function Item({ item, sub, lang, onFocus, t }) {
   const gm = googleMapsUrl(item.lat, item.lon);
   const site = item.url || item.visit_url || item.manager_url || null;
   return (
-    <li className="flex flex-wrap items-baseline gap-1 min-w-0 text-[11px] leading-snug">
+    <li className="flex flex-wrap items-baseline gap-1 min-w-0 text-[12px] leading-snug">
       {onFocus && Number.isFinite(item.lat) && Number.isFinite(item.lon) ? (
         <button
           type="button"
@@ -62,13 +62,13 @@ const Item = memo(function Item({ item, sub, lang, onFocus, t }) {
       ) : (
         <span className="text-slate-100 truncate">{item.name}</span>
       )}
-      {Number.isFinite(item.nm) ? <span className="text-slate-500 text-[9px] shrink-0">{nm(item.nm, lang)}</span> : null}
-      {item.fuel?.length ? <span className="text-slate-500 text-[9px] shrink-0">{item.fuel.join(" · ")}</span> : null}
-      {item.phone ? <a href={`tel:${item.phone}`} className="text-slate-400 text-[9px] shrink-0 hover:text-cyan-200">{item.phone}</a> : null}
-      {site ? <a href={site} target="_blank" rel="noopener noreferrer" className="text-cyan-300/80 text-[10px] shrink-0 hover:text-cyan-200" title={site}>↗</a> : null}
-      {gm ? <a href={gm} target="_blank" rel="noopener noreferrer" className="text-cyan-300/80 text-[10px] shrink-0 hover:text-cyan-200" title="Google Maps">◎</a> : null}
+      {Number.isFinite(item.nm) ? <span className="text-slate-500 text-[12px] shrink-0">{nm(item.nm, lang)}</span> : null}
+      {item.fuel?.length ? <span className="text-slate-500 text-[12px] shrink-0">{item.fuel.join(" · ")}</span> : null}
+      {item.phone ? <a href={`tel:${item.phone}`} className="text-slate-400 text-[12px] shrink-0 hover:text-cyan-200">{item.phone}</a> : null}
+      {site ? <a href={site} target="_blank" rel="noopener noreferrer" className="text-cyan-300/80 text-[12px] shrink-0 hover:text-cyan-200" title={site}>↗</a> : null}
+      {gm ? <a href={gm} target="_blank" rel="noopener noreferrer" className="text-cyan-300/80 text-[12px] shrink-0 hover:text-cyan-200" title="Google Maps">◎</a> : null}
       {item.enrich?.text || item.phrase ? (
-        <span data-testid="escale-enrich" className="text-slate-400 text-[10px] min-w-0 basis-full">
+        <span data-testid="escale-enrich" className="text-slate-400 text-[12px] min-w-0 basis-full">
           {item.enrich?.text || item.phrase}
           {item.enrich?.url ? (
             <a href={item.enrich.url} target="_blank" rel="noopener noreferrer" className="ml-1 text-cyan-300/80 hover:text-cyan-200">↗</a>
@@ -83,7 +83,7 @@ function ZeeLine({ zee, lang }) {
   if (!zee?.name) return null;
   const gold = zee.gold ? (lang === "en" ? " · Gold formalities" : " · formalités Gold") : "";
   const name = localizePlaceName(zee.name, lang);
-  return <li className="text-[11px] text-slate-200 leading-snug">{name}{gold}</li>;
+  return <li className="text-[12px] text-slate-200 leading-snug">{name}{gold}</li>;
 }
 
 /**
@@ -102,7 +102,7 @@ export const EscaleSheet = memo(function EscaleSheet({ stop, fiche, loading, err
     <div data-testid="escale-sheet" className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-2 min-w-0">
       <div className="flex items-center gap-1.5 mb-1">
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200 leading-snug">{t("escaleSheetTitle")}</div>
+          <div className="text-[12px] font-semibold text-emerald-200 leading-snug">{t("escaleSheetTitle")}</div>
           <div className="text-[12px] font-semibold text-white leading-snug truncate">{displayStopName(stop.name, lang, t)}</div>
         </div>
         {onClose ? (
@@ -127,11 +127,11 @@ export const EscaleSheet = memo(function EscaleSheet({ stop, fiche, loading, err
         ) : null}
       </div>
 
-      {loading ? <p className="text-[11px] text-slate-400 leading-snug">{t("escaleSheetLoading")}</p> : null}
-      {error ? <p className="text-[11px] text-amber-300/90 leading-snug">{t("escaleSheetError")}</p> : null}
+      {loading ? <p className="text-[12px] text-slate-400 leading-snug">{t("escaleSheetLoading")}</p> : null}
+      {error ? <p className="text-[12px] text-amber-300/90 leading-snug">{t("escaleSheetError")}</p> : null}
 
       {paragraph ? (
-        <p className="text-[11px] text-slate-100 leading-snug mb-1.5 break-words [overflow-wrap:anywhere]">{paragraph}</p>
+        <p className="text-[12px] text-slate-100 leading-snug mb-1.5 break-words [overflow-wrap:anywhere]">{paragraph}</p>
       ) : null}
       {paragraph && (fiche?.paragraph?.source || fiche?.paragraph?.engine) ? (
         <LlmSourceBadge
@@ -142,17 +142,17 @@ export const EscaleSheet = memo(function EscaleSheet({ stop, fiche, loading, err
       ) : null}
 
       {!loading && fiche && !keys.length ? (
-        <p className="text-[11px] text-slate-400 leading-snug">{t("escaleSheetEmpty")}</p>
+        <p className="text-[12px] text-slate-400 leading-snug">{t("escaleSheetEmpty")}</p>
       ) : null}
 
       {keys.map((section) => (
         <div key={section} className="mt-1.5 first:mt-0">
-          <div className="text-[10px] font-semibold text-emerald-200/90 leading-snug">{label(section, lang)}</div>
+          <div className="text-[12px] font-semibold text-emerald-200/90 leading-snug">{label(section, lang)}</div>
           {Object.entries(sections[section]).map(([sub, items]) => (
             <div key={sub} className="pl-1.5 mt-0.5">
               {Array.isArray(items) ? (
                 <>
-                  <div className="text-[9px] uppercase tracking-wider text-slate-500 leading-snug">{label(sub, lang)}</div>
+                  <div className="text-[12px] text-slate-500 leading-snug">{label(sub, lang)}</div>
                   <ul className="space-y-0.5 min-w-0">
                     {items.map((item, i) => (
                       <Item key={`${item.name}-${i}`} item={item} sub={sub} lang={lang} onFocus={onFocus} t={t} />
@@ -168,7 +168,7 @@ export const EscaleSheet = memo(function EscaleSheet({ stop, fiche, loading, err
       ))}
 
       {fiche?.sources ? (
-        <div className="text-[9px] text-slate-500 leading-snug mt-1.5">
+        <div className="text-[12px] text-slate-500 leading-snug mt-1.5">
           {t("escaleSheetSources")} : OpenStreetMap{fiche.sources.bi ? " · Blue Intelligence" : ""}{fiche.paragraph?.engine ? ` · ${fiche.paragraph.engine}` : ""}
         </div>
       ) : null}

@@ -81,13 +81,14 @@ export const escH = (s) => String(s ?? "")
 
 // Neutral route styling that reads on both dark and light basemaps.
 // Two-layer stroke (dark casing + light main) gives contrast in every context.
-export const ROUTE_MAIN_COLOR = "#e2e8f0";     // slate-200 top line
-export const ROUTE_CASING_COLOR = "#0f172a";   // deep navy casing for contrast on light map
+export const ROUTE_MAIN_COLOR = "#e8eff2";     // chart-100 top line
+export const ROUTE_CASING_COLOR = "#0a1a26";   // chart navy casing for contrast on light map
 export const ROUTE_MAIN_WEIGHT = 2.5;
 export const ROUTE_CASING_WEIGHT = 5;
-/** Accompli (wake) vs reste à parcourir. */
-export const WAKE_DONE_COLOR = "#7dd3fc";
-export const WAKE_REST_COLOR = "#1d4ed8";
+/** Accompli (wake, magenta de la route tracée) vs reste à parcourir (gris de carte, pointillé). */
+export const WAKE_DONE_COLOR = "#e0589f";
+export const WAKE_REST_COLOR = "#8fa9b8";
+export const WAKE_REST_DASH = "6 6";
 export const ESCALE_FILL = "#f8fafc";
 export const ESCALE_STROKE = "#0f172a";
 export const INTERMEDIATE_FILL = "#94a3b8";
