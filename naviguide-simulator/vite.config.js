@@ -67,6 +67,16 @@ export default defineConfig({
         main: path.resolve(root, "index.html"),
         lotR8b: path.resolve(root, "lot-r8b.html"),
       },
+      // Chunks split from App (#182): a lazy chunk named after a module such as
+      // iciBriefing or voyageClock gave /assets/iciBriefing-*.js, a path that
+      // contains an API prefix (/ici, /voyage). Route mocks and path filters
+      // keyed on those prefixes then answered the script with JSON and the app
+      // never mounted. The nv- prefix keeps generated files out of API paths.
+      output: {
+        entryFileNames: "assets/nv-[name]-[hash].js",
+        chunkFileNames: "assets/nv-[name]-[hash].js",
+        assetFileNames: "assets/nv-[name]-[hash][extname]",
+      },
     },
   },
   server: {
