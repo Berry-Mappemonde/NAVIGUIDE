@@ -37,7 +37,6 @@ export function emptyClimoPools() {
     wind: new Map(),
     waveP50: new Map(),
     waveP90: new Map(),
-    waveMean: new Map(),
     current: new Map(),
   };
 }
