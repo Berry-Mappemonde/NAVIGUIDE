@@ -1,8 +1,8 @@
 # Versions installées par la CI de main (23be7ba8, Python 3.12, run 39069408395).
 # Aucune montée : chaque ligne est le paquet réellement testé. Dependabot
 # continue de proposer des mises à jour sur ces épingles ==.
-fastapi==0.142.2
-starlette==1.8.0
+fastapi==0.162.0
+starlette==1.10.0
 uvicorn==0.54.0
 httpx==0.28.1
 searoute==1.6.0
@@ -11,7 +11,7 @@ shapely==2.2.0
 global-land-mask==1.0.0
 numpy==2.5.4
 h5py==3.16.0
-pandas==3.0.6
+pandas==3.1.0
 openpyxl==3.1.5
 pdfplumber==0.11.10
 python-multipart==0.0.32
@@ -20,7 +20,7 @@ copernicusmarine==2.5.0
 click==8.5.0
 xarray==2026.9.0
 Pillow==13.0.0
-pytest==9.1.1
+pytest==9.2.0
 pymongo==4.19.0
 
 # Fermeture résolue par cette même installation, pour qu'un serveur neuf
@@ -29,22 +29,22 @@ annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
 arcosparse==0.5.1
-boto3==1.43.114
-botocore==1.43.114
+boto3==1.43.122
+botocore==1.43.122
 certifi>=2026.10.19
 cffi==2.1.1
 charset-normalizer==3.5.2
 cloudpickle==3.1.2
 cryptography==50.0.2
 dask==2026.8.0
-dnspython==2.9.0
+dnspython==2.9.1
 donfig==0.8.1.post1
 et-xmlfile==2.0.0
 fsspec==2026.9.0
 geojson==3.3.0
 google-crc32c==1.9.0
 h11==0.16.0
-h5netcdf==1.8.1
+h5netcdf==1.8.2
 httpcore==1.0.9
 idna==3.20
 iniconfig==2.3.1
@@ -52,16 +52,16 @@ jmespath==1.1.0
 locket==1.0.0
 msgspec==0.22.0
 networkx==3.7
-numcodecs==0.17.0
-opentelemetry-api==1.45.1
+numcodecs==0.17.1
+opentelemetry-api==1.45.2
 packaging==26.3
 partd==1.4.2
 pdfminer.six==20260107
 pluggy==1.7.0
 pyarrow==26.0.0
-pycparser==3.11
-pydantic==2.14.1
-pydantic-core==2.50.1
+pycparser==3.12
+pydantic==2.14.2
+pydantic-core==2.50.2
 pygments==2.21.0
 pypdfium2==5.14.0
 pystac==1.15.2
@@ -91,7 +91,7 @@ pystac-ext-xarray-assets==1.0.1
 python-dateutil==2.9.0.post0
 pyyaml==6.0.3
 requests==2.34.2
-s3transfer==0.19.2
+s3transfer==0.19.3
 semver==3.1.0
 six==1.17.0
 toolz==1.2.0
@@ -99,4 +99,4 @@ tqdm==4.70.1
 typing-extensions==4.16.0
 typing-inspection==0.4.4
 urllib3==2.8.0
-zarr==3.4.1
+zarr==3.4.2
