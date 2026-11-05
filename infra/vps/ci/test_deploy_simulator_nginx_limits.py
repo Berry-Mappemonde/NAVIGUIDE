@@ -134,6 +134,26 @@ class NginxLimitsFileTests(unittest.TestCase):
             text = (ROOT / rel).read_text(encoding="utf-8")
             self.assertIn("nginx-simulator-limits.conf", text, rel)
             self.assertIn("nginx-simulator-443-redirects.conf", text, rel)
+            self.assertIn("nginx-http-bootstrap.conf", text, rel)
+            self.assertIn("naviguide-simulator.service.d/memory.conf", text, rel)
+
+    def test_vhost_bi_proxy_resolves_at_request_time(self):
+        text = VHOST.read_text(encoding="utf-8")
+        self.assertIn("resolver 127.0.0.53", text)
+        self.assertIn("set $bi_host blueintelligence.online", text)
+        self.assertIn("proxy_pass https://$bi_host/api/", text)
+        self.assertNotRegex(
+            text,
+            r'proxy_pass\s+https://blueintelligence\.online/',
+            "literal BI hostname still in proxy_pass",
+        )
+
+    def test_bootstrap_bi_proxy_resolves_at_request_time(self):
+        bootstrap = NAV / "nginx-http-bootstrap.conf"
+        self.assertTrue(bootstrap.is_file(), "nginx-http-bootstrap.conf manquant")
+        text = bootstrap.read_text(encoding="utf-8")
+        self.assertIn("resolver 127.0.0.53", text)
+        self.assertIn("proxy_pass https://$bi_host/api/climatology/", text)
 
 
 class DeploySimulatorNginxSequenceTests(unittest.TestCase):
@@ -189,6 +209,7 @@ class DeploySimulatorNginxSequenceTests(unittest.TestCase):
             NGINX_SRC=str(VHOST),
             LIMITS_SRC=str(LIMITS),
             REDIRECTS_SRC=str(REDIRECTS),
+            BOOTSTRAP_SRC=str(NAV / "nginx-http-bootstrap.conf"),
         )
         proc = subprocess.run(
             ["bash", "-c", "set -euo pipefail\n" + _block()],
@@ -237,7 +258,9 @@ class DeploySimulatorNginxSequenceTests(unittest.TestCase):
         proc, calls = self._run(have_cert=False)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertSingleZones()
-        self.assertFalse((self.etc / "conf.d/naviguide-simulator-limits.conf").exists())
+        self.assertTrue((self.etc / "conf.d/naviguide-simulator-limits.conf").is_file())
+        boot = (self.etc / "sites-available/naviguide-http-bootstrap").read_text(encoding="utf-8")
+        self.assertIsNone(re.search(r"^\s*limit_req_zone", boot, re.M))
         self.assertFalse((self.etc / "sites-enabled/naviguide-simulator").exists())
         self.assertFalse((self.etc / "sites-enabled/naviguide-443-redirects").exists())
         self.assertIn("non activé", proc.stderr)
@@ -249,7 +272,7 @@ class DeploySimulatorNginxSequenceTests(unittest.TestCase):
         proc, _ = self._run(have_cert=True)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertSingleZones()
-        self.assertFalse((self.etc / "conf.d/naviguide-simulator-limits.conf").exists())
+        self.assertTrue((self.etc / "conf.d/naviguide-simulator-limits.conf").is_file())
         self.assertTrue((self.etc / "sites-enabled/naviguide-simulator").is_symlink())
 
     def test_bootstrap_sans_zones_et_sans_certificat_zones_en_conf_d(self):

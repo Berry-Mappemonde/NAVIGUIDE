@@ -26,6 +26,21 @@ class SimulatorDeployManifestTests(unittest.TestCase):
         text = (ROOT / "infra/vps/naviguide/deploy-simulator.sh").read_text(encoding="utf-8")
         self.assertIn("zz-memory.conf", text)
 
+    def test_deploy_script_installs_memory_dropins(self):
+        text = (ROOT / "infra/vps/naviguide/deploy-simulator.sh").read_text(encoding="utf-8")
+        self.assertIn("install_unit_memory_dropin", text)
+        self.assertIn("naviguide-simulator.service.d/memory.conf", text)
+        self.assertIn("naviguide-film-front.service.d/memory.conf", text)
+        self.assertIn("ensure_swap", text)
+
+    def test_memory_dropin_sources_present_in_repo(self):
+        self.assertTrue(
+            (ROOT / "infra/vps/naviguide/naviguide-simulator.service.d/memory.conf").is_file()
+        )
+        self.assertTrue(
+            (ROOT / "infra/vps/naviguide/naviguide-film-front.service.d/memory.conf").is_file()
+        )
+
     def test_film_front_sources_present_in_repo(self):
         self.assertTrue(
             (ROOT / "infra/vps/naviguide/naviguide-film-front.service").is_file()
