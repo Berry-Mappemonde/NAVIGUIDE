@@ -46,6 +46,7 @@ def site_for_path(path: str) -> str | None:
         name = Path(path).name
         if "simulator" in name or name in (
             "naviguide-film-front.service",
+            "nginx-http-bootstrap.conf",
             "deploy-simulator.sh",
             "simulator.env.example",
             "publish-simulator-from-mac.sh",

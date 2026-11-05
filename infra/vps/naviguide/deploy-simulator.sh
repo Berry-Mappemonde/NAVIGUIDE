@@ -18,7 +18,10 @@ CONF_DIR="$HOME/.config/naviguide"
 UV="$HOME/.local/bin/uv"
 WWW_ROOT=/var/www/naviguide-simulator
 NGINX_SRC="$APP/infra/vps/naviguide/nginx-simulator.conf"
+BOOTSTRAP_SRC="$APP/infra/vps/naviguide/nginx-http-bootstrap.conf"
 UNIT_SRC="$APP/infra/vps/naviguide/naviguide-simulator.service"
+SIM_MEM_DROPIN_SRC="$APP/infra/vps/naviguide/naviguide-simulator.service.d/memory.conf"
+FILM_MEM_DROPIN_SRC="$APP/infra/vps/naviguide/naviguide-film-front.service.d/memory.conf"
 
 if [ ! -d "$SIM/server" ]; then
   echo "Dossier $SIM/server introuvable. Rsync d'abord depuis le Mac." >&2
@@ -36,7 +39,9 @@ require_file() {
 }
 
 require_file "$NGINX_SRC" "nginx-simulator.conf"
+require_file "$BOOTSTRAP_SRC" "nginx-http-bootstrap.conf"
 require_file "$UNIT_SRC" "naviguide-simulator.service"
+require_file "$SIM_MEM_DROPIN_SRC" "naviguide-simulator.service.d/memory.conf"
 require_file "$APP/infra/vps/naviguide/nginx-simulator-limits.conf" "nginx-simulator-limits.conf"
 require_file "$APP/infra/vps/naviguide/nginx-simulator-443-redirects.conf" "nginx-simulator-443-redirects.conf"
 
@@ -46,7 +51,40 @@ FILM_PY="$SIM/server/film_front.py"
 SKIP_FRONTEND_BUILD="${SKIP_FRONTEND_BUILD:-0}"
 SKIP_PIP="${SKIP_PIP:-0}"
 
+ensure_swap() {
+  local swapfile=/swapfile
+  local size_g=4
+  if swapon --show=NAME --noheadings 2>/dev/null | grep -qx "$swapfile"; then
+    echo "→ $swapfile déjà actif"
+    return 0
+  fi
+  if [ -f "$swapfile" ]; then
+    echo "→ Activation de $swapfile existant"
+    sudo swapon "$swapfile" 2>/dev/null || true
+  else
+    echo "→ Création de ${size_g}G $swapfile (incident OOM 2026-11-05)"
+    if ! sudo fallocate -l "${size_g}G" "$swapfile" 2>/dev/null; then
+      sudo dd if=/dev/zero of="$swapfile" bs=1M count=$((size_g * 1024)) status=none
+    fi
+    sudo chmod 600 "$swapfile"
+    sudo mkswap "$swapfile"
+    sudo swapon "$swapfile"
+  fi
+  if ! grep -qsE '^[^#]*[[:space:]]/swapfile[[:space:]]' /etc/fstab; then
+    echo "$swapfile none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null
+  fi
+}
+
+install_unit_memory_dropin() {
+  local src="$1" unit="$2"
+  local dir="/etc/systemd/system/${unit}.d"
+  sudo install -d -m 755 "$dir"
+  sudo install -m 644 "$src" "$dir/memory.conf"
+}
+
 command -v "$UV" >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
+
+ensure_swap
 
 # ── Dedicated venv (not the naviguide/ one) ─────────────────────────────────────
 cd "$SIM"
@@ -126,6 +164,7 @@ if [ -f "$ZZ_MEM_DROPIN" ]; then
 fi
 
 sudo cp "$UNIT_SRC" /etc/systemd/system/naviguide-simulator.service
+install_unit_memory_dropin "$SIM_MEM_DROPIN_SRC" "naviguide-simulator.service"
 
 film_deploy_ok=0
 have_film_unit=0
@@ -149,6 +188,8 @@ fi
 
 if [ "$film_deploy_ok" -eq 1 ]; then
   sudo cp "$FILM_UNIT" /etc/systemd/system/naviguide-film-front.service
+  require_file "$FILM_MEM_DROPIN_SRC" "naviguide-film-front.service.d/memory.conf"
+  install_unit_memory_dropin "$FILM_MEM_DROPIN_SRC" "naviguide-film-front.service"
 fi
 
 sudo systemctl daemon-reload
@@ -199,21 +240,26 @@ sudo test -f "$CERT" && HAVE_CERT=1
 # autre site actif (ancien bootstrap HTTP) les déclare encore, on n'installe
 # pas le fichier conf.d.
 NGINX_ETC="${NGINX_ETC:-/etc/nginx}"
+BOOTSTRAP_SRC="${BOOTSTRAP_SRC:-${APP:-/home/naviguide/naviguide}/infra/vps/naviguide/nginx-http-bootstrap.conf}"
 LIMITS_SRC="${LIMITS_SRC:-${APP:-/home/naviguide/naviguide}/infra/vps/naviguide/nginx-simulator-limits.conf}"
 REDIRECTS_SRC="${REDIRECTS_SRC:-${APP:-/home/naviguide/naviguide}/infra/vps/naviguide/nginx-simulator-443-redirects.conf}"
 LIMITS_DST="$NGINX_ETC/conf.d/naviguide-simulator-limits.conf"
 SIM_AVAIL="$NGINX_ETC/sites-available/naviguide-simulator"
 SIM_ENABLED="$NGINX_ETC/sites-enabled/naviguide-simulator"
+BOOTSTRAP_AVAIL="$NGINX_ETC/sites-available/naviguide-http-bootstrap"
+BOOTSTRAP_ENABLED="$NGINX_ETC/sites-enabled/naviguide-http-bootstrap"
 REDIR_AVAIL="$NGINX_ETC/sites-available/naviguide-443-redirects"
 REDIR_ENABLED="$NGINX_ETC/sites-enabled/naviguide-443-redirects"
 NGINX_BAK="$NGINX_ETC/naviguide-deploy-bak/$(date -u +%Y%m%dT%H%M%SZ)"
 
 sudo mkdir -p "$NGINX_BAK"
-for f in "$LIMITS_DST" "$SIM_AVAIL" "$REDIR_AVAIL"; do
+for f in "$LIMITS_DST" "$SIM_AVAIL" "$BOOTSTRAP_AVAIL" "$REDIR_AVAIL"; do
   if sudo test -f "$f"; then sudo cp -a "$f" "$NGINX_BAK/"; fi
 done
 SIM_WAS_ENABLED=0
 [ -L "$SIM_ENABLED" ] && SIM_WAS_ENABLED=1
+BOOTSTRAP_WAS_ENABLED=0
+[ -L "$BOOTSTRAP_ENABLED" ] && BOOTSTRAP_WAS_ENABLED=1
 REDIR_WAS_ENABLED=0
 [ -L "$REDIR_ENABLED" ] && REDIR_WAS_ENABLED=1
 
@@ -238,18 +284,23 @@ nginx_restore() {
   echo "ERREUR : nginx -t a échoué. Retour à la configuration sauvegardée ($NGINX_BAK)." >&2
   nginx_restore_file "$LIMITS_DST"
   nginx_restore_file "$SIM_AVAIL"
+  nginx_restore_file "$BOOTSTRAP_AVAIL"
   nginx_restore_file "$REDIR_AVAIL"
   nginx_restore_link "$SIM_WAS_ENABLED" "$SIM_AVAIL" "$SIM_ENABLED"
+  nginx_restore_link "$BOOTSTRAP_WAS_ENABLED" "$BOOTSTRAP_AVAIL" "$BOOTSTRAP_ENABLED"
   nginx_restore_link "$REDIR_WAS_ENABLED" "$REDIR_AVAIL" "$REDIR_ENABLED"
 }
 
 # Sites actifs (hors fichiers posés ici) qui déclarent encore les zones.
 sim_zones_elsewhere() {
-  local f
+  local f base
   for f in "$NGINX_ETC"/conf.d/*.conf "$NGINX_ETC"/sites-enabled/*; do
     [ -e "$f" ] || continue
     [ "$f" = "$LIMITS_DST" ] && continue
     [ "$f" = "$SIM_ENABLED" ] && [ -L "$f" ] && continue
+    base="$(basename "$f")"
+    # Toujours remplacé par nginx-http-bootstrap.conf du dépôt (sans zones).
+    [ "$base" = "naviguide-http-bootstrap" ] && continue
     if grep -qsE '^[[:space:]]*limit_req_zone[^#]*zone=sim_(write|story):' "$f"; then
       echo "$f"
     fi
@@ -257,6 +308,8 @@ sim_zones_elsewhere() {
 }
 
 sudo cp "$NGINX_SRC" "$SIM_AVAIL"
+sudo install -m 644 "$BOOTSTRAP_SRC" "$BOOTSTRAP_AVAIL"
+sudo ln -sf "$BOOTSTRAP_AVAIL" "$BOOTSTRAP_ENABLED"
 ZONES_ELSEWHERE="$(sim_zones_elsewhere)"
 if [ -n "$ZONES_ELSEWHERE" ]; then
   echo "⚠  zones sim_write/sim_story déjà déclarées dans : $ZONES_ELSEWHERE" >&2
