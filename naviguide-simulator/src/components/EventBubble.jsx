@@ -9,6 +9,7 @@ import {
   applyBubbleClose,
   bubbleChips,
   bubbleFacts,
+  bubbleFocusEnds,
   bubbleId,
   bubbleKindIcon,
   bubbleTitle,
@@ -172,6 +173,8 @@ export function attachEventBubble(scene, L) {
   let visibleTimer = 0;
   let currentCard = null;
   let closedByEsc = false;
+  // Carte affichée : un « Voir sur la carte » lancé depuis elle s'arrête quand elle s'en va (#102).
+  let shownId = null;
 
   const win = typeof window !== "undefined" ? window : null;
 
@@ -199,6 +202,10 @@ export function attachEventBubble(scene, L) {
 
   function hide({ immediate = false } = {}) {
     if (!open && !popup._map) return;
+    if (shownId) {
+      shownId = null;
+      scene.releaseBubbleFocus?.();
+    }
     if (hideTimer) clearTimeout(hideTimer);
     if (visibleTimer) clearTimeout(visibleTimer);
     setVisible(false);
@@ -223,6 +230,8 @@ export function attachEventBubble(scene, L) {
       clearTimeout(hideTimer);
       hideTimer = 0;
     }
+    if (bubbleFocusEnds(shownId, card)) scene.releaseBubbleFocus?.();
+    shownId = bubbleId(card);
     renderBubble(root, host, card, dismiss);
     popup.setContent(host);
     popup.setLatLng(marker.getLatLng());
@@ -266,6 +275,7 @@ export function attachEventBubble(scene, L) {
     },
     setCard,
     hide,
+    shownCard: () => (shownId ? currentCard : null),
     dispose() {
       win?.removeEventListener("keydown", onEsc);
       if (hideTimer) clearTimeout(hideTimer);

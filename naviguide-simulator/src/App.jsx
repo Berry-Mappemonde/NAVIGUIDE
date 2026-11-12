@@ -2047,6 +2047,7 @@ export default function App() {
         onWaypointHover={setHoveredPoint}
         onDrawingWaypointClick={handleDrawingWaypointClick}
         onWaypointClick={openEscaleFromUi}
+        onBriefingFocus={handleBriefingFocus}
       />
 
       <NotForNavModal
