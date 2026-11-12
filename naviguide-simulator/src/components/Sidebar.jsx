@@ -11,8 +11,9 @@ import { ICI_BRIEFING_SOURCE } from "../engine/iciBriefing.js";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 import { wrapLon } from "../utils/geo.js";
 
-const NAVIGUIDE_LOGO = "/logo-naviguide.png";
-const BERRY_LOGO = "/logo-berry-mappemonde.png";
+// Copies 3× de la taille affichée (h-9, h-7) des PNG validés, qui restent dans public/.
+const NAVIGUIDE_LOGO = "/logo-naviguide-108.png";
+const BERRY_LOGO = "/logo-berry-mappemonde-84h.png";
 
 function BerryCard({
   onCustomRoute, onRouteSwitchToBerry, onRouteSwitchToCustom, isDrawing,

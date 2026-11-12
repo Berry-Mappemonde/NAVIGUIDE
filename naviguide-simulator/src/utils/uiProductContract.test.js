@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
@@ -70,15 +70,19 @@ describe("contrat UI produit", () => {
     assert.match(selectChunk, /setToolsOpen\(true\)/);
   });
 
-  it("utilise les PNG validés et le favicon d’origine", () => {
+  it("utilise les PNG validés, à la taille affichée, et le favicon d’origine", () => {
     const sidebar = read("../components/Sidebar.jsx");
     const index = read("../../index.html");
-    assert.match(sidebar, /const NAVIGUIDE_LOGO = "\/logo-naviguide\.png"/);
-    assert.match(sidebar, /const BERRY_LOGO = "\/logo-berry-mappemonde\.png"/);
+    assert.match(sidebar, /const NAVIGUIDE_LOGO = "\/logo-naviguide-108\.png"/);
+    assert.match(sidebar, /const BERRY_LOGO = "\/logo-berry-mappemonde-84h\.png"/);
     assert.match(index, /href="\/favicon-n-bl\.png"/);
     assert.ok(existsSync(join(src, "../../public/logo-naviguide.png")));
     assert.ok(existsSync(join(src, "../../public/logo-berry-mappemonde.png")));
     assert.ok(existsSync(join(src, "../../public/favicon-n-bl.png")));
+    // Les originaux (444 ko, 130 ko) ne sont plus servis au premier affichage.
+    for (const shown of ["logo-naviguide-108.png", "logo-berry-mappemonde-84h.png"]) {
+      assert.ok(statSync(join(src, "../../public", shown)).size < 40_000, shown);
+    }
   });
 
   it("réserve les contrôles de lecture à Tracer et à Suivre × ma route", () => {
