@@ -123,7 +123,7 @@ jobs:
           cache: npm
           cache-dependency-path: naviguide-simulator/package-lock.json
       - run: npm ci
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: simulator-dist
           path: naviguide-simulator/dist
@@ -176,7 +176,7 @@ jobs:
           cache: pip
           cache-dependency-path: naviguide-simulator/server/requirements.txt
       - run: npm ci
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: simulator-dist
           path: naviguide-simulator/dist
